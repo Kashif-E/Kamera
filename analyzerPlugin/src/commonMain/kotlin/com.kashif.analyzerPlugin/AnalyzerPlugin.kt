@@ -22,7 +22,7 @@ class AnalyzerPlugin(val coroutineScope: CoroutineScope) :
     CameraKPlugin {
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
-    val analyzerFlow = MutableSharedFlow<ByteArray>()
+    private val analyzerFlow = MutableSharedFlow<ByteArray>()
     private var isAnalyzing = atomic(false)
     private var collectorJob: Job? = null
 
