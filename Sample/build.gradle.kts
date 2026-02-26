@@ -39,6 +39,7 @@ kotlin {
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
             implementation(projects.cameraK)
+            implementation(projects.analyzerPlugin)
             implementation(projects.imageSaverPlugin)
             implementation(projects.qrScannerPlugin)
             implementation(projects.ocrPlugin)

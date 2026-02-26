@@ -78,6 +78,8 @@ import com.composables.icons.lucide.SwitchCamera
 import com.composables.icons.lucide.Type
 import com.composables.icons.lucide.X
 import com.composables.icons.lucide.Zap
+import com.kashif.analyzerPlugin.AnalyzerPlugin
+import com.kashif.analyzerPlugin.rememberAnalyzerPlugin
 import com.kashif.cameraK.compose.CameraKScreen
 import com.kashif.cameraK.compose.rememberCameraKState
 import com.kashif.cameraK.controller.CameraController
@@ -140,6 +142,7 @@ fun App() = AppTheme {
                 customFolderName = "CameraK",
             ),
         )
+        val analyzerPlugin = rememberAnalyzerPlugin()
         val qrScannerPlugin = rememberQRScannerPlugin()
         val ocrPlugin = rememberOcrPlugin()
         val videoRecorderPlugin = rememberVideoRecorderPlugin(
@@ -158,6 +161,7 @@ fun App() = AppTheme {
 
         if (cameraPermissionState.value && storagePermissionState.value) {
             CameraContent(
+                analyzerPlugin = analyzerPlugin,
                 imageSaverPlugin = imageSaverPlugin,
                 qrScannerPlugin = qrScannerPlugin,
                 ocrPlugin = ocrPlugin,
@@ -189,6 +193,7 @@ private fun PermissionsHandler(
 }
 @Composable
 private fun CameraContent(
+    analyzerPlugin: AnalyzerPlugin,
     imageSaverPlugin: ImageSaverPlugin,
     qrScannerPlugin: QRScannerPlugin,
     ocrPlugin: OcrPlugin,
@@ -197,6 +202,12 @@ private fun CameraContent(
     var qrCodes by remember { mutableStateOf(listOf<String>()) }
     var recognizedText by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(analyzerPlugin){
+        analyzerPlugin.startAnalyzer()
+        analyzerPlugin.getAnalyzerFlow().collect { frame->
+
+        }
+    }
     LaunchedEffect(qrScannerPlugin) {
         qrScannerPlugin.getQrCodeFlow().collect { qr ->
             if (qr !in qrCodes) {
