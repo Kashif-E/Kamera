@@ -45,6 +45,7 @@ kotlin {
             implementation(projects.ocrPlugin)
             implementation(projects.videoRecorderPlugin)
             implementation(libs.lucide.icons.cmp)
+            implementation(libs.kflite)
         }
 
         commonTest.dependencies {
