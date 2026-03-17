@@ -2,6 +2,7 @@ package com.kashif.cameraK.state
 
 import androidx.compose.runtime.Stable
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -95,6 +96,14 @@ class CameraKStateHolder(
      */
     val events: SharedFlow<CameraKEvent> = _events.asSharedFlow()
 
+    private val _deviceOrientation = MutableStateFlow(DeviceOrientation.PORTRAIT)
+
+    /**
+     * Observable device orientation.
+     * Updates automatically when the physical device orientation changes.
+     */
+    val deviceOrientation: StateFlow<DeviceOrientation> = _deviceOrientation.asStateFlow()
+
     /**
      * CoroutineScope for plugins to launch their operations.
      * This scope is tied to the StateHolder's lifecycle - it cancels when StateHolder shuts down.
@@ -148,6 +157,12 @@ class CameraKStateHolder(
             // Start session
             newController.startSession()
 
+            // Initialize orientation tracking
+            _deviceOrientation.value = newController.getDeviceOrientation()
+            newController.setOnOrientationChangedListener { orientation ->
+                _deviceOrientation.value = orientation
+            }
+
             // Initialize UI state from controller
             updateUIStateFromController(newController)
 
@@ -192,7 +207,8 @@ class CameraKStateHolder(
             }
             attachedPlugins.clear()
 
-            // Stop session and cleanup
+            // Stop orientation listener and session
+            controller?.setOnOrientationChangedListener(null)
             controller?.stopSession()
             controller?.cleanup()
             controller = null
@@ -387,6 +403,19 @@ class CameraKStateHolder(
             _uiState.value.copy(
                 cameraLens = currentController.getCameraLens(),
             )
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Orientation
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Locks camera output orientation to a specific value.
+     * Affects image capture and video recording rotation.
+     * Pass `null` to follow the device's physical orientation automatically.
+     */
+    fun setTargetOrientation(orientation: DeviceOrientation?) {
+        controller?.setTargetOrientation(orientation)
     }
 
     // ═══════════════════════════════════════════════════════════════

@@ -37,9 +37,11 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import android.view.OrientationEventListener
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
@@ -919,11 +921,78 @@ actual class CameraController(
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // Device Orientation
+    // ═══════════════════════════════════════════════════════════════
+
+    @Volatile
+    private var currentDeviceOrientation = DeviceOrientation.PORTRAIT
+
+    @Volatile
+    private var orientationChangedCallback: ((DeviceOrientation) -> Unit)? = null
+    private var orientationEventListener: OrientationEventListener? = null
+
+    @Volatile
+    private var targetOrientation: DeviceOrientation? = null
+
+    actual fun getDeviceOrientation(): DeviceOrientation = currentDeviceOrientation
+
+    actual fun setOnOrientationChangedListener(callback: ((DeviceOrientation) -> Unit)?) {
+        orientationChangedCallback = callback
+        if (callback != null) {
+            if (orientationEventListener == null) {
+                orientationEventListener = object : OrientationEventListener(context) {
+                    override fun onOrientationChanged(angle: Int) {
+                        if (angle == ORIENTATION_UNKNOWN) return
+                        val newOrientation = when {
+                            angle in 315..359 || angle in 0..44 -> DeviceOrientation.PORTRAIT
+                            angle in 45..134 -> DeviceOrientation.LANDSCAPE_RIGHT
+                            angle in 135..224 -> DeviceOrientation.PORTRAIT_UPSIDE_DOWN
+                            angle in 225..314 -> DeviceOrientation.LANDSCAPE_LEFT
+                            else -> return
+                        }
+                        if (newOrientation != currentDeviceOrientation) {
+                            currentDeviceOrientation = newOrientation
+                            // Update capture rotation when in auto mode
+                            if (targetOrientation == null) {
+                                applyTargetRotation(newOrientation)
+                            }
+                            orientationChangedCallback?.invoke(newOrientation)
+                        }
+                    }
+                }
+            }
+            orientationEventListener?.enable()
+        } else {
+            orientationEventListener?.disable()
+            orientationEventListener = null
+        }
+    }
+
+    actual fun setTargetOrientation(orientation: DeviceOrientation?) {
+        targetOrientation = orientation
+        applyTargetRotation(orientation ?: currentDeviceOrientation)
+    }
+
+    private fun applyTargetRotation(orientation: DeviceOrientation) {
+        val rotation = when (orientation) {
+            DeviceOrientation.PORTRAIT -> android.view.Surface.ROTATION_0
+            DeviceOrientation.LANDSCAPE_LEFT -> android.view.Surface.ROTATION_90
+            DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> android.view.Surface.ROTATION_180
+            DeviceOrientation.LANDSCAPE_RIGHT -> android.view.Surface.ROTATION_270
+        }
+        imageCapture?.targetRotation = rotation
+        videoCapture?.targetRotation = rotation
+    }
+
     /**
      * Clean up resources when no longer needed
      * Should be called when the controller is being destroyed
      */
     actual fun cleanup() {
+        orientationEventListener?.disable()
+        orientationEventListener = null
+        orientationChangedCallback = null
         activeRecording?.stop()
         activeRecording = null
         registeredAnalyzers.clear()

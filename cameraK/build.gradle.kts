@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.kashif.camera_compose"
-version = "0.3"
+version = "0.4"
 
 kotlin {
     jvmToolchain(11)
@@ -106,7 +106,7 @@ mavenPublishing {
     coordinates(
         groupId = "io.github.kashif-mehmood-km",
         artifactId = "camerak",
-        version = "0.3",
+        version = "0.4",
     )
 
     pom {
@@ -144,7 +144,7 @@ mavenPublishing {
 
 tasks.withType<org.jetbrains.dokka.gradle.DokkaTask>().configureEach {
     moduleName.set("CameraK")
-    moduleVersion.set("0.3")
+    moduleVersion.set("0.4")
     outputDirectory.set(file("${layout.buildDirectory}/dokka/html"))
 
     pluginsMapConfiguration.set(
