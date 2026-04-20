@@ -205,7 +205,7 @@ private fun CameraContent(
     LaunchedEffect(analyzerPlugin){
         analyzerPlugin.startAnalyzer()
         analyzerPlugin.getAnalyzerFlow().collect { frame->
-
+            RunTFliteModel(frame)
         }
     }
     LaunchedEffect(qrScannerPlugin) {
