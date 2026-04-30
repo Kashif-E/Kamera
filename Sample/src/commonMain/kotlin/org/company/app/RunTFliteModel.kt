@@ -3,7 +3,7 @@ package org.company.app
 import org.kmp.playground.kflite.DelegateType
 import org.kmp.playground.kflite.InterpreterOptions
 import org.kmp.playground.kflite.Kflite
-import org.kmp.playground.kflite.toScaledByteBuffer
+import org.kmp.playground.kflite.bytesToScaledByteBuffer
 
 @Composable
 fun ByteArray.runTFliteModel() {
