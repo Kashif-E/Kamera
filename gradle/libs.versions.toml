@@ -28,7 +28,7 @@ videoinput = "1.5.12"
 tesseractPlatform = "5.5.1-1.5.12"
 textRecognition = "16.0.1"
 
-kflite = "1.1.37"
+kflite = "1.1.40"
 
 [libraries]
 
