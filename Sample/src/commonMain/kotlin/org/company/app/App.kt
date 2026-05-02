@@ -191,6 +191,7 @@ private fun PermissionsHandler(
         )
     }
 }
+
 @Composable
 private fun CameraContent(
     analyzerPlugin: AnalyzerPlugin,
@@ -201,11 +202,11 @@ private fun CameraContent(
 ) {
     var qrCodes by remember { mutableStateOf(listOf<String>()) }
     var recognizedText by remember { mutableStateOf<String?>(null) }
+    var latestFrame by remember { mutableStateOf<ByteArray?>(null) }
 
-    LaunchedEffect(analyzerPlugin){
-        analyzerPlugin.startAnalyzer()
-        analyzerPlugin.getAnalyzerFlow().collect { frame->
-            RunTFliteModel(frame)
+    LaunchedEffect(analyzerPlugin) {
+        analyzerPlugin.getAnalyzerFlow().collect { frame ->
+            latestFrame = frame
         }
     }
     LaunchedEffect(qrScannerPlugin) {
@@ -287,9 +288,11 @@ private fun CameraContent(
             imageSaverPlugin = imageSaverPlugin,
             qrScannerPlugin = qrScannerPlugin,
             ocrPlugin = ocrPlugin,
+            analyzerPlugin = analyzerPlugin,
             videoRecorderPlugin = videoRecorderPlugin,
             qrCodes = qrCodes,
             recognizedText = recognizedText,
+            latestFrame = latestFrame
         )
     }
 }
@@ -303,9 +306,11 @@ private fun CameraScreen(
     imageSaverPlugin: ImageSaverPlugin,
     qrScannerPlugin: QRScannerPlugin,
     ocrPlugin: OcrPlugin,
+    analyzerPlugin: AnalyzerPlugin,
     videoRecorderPlugin: VideoRecorderPlugin,
     qrCodes: List<String>,
     recognizedText: String?,
+    latestFrame: ByteArray?
 ) {
     val scope = rememberCoroutineScope()
     val cameraController = cameraState.controller
@@ -331,6 +336,7 @@ private fun CameraScreen(
 
     var isQRScanningEnabled by remember { mutableStateOf(true) }
     var isOCREnabled by remember { mutableStateOf(true) }
+    var isDetectionEnabled by remember { mutableStateOf(true) }
 
     var showSettings by remember { mutableStateOf(false) }
 
@@ -344,13 +350,15 @@ private fun CameraScreen(
                 is CameraKEvent.RecordingStarted -> {
                     isRecording = true
                 }
+
                 is CameraKEvent.RecordingStopped,
                 is CameraKEvent.RecordingFailed,
                 is CameraKEvent.RecordingMaxDurationReached,
-                -> {
+                    -> {
                     isRecording = false
                     recordingDurationMs = 0L
                 }
+
                 else -> {}
             }
         }
@@ -372,7 +380,8 @@ private fun CameraScreen(
             } else {
                 qrScannerPlugin.pauseScanning()
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
     LaunchedEffect(isOCREnabled) {
@@ -382,13 +391,27 @@ private fun CameraScreen(
             } else {
                 ocrPlugin.stopRecognition()
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
+    }
+
+    LaunchedEffect(isDetectionEnabled) {
+        try {
+            if (isDetectionEnabled) {
+                analyzerPlugin.startAnalyzer()
+            } else {
+                analyzerPlugin.stopAnalyzer()
+            }
+        } catch (_: Exception) {
+        }
     }
 
     fun setCameraZoom(newLevel: Float) {
         cameraController.setZoom(newLevel)
         zoomLevel = cameraController.getZoom()
     }
+
+    latestFrame?.let { it.runTFliteModel() }
 
     Box(
         modifier = Modifier
@@ -452,7 +475,6 @@ private fun CameraScreen(
                 QrChipRow(qrCodes = qrCodes)
                 Spacer(modifier = Modifier.height(10.dp))
             }
-
             // Mode switcher
             ModeSwitcher(
                 currentMode = cameraMode,
@@ -1131,10 +1153,12 @@ private suspend fun handleImageCapture(cameraController: CameraController, onIma
         is ImageCaptureResult.SuccessWithFile -> {
             println("Image captured: ${result.filePath}")
         }
+
         is ImageCaptureResult.Success -> {
             println("Image captured (${result.byteArray.size} bytes)")
             onImageCaptured(result.byteArray.decodeToImageBitmap())
         }
+
         is ImageCaptureResult.Error -> {
             println("Capture error: ${result.exception.message}")
         }
