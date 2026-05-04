@@ -19,11 +19,14 @@ internal fun CameraController.enableAnalyzer(onFrameAvailable: (ByteArray) -> Un
 internal class CameraAnalyzer(private val onFrameAvailable: (ByteArray) -> Unit) : ImageAnalysis.Analyzer {
     @OptIn(ExperimentalGetImage::class)
     override fun analyze(image: ImageProxy) {
-        val mediaImage = image.image
-        if (mediaImage == null) {
+        try {
+            val mediaImage = image.image
+            if (mediaImage == null) {
+                return
+            }
+            onFrameAvailable(image.toByteArray())
+        } finally {
             image.close()
-            return
         }
-        onFrameAvailable(image.toByteArray())
     }
 }

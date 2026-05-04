@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 
@@ -69,9 +70,11 @@ val LocalCameraKStateHolder = compositionLocalOf<CameraKStateHolder?> { null }
 fun CameraKScreen(
     modifier: Modifier = Modifier,
     cameraState: CameraKState,
+    deviceOrientation: DeviceOrientation = DeviceOrientation.PORTRAIT,
     loadingContent: @Composable () -> Unit = { DefaultLoadingScreen() },
     errorContent: @Composable (CameraKState.Error) -> Unit = { DefaultErrorScreen(it) },
     showPreview: Boolean = true,
+    overlay: @Composable (CameraPreviewScope.() -> Unit)? = null,
     content: @Composable (CameraKState.Ready) -> Unit,
 ) {
     Box(modifier = modifier) {
@@ -82,6 +85,8 @@ fun CameraKScreen(
                     CameraPreviewView(
                         controller = cameraState.controller,
                         modifier = Modifier.fillMaxSize(),
+                        deviceOrientation = deviceOrientation,
+                        overlay = overlay,
                     )
                 }
                 content(cameraState)

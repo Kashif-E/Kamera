@@ -3,6 +3,7 @@ package com.kashif.cameraK.controller
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
@@ -52,10 +53,13 @@ import platform.Foundation.NSURL
 import platform.Foundation.timeIntervalSince1970
 import platform.Photos.PHAssetChangeRequest
 import platform.Photos.PHPhotoLibrary
+import platform.Foundation.NSNotificationCenter
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
+import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import platform.UIKit.UIImagePNGRepresentation
 import platform.UIKit.UIViewController
+import kotlin.concurrent.Volatile
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_HIGH
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_global_queue
@@ -175,9 +179,6 @@ actual class CameraController(
             } catch (e: Exception) {
                 platform.Foundation.NSLog("CameraK Error: movie output - ${e.message}")
             }
-
-            // Pre-add audio input so recording starts without session reconfiguration stutter
-            addAudioInputIfNeeded()
 
             startSession()
         }
@@ -619,6 +620,8 @@ actual class CameraController(
     }
 
     actual fun cleanup() {
+        removeOrientationObserver()
+        orientationChangedCallback = null
         movieFileOutput = null
         videoRecordingDelegate = null
         customCameraController.cleanupSession()
@@ -638,7 +641,6 @@ actual class CameraController(
             return@suspendCancellableCoroutine
         }
 
-        // Audio input is pre-added at session setup to avoid stutter
         if (configuration.enableAudio) {
             addAudioInputIfNeeded()
         }
@@ -868,5 +870,82 @@ actual class CameraController(
         TorchMode.ON -> AVCaptureTorchModeOn
         TorchMode.OFF -> AVCaptureTorchModeOff
         TorchMode.AUTO -> AVCaptureTorchModeAuto
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Device Orientation
+    // ═══════════════════════════════════════════════════════════════
+
+    @Volatile
+    private var currentDeviceOrientation = DeviceOrientation.PORTRAIT
+
+    @Volatile
+    private var orientationChangedCallback: ((DeviceOrientation) -> Unit)? = null
+    private var orientationObserver: Any? = null
+
+    @Volatile
+    private var targetOrientation: DeviceOrientation? = null
+
+    actual fun getDeviceOrientation(): DeviceOrientation = currentDeviceOrientation
+
+    actual fun setOnOrientationChangedListener(callback: ((DeviceOrientation) -> Unit)?) {
+        removeOrientationObserver()
+        orientationChangedCallback = callback
+        if (callback != null) {
+            UIDevice.currentDevice.beginGeneratingDeviceOrientationNotifications()
+            orientationObserver = NSNotificationCenter.defaultCenter.addObserverForName(
+                UIDeviceOrientationDidChangeNotification,
+                null,
+                null,
+            ) { _ ->
+                val uiOrientation = UIDevice.currentDevice.orientation
+                val newOrientation = when (uiOrientation) {
+                    UIDeviceOrientation.UIDeviceOrientationPortrait -> DeviceOrientation.PORTRAIT
+                    UIDeviceOrientation.UIDeviceOrientationLandscapeLeft -> DeviceOrientation.LANDSCAPE_LEFT
+                    UIDeviceOrientation.UIDeviceOrientationPortraitUpsideDown -> DeviceOrientation.PORTRAIT_UPSIDE_DOWN
+                    UIDeviceOrientation.UIDeviceOrientationLandscapeRight -> DeviceOrientation.LANDSCAPE_RIGHT
+                    else -> null
+                }
+                if (newOrientation != null && newOrientation != currentDeviceOrientation) {
+                    currentDeviceOrientation = newOrientation
+                    orientationChangedCallback?.invoke(newOrientation)
+                }
+            }
+        }
+    }
+
+    actual fun setTargetOrientation(orientation: DeviceOrientation?) {
+        targetOrientation = orientation
+        val effective = orientation ?: currentDeviceOrientation
+        val avOrientation = effective.toAVCaptureVideoOrientation()
+        getCameraPreviewLayer()?.connection?.let { connection ->
+            if (connection.isVideoOrientationSupported()) {
+                connection.videoOrientation = avOrientation
+            }
+        }
+    }
+
+    private fun removeOrientationObserver() {
+        orientationObserver?.let { observer ->
+            NSNotificationCenter.defaultCenter.removeObserver(observer)
+            UIDevice.currentDevice.endGeneratingDeviceOrientationNotifications()
+        }
+        orientationObserver = null
+    }
+
+    internal fun effectiveVideoOrientation(): AVCaptureVideoOrientation {
+        val locked = targetOrientation
+        return if (locked != null) {
+            locked.toAVCaptureVideoOrientation()
+        } else {
+            currentVideoOrientation()
+        }
+    }
+
+    private fun DeviceOrientation.toAVCaptureVideoOrientation(): AVCaptureVideoOrientation = when (this) {
+        DeviceOrientation.PORTRAIT -> AVCaptureVideoOrientationPortrait
+        DeviceOrientation.LANDSCAPE_LEFT -> AVCaptureVideoOrientationLandscapeRight
+        DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> AVCaptureVideoOrientationPortraitUpsideDown
+        DeviceOrientation.LANDSCAPE_RIGHT -> AVCaptureVideoOrientationLandscapeLeft
     }
 }

@@ -21,7 +21,7 @@ Add to your `build.gradle.kts`:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.kashif-mehmood-km:camerak:0.2.0")
+            implementation("io.github.kashif-mehmood-km:camerak:0.3")
         }
     }
 }
@@ -33,7 +33,7 @@ Add to `gradle/libs.versions.toml`:
 
 ```toml
 [versions]
-camerak = "0.2.0"
+camerak = "0.3"
 
 [libraries]
 camerak = { module = "io.github.kashif-mehmood-km:camerak", version.ref = "camerak" }
@@ -55,7 +55,7 @@ kotlin {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:0.2.0")
+    implementation("io.github.kashif-mehmood-km:camerak:0.3")
 }
 ```
 
@@ -105,7 +105,7 @@ Run Gradle sync:
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.2.0")
+    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.3")
 }
 ```
 
@@ -113,7 +113,7 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.2.0")
+    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.3")
 }
 ```
 
@@ -121,7 +121,7 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.2.0")
+    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.3")
 }
 ```
 

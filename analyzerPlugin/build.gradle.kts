@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "com.kashif.analyzer_plugin"
-version = "0.0.2"
+version = "0.4"
 
 kotlin {
     jvmToolchain(11)
@@ -83,7 +83,7 @@ mavenPublishing {
     coordinates(
         groupId = "io.github.kashif-mehmood-km",
         artifactId = "analyzer_plugin",
-        version = "0.3",
+        version = "0.4",
     )
 
     pom {

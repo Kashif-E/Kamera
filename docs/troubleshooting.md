@@ -417,7 +417,7 @@ Include:
 
 **Good issue:**
 ```
-CameraK 0.2.0
+CameraK 0.3
 Android 13 (Pixel 6)
 
 Preview shows black screen when using:

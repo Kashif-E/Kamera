@@ -85,7 +85,7 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/kashif-e/CameraK
       name: GitHub
-  version: 0.2.0
+  version: 0.3
 
 extra_css:
   - stylesheets/extra.css

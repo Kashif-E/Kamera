@@ -27,7 +27,7 @@ Before creating an issue, please:
 ### Good Issue Example
 
 ```markdown
-**CameraK Version:** 0.2.0
+**CameraK Version:** 0.3
 **Platform:** Android 13 (Pixel 6)
 
 **Description:**

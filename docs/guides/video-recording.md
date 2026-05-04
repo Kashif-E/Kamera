@@ -49,7 +49,7 @@ Add the plugin dependency to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:0.2.0")
+    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:0.3")
 }
 ```
 
@@ -184,7 +184,7 @@ Row(
 
 ## 9. See Also
 
-- [Sample App Usage](../../Sample/src/commonMain/kotlin/org/company/app/App.kt)
+- [Sample App Usage](https://github.com/Kashif-E/CameraK/blob/main/Sample/src/commonMain/kotlin/org/company/app/App.kt)
 - [Plugins Guide](plugins.md)
 - [CameraKScreen API](../api/camera-k-screen.md)
 

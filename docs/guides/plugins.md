@@ -34,7 +34,7 @@ Plugins activate automatically when camera reaches `Ready` state.
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.2.0")
+    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.3")
 }
 ```
 
@@ -108,7 +108,7 @@ fun QRScannerScreen() {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.2.0")
+    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.3")
 }
 ```
 
@@ -182,7 +182,7 @@ fun OCRScannerScreen() {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.2.0")
+    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.3")
 }
 ```
 
