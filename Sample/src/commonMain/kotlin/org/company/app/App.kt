@@ -420,7 +420,9 @@ private fun CameraScreen(
         zoomLevel = cameraController.getZoom()
     }
 
-    latestFrame?.let { it.runTFliteModel() }
+    LaunchedEffect(latestFrame) {
+        latestFrame?.runTFliteModel()
+    }
 
     Box(
         modifier = Modifier
