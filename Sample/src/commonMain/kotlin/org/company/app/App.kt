@@ -238,6 +238,7 @@ private fun CameraContent(
             aspectRatio = AspectRatio.RATIO_4_3,
         ),
         setupPlugins = { stateHolder ->
+            stateHolder.attachPlugin(analyzerPlugin)
             stateHolder.attachPlugin(imageSaverPlugin)
             stateHolder.attachPlugin(qrScannerPlugin)
             stateHolder.attachPlugin(ocrPlugin)
