@@ -4,6 +4,10 @@ import org.kmp.playground.kflite.DelegateType
 import org.kmp.playground.kflite.InterpreterOptions
 import org.kmp.playground.kflite.Kflite
 import org.kmp.playground.kflite.bytesToScaledByteBuffer
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import cameracompose.sample.generated.resources.Res
+import kotlinx.coroutines.launch
 
 /**
  * Multiplatform-safe alternative to `String.format` for simple numeric formatting.
@@ -95,7 +99,8 @@ private fun Double.pow(n: Int): Double {
 }
 
 
-
+private const val FLOAT_TYPE_SIZE = 3
+private const val PIXEL_SIZE = 1
 @Composable
 fun ByteArray.runTFliteModel() {
     val scope = rememberCoroutineScope()
@@ -134,7 +139,7 @@ fun ByteArray.runTFliteModel() {
         // Run model
         Kflite.run(
             listOf(
-                this.bytesToScaledByteBuffer(
+                this@runTFliteModel.bytesToScaledByteBuffer(
                     inputWidth = inputImageWidth,
                     inputHeight = inputImageHeight,
                     inputAllocateSize = modelInputSize
