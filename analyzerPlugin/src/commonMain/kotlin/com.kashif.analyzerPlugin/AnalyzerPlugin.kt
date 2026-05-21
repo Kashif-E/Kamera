@@ -104,6 +104,6 @@ class AnalyzerPlugin(val coroutineScope: CoroutineScope) :
 expect fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit)
 
 @Composable
-fun rememberAnalyzerPlugin(coroutineScope: CoroutineScope = rememberCoroutineScope()): AnalyzerPlugin = remember {
+fun rememberAnalyzerPlugin(coroutineScope: CoroutineScope = rememberCoroutineScope()): AnalyzerPlugin = remember(coroutineScope) {
     AnalyzerPlugin(coroutineScope)
 }
