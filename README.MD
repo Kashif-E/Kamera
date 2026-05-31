@@ -1,7 +1,7 @@
 # CameraK
 
 <p align="center">
-  <img src="docs/assets/cameraklogo.png" alt="CameraK Logo" width="200" style="border-radius: 50%;"/>
+  <img src="docs/assets/camerakposter.jpg" alt="CameraK Poster" width="200" style="border-radius: 50%;"/>
 </p>
 
 A modern camera library for Compose Multiplatform supporting Android, iOS, and Desktop with a unified API.
