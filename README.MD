@@ -1,17 +1,21 @@
 # CameraK
 
 <p align="center">
-  <img src="docs/assets/camerakposter.jpg" alt="CameraK Poster" width="800" style="border-radius: 50%;"/>
+  <img src="docs/assets/camerakposter.png" alt="CameraK Poster" width="800" style="border-radius: 50%;"/>
 </p>
 
 <p align="center">
 A modern camera library for Compose Multiplatform supporting Android, iOS, and Desktop with a unified API.
+</p>
+
+<p align="center">
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.kashif-mehmood-km/camerak?label=Maven%20Central&color=blue)](https://search.maven.org/search?q=g:io.github.kashif-mehmood-km)
 [![GitHub Release](https://img.shields.io/github/v/release/kashif-e/camerak)](https://github.com/Kashif-E/CameraK/releases)
 [![Kotlin Weekly](https://img.shields.io/badge/Kotlin_Weekly-425-7F52FF)](https://mailchi.mp/kotlinweekly/kotlin-weekly-425)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 </p>
+
 
 ## Features
 
