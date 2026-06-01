@@ -28,6 +28,8 @@ videoinput = "1.5.12"
 tesseractPlatform = "5.5.1-1.5.12"
 textRecognition = "16.0.1"
 
+kflite = "1.1.40"
+
 [libraries]
 
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camera-view" }
@@ -61,6 +63,7 @@ videoinput = { module = "org.bytedeco:videoinput", version.ref = "videoinput" }
 tesseract-platform = { module = "org.bytedeco:tesseract-platform", version.ref = "tesseractPlatform" }
 text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "textRecognition" }
 
+kflite = {module = "io.github.shadmanadman:kflite", version.ref = "kflite"}
 [plugins]
 
 multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

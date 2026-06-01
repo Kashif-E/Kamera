@@ -2,23 +2,27 @@ package com.kashif.analyzerPlugin
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 
-class AnalyzerPlugin :
+class AnalyzerPlugin(val coroutineScope: CoroutineScope) :
     CameraPlugin,
     CameraKPlugin {
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
-    val analyzerFlow = Channel<ByteArray>(Channel.CONFLATED)
+    private val analyzerFlow = MutableSharedFlow<ByteArray>()
     private var isAnalyzing = atomic(false)
     private var collectorJob: Job? = null
 
@@ -31,7 +35,9 @@ class AnalyzerPlugin :
         isAnalyzing.value = true
         startAnalyzer(cameraController!!) {
             if (isAnalyzing.value) {
-                analyzerFlow.trySend(it)
+                coroutineScope.launch {
+                    analyzerFlow.emit(it)
+                }
             }
         }
     }
@@ -73,7 +79,6 @@ class AnalyzerPlugin :
         stopAnalyzer()
         collectorJob?.cancel()
         collectorJob = null
-        analyzerFlow.close()
         this.stateHolder = null
         this.cameraController = null
     }
@@ -87,11 +92,18 @@ class AnalyzerPlugin :
     fun attachToStateHolder(stateHolder: CameraKStateHolder) {
         stateHolder.attachPlugin(this)
     }
+
+    /**
+     * Returns a flow that emits latest frames.
+     *
+     * @return SharedFlow<ByteArray>
+     */
+    fun getAnalyzerFlow() = analyzerFlow.asSharedFlow()
 }
 
 expect fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit)
 
 @Composable
-fun rememberAnalyzerPlugin(): AnalyzerPlugin = remember {
-    AnalyzerPlugin()
+fun rememberAnalyzerPlugin(coroutineScope: CoroutineScope = rememberCoroutineScope()): AnalyzerPlugin = remember(coroutineScope) {
+    AnalyzerPlugin(coroutineScope)
 }

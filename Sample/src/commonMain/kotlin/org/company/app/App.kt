@@ -80,6 +80,8 @@ import com.composables.icons.lucide.SwitchCamera
 import com.composables.icons.lucide.Type
 import com.composables.icons.lucide.X
 import com.composables.icons.lucide.Zap
+import com.kashif.analyzerPlugin.AnalyzerPlugin
+import com.kashif.analyzerPlugin.rememberAnalyzerPlugin
 import com.kashif.cameraK.compose.CameraKScreen
 import com.kashif.cameraK.compose.rememberCameraKState
 import com.kashif.cameraK.controller.CameraController
@@ -143,6 +145,7 @@ fun App() = AppTheme {
                 customFolderName = "CameraK",
             ),
         )
+        val analyzerPlugin = rememberAnalyzerPlugin()
         val qrScannerPlugin = rememberQRScannerPlugin()
         val ocrPlugin = rememberOcrPlugin()
         val videoRecorderPlugin = rememberVideoRecorderPlugin(
@@ -161,6 +164,7 @@ fun App() = AppTheme {
 
         if (cameraPermissionState.value && storagePermissionState.value) {
             CameraContent(
+                analyzerPlugin = analyzerPlugin,
                 imageSaverPlugin = imageSaverPlugin,
                 qrScannerPlugin = qrScannerPlugin,
                 ocrPlugin = ocrPlugin,
@@ -190,8 +194,10 @@ private fun PermissionsHandler(
         )
     }
 }
+
 @Composable
 private fun CameraContent(
+    analyzerPlugin: AnalyzerPlugin,
     imageSaverPlugin: ImageSaverPlugin,
     qrScannerPlugin: QRScannerPlugin,
     ocrPlugin: OcrPlugin,
@@ -199,7 +205,13 @@ private fun CameraContent(
 ) {
     var qrCodes by remember { mutableStateOf(listOf<String>()) }
     var recognizedText by remember { mutableStateOf<String?>(null) }
+    var latestFrame by remember { mutableStateOf<ByteArray?>(null) }
 
+    LaunchedEffect(analyzerPlugin) {
+        analyzerPlugin.getAnalyzerFlow().collect { frame ->
+            latestFrame = frame
+        }
+    }
     LaunchedEffect(qrScannerPlugin) {
         qrScannerPlugin.getQrCodeFlow().collect { qr ->
             if (qr !in qrCodes) {
@@ -226,6 +238,7 @@ private fun CameraContent(
             aspectRatio = AspectRatio.RATIO_4_3,
         ),
         setupPlugins = { stateHolder ->
+            stateHolder.attachPlugin(analyzerPlugin)
             stateHolder.attachPlugin(imageSaverPlugin)
             stateHolder.attachPlugin(qrScannerPlugin)
             stateHolder.attachPlugin(ocrPlugin)
@@ -279,9 +292,11 @@ private fun CameraContent(
             imageSaverPlugin = imageSaverPlugin,
             qrScannerPlugin = qrScannerPlugin,
             ocrPlugin = ocrPlugin,
+            analyzerPlugin = analyzerPlugin,
             videoRecorderPlugin = videoRecorderPlugin,
             qrCodes = qrCodes,
             recognizedText = recognizedText,
+            latestFrame = latestFrame
         )
     }
 }
@@ -295,9 +310,11 @@ private fun CameraScreen(
     imageSaverPlugin: ImageSaverPlugin,
     qrScannerPlugin: QRScannerPlugin,
     ocrPlugin: OcrPlugin,
+    analyzerPlugin: AnalyzerPlugin,
     videoRecorderPlugin: VideoRecorderPlugin,
     qrCodes: List<String>,
     recognizedText: String?,
+    latestFrame: ByteArray?
 ) {
     val scope = rememberCoroutineScope()
     val cameraController = cameraState.controller
@@ -323,6 +340,7 @@ private fun CameraScreen(
 
     var isQRScanningEnabled by remember { mutableStateOf(true) }
     var isOCREnabled by remember { mutableStateOf(true) }
+    var isDetectionEnabled by remember { mutableStateOf(true) }
 
     var showSettings by remember { mutableStateOf(false) }
     var deviceOrientation by remember { mutableStateOf(DeviceOrientation.PORTRAIT) }
@@ -342,13 +360,15 @@ private fun CameraScreen(
                 is CameraKEvent.RecordingStarted -> {
                     isRecording = true
                 }
+
                 is CameraKEvent.RecordingStopped,
                 is CameraKEvent.RecordingFailed,
                 is CameraKEvent.RecordingMaxDurationReached,
-                -> {
+                    -> {
                     isRecording = false
                     recordingDurationMs = 0L
                 }
+
                 else -> {}
             }
         }
@@ -370,7 +390,8 @@ private fun CameraScreen(
             } else {
                 qrScannerPlugin.pauseScanning()
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
     LaunchedEffect(isOCREnabled) {
@@ -380,12 +401,28 @@ private fun CameraScreen(
             } else {
                 ocrPlugin.stopRecognition()
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
+    }
+
+    LaunchedEffect(isDetectionEnabled) {
+        try {
+            if (isDetectionEnabled) {
+                analyzerPlugin.startAnalyzer()
+            } else {
+                analyzerPlugin.stopAnalyzer()
+            }
+        } catch (_: Exception) {
+        }
     }
 
     fun setCameraZoom(newLevel: Float) {
         cameraController.setZoom(newLevel)
         zoomLevel = cameraController.getZoom()
+    }
+
+    LaunchedEffect(latestFrame) {
+        latestFrame?.runTFliteModel()
     }
 
     Box(
@@ -450,7 +487,6 @@ private fun CameraScreen(
                 QrChipRow(qrCodes = qrCodes)
                 Spacer(modifier = Modifier.height(10.dp))
             }
-
             // Mode switcher
             ModeSwitcher(
                 currentMode = cameraMode,
@@ -1160,10 +1196,12 @@ private suspend fun handleImageCapture(cameraController: CameraController, onIma
         is ImageCaptureResult.SuccessWithFile -> {
             println("Image captured: ${result.filePath}")
         }
+
         is ImageCaptureResult.Success -> {
             println("Image captured (${result.byteArray.size} bytes)")
             onImageCaptured(result.byteArray.decodeToImageBitmap())
         }
+
         is ImageCaptureResult.Error -> {
             println("Capture error: ${result.exception.message}")
         }
