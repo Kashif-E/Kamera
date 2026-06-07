@@ -1,7 +1,7 @@
 # CameraK
 
 <p align="center">
-  <img src="docs/assets/camerakposter.png" alt="CameraK Poster" width="800" style="border-radius: 50%;"/>
+  <img src="docs/assets/kamera.jpg" alt="CameraK Poster" width="800" style="border-radius: 50%;"/>
 </p>
 
 <p align="center">
