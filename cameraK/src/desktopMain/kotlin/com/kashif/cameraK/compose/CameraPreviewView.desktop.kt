@@ -15,7 +15,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import com.kashif.cameraK.controller.CameraController
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -26,13 +25,13 @@ import kotlinx.coroutines.launch
 actual fun CameraPreviewView(controller: CameraController, modifier: Modifier) {
     BoxWithConstraints(modifier = modifier) {
         val scope = rememberCoroutineScope()
-        val frameChannel = controller.getFrameChannel()
         var currentFrame by remember { mutableStateOf<ImageBitmap?>(null) }
 
         LaunchedEffect(controller) {
             scope.launch(Dispatchers.Default) {
-                frameChannel.consumeAsFlow().collect { frame ->
+                controller.frameFlow.collect { frame ->
                     currentFrame = frame.toComposeImageBitmap()
+                    println("Consumed frame fom CameraPreviewView, thread ${Thread.currentThread().name}")
                 }
             }
         }

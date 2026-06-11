@@ -3,7 +3,6 @@ package com.kashif.qrscannerplugin
 import com.kashif.cameraK.controller.CameraController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -18,7 +17,8 @@ actual fun startScanning(controller: CameraController, onQrScanner: (String) -> 
     val scope = CoroutineScope(Dispatchers.Default)
 
     scope.launch {
-        controller.getFrameChannel().consumeAsFlow().collect { image ->
+        controller.frameFlow.collect { image ->
+            println("Consumed from QRScannerPlugin, thread ${Thread.currentThread().name}")
             qrScanner.scanImage(image)?.let { code ->
                 withContext(Dispatchers.Main) {
                     onQrScanner(code)
