@@ -6,6 +6,7 @@ import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.utils.MemoryManager
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.useContents
 import platform.AVFoundation.*
 import platform.Foundation.NSData
 import platform.Foundation.NSError
@@ -418,6 +419,41 @@ class CustomCameraController(
      * @return Maximum zoom factor
      */
     fun getMaxZoom(): Float = currentCamera?.activeFormat?.videoMaxZoomFactor?.toFloat() ?: 1.0f
+
+    /**
+     * Sets the focus point and exposure point of interest.
+     * @param x Normalized x coordinate (0..1)
+     * @param y Normalized y coordinate (0..1)
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    fun setFocus(x: Float, y: Float) {
+        val camera = currentCamera ?: return
+        val previewLayer = cameraPreviewLayer ?: return
+
+        try {
+            camera.lockForConfiguration(null)
+
+            val point = platform.CoreGraphics.CGPointMake(
+                x.toDouble() * previewLayer.bounds.useContents { size.width },
+                y.toDouble() * previewLayer.bounds.useContents { size.height }
+            )
+            val devicePoint = previewLayer.captureDevicePointOfInterestForPoint(point)
+
+            if (camera.isFocusPointOfInterestSupported()) {
+                camera.focusPointOfInterest = devicePoint
+                camera.focusMode = AVCaptureFocusModeAutoFocus
+            }
+
+            if (camera.isExposurePointOfInterestSupported()) {
+                camera.exposurePointOfInterest = devicePoint
+                camera.exposureMode = AVCaptureExposureModeContinuousAutoExposure
+            }
+
+            camera.unlockForConfiguration()
+        } catch (e: Exception) {
+            NSLog("CameraK: Error setting focus: ${e.message}")
+        }
+    }
 
     /**
      * Sets the session preset quality based on memory conditions

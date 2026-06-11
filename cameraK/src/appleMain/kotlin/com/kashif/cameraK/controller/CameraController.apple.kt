@@ -560,6 +560,9 @@ actual class CameraController(
 
     actual fun getTorchMode(): TorchMode? = torchMode
 
+    actual fun setFocus(x: Float, y: Float, size: Float) {
+        customCameraController.setFocus(x, y)
+    }
     actual fun setZoom(zoomRatio: Float) {
         customCameraController.setZoom(zoomRatio)
     }
