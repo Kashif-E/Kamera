@@ -133,6 +133,18 @@ expect class CameraController {
     fun setPreferredCameraDeviceType(deviceType: CameraDeviceType)
 
     /**
+     * Sets the focus point and metering area for the camera.
+     *
+     * @param x The horizontal coordinate of the focus point (0.0 to 1.0, where 0 is left and 1 is right).
+     * @param y The vertical coordinate of the focus point (0.0 to 1.0, where 0 is top and 1 is bottom).
+     * @param size The size of the focus/metering area (0.0 to 1.0). Default is 1.0.
+     *
+     * Note: Coordinates are relative to the preview surface.
+     * On Desktop: Not supported, no-op.
+     */
+    fun setFocus(x: Float = 0f, y: Float = 0f,size: Float = 1f)
+
+    /**
      * Sets the zoom level.
      *
      * @param zoomRatio The zoom ratio to set. 1.0 is no zoom, values > 1.0 zoom in.
