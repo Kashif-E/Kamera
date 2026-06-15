@@ -1,15 +1,21 @@
 # CameraK
 
 <p align="center">
-  <img src="docs/assets/cameraklogo.png" alt="CameraK Logo" width="200" style="border-radius: 50%;"/>
+  <img src="docs/assets/kamera.jpg" alt="CameraK Poster" width="800" style="border-radius: 50%;"/>
 </p>
 
+<p align="center">
 A modern camera library for Compose Multiplatform supporting Android, iOS, and Desktop with a unified API.
+</p>
+
+<p align="center">
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.kashif-mehmood-km/camerak?label=Maven%20Central&color=blue)](https://search.maven.org/search?q=g:io.github.kashif-mehmood-km)
 [![GitHub Release](https://img.shields.io/github/v/release/kashif-e/camerak)](https://github.com/Kashif-E/CameraK/releases)
 [![Kotlin Weekly](https://img.shields.io/badge/Kotlin_Weekly-425-7F52FF)](https://mailchi.mp/kotlinweekly/kotlin-weekly-425)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+</p>
+
 
 ## Features
 
@@ -17,7 +23,7 @@ A modern camera library for Compose Multiplatform supporting Android, iOS, and D
 - **Compose-First**: Native Compose Multiplatform API
 - **Flexible Configuration**: Aspect ratios, zoom, flash control
 - **Video Recording**: Record video with pause/resume, configurable quality, and max duration
-- **Plugin System**: Modular QR/barcode scanning, OCR, image saving, video recording
+- **Plugin System**: Modular QR/barcode scanning, OCR, image saving, video recording, Image Analyzer
 - **Optimized Capture**: Direct file saving with `takePictureToFile()`
 - **Advanced Control**: Camera selection (ultra-wide, telephoto on iOS)
 
@@ -35,6 +41,7 @@ dependencies {
     implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.2.0")
     implementation("io.github.kashif-mehmood-km:ocr_plugin:0.2.0")
     implementation("io.github.kashif-mehmood-km:video_recorder_plugin:0.3")
+    implementation("io.github.kashif-mehmood-km:analyzer_plugin:0.3")
 }
 ```
 
@@ -51,6 +58,7 @@ camerak = { module = "io.github.kashif-mehmood-km:camerak", version.ref = "camer
 camerak-image-saver = { module = "io.github.kashif-mehmood-km:image_saver_plugin", version.ref = "camerak" }
 camerak-qr-scanner = { module = "io.github.kashif-mehmood-km:qr_scanner_plugin", version.ref = "camerak" }
 camerak-ocr = { module = "io.github.kashif-mehmood-km:ocr_plugin", version.ref = "camerak" }
+camerak-analyzer = { module = "io.github.kashif-mehmood-km:analzer_plugin", version.ref = "camerak" }
 camerak-video-recorder = { module = "io.github.kashif-mehmood-km:video_recorder_plugin", version.ref = "camerak" }
 ```
 
@@ -62,6 +70,7 @@ dependencies {
     implementation(libs.camerak.image.saver)
     implementation(libs.camerak.qr.scanner)
     implementation(libs.camerak.ocr)
+    implementation(libs.camerak.analyzer)
     implementation(libs.camerak.video.recorder)
 }
 ```
@@ -100,6 +109,7 @@ fun CameraScreen() {
     val imageSaverPlugin = rememberImageSaverPlugin(config = ImageSaverConfig(isAutoSave = true))
     val qrScannerPlugin = rememberQRScannerPlugin()
     val ocrPlugin = rememberOcrPlugin()
+    val analyzerPlugin = rememberAnalyzerPlugin()
 
     // Create camera state - all configuration and plugins handled here
     val cameraState by rememberCameraKState(
@@ -112,6 +122,7 @@ fun CameraScreen() {
             stateHolder.attachPlugin(imageSaverPlugin)
             stateHolder.attachPlugin(qrScannerPlugin)
             stateHolder.attachPlugin(ocrPlugin)
+            stateHolder.attachPlugin(analyzerPlugin)
         },
     )
 
@@ -478,6 +489,39 @@ ocrPlugin.startRecognition()
 
 // Stop recognition
 ocrPlugin.stopRecognition()
+```
+
+### Analyzer Plugin
+
+Image Aalyzer - observe latest frame in a thread safe environment. Results are delivered through `CameraKEvent.LatestFrame` events via the `events` SharedFlow on `CameraKStateHolder`.
+
+#### Setup
+
+```kotlin
+val scope = rememberCoroutineScope()
+val analyzerPlugin = remember { AnalyzerPlugin(scope) }
+var latestFrame by remember { mutableStateOf<ByteArray?>(null) }
+
+val cameraState by rememberCameraKState(-> stateHolder
+    analyzerPlugin.attachToStateHolder(stateHolder)
+)
+
+// Observe latest frame events
+LaunchedEffect(analyzerPlugin) {
+    analyzerPlugin.getAnalyzerFlow().collect{-> frame
+	latestFrame = frame
+  }
+}
+```
+
+#### Control Analyzer
+
+```kotlin
+// Start Analyzer (called automatically on camera ready)
+analyzerPlugin.startAnalyzer()
+
+// Stop Analyzer
+analyzerPlugin.stopAnalyzer()
 ```
 
 ### Video Recorder Plugin
@@ -946,7 +990,7 @@ The old `getController()` method is deprecated:
 // Warning level (v0.2.0)
 @Deprecated(
     "Use cameraState.filterIsInstance<Ready>() instead. " +
-    "Will be removed in v2.0.0",
+            "Will be removed in v2.0.0",
     replaceWith = ReplaceWith(
         "pluginScope.launch { cameraState.filterIsInstance<CameraKState.Ready>().collect { ... } }"
     ),

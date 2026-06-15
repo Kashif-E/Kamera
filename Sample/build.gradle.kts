@@ -39,11 +39,13 @@ kotlin {
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
             implementation(projects.cameraK)
+            implementation(projects.analyzerPlugin)
             implementation(projects.imageSaverPlugin)
             implementation(projects.qrScannerPlugin)
             implementation(projects.ocrPlugin)
             implementation(projects.videoRecorderPlugin)
             implementation(libs.lucide.icons.cmp)
+            implementation(libs.kflite)
         }
 
         commonTest.dependencies {

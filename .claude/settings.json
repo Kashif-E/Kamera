@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed -i '' 's/version = \"\"0\\\\.3\"\"/version = \"\"0.4\"\"/g' cameraK/build.gradle.kts analyzerPlugin/build.gradle.kts videoRecorderPlugin/build.gradle.kts qrScannerPlugin/build.gradle.kts ocrPlugin/build.gradle.kts ImageSaverPlugin/build.gradle.kts)",
+      "Bash(sed -i '' 's/moduleVersion\\\\.set\\(\"\"0\\\\.3\"\"\\)/moduleVersion.set\\(\"\"0.4\"\"\\)/g' cameraK/build.gradle.kts)",
+      "Read(//Users/kashif/**)",
+      "Bash(gh secret:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}

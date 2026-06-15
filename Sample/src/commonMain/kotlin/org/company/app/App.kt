@@ -55,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.decodeToImageBitmap
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.composables.icons.lucide.AlignVerticalSpaceAround
 import com.composables.icons.lucide.Aperture
 import com.composables.icons.lucide.Focus
 import com.composables.icons.lucide.Image
@@ -78,12 +80,15 @@ import com.composables.icons.lucide.SwitchCamera
 import com.composables.icons.lucide.Type
 import com.composables.icons.lucide.X
 import com.composables.icons.lucide.Zap
+import com.kashif.analyzerPlugin.AnalyzerPlugin
+import com.kashif.analyzerPlugin.rememberAnalyzerPlugin
 import com.kashif.cameraK.compose.CameraKScreen
 import com.kashif.cameraK.compose.rememberCameraKState
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
@@ -140,6 +145,7 @@ fun App() = AppTheme {
                 customFolderName = "CameraK",
             ),
         )
+        val analyzerPlugin = rememberAnalyzerPlugin()
         val qrScannerPlugin = rememberQRScannerPlugin()
         val ocrPlugin = rememberOcrPlugin()
         val videoRecorderPlugin = rememberVideoRecorderPlugin(
@@ -158,6 +164,7 @@ fun App() = AppTheme {
 
         if (cameraPermissionState.value && storagePermissionState.value) {
             CameraContent(
+                analyzerPlugin = analyzerPlugin,
                 imageSaverPlugin = imageSaverPlugin,
                 qrScannerPlugin = qrScannerPlugin,
                 ocrPlugin = ocrPlugin,
@@ -187,8 +194,10 @@ private fun PermissionsHandler(
         )
     }
 }
+
 @Composable
 private fun CameraContent(
+    analyzerPlugin: AnalyzerPlugin,
     imageSaverPlugin: ImageSaverPlugin,
     qrScannerPlugin: QRScannerPlugin,
     ocrPlugin: OcrPlugin,
@@ -196,7 +205,13 @@ private fun CameraContent(
 ) {
     var qrCodes by remember { mutableStateOf(listOf<String>()) }
     var recognizedText by remember { mutableStateOf<String?>(null) }
+    var latestFrame by remember { mutableStateOf<ByteArray?>(null) }
 
+    LaunchedEffect(analyzerPlugin) {
+        analyzerPlugin.getAnalyzerFlow().collect { frame ->
+            latestFrame = frame
+        }
+    }
     LaunchedEffect(qrScannerPlugin) {
         qrScannerPlugin.getQrCodeFlow().collect { qr ->
             if (qr !in qrCodes) {
@@ -223,6 +238,7 @@ private fun CameraContent(
             aspectRatio = AspectRatio.RATIO_4_3,
         ),
         setupPlugins = { stateHolder ->
+            stateHolder.attachPlugin(analyzerPlugin)
             stateHolder.attachPlugin(imageSaverPlugin)
             stateHolder.attachPlugin(qrScannerPlugin)
             stateHolder.attachPlugin(ocrPlugin)
@@ -276,9 +292,11 @@ private fun CameraContent(
             imageSaverPlugin = imageSaverPlugin,
             qrScannerPlugin = qrScannerPlugin,
             ocrPlugin = ocrPlugin,
+            analyzerPlugin = analyzerPlugin,
             videoRecorderPlugin = videoRecorderPlugin,
             qrCodes = qrCodes,
             recognizedText = recognizedText,
+            latestFrame = latestFrame
         )
     }
 }
@@ -292,9 +310,11 @@ private fun CameraScreen(
     imageSaverPlugin: ImageSaverPlugin,
     qrScannerPlugin: QRScannerPlugin,
     ocrPlugin: OcrPlugin,
+    analyzerPlugin: AnalyzerPlugin,
     videoRecorderPlugin: VideoRecorderPlugin,
     qrCodes: List<String>,
     recognizedText: String?,
+    latestFrame: ByteArray?
 ) {
     val scope = rememberCoroutineScope()
     val cameraController = cameraState.controller
@@ -320,11 +340,18 @@ private fun CameraScreen(
 
     var isQRScanningEnabled by remember { mutableStateOf(true) }
     var isOCREnabled by remember { mutableStateOf(true) }
+    var isDetectionEnabled by remember { mutableStateOf(true) }
 
     var showSettings by remember { mutableStateOf(false) }
+    var deviceOrientation by remember { mutableStateOf(DeviceOrientation.PORTRAIT) }
+    var lockedOrientation by remember { mutableStateOf<DeviceOrientation?>(null) }
 
     LaunchedEffect(cameraController) {
         maxZoom = cameraController.getMaxZoom()
+        deviceOrientation = cameraController.getDeviceOrientation()
+        cameraController.setOnOrientationChangedListener { orientation ->
+            deviceOrientation = orientation
+        }
     }
 
     LaunchedEffect(videoRecorderPlugin) {
@@ -333,13 +360,15 @@ private fun CameraScreen(
                 is CameraKEvent.RecordingStarted -> {
                     isRecording = true
                 }
+
                 is CameraKEvent.RecordingStopped,
                 is CameraKEvent.RecordingFailed,
                 is CameraKEvent.RecordingMaxDurationReached,
-                -> {
+                    -> {
                     isRecording = false
                     recordingDurationMs = 0L
                 }
+
                 else -> {}
             }
         }
@@ -361,7 +390,8 @@ private fun CameraScreen(
             } else {
                 qrScannerPlugin.pauseScanning()
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
     LaunchedEffect(isOCREnabled) {
@@ -371,12 +401,28 @@ private fun CameraScreen(
             } else {
                 ocrPlugin.stopRecognition()
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
+    }
+
+    LaunchedEffect(isDetectionEnabled) {
+        try {
+            if (isDetectionEnabled) {
+                analyzerPlugin.startAnalyzer()
+            } else {
+                analyzerPlugin.stopAnalyzer()
+            }
+        } catch (_: Exception) {
+        }
     }
 
     fun setCameraZoom(newLevel: Float) {
         cameraController.setZoom(newLevel)
         zoomLevel = cameraController.getZoom()
+    }
+
+    LaunchedEffect(latestFrame) {
+        latestFrame?.runTFliteModel()
     }
 
     Box(
@@ -441,7 +487,6 @@ private fun CameraScreen(
                 QrChipRow(qrCodes = qrCodes)
                 Spacer(modifier = Modifier.height(10.dp))
             }
-
             // Mode switcher
             ModeSwitcher(
                 currentMode = cameraMode,
@@ -456,44 +501,52 @@ private fun CameraScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                CameraFlipButton(
-                    onClick = {
-                        cameraController.toggleCameraLens()
-                        maxZoom = cameraController.getMaxZoom()
-                        zoomLevel = 1f
-                    },
-                    enabled = !isRecording,
-                )
+                val orientationRotation = deviceOrientation.compensationDegrees
 
-                ShutterButton(
-                    mode = cameraMode,
-                    isRecording = isRecording,
-                    isCapturing = isCapturing,
-                    onPhotoCapture = {
-                        if (!isCapturing) {
-                            isCapturing = true
-                            scope.launch {
-                                handleImageCapture(
-                                    cameraController = cameraController,
-                                    onImageCaptured = { imageBitmap = it },
-                                )
-                                isCapturing = false
+                Box(modifier = Modifier.graphicsLayer { rotationZ = orientationRotation }) {
+                    CameraFlipButton(
+                        onClick = {
+                            cameraController.toggleCameraLens()
+                            maxZoom = cameraController.getMaxZoom()
+                            zoomLevel = 1f
+                        },
+                        enabled = !isRecording,
+                    )
+                }
+
+                Box(modifier = Modifier.graphicsLayer { rotationZ = orientationRotation }) {
+                    ShutterButton(
+                        mode = cameraMode,
+                        isRecording = isRecording,
+                        isCapturing = isCapturing,
+                        onPhotoCapture = {
+                            if (!isCapturing) {
+                                isCapturing = true
+                                scope.launch {
+                                    handleImageCapture(
+                                        cameraController = cameraController,
+                                        onImageCaptured = { imageBitmap = it },
+                                    )
+                                    isCapturing = false
+                                }
                             }
-                        }
-                    },
-                    onVideoToggle = {
-                        if (isRecording) {
-                            videoRecorderPlugin.stopRecording()
-                        } else {
-                            videoRecorderPlugin.startRecording()
-                        }
-                    },
-                )
+                        },
+                        onVideoToggle = {
+                            if (isRecording) {
+                                videoRecorderPlugin.stopRecording()
+                            } else {
+                                videoRecorderPlugin.startRecording()
+                            }
+                        },
+                    )
+                }
 
-                SettingsButton(
-                    isOpen = showSettings,
-                    onClick = { showSettings = !showSettings },
-                )
+                Box(modifier = Modifier.graphicsLayer { rotationZ = orientationRotation }) {
+                    SettingsButton(
+                        isOpen = showSettings,
+                        onClick = { showSettings = !showSettings },
+                    )
+                }
             }
         }
 
@@ -506,6 +559,8 @@ private fun CameraScreen(
                 cameraDeviceType = cameraDeviceType,
                 isQRScanningEnabled = isQRScanningEnabled,
                 isOCREnabled = isOCREnabled,
+                lockedOrientation = lockedOrientation,
+                deviceOrientation = deviceOrientation,
                 onResolutionChange = { resolution = it },
                 onImageFormatChange = { imageFormat = it },
                 onQualityPrioritizationChange = { qualityPrioritization = it },
@@ -515,6 +570,10 @@ private fun CameraScreen(
                 },
                 onQRScanningToggle = { isQRScanningEnabled = it },
                 onOCRToggle = { isOCREnabled = it },
+                onOrientationLockChange = { orientation ->
+                    lockedOrientation = orientation
+                    cameraController.setTargetOrientation(orientation)
+                },
                 onDismiss = { showSettings = false },
             )
         }
@@ -844,12 +903,15 @@ private fun SettingsPanel(
     cameraDeviceType: CameraDeviceType,
     isQRScanningEnabled: Boolean,
     isOCREnabled: Boolean,
+    lockedOrientation: DeviceOrientation?,
+    deviceOrientation: DeviceOrientation,
     onResolutionChange: (Pair<Int, Int>?) -> Unit,
     onImageFormatChange: (ImageFormat) -> Unit,
     onQualityPrioritizationChange: (QualityPrioritization) -> Unit,
     onCameraDeviceTypeChange: (CameraDeviceType) -> Unit,
     onQRScanningToggle: (Boolean) -> Unit,
     onOCRToggle: (Boolean) -> Unit,
+    onOrientationLockChange: (DeviceOrientation?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val resolutionOptions = listOf(null, 1920 to 1080, 1280 to 720, 640 to 480)
@@ -931,6 +993,20 @@ private fun SettingsPanel(
             // Plugin toggles
             SettingToggle(Lucide.ScanLine, "QR Scanner", isQRScanningEnabled, onQRScanningToggle)
             SettingToggle(Lucide.Type, "OCR (Text Recognition)", isOCREnabled, onOCRToggle)
+
+            // Orientation lock
+            SettingRow(icon = Lucide.AlignVerticalSpaceAround, label = "Orientation Lock (${deviceOrientation.name})") {
+                val options = listOf<DeviceOrientation?>(null) + DeviceOrientation.entries
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(options) { option ->
+                        Chip(
+                            label = option?.name?.replace("_", " ") ?: "AUTO",
+                            selected = option == lockedOrientation,
+                            onClick = { onOrientationLockChange(option) },
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -1120,10 +1196,12 @@ private suspend fun handleImageCapture(cameraController: CameraController, onIma
         is ImageCaptureResult.SuccessWithFile -> {
             println("Image captured: ${result.filePath}")
         }
+
         is ImageCaptureResult.Success -> {
             println("Image captured (${result.byteArray.size} bytes)")
             onImageCaptured(result.byteArray.decodeToImageBitmap())
         }
+
         is ImageCaptureResult.Error -> {
             println("Capture error: ${result.exception.message}")
         }

@@ -2,6 +2,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
@@ -249,6 +250,16 @@ actual class CameraController(
         plugins.forEach {
             it.initialize(this)
         }
+    }
+
+    actual fun getDeviceOrientation(): DeviceOrientation = DeviceOrientation.PORTRAIT
+
+    actual fun setOnOrientationChangedListener(callback: ((DeviceOrientation) -> Unit)?) {
+        // No-op on desktop
+    }
+
+    actual fun setTargetOrientation(orientation: DeviceOrientation?) {
+        // No-op on desktop
     }
 
     actual fun cleanup() {

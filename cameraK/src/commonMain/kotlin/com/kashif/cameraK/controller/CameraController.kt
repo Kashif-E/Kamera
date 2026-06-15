@@ -2,6 +2,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
@@ -187,6 +188,24 @@ expect class CameraController {
      * Note: After calling cleanup(), the controller should not be used again.
      */
     fun cleanup()
+
+    // ═══════════════════════════════════════════════════════════════
+    // Device Orientation
+    // ═══════════════════════════════════════════════════════════════
+
+    fun getDeviceOrientation(): DeviceOrientation
+
+    fun setOnOrientationChangedListener(callback: ((DeviceOrientation) -> Unit)?)
+
+    /**
+     * Locks camera output orientation to a specific value.
+     *
+     * This affects image capture rotation and video recording rotation.
+     * On iOS, also updates the preview layer's video orientation.
+     *
+     * Pass `null` to follow the device's physical orientation automatically (default).
+     */
+    fun setTargetOrientation(orientation: DeviceOrientation?)
 
     // ═══════════════════════════════════════════════════════════════
     // Video Recording
