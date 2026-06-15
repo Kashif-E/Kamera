@@ -11,7 +11,6 @@ actual fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (
 
     scope.launch {
         cameraController.frameFlow.collect { image ->
-            println("Consumed from AnalyzerPlugin, thread ${Thread.currentThread().name}")
             onFrameAvailable((image.raster.dataBuffer as DataBufferByte).data)
         }
     }

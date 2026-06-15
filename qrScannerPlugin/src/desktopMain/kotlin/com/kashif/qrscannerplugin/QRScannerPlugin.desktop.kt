@@ -18,7 +18,6 @@ actual fun startScanning(controller: CameraController, onQrScanner: (String) -> 
 
     scope.launch {
         controller.frameFlow.collect { image ->
-            println("Consumed from QRScannerPlugin, thread ${Thread.currentThread().name}")
             qrScanner.scanImage(image)?.let { code ->
                 withContext(Dispatchers.Main) {
                     onQrScanner(code)

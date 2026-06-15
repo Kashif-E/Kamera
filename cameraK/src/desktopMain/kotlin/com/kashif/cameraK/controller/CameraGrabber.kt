@@ -66,13 +66,11 @@ class CameraGrabber(
                         val frame = grabber?.grab()
                         if (frame?.image != null) {
                             converter.convert(frame)?.let { image ->
-                                val result = frameFlow.tryEmit(image)
-                                println("DEBUG: Sent frame to channel, image size: ${image.width}x${image.height}, emissionResult: $result")
+                                frameFlow.tryEmit(image)
 
                                 frameCount++
                                 val currentTime = System.currentTimeMillis()
                                 if (currentTime - lastFpsTime >= 1000) {
-                                    println("Camera FPS: $frameCount")
                                     frameCount = 0
                                     lastFpsTime = currentTime
                                 }

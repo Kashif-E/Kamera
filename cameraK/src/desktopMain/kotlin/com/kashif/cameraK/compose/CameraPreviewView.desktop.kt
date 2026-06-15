@@ -31,7 +31,6 @@ actual fun CameraPreviewView(controller: CameraController, modifier: Modifier) {
             scope.launch(Dispatchers.Default) {
                 controller.frameFlow.collect { frame ->
                     currentFrame = frame.toComposeImageBitmap()
-                    println("Consumed frame fom CameraPreviewView, thread ${Thread.currentThread().name}")
                 }
             }
         }

@@ -19,6 +19,9 @@ import com.kashif.cameraK.controller.DesktopCameraControllerBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+/**
+ * @deprecated This is an internal function for the deprecated [CameraPreview] API.
+ */
 @Composable
 actual fun expectCameraPreview(
     modifier: Modifier,

@@ -179,7 +179,6 @@ actual fun startRecognition(cameraController: CameraController, onText: (text: S
 
     scope.launch {
         cameraController.frameFlow.collect { image ->
-            println("Consumed from OcrPlugin, thread ${Thread.currentThread().name}")
             ocrProcessor.scanImage(image)?.let { text ->
                 withContext(Dispatchers.Main) {
                     onText(text)
