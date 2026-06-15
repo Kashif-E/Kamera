@@ -28,8 +28,12 @@ kotlin {
         }
     }
 
+    applyDefaultHierarchyTemplate()
+
     sourceSets {
         val desktopMain by getting
+
+        val mobileMain by creating
 
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -45,8 +49,26 @@ kotlin {
             implementation(projects.ocrPlugin)
             implementation(projects.videoRecorderPlugin)
             implementation(libs.lucide.icons.cmp)
+        }
+
+        mobileMain.dependsOn(commonMain.get())
+
+        mobileMain.dependencies {
             implementation(libs.kflite)
         }
+
+        androidMain {
+            dependsOn(mobileMain)
+            dependencies {
+                implementation(compose.uiTooling)
+                implementation(libs.androidx.activityCompose)
+            }
+        }
+
+        iosMain {
+            dependsOn(mobileMain)
+        }
+
 
         commonTest.dependencies {
             implementation(kotlin("test"))
@@ -71,7 +93,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        minSdk = 23
+        minSdk = 24
         targetSdk = 34
 
         applicationId = "org.company.app.androidApp"
