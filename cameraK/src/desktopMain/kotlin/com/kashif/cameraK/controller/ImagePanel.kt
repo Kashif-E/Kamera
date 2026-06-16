@@ -62,8 +62,20 @@ class ImagePanel : JPanel(true) {
                     RenderingHints.KEY_INTERPOLATION,
                     RenderingHints.VALUE_INTERPOLATION_BILINEAR,
                 )
+                // Clear the reused buffer first: with letterboxing the bars outside the
+                // scaled image aren't redrawn, so stale pixels would ghost through (#119).
+                volatileG.composite = AlphaComposite.Clear
+                volatileG.fillRect(0, 0, width, height)
+
                 volatileG.composite = AlphaComposite.SrcOver
-                volatileG.drawImage(currentImage, 0, 0, width, height, null)
+                // Scale-to-fit preserving aspect ratio (letterbox), so the preview matches the
+                // captured frame instead of stretching to fill the panel (#119).
+                currentImage?.let { img ->
+                    val scale = minOf(width.toDouble() / img.width, height.toDouble() / img.height)
+                    val w = (img.width * scale).toInt()
+                    val h = (img.height * scale).toInt()
+                    volatileG.drawImage(img, (width - w) / 2, (height - h) / 2, w, h, null)
+                }
                 volatileG.dispose()
             }
 
