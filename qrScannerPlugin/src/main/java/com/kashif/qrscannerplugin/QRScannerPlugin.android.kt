@@ -62,6 +62,12 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
     private var lastScanTime: Long = 0
     private val scanDebounceMs = 1000L
 
+    // Inverted (white-on-black) codes are uncommon, and the retry costs a second full ZXing
+    // decode. Only attempt it every Nth frame so normal scanning isn't doing two decodes on
+    // every empty frame — still catches an inverted code within a few frames (#116).
+    private var frameCount = 0L
+    private val invertedRetryEveryNFrames = 3
+
     /**
      * Analyzes camera frames to detect QR codes and barcodes.
      *
@@ -91,6 +97,8 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
             // rowStride is honored so row padding doesn't skew the image.
             val plane = image.planes[0]
             val buffer = plane.buffer
+            // Rewind so we always copy the full Y plane regardless of the buffer's position.
+            buffer.rewind()
             val bytes = ByteArray(buffer.remaining())
             buffer.get(bytes)
 
@@ -106,22 +114,31 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
                     false,
                 )
 
+            frameCount++
             val result =
                 try {
                     reader.decodeWithState(BinaryBitmap(HybridBinarizer(source)))
                 } catch (_: NotFoundException) {
-                    // Retry inverted so white-on-black / light-on-dark codes scan too (#116).
-                    // ponytail: one extra decode per empty frame; CameraX drops frames under
-                    // load so this self-throttles. Revisit if battery cost shows up.
-                    reader.decodeWithState(BinaryBitmap(HybridBinarizer(source.invert())))
+                    if (frameCount % invertedRetryEveryNFrames == 0L) {
+                        // Periodic inverted pass for white-on-black / light-on-dark codes (#116).
+                        try {
+                            reader.decodeWithState(BinaryBitmap(HybridBinarizer(source.invert())))
+                        } catch (_: NotFoundException) {
+                            null
+                        }
+                    } else {
+                        null
+                    }
                 }
-            val currentTime = System.currentTimeMillis()
 
-            if (result.text != lastScannedCode || (currentTime - lastScanTime) > scanDebounceMs) {
-                Log.d("QRScanner", "QR Code detected: ${result.text}")
-                lastScannedCode = result.text
-                lastScanTime = currentTime
-                onQrScanner(result.text)
+            if (result != null) {
+                val currentTime = System.currentTimeMillis()
+                if (result.text != lastScannedCode || (currentTime - lastScanTime) > scanDebounceMs) {
+                    Log.d("QRScanner", "QR Code detected: ${result.text}")
+                    lastScannedCode = result.text
+                    lastScanTime = currentTime
+                    onQrScanner(result.text)
+                }
             }
         } catch (e: Exception) {
             // QR code detection failed - no code found in frame (expected during normal scanning)
