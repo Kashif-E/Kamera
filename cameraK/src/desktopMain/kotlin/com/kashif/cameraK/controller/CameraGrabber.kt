@@ -3,8 +3,8 @@ package com.kashif.cameraK.controller
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.bytedeco.javacv.FFmpegFrameGrabber
@@ -13,7 +13,7 @@ import org.bytedeco.javacv.VideoInputFrameGrabber
 import java.awt.image.BufferedImage
 
 class CameraGrabber(
-    private val frameChannel: Channel<BufferedImage>,
+    private val frameFlow: MutableSharedFlow<BufferedImage>,
     private val errorHandler: (Throwable) -> Unit,
     private val targetResolution: Pair<Int, Int>? = null,
 ) {
@@ -66,13 +66,11 @@ class CameraGrabber(
                         val frame = grabber?.grab()
                         if (frame?.image != null) {
                             converter.convert(frame)?.let { image ->
-                                frameChannel.trySend(image)
-                                println("DEBUG: Sent frame to channel, image size: ${image.width}x${image.height}")
+                                frameFlow.tryEmit(image)
 
                                 frameCount++
                                 val currentTime = System.currentTimeMillis()
                                 if (currentTime - lastFpsTime >= 1000) {
-                                    println("Camera FPS: $frameCount")
                                     frameCount = 0
                                     lastFpsTime = currentTime
                                 }

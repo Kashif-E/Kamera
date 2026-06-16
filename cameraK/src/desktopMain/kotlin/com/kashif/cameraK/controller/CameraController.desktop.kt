@@ -15,8 +15,10 @@ import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -43,7 +45,12 @@ actual class CameraController(
     private val targetResolution: Pair<Int, Int>? = null,
 ) {
     private var cameraGrabber: CameraGrabber? = null
-    private val frameChannel = Channel<BufferedImage>(Channel.CONFLATED)
+    private val _frameFlow = MutableSharedFlow<BufferedImage>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val frameFlow: Flow<BufferedImage> get() = _frameFlow
     private val qualityPriority: QualityPrioritization = QualityPrioritization.NONE
 
     // Video recording
@@ -217,7 +224,7 @@ actual class CameraController(
         CoroutineScope(Dispatchers.Default).launch {
             // If there is a custom grabber, use it, else use the default camera grabber
             // Which attempts to use the default camera
-            cameraGrabber = CameraGrabber(frameChannel, {
+            cameraGrabber = CameraGrabber(_frameFlow, {
                 System.err.println("CameraK: Camera error: ${it.message}")
                 it.printStackTrace()
             }, targetResolution).apply {
@@ -232,7 +239,6 @@ actual class CameraController(
      */
     actual fun stopSession() {
         cameraGrabber?.stop()
-        frameChannel.close()
     }
 
     /**
@@ -263,10 +269,7 @@ actual class CameraController(
     actual fun cleanup() {
         stopVideoRecorderIfActive()
         cameraGrabber?.stop()
-        frameChannel.close()
     }
-
-    fun getFrameChannel() = frameChannel
 
 
     actual suspend fun startRecording(configuration: VideoConfiguration): String = withContext(Dispatchers.IO) {

@@ -80,6 +80,7 @@ actual class CameraController(
     internal var returnFilePath: Boolean,
     internal var plugins: MutableList<CameraPlugin>,
     internal var targetResolution: Pair<Int, Int>? = null,
+    internal var mirrorFrontCamera: Boolean = false,
 ) : UIViewController(null, null) {
     private var isCapturing = atomic(false)
     private val customCameraController = CustomCameraController(
@@ -87,6 +88,7 @@ actual class CameraController(
         initialCameraLens = cameraLens,
         aspectRatio = aspectRatio,
         targetResolution = targetResolution,
+        mirrorFrontCamera = mirrorFrontCamera,
     )
     private var imageCaptureListeners = mutableListOf<(ByteArray) -> Unit>()
     private var metadataOutput = AVCaptureMetadataOutput()
@@ -142,15 +144,21 @@ actual class CameraController(
         customCameraController.safeAddOutput(output)
     }
 
+    @Volatile
+    private var lastVideoOrientation: AVCaptureVideoOrientation = AVCaptureVideoOrientationPortrait
+
     internal fun currentVideoOrientation(): AVCaptureVideoOrientation {
-        val orientation = UIDevice.currentDevice.orientation
-        return when (orientation) {
+        // FaceUp / FaceDown / Unknown don't correspond to a video orientation; mapping them to
+        // Portrait distorts a landscape preview when the device lies flat (#115). Keep the last
+        // valid orientation so portrait/landscape tracking stays stable as the device tilts (#109).
+        lastVideoOrientation = when (UIDevice.currentDevice.orientation) {
             UIDeviceOrientation.UIDeviceOrientationPortrait -> AVCaptureVideoOrientationPortrait
             UIDeviceOrientation.UIDeviceOrientationPortraitUpsideDown -> AVCaptureVideoOrientationPortraitUpsideDown
             UIDeviceOrientation.UIDeviceOrientationLandscapeLeft -> AVCaptureVideoOrientationLandscapeRight
             UIDeviceOrientation.UIDeviceOrientationLandscapeRight -> AVCaptureVideoOrientationLandscapeLeft
-            else -> AVCaptureVideoOrientationPortrait
+            else -> lastVideoOrientation
         }
+        return lastVideoOrientation
     }
 
     private fun setupCamera() {
@@ -408,7 +416,7 @@ actual class CameraController(
         }
 
         // Trigger capture with constant quality (95)
-        customCameraController.captureImage(0.95)
+        customCameraController.captureImage()
     }
 
     /**
@@ -516,7 +524,7 @@ actual class CameraController(
             captureHandler.process(null, "Capture cancelled")
         }
 
-        customCameraController.captureImage(0.95)
+        customCameraController.captureImage()
     }
 
     actual fun toggleFlashMode() {
@@ -658,10 +666,11 @@ actual class CameraController(
         val delegate = VideoRecordingDelegate()
         videoRecordingDelegate = delegate
 
-        // Set video orientation on the movie file output connection
+        // Set video orientation on the movie file output connection. Use the effective
+        // orientation so a locked orientation (setTargetOrientation) is honored for recording.
         output.connectionWithMediaType(platform.AVFoundation.AVMediaTypeVideo)?.let { connection ->
             if (connection.isVideoOrientationSupported()) {
-                connection.videoOrientation = currentVideoOrientation()
+                connection.videoOrientation = effectiveVideoOrientation()
             }
         }
 

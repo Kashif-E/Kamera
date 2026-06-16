@@ -19,6 +19,7 @@ import platform.AVFoundation.AVMetadataObjectTypeDataMatrixCode
 import platform.AVFoundation.AVMetadataObjectTypeEAN13Code
 import platform.AVFoundation.AVMetadataObjectTypeEAN8Code
 import platform.AVFoundation.AVMetadataObjectTypeITF14Code
+import platform.AVFoundation.AVMetadataObjectTypeInterleaved2of5Code
 import platform.AVFoundation.AVMetadataObjectTypePDF417Code
 import platform.AVFoundation.AVMetadataObjectTypeQRCode
 import platform.AVFoundation.AVMetadataObjectTypeUPCECode
@@ -67,9 +68,8 @@ sealed class ScannedCode {
                 AVMetadataObjectTypeCode39Code -> Barcode(value, "CODE_39")
                 AVMetadataObjectTypeCode93Code -> Barcode(value, "CODE_93")
                 AVMetadataObjectTypeCode39Mod43Code -> Barcode(value, "CODE_39_MOD_43")
-                AVMetadataObjectTypeEAN13Code -> Barcode(value, "EAN_13")
-                AVMetadataObjectTypeEAN8Code -> Barcode(value, "EAN_8")
                 AVMetadataObjectTypeITF14Code -> Barcode(value, "ITF_14")
+                AVMetadataObjectTypeInterleaved2of5Code -> Barcode(value, "ITF")
                 AVMetadataObjectTypePDF417Code -> Barcode(value, "PDF_417")
                 AVMetadataObjectTypeAztecCode -> Barcode(value, "AZTEC")
                 AVMetadataObjectTypeDataMatrixCode -> Barcode(value, "DATA_MATRIX")
@@ -109,6 +109,7 @@ actual fun startScanning(controller: CameraController, onQrScanner: (String) -> 
                 AVMetadataObjectTypeCode93Code!!,
                 AVMetadataObjectTypeCode39Mod43Code!!,
                 AVMetadataObjectTypeITF14Code!!,
+                AVMetadataObjectTypeInterleaved2of5Code!!,
                 AVMetadataObjectTypePDF417Code!!,
                 AVMetadataObjectTypeAztecCode!!,
                 AVMetadataObjectTypeDataMatrixCode!!,

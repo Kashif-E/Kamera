@@ -38,6 +38,7 @@ class CustomCameraController(
     private var initialCameraLens: CameraLens = CameraLens.BACK,
     private val aspectRatio: AspectRatio = AspectRatio.RATIO_4_3,
     private val targetResolution: Pair<Int, Int>? = null,
+    private val mirrorFrontCamera: Boolean = false,
 ) : NSObject(),
     AVCapturePhotoCaptureDelegateProtocol {
     var captureSession: AVCaptureSession? = null
@@ -54,8 +55,6 @@ class CustomCameraController(
 
     var flashMode: AVCaptureFlashMode = AVCaptureFlashModeAuto
     var torchMode: AVCaptureTorchMode = AVCaptureTorchModeAuto
-
-    private var highQualityEnabled = false
 
     // Configuration queue for plugin outputs (Apple WWDC pattern)
     private val pendingConfigurations = mutableListOf<() -> Unit>()
@@ -342,7 +341,9 @@ class CustomCameraController(
         val session = captureSession ?: return
 
         val newPreviewLayer = AVCaptureVideoPreviewLayer(session = session).apply {
-            videoGravity = AVLayerVideoGravityResizeAspectFill
+            // ResizeAspect (letterbox) so the preview shows the exact frame that gets captured — WYSIWYG (#119).
+            // ResizeAspectFill would crop the preview to fill the view, mismatching the full-frame captured photo.
+            videoGravity = AVLayerVideoGravityResizeAspect
             setFrame(view.bounds)
             connection?.videoOrientation = currentVideoOrientation()
         }
@@ -351,15 +352,22 @@ class CustomCameraController(
         cameraPreviewLayer = newPreviewLayer
     }
 
+    @Volatile
+    private var lastVideoOrientation: AVCaptureVideoOrientation = AVCaptureVideoOrientationPortrait
+
     fun currentVideoOrientation(): AVCaptureVideoOrientation {
-        val orientation = UIDevice.currentDevice.orientation
-        return when (orientation) {
+        // FaceUp / FaceDown / Unknown don't correspond to a video orientation. Mapping them to
+        // Portrait snaps a landscape preview to portrait and distorts it when the device lies flat
+        // (#115). Keep the last valid orientation in those cases so portrait/landscape tracking
+        // stays stable as the device tilts (#109).
+        lastVideoOrientation = when (UIDevice.currentDevice.orientation) {
             UIDeviceOrientation.UIDeviceOrientationPortrait -> AVCaptureVideoOrientationPortrait
             UIDeviceOrientation.UIDeviceOrientationPortraitUpsideDown -> AVCaptureVideoOrientationPortraitUpsideDown
             UIDeviceOrientation.UIDeviceOrientationLandscapeLeft -> AVCaptureVideoOrientationLandscapeRight
             UIDeviceOrientation.UIDeviceOrientationLandscapeRight -> AVCaptureVideoOrientationLandscapeLeft
-            else -> AVCaptureVideoOrientationPortrait
+            else -> lastVideoOrientation
         }
+        return lastVideoOrientation
     }
 
     fun setFlashMode(mode: AVCaptureFlashMode) {
@@ -473,15 +481,12 @@ class CustomCameraController(
 
         captureSession?.sessionPreset = newPreset
         captureSession?.commitConfiguration()
-
-        highQualityEnabled = newPreset == AVCaptureSessionPresetPhoto
     }
 
     /**
-     * Capture an image with specified quality
-     * @param quality Image quality factor (0.0 to 1.0)
+     * Capture an image. Output quality is governed by the configured [qualityPrioritization].
      */
-    fun captureImage(quality: Double = 0.9) {
+    fun captureImage() {
         if (photoOutput == null || captureSession?.isRunning() != true) {
             onError?.invoke(CameraException.ConfigurationError("Camera not ready for capture"))
             return
@@ -525,11 +530,9 @@ class CustomCameraController(
             settings.flashMode = AVCaptureFlashModeOff
         }
 
-        if (highQualityEnabled && quality > 0.8) {
-            settings.setAutoStillImageStabilizationEnabled(true)
-        } else {
-            settings.setAutoStillImageStabilizationEnabled(false)
-        }
+        // Don't touch autoStillImageStabilizationEnabled: it's deprecated since iOS 13 and
+        // setting it together with photoQualityPrioritization (set above) raises -17281
+        // (invalid state). Stabilization is handled automatically by the prioritization level. (#113)
 
         // Set the photo output connection orientation to match current device orientation
         // This ensures the captured photo has the correct orientation metadata
@@ -537,16 +540,16 @@ class CustomCameraController(
             if (connection.isVideoOrientationSupported()) {
                 connection.videoOrientation = currentVideoOrientation()
             }
+            // Mirror the front-camera photo to match the mirrored preview when configured (#112).
+            if (connection.isVideoMirroringSupported()) {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.videoMirrored = mirrorFrontCamera && isUsingFrontCamera
+            }
         }
 
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
             photoOutput?.capturePhotoWithSettings(settings, delegate = this)
         }
-    }
-
-    fun captureImage() {
-        val quality = MemoryManager.getOptimalImageQuality()
-        captureImage(quality)
     }
 
     /**

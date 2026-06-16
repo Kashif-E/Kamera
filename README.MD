@@ -1,7 +1,7 @@
 # CameraK
 
 <p align="center">
-  <img src="docs/assets/camerakposter.png" alt="CameraK Poster" width="800" style="border-radius: 50%;"/>
+  <img src="docs/assets/kamera.jpg" alt="CameraK Poster" width="800" style="border-radius: 50%;"/>
 </p>
 
 <p align="center">
@@ -203,7 +203,7 @@ sealed class CameraKState {
 |----------|-------------|---------|
 | Android | API 21+ | CameraX |
 | iOS | iOS 13.0+ | AVFoundation |
-| Desktop | JDK 11+ | JavaCV |
+| Desktop | JDK 17+ | JavaCV |
 
 ## Configuration
 
