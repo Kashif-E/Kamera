@@ -240,6 +240,9 @@ sealed class CameraKEvent {
  * @property returnFilePath If true, returns file path instead of byte array (faster).
  * @property mirrorFrontCamera If true, front-camera captures are horizontally mirrored to match
  *   the mirrored preview (selfie "what you see is what you get"). No effect on the back camera.
+ *   Representation note: iOS and the Android byte-array path bake the flip into the pixels; the
+ *   Android file path (`takePictureToFile`, the fast path) records it as an EXIF orientation tag,
+ *   which EXIF-aware viewers honor but raw-pixel consumers may ignore.
  *
  * @example
  * ```kotlin
