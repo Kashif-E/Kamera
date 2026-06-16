@@ -123,4 +123,19 @@ class CameraStateVideoTest {
         val b = CameraKEvent.RecordingStopped(result)
         assertEquals(a, b)
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // CameraConfiguration Tests
+    // ═══════════════════════════════════════════════════════════════
+
+    @Test
+    fun cameraConfiguration_mirrorFrontCameraDefaultsToFalse() {
+        assertFalse(CameraConfiguration().mirrorFrontCamera)
+    }
+
+    @Test
+    fun cameraConfiguration_mirrorFrontCameraPropagates() {
+        assertTrue(CameraConfiguration(mirrorFrontCamera = true).mirrorFrontCamera)
+        assertTrue(CameraConfiguration().copy(mirrorFrontCamera = true).mirrorFrontCamera)
+    }
 }
