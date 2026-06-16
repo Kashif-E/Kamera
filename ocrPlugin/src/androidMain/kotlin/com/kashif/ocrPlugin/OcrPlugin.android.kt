@@ -1,6 +1,5 @@
 package com.kashif.ocrPlugin
 
-import com.kashif.cameraK.utils.CameraKLogger
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -10,6 +9,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext

@@ -158,11 +158,6 @@ expect class CameraController {
     fun addImageCaptureListener(listener: (ByteArray) -> Unit)
 
     /**
-     * Initializes all registered plugins.
-     */
-    fun initializeControllerPlugins()
-
-    /**
      * Cleans up resources when the controller is no longer needed.
      * Should be called when disposing the controller to prevent memory leaks.
      *

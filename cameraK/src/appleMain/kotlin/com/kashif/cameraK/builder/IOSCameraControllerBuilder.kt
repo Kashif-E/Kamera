@@ -9,7 +9,6 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.utils.InvalidConfigurationException
 
 /**
@@ -28,7 +27,6 @@ class IOSCameraControllerBuilder : CameraControllerBuilder {
     private var aspectRatio: AspectRatio = AspectRatio.RATIO_4_3
     private var targetResolution: Pair<Int, Int>? = null
     private var mirrorFrontCamera: Boolean = false
-    private val plugins = mutableListOf<CameraPlugin>()
 
     override fun setMirrorFrontCamera(mirror: Boolean): CameraControllerBuilder {
         this.mirrorFrontCamera = mirror
@@ -92,11 +90,6 @@ class IOSCameraControllerBuilder : CameraControllerBuilder {
         return this
     }
 
-    override fun addPlugin(plugin: CameraPlugin): CameraControllerBuilder {
-        plugins.add(plugin)
-        return this
-    }
-
     /**
      * Builds the configured iOS camera controller.
      *
@@ -113,7 +106,6 @@ class IOSCameraControllerBuilder : CameraControllerBuilder {
             cameraLens = cameraLens,
             imageFormat = format,
             directory = dir,
-            plugins = plugins,
             qualityPriority = qualityPriority,
             cameraDeviceType = cameraDeviceType,
             returnFilePath = returnFilePath,

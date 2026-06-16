@@ -1,17 +1,15 @@
 package com.kashif.ocrPlugin
-import com.kashif.cameraK.utils.CameraKLogger
-
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.ImageBitmap
 import com.kashif.cameraK.controller.CameraController
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
+import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -20,9 +18,8 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 
 /**
- * OCR plugin that works with both old and new camera APIs.
+ * OCR plugin for the Compose-first camera API.
  *
- * **New Compose-first API usage:**
  * ```kotlin
  * val scope = rememberCoroutineScope()
  * val ocrPlugin = remember { OcrPlugin(scope) }
@@ -38,38 +35,14 @@ import kotlinx.coroutines.launch
  *     }
  * }
  * ```
- *
- * **Legacy API usage:**
- * ```kotlin
- * val ocrPlugin = rememberOcrPlugin()
- *
- * CameraPreview(
- *     onCameraControllerReady = { controller ->
- *         ocrPlugin.initialize(controller)
- *         ocrPlugin.startRecognition()
- *     }
- * )
- * ```
  */
 @Stable
-class OcrPlugin(val coroutineScope: CoroutineScope) :
-    CameraPlugin,
-    CameraKPlugin {
+class OcrPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
     val ocrFlow = Channel<String>()
     private var isRecognising = atomic(false)
     private var collectorJob: kotlinx.coroutines.Job? = null
-
-    /**
-     * Initializes the plugin with the camera controller (legacy API).
-     *
-     * @param cameraController The [CameraController] instance to use for OCR.
-     */
-    override fun initialize(cameraController: CameraController) {
-        CameraKLogger.d("CameraK", "OcrPlugin initialized (legacy API)")
-        this.cameraController = cameraController
-    }
 
     /**
      * Attaches the plugin to the state holder (new API).

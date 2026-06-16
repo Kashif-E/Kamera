@@ -9,7 +9,6 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.plugins.CameraPlugin
 
 /**
  * Builder interface for constructing a [CameraController] with customizable configurations and plugins.
@@ -33,14 +32,6 @@ interface CameraControllerBuilder {
     fun setImageFormat(imageFormat: ImageFormat): CameraControllerBuilder
 
     fun setDirectory(directory: Directory): CameraControllerBuilder
-
-    /**
-     * Adds a [CameraPlugin] to the [CameraController].
-     *
-     * @param plugin The plugin to add.
-     * @return The current instance of [CameraControllerBuilder].
-     */
-    fun addPlugin(plugin: CameraPlugin): CameraControllerBuilder
 
     /**
      * Builds and returns a configured instance of [CameraController].

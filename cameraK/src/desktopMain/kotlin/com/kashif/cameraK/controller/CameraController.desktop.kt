@@ -1,7 +1,5 @@
 package com.kashif.cameraK.controller
 
-import com.kashif.cameraK.utils.CameraKLogger
-
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
@@ -10,8 +8,8 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.CoroutineScope
@@ -39,7 +37,6 @@ import javax.imageio.ImageIO
  * Interface defining the core functionalities of the CameraController.
  */
 actual class CameraController(
-    internal var plugins: MutableList<CameraPlugin>,
     private val imageFormat: ImageFormat,
     private val directory: Directory,
     private val horizontalFlip: Boolean = false,
@@ -50,7 +47,7 @@ actual class CameraController(
     private val _frameFlow = MutableSharedFlow<BufferedImage>(
         replay = 0,
         extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val frameFlow: Flow<BufferedImage> get() = _frameFlow
     private val qualityPriority: QualityPrioritization = QualityPrioritization.NONE
@@ -234,12 +231,6 @@ actual class CameraController(
         this.listener = listener
     }
 
-    actual fun initializeControllerPlugins() {
-        plugins.forEach {
-            it.initialize(this)
-        }
-    }
-
     actual fun getDeviceOrientation(): DeviceOrientation = DeviceOrientation.PORTRAIT
 
     actual fun setOnOrientationChangedListener(callback: ((DeviceOrientation) -> Unit)?) {
@@ -254,7 +245,6 @@ actual class CameraController(
         stopVideoRecorderIfActive()
         cameraGrabber?.stop()
     }
-
 
     actual suspend fun startRecording(configuration: VideoConfiguration): String = withContext(Dispatchers.IO) {
         val outputPath = createVideoOutputPath(configuration)

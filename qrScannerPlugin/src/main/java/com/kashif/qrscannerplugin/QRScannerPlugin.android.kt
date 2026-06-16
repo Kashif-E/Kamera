@@ -1,7 +1,6 @@
 package com.kashif.qrscannerplugin
 
 import android.graphics.ImageFormat
-import com.kashif.cameraK.utils.CameraKLogger
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -12,6 +11,7 @@ import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.utils.CameraKLogger
 import java.util.EnumMap
 
 /**

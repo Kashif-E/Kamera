@@ -8,7 +8,6 @@ import coil3.PlatformContext
 import coil3.compose.LocalPlatformContext
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKStateHolder
 import kotlinx.coroutines.CoroutineScope
@@ -62,9 +61,7 @@ data class ImageSaverConfig(
  * ```
  */
 @Stable
-abstract class ImageSaverPlugin(val config: ImageSaverConfig) :
-    CameraPlugin,
-    CameraKPlugin {
+abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
     private var stateHolder: CameraKStateHolder? = null
 
     /**
@@ -75,23 +72,6 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) :
      * @return The file path where the image was saved, or null if saving failed.
      */
     abstract suspend fun saveImage(byteArray: ByteArray, imageName: String? = null): String?
-
-    /**
-     * Initializes the plugin with the camera controller (legacy API).
-     * If auto-save is enabled, sets up listeners to save images automatically.
-     *
-     * @param cameraController The [CameraController] instance to attach listeners to.
-     */
-    override fun initialize(cameraController: com.kashif.cameraK.controller.CameraController) {
-        if (config.isAutoSave) {
-            cameraController.addImageCaptureListener { byteArray ->
-                CoroutineScope(Dispatchers.IO).launch {
-                    val imageName = config.prefix?.let { "CameraK" }
-                    saveImage(byteArray, imageName)
-                }
-            }
-        }
-    }
 
     /**
      * Attaches the plugin to the state holder (new API).

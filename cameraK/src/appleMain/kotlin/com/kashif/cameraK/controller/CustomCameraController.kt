@@ -1,17 +1,15 @@
 package com.kashif.cameraK.controller
 
-import com.kashif.cameraK.utils.CameraKLogger
-
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.QualityPrioritization
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.MemoryManager
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AVFoundation.*
 import platform.Foundation.NSData
 import platform.Foundation.NSError
-import platform.Foundation.NSLog
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIView

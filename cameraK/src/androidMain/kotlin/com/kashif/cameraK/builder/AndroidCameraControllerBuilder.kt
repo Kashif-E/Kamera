@@ -11,7 +11,6 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.utils.InvalidConfigurationException
 
 /**
@@ -34,7 +33,6 @@ class AndroidCameraControllerBuilder(private val context: Context, private val l
     private var aspectRatio: AspectRatio = AspectRatio.RATIO_4_3
     private var targetResolution: Pair<Int, Int>? = null
     private var mirrorFrontCamera: Boolean = false
-    private val plugins = mutableListOf<CameraPlugin>()
 
     override fun setMirrorFrontCamera(mirror: Boolean): CameraControllerBuilder {
         this.mirrorFrontCamera = mirror
@@ -101,26 +99,17 @@ class AndroidCameraControllerBuilder(private val context: Context, private val l
         return this
     }
 
-    override fun addPlugin(plugin: CameraPlugin): CameraControllerBuilder {
-        plugins.add(plugin)
-        return this
-    }
-
     override fun build(): CameraController {
         val format = imageFormat ?: throw InvalidConfigurationException("ImageFormat must be set.")
         val dir = directory ?: throw InvalidConfigurationException("Directory must be set.")
 
-        /* if (flashMode == FlashMode.ON && cameraLens == CameraLens.FRONT) {
-             throw InvalidConfigurationException("Flash mode ON is not supported with the front camera.")
-         }*/
-        val cameraController = CameraController(
+        return CameraController(
             context = context,
             lifecycleOwner = lifecycleOwner,
             flashMode = flashMode,
             cameraLens = cameraLens,
             imageFormat = format,
             directory = dir,
-            plugins = plugins,
             torchMode = torchMode,
             qualityPriority = qualityPriority,
             cameraDeviceType = cameraDeviceType,
@@ -129,10 +118,5 @@ class AndroidCameraControllerBuilder(private val context: Context, private val l
             targetResolution = targetResolution,
             mirrorFrontCamera = mirrorFrontCamera,
         )
-        plugins.forEach {
-            it.initialize(cameraController)
-        }
-
-        return cameraController
     }
 }

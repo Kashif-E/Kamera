@@ -1,7 +1,5 @@
 package com.kashif.cameraK.controller
 
-import com.kashif.cameraK.utils.CameraKLogger
-
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -11,15 +9,14 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.MemoryManager
 import com.kashif.cameraK.utils.fixOrientation
 import com.kashif.cameraK.utils.toByteArray
 import com.kashif.cameraK.utils.toUIImage
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
-import com.kashif.cameraK.video.VideoQuality
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -34,10 +31,6 @@ import platform.AVFoundation.AVCaptureMetadataOutput
 import platform.AVFoundation.AVCaptureMetadataOutputObjectsDelegateProtocol
 import platform.AVFoundation.AVCaptureMovieFileOutput
 import platform.AVFoundation.AVCaptureOutput
-import platform.AVFoundation.AVCaptureSessionPreset1280x720
-import platform.AVFoundation.AVCaptureSessionPreset1920x1080
-import platform.AVFoundation.AVCaptureSessionPreset3840x2160
-import platform.AVFoundation.AVCaptureSessionPreset640x480
 import platform.AVFoundation.AVCaptureTorchMode
 import platform.AVFoundation.AVCaptureTorchModeAuto
 import platform.AVFoundation.AVCaptureTorchModeOff
@@ -51,21 +44,21 @@ import platform.AVFoundation.AVMediaTypeAudio
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSURL
 import platform.Foundation.timeIntervalSince1970
 import platform.Photos.PHAssetChangeRequest
 import platform.Photos.PHPhotoLibrary
-import platform.Foundation.NSNotificationCenter
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import platform.UIKit.UIImagePNGRepresentation
 import platform.UIKit.UIViewController
-import kotlin.concurrent.Volatile
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_HIGH
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_global_queue
 import platform.darwin.dispatch_get_main_queue
+import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.random.Random
@@ -80,7 +73,6 @@ actual class CameraController(
     internal var cameraDeviceType: CameraDeviceType,
     internal var aspectRatio: AspectRatio,
     internal var returnFilePath: Boolean,
-    internal var plugins: MutableList<CameraPlugin>,
     internal var targetResolution: Pair<Int, Int>? = null,
     internal var mirrorFrontCamera: Boolean = false,
 ) : UIViewController(null, null) {
@@ -458,7 +450,6 @@ actual class CameraController(
         if (customCameraController.captureSession != null) {
             memoryManager.clearBufferPools()
             customCameraController.startSession()
-            initializeControllerPlugins()
         }
         // If captureSession is null, onSessionReady will call startSession() when ready
     }
@@ -471,12 +462,6 @@ actual class CameraController(
         imageCaptureListeners.add(listener)
     }
 
-    actual fun initializeControllerPlugins() {
-        plugins.forEach {
-            it.initialize(this)
-        }
-    }
-
     actual fun cleanup() {
         removeOrientationObserver()
         orientationChangedCallback = null
@@ -485,7 +470,6 @@ actual class CameraController(
         customCameraController.cleanupSession()
         memoryManager.clearBufferPools()
     }
-
 
     @OptIn(ExperimentalForeignApi::class)
     actual suspend fun startRecording(configuration: VideoConfiguration): String = suspendCancellableCoroutine { cont ->
@@ -696,8 +680,9 @@ actual class CameraController(
             completionHandler = { success, error ->
                 if (!success || error != null) {
                     saveError = error?.localizedDescription ?: "Failed to save video to Photos"
-                    CameraKLogger.e("CameraK", 
-                        "CameraK: Failed to save video to Photos: ${saveError}",
+                    CameraKLogger.e(
+                        "CameraK",
+                        "CameraK: Failed to save video to Photos: $saveError",
                     )
                 }
                 platform.darwin.dispatch_semaphore_signal(semaphore)

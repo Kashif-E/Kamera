@@ -4,8 +4,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.os.Environment
-import com.kashif.cameraK.utils.CameraKLogger
 import android.util.Size
+import android.view.OrientationEventListener
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
@@ -33,7 +33,6 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
-import android.view.OrientationEventListener
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -43,8 +42,8 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.InvalidConfigurationException
 import com.kashif.cameraK.utils.MemoryManager
 import com.kashif.cameraK.video.VideoCaptureResult
@@ -76,7 +75,6 @@ actual class CameraController(
     internal var cameraDeviceType: CameraDeviceType,
     internal var returnFilePath: Boolean,
     internal var aspectRatio: AspectRatio,
-    internal var plugins: MutableList<CameraPlugin>,
     internal var targetResolution: Pair<Int, Int>? = null,
     internal var mirrorFrontCamera: Boolean = false,
 ) {
@@ -321,7 +319,9 @@ actual class CameraController(
     private fun rebuildMultiplexedAnalyzer() {
         if (registeredAnalyzers.isEmpty()) {
             if (imageAnalyzer != null) {
-                try { cameraProvider?.unbind(imageAnalyzer) } catch (_: Exception) {}
+                try {
+                    cameraProvider?.unbind(imageAnalyzer)
+                } catch (_: Exception) {}
                 imageAnalyzer = null
             }
             return
@@ -361,10 +361,9 @@ actual class CameraController(
      * Capture metadata: mirror the saved image horizontally for the front camera when configured,
      * so the photo matches the mirrored preview (#112).
      */
-    private fun captureMetadata(): ImageCapture.Metadata =
-        ImageCapture.Metadata().apply {
-            isReversedHorizontal = mirrorFrontCamera && cameraLens == CameraLens.FRONT
-        }
+    private fun captureMetadata(): ImageCapture.Metadata = ImageCapture.Metadata().apply {
+        isReversedHorizontal = mirrorFrontCamera && cameraLens == CameraLens.FRONT
+    }
 
     /**
      * Perform fast file-based capture without ByteArray processing.
@@ -488,7 +487,6 @@ actual class CameraController(
     actual fun startSession() {
         memoryManager.updateMemoryStatus()
         memoryManager.clearBufferPools()
-        initializeControllerPlugins()
     }
 
     actual fun stopSession() {
@@ -498,10 +496,6 @@ actual class CameraController(
 
     actual fun addImageCaptureListener(listener: (ByteArray) -> Unit) {
         imageCaptureListeners.add(listener)
-    }
-
-    actual fun initializeControllerPlugins() {
-        plugins.forEach { it.initialize(this) }
     }
 
     private fun createTempFile(): File {
@@ -780,9 +774,7 @@ actual class CameraController(
  * Uses [RefCountedImageProxy] so each analyzer can call `close()` independently;
  * the underlying buffer is released only when all analyzers have finished.
  */
-private class MultiplexingAnalyzer(
-    private val analyzers: List<ImageAnalysis.Analyzer>,
-) : ImageAnalysis.Analyzer {
+private class MultiplexingAnalyzer(private val analyzers: List<ImageAnalysis.Analyzer>) : ImageAnalysis.Analyzer {
     override fun analyze(imageProxy: ImageProxy) {
         if (analyzers.isEmpty()) {
             imageProxy.close()

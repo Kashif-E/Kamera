@@ -1,7 +1,6 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.utils.CameraKLogger
-
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
