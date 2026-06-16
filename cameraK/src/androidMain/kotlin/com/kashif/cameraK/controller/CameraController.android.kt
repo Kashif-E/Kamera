@@ -101,6 +101,7 @@ actual class CameraController(
     private val maxConcurrentCaptures = 3
 
     private val imageProcessingExecutor = Executors.newFixedThreadPool(2)
+    private val analyzerExecutor = Executors.newSingleThreadExecutor()
 
     fun bindCamera(previewView: PreviewView, onCameraReady: () -> Unit = {}) {
         this.previewView = previewView
@@ -331,7 +332,9 @@ actual class CameraController(
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .build()
             .apply {
-                setAnalyzer(ContextCompat.getMainExecutor(context), composite)
+                // Run analysis off the main thread — frame work (e.g. JPEG-encoding the analyzer
+                // frame, QR/OCR) is too heavy to block the UI thread.
+                setAnalyzer(analyzerExecutor, composite)
             }
 
         try {
@@ -773,6 +776,7 @@ actual class CameraController(
         registeredAnalyzers.clear()
         recordingFinalizeChannel.close()
         imageProcessingExecutor.shutdown()
+        analyzerExecutor.shutdown()
         memoryManager.clearBufferPools()
     }
 }

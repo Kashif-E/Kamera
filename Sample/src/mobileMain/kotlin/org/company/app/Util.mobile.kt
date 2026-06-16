@@ -8,6 +8,7 @@ import org.kmp.playground.kflite.DelegateType
 import org.kmp.playground.kflite.InterpreterOptions
 import org.kmp.playground.kflite.Kflite
 import org.kmp.playground.kflite.bytesToScaledByteBuffer
+import kotlin.concurrent.Volatile
 import kotlin.math.floor
 
 const val FLOAT_TYPE_SIZE = 3
@@ -17,8 +18,8 @@ private const val SCORE_THRESHOLD = 0.4f
 
 // The model is initialized once and reused; inference runs off the main thread, and a new frame is
 // dropped while one is already in flight (the analyzer produces frames far faster than inference).
-private var modelReady = false
-private var inferenceInFlight = false
+@Volatile private var modelReady = false
+@Volatile private var inferenceInFlight = false
 
 actual fun getTFliteRunner(): (ByteArray.(CoroutineScope) -> Unit)? = ByteArray::runTFliteModel
 

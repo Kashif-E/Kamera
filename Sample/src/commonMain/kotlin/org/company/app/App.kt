@@ -481,9 +481,11 @@ private fun CameraScreen(
                 torchMode = cameraController.getTorchMode() ?: TorchMode.OFF
             },
             onAspectRatioCycle = {
-                val entries = AspectRatio.entries
-                val next = entries[(entries.indexOf(aspectRatio) + 1) % entries.size]
-                onAspectRatioChange(next)
+                if (!isRecording) {
+                    val entries = AspectRatio.entries
+                    val next = entries[(entries.indexOf(aspectRatio) + 1) % entries.size]
+                    onAspectRatioChange(next)
+                }
             },
         )
 
@@ -590,10 +592,12 @@ private fun CameraScreen(
                 isOCREnabled = isOCREnabled,
                 lockedOrientation = lockedOrientation,
                 deviceOrientation = deviceOrientation,
-                onResolutionChange = onResolutionChange,
-                onImageFormatChange = onImageFormatChange,
-                onQualityPrioritizationChange = onQualityPrioritizationChange,
-                onCameraDeviceTypeChange = onCameraDeviceTypeChange,
+                // Config-level changes re-initialize the camera, so ignore them mid-recording
+                // (tearing the controller down under an active recording would corrupt the clip).
+                onResolutionChange = { if (!isRecording) onResolutionChange(it) },
+                onImageFormatChange = { if (!isRecording) onImageFormatChange(it) },
+                onQualityPrioritizationChange = { if (!isRecording) onQualityPrioritizationChange(it) },
+                onCameraDeviceTypeChange = { if (!isRecording) onCameraDeviceTypeChange(it) },
                 onQRScanningToggle = { isQRScanningEnabled = it },
                 onOCRToggle = { isOCREnabled = it },
                 onOrientationLockChange = { orientation ->
