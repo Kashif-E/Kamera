@@ -1,4 +1,5 @@
 package com.kashif.imagesaverplugin
+import com.kashif.cameraK.utils.CameraKLogger
 
 import coil3.PlatformContext
 import com.kashif.cameraK.utils.fixOrientation
@@ -37,7 +38,7 @@ class IOSImageSaverPlugin(
                 val nsData = byteArray.toNSData()
 
                 if (nsData == null) {
-                    println("Failed to convert ByteArray to NSData.")
+                    CameraKLogger.e("CameraK", "Failed to convert ByteArray to NSData.")
                     onImageSavedFailed("Failed to convert ByteArray to NSData.")
                     return@withContext null
                 }
@@ -45,7 +46,7 @@ class IOSImageSaverPlugin(
                 val image = UIImage.imageWithData(nsData)
 
                 if (image == null) {
-                    println("Failed to convert NSData to UIImage.")
+                    CameraKLogger.e("CameraK", "Failed to convert NSData to UIImage.")
                     onImageSavedFailed("Failed to create UIImage from NSData.")
                     return@withContext null
                 }
@@ -61,10 +62,10 @@ class IOSImageSaverPlugin(
                     assetId = request.placeholderForCreatedAsset?.localIdentifier
                 }) { success, error ->
                     if (success && assetId != null) {
-                        println("Image successfully saved to Photos album with ID: $assetId")
+                        CameraKLogger.d("CameraK", "Image successfully saved to Photos album with ID: $assetId")
                         onImageSaved()
                     } else {
-                        println("Failed to save image: ${error?.localizedDescription}")
+                        CameraKLogger.e("CameraK", "Failed to save image: ${error?.localizedDescription}")
                         onImageSavedFailed(error?.localizedDescription ?: "Unknown error")
                         assetId = null
                     }
@@ -74,7 +75,7 @@ class IOSImageSaverPlugin(
                 semaphore.wait()
                 assetId?.let { "ph://$it" }
             } catch (e: Exception) {
-                println("Exception while saving image: ${e.message}")
+                CameraKLogger.e("CameraK", "Exception while saving image: ${e.message}")
                 onImageSavedFailed(e.message ?: "Unknown exception")
                 null
             }
@@ -135,7 +136,7 @@ class IOSImageSaverPlugin(
             )
         if (success) fullPath else null
     } catch (e: Exception) {
-        println("Failed to resolve asset to file: ${e.message}")
+        CameraKLogger.e("CameraK", "Failed to resolve asset to file: ${e.message}")
         null
     }
 }
@@ -156,10 +157,8 @@ class IOSImageSaverPlugin(
 //            contextInfo: COpaquePointer?
 //        ) {
 //            if (error == null) {
-//                println("Image saved to Photo Library.")
 //                onSuccess()
 //            } else {
-//                println("Failed to save image: ${error.localizedDescription}")
 //                onError(error.localizedDescription ?: "Unknown error")
 //            }
 //        }
@@ -174,8 +173,8 @@ class IOSImageSaverPlugin(
 
 actual fun createPlatformImageSaverPlugin(context: PlatformContext, config: ImageSaverConfig): ImageSaverPlugin =
     IOSImageSaverPlugin(config = config, onImageSaved = {
-        println("Image saved successfully!")
+        CameraKLogger.d("CameraK", "Image saved successfully!")
     }, onImageSavedFailed = { errorMessage ->
 
-        println("Failed to save image: $errorMessage")
+        CameraKLogger.e("CameraK", "Failed to save image: $errorMessage")
     })

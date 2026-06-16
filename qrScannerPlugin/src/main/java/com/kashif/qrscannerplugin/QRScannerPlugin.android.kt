@@ -1,7 +1,7 @@
 package com.kashif.qrscannerplugin
 
 import android.graphics.ImageFormat
-import android.util.Log
+import com.kashif.cameraK.utils.CameraKLogger
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -20,11 +20,11 @@ import java.util.EnumMap
  * @param onQrScanner Callback invoked when a QR code is detected with the scanned text
  */
 fun CameraController.enableQrCodeScanner(onQrScanner: (String) -> Unit) {
-    Log.d("QRScanner", "Enabling QR code scanner")
+    CameraKLogger.d("QRScanner", "Enabling QR code scanner")
     try {
         registerImageAnalyzer(QRCodeAnalyzer(onQrScanner))
     } catch (e: Exception) {
-        Log.e("QRScanner", "Failed to enable QR scanner: ${e.message}", e)
+        CameraKLogger.e("QRScanner", "Failed to enable QR scanner: ${e.message}", e)
         // Camera might not be fully initialized yet - this is expected during startup
     }
 }
@@ -85,7 +85,7 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
         }
 
         if (image.format != ImageFormat.YUV_420_888) {
-            Log.e("QRScanner", "Unsupported image format: ${image.format}")
+            CameraKLogger.e("QRScanner", "Unsupported image format: ${image.format}")
             imageProxy.close()
             return
         }
@@ -134,7 +134,7 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
             if (result != null) {
                 val currentTime = System.currentTimeMillis()
                 if (result.text != lastScannedCode || (currentTime - lastScanTime) > scanDebounceMs) {
-                    Log.d("QRScanner", "QR Code detected: ${result.text}")
+                    CameraKLogger.d("QRScanner", "QR Code detected: ${result.text}")
                     lastScannedCode = result.text
                     lastScanTime = currentTime
                     onQrScanner(result.text)
@@ -150,6 +150,6 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
 }
 
 actual fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit) {
-    Log.d("QRScanner", "Starting QR scanner")
+    CameraKLogger.d("QRScanner", "Starting QR scanner")
     controller.enableQrCodeScanner(onQrScanner)
 }

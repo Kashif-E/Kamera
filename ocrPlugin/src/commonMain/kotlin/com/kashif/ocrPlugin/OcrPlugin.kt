@@ -1,4 +1,5 @@
 package com.kashif.ocrPlugin
+import com.kashif.cameraK.utils.CameraKLogger
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -66,7 +67,7 @@ class OcrPlugin(val coroutineScope: CoroutineScope) :
      * @param cameraController The [CameraController] instance to use for OCR.
      */
     override fun initialize(cameraController: CameraController) {
-        println("OcrPlugin initialized (legacy API)")
+        CameraKLogger.d("CameraK", "OcrPlugin initialized (legacy API)")
         this.cameraController = cameraController
     }
 
@@ -77,7 +78,7 @@ class OcrPlugin(val coroutineScope: CoroutineScope) :
      * @param stateHolder The [CameraKStateHolder] to attach to.
      */
     override fun onAttach(stateHolder: CameraKStateHolder) {
-        println("OcrPlugin attached (new API)")
+        CameraKLogger.d("CameraK", "OcrPlugin attached (new API)")
         this.stateHolder = stateHolder
 
         collectorJob =
@@ -89,7 +90,7 @@ class OcrPlugin(val coroutineScope: CoroutineScope) :
                             this@OcrPlugin.cameraController = readyState.controller
                             startRecognition()
                         } catch (e: Exception) {
-                            println("OcrPlugin: Failed to start recognition: ${e.message}")
+                            CameraKLogger.e("CameraK", "OcrPlugin: Failed to start recognition: ${e.message}")
                             e.printStackTrace()
                         }
                     }
@@ -100,7 +101,7 @@ class OcrPlugin(val coroutineScope: CoroutineScope) :
      * Detaches the plugin from the state holder and cleans up resources.
      */
     override fun onDetach() {
-        println("OcrPlugin detached")
+        CameraKLogger.d("CameraK", "OcrPlugin detached")
         stopRecognition()
         collectorJob?.cancel()
         collectorJob = null
@@ -125,9 +126,9 @@ class OcrPlugin(val coroutineScope: CoroutineScope) :
      * @param textureImage The image bitmap to extract text from.
      */
     fun extractTextFromBitmap(textureImage: ImageBitmap) = coroutineScope.launch {
-        println("Starting text extraction from bitmap")
+        CameraKLogger.d("CameraK", "Starting text extraction from bitmap")
         val extractedText = extractTextFromBitmapImpl(textureImage)
-        println("Extracted text: $extractedText")
+        CameraKLogger.d("CameraK", "Extracted text: $extractedText")
     }
 
     fun startRecognition() {

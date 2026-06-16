@@ -1,4 +1,5 @@
 package com.kashif.qrscannerplugin
+import com.kashif.cameraK.utils.CameraKLogger
 
 /**
  * QR Scanner plugin for detecting QR codes in camera frames.
@@ -73,7 +74,7 @@ class QRScannerPlugin(private val coroutineScope: CoroutineScope) :
      * @param cameraController The [CameraController] instance to use for QR scanning.
      */
     override fun initialize(cameraController: CameraController) {
-        println("QRScannerPlugin initialized (legacy API)")
+        CameraKLogger.d("CameraK", "QRScannerPlugin initialized (legacy API)")
         this.cameraController = cameraController
     }
 
@@ -84,7 +85,7 @@ class QRScannerPlugin(private val coroutineScope: CoroutineScope) :
      * @param stateHolder The [CameraKStateHolder] to attach to.
      */
     override fun onAttach(stateHolder: CameraKStateHolder) {
-        println("QRScannerPlugin attached (new API)")
+        CameraKLogger.d("CameraK", "QRScannerPlugin attached (new API)")
         this.stateHolder = stateHolder
 
         collectorJob =
@@ -102,7 +103,7 @@ class QRScannerPlugin(private val coroutineScope: CoroutineScope) :
      * Detaches the plugin from the state holder and cleans up resources.
      */
     override fun onDetach() {
-        println("QRScannerPlugin detached")
+        CameraKLogger.d("CameraK", "QRScannerPlugin detached")
         pauseScanning()
         collectorJob?.cancel()
         collectorJob = null
@@ -139,12 +140,12 @@ class QRScannerPlugin(private val coroutineScope: CoroutineScope) :
                     }
                 }
             } catch (e: Exception) {
-                println("QRScannerPlugin: Failed to start scanning: ${e.message}")
+                CameraKLogger.e("CameraK", "QRScannerPlugin: Failed to start scanning: ${e.message}")
                 isScanning.value = false
                 // Camera might not be fully initialized yet - will retry on next opportunity
             }
         } ?: run {
-            println("QRScannerPlugin: CameraController is not initialized")
+            CameraKLogger.d("CameraK", "QRScannerPlugin: CameraController is not initialized")
             isScanning.value = false
         }
     }

@@ -1,4 +1,5 @@
 package com.kashif.imagesaverplugin
+import com.kashif.cameraK.utils.CameraKLogger
 
 import android.content.ContentValues
 import android.content.Context
@@ -69,11 +70,11 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                 resolver.update(imageUri, contentValues, null, null)
             }
 
-            println("Image saved successfully at URI: $imageUri")
+            CameraKLogger.d("CameraK", "Image saved successfully at URI: $imageUri")
             imageUri.toString()
         } catch (e: IOException) {
             e.printStackTrace()
-            println("Failed to save image: ${e.message}")
+            CameraKLogger.e("CameraK", "Failed to save image: ${e.message}")
             null
         }
     }

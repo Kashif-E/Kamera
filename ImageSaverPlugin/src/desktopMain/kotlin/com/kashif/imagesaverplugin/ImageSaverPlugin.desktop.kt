@@ -1,4 +1,5 @@
 package com.kashif.imagesaverplugin
+import com.kashif.cameraK.utils.CameraKLogger
 
 import coil3.PlatformContext
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +54,6 @@ class JVMImageSaverPlugin(
 actual fun createPlatformImageSaverPlugin(context: PlatformContext, config: ImageSaverConfig): ImageSaverPlugin =
     JVMImageSaverPlugin(
         config = config,
-        onImageSaved = { println("Image saved successfully!") },
-        onImageSavedFailed = { errorMessage -> println("Failed to save image: $errorMessage") },
+        onImageSaved = { CameraKLogger.d("CameraK", "Image saved successfully!") },
+        onImageSavedFailed = { errorMessage -> CameraKLogger.e("CameraK", "Failed to save image: $errorMessage") },
     )

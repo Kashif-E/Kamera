@@ -1,4 +1,5 @@
 package com.kashif.analyzerPlugin
+import com.kashif.cameraK.utils.CameraKLogger
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -27,7 +28,7 @@ class AnalyzerPlugin(val coroutineScope: CoroutineScope) :
     private var collectorJob: Job? = null
 
     override fun initialize(cameraController: CameraController) {
-        println("Analyzer initialized (legacy API)")
+        CameraKLogger.d("CameraK", "Analyzer initialized (legacy API)")
         this.cameraController = cameraController
     }
 
@@ -53,7 +54,7 @@ class AnalyzerPlugin(val coroutineScope: CoroutineScope) :
      * @param stateHolder The [CameraKStateHolder] to attach to.
      */
     override fun onAttach(stateHolder: CameraKStateHolder) {
-        println("Analyzer attached (new API)")
+        CameraKLogger.d("CameraK", "Analyzer attached (new API)")
         this.stateHolder = stateHolder
 
         collectorJob = stateHolder.pluginScope.launch {
@@ -64,7 +65,7 @@ class AnalyzerPlugin(val coroutineScope: CoroutineScope) :
                         this@AnalyzerPlugin.cameraController = readyState.controller
                         startAnalyzer()
                     } catch (e: Exception) {
-                        println("Analyzer: Failed to start analyzer: ${e.message}")
+                        CameraKLogger.e("CameraK", "Analyzer: Failed to start analyzer: ${e.message}")
                         e.printStackTrace()
                     }
                 }
@@ -75,7 +76,7 @@ class AnalyzerPlugin(val coroutineScope: CoroutineScope) :
      * Detaches the plugin from the state holder and cleans up resources.
      */
     override fun onDetach() {
-        println("com.kashif.analyzerPlugin.AnalyzerPlugin detached")
+        CameraKLogger.d("CameraK", "com.kashif.analyzerPlugin.AnalyzerPlugin detached")
         stopAnalyzer()
         collectorJob?.cancel()
         collectorJob = null
