@@ -1,5 +1,7 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.utils.CameraKLogger
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -58,22 +60,12 @@ class CameraGrabber(
 
         job =
             coroutineScope.launch(Dispatchers.IO) {
-                var frameCount = 0
-                var lastFpsTime = System.currentTimeMillis()
-
                 try {
                     while (isActive) {
                         val frame = grabber?.grab()
                         if (frame?.image != null) {
                             converter.convert(frame)?.let { image ->
                                 frameFlow.tryEmit(image)
-
-                                frameCount++
-                                val currentTime = System.currentTimeMillis()
-                                if (currentTime - lastFpsTime >= 1000) {
-                                    frameCount = 0
-                                    lastFpsTime = currentTime
-                                }
                             }
                         }
 
@@ -107,7 +99,7 @@ class CameraGrabber(
         OperatingSystem.LINUX -> {
             // Prefer /dev/video0 but fall back to the first available readable device (#52, #53)
             val videoDevice = findBestVideoDevice()
-            println("CameraK: Using video device: $videoDevice")
+            CameraKLogger.d("CameraK", "Using video device: $videoDevice")
             FFmpegFrameGrabber(videoDevice)
         }
     }.apply {

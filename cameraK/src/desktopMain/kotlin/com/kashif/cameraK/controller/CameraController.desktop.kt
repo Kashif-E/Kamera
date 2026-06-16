@@ -1,5 +1,7 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.utils.CameraKLogger
+
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
@@ -221,7 +223,7 @@ actual class CameraController(
             // If there is a custom grabber, use it, else use the default camera grabber
             // Which attempts to use the default camera
             cameraGrabber = CameraGrabber(_frameFlow, {
-                System.err.println("CameraK: Camera error: ${it.message}")
+                CameraKLogger.e("CameraK", "CameraK: Camera error: ${it.message}")
                 it.printStackTrace()
             }, targetResolution).apply {
                 setHorizontalFlip(horizontalFlip)
@@ -306,14 +308,14 @@ actual class CameraController(
                                 val videoFrame = converter.convert(frame)
                                 recorder.record(videoFrame)
                             } catch (e: Exception) {
-                                System.err.println("CameraK recording frame error: ${e.message}")
+                                CameraKLogger.e("CameraK", "CameraK recording frame error: ${e.message}")
                             }
                         }
                     }
                     delay(33) // ~30fps
                 }
             } catch (e: Exception) {
-                System.err.println("CameraK recording loop error: ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK recording loop error: ${e.message}")
             }
         }
 
@@ -352,7 +354,7 @@ actual class CameraController(
                 frameRecorder?.stop()
                 frameRecorder?.release()
             } catch (e: Exception) {
-                System.err.println("CameraK: Error stopping recorder: ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK: Error stopping recorder: ${e.message}")
             }
             frameRecorder = null
         }

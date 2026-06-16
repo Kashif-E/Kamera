@@ -8,7 +8,7 @@ import android.graphics.Matrix
 import android.hardware.camera2.CameraCharacteristics
 import android.media.ExifInterface
 import android.os.Environment
-import android.util.Log
+import com.kashif.cameraK.utils.CameraKLogger
 import android.util.Size
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -111,7 +111,6 @@ actual class CameraController(
     private val imageProcessingExecutor = Executors.newFixedThreadPool(2)
 
     fun bindCamera(previewView: PreviewView, onCameraReady: () -> Unit = {}) {
-        Log.d("CameraK", "==> bindCamera() called for deviceType: $cameraDeviceType")
         this.previewView = previewView
 
         memoryManager.initialize(context)
@@ -121,7 +120,6 @@ actual class CameraController(
             try {
                 cameraProvider = cameraProviderFuture.get()
                 cameraProvider?.unbindAll()
-                Log.d("CameraK", "==> Unbind all existing cameras")
 
                 val resolutionSelector = createResolutionSelector()
 
@@ -133,7 +131,6 @@ actual class CameraController(
                     }
 
                 val cameraSelector = createCameraSelector()
-                Log.d("CameraK", "==> Camera selector created for: $cameraDeviceType")
 
                 configureCaptureUseCase(resolutionSelector)
                 configureVideoCaptureUseCase()
@@ -154,11 +151,10 @@ actual class CameraController(
                     cameraSelector,
                     useCaseGroup,
                 )
-                Log.d("CameraK", "==> Camera successfully bound with deviceType: $cameraDeviceType")
 
                 onCameraReady()
             } catch (exc: Exception) {
-                Log.e("CameraK", "==> Use case binding failed for $cameraDeviceType: ${exc.message}")
+                CameraKLogger.e("CameraK", "==> Use case binding failed for $cameraDeviceType: ${exc.message}")
                 exc.printStackTrace()
             }
         }, ContextCompat.getMainExecutor(context))
@@ -224,7 +220,7 @@ actual class CameraController(
                             false
                         }
                     }.ifEmpty {
-                        Log.w("CameraK", "Telephoto camera not available, using default")
+                        CameraKLogger.w("CameraK", "Telephoto camera not available, using default")
                         cameraInfos.take(1)
                     }
                 }
@@ -242,7 +238,7 @@ actual class CameraController(
                             false
                         }
                     }.ifEmpty {
-                        Log.w("CameraK", "Ultra-wide camera not available, using default")
+                        CameraKLogger.w("CameraK", "Ultra-wide camera not available, using default")
                         cameraInfos.take(1)
                     }
                 }
@@ -260,7 +256,7 @@ actual class CameraController(
                             false
                         }
                     }.ifEmpty {
-                        Log.w("CameraK", "Macro camera not available, using default")
+                        CameraKLogger.w("CameraK", "Macro camera not available, using default")
                         cameraInfos.take(1)
                     }
                 }
@@ -359,7 +355,7 @@ actual class CameraController(
     actual suspend fun takePicture(): ImageCaptureResult = suspendCancellableCoroutine { cont ->
         if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
             pendingCaptures.decrementAndGet()
-            Log.w("CameraK", "Burst queue full, dropping frame (${pendingCaptures.value} in progress)")
+            CameraKLogger.w("CameraK", "Burst queue full, dropping frame (${pendingCaptures.value} in progress)")
             cont.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
             return@suspendCancellableCoroutine
         }
@@ -382,7 +378,7 @@ actual class CameraController(
     actual suspend fun takePictureToFile(): ImageCaptureResult = suspendCancellableCoroutine { cont ->
         if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
             pendingCaptures.decrementAndGet()
-            Log.w("CameraK", "Burst queue full, dropping frame")
+            CameraKLogger.w("CameraK", "Burst queue full, dropping frame")
             cont.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
             return@suspendCancellableCoroutine
         }
@@ -427,7 +423,7 @@ actual class CameraController(
                 }
 
                 override fun onError(exc: ImageCaptureException) {
-                    Log.e("CameraK", "Image capture failed: ${exc.message}", exc)
+                    CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
                     pendingCaptures.decrementAndGet()
                     outputFile.delete() // Clean up failed capture file
                     continuation.resume(ImageCaptureResult.Error(exc))
@@ -472,11 +468,11 @@ actual class CameraController(
                             if (filePath != null) {
                                 continuation.resume(ImageCaptureResult.SuccessWithFile(filePath))
                             } else {
-                                Log.e("CameraK", "Failed to get file path from capture result")
+                                CameraKLogger.e("CameraK", "Failed to get file path from capture result")
                                 continuation.resume(ImageCaptureResult.Error(Exception("Failed to get file path")))
                             }
                         } else {
-                            Log.e("CameraK", "Capture result has no savedUri")
+                            CameraKLogger.e("CameraK", "Capture result has no savedUri")
                             continuation.resume(ImageCaptureResult.Error(Exception("No file URI returned")))
                         }
                         pendingCaptures.decrementAndGet()
@@ -490,7 +486,7 @@ actual class CameraController(
                                     imageCaptureListeners.forEach { it(byteArray) }
                                     continuation.resume(ImageCaptureResult.Success(byteArray))
                                 } else {
-                                    Log.e("CameraK", "Failed to convert image to ByteArray")
+                                    CameraKLogger.e("CameraK", "Failed to convert image to ByteArray")
                                     continuation.resume(
                                         ImageCaptureResult.Error(Exception("Failed to convert image to ByteArray.")),
                                     )
@@ -503,7 +499,7 @@ actual class CameraController(
                 }
 
                 override fun onError(exc: ImageCaptureException) {
-                    Log.e("CameraK", "Image capture failed: ${exc.message}", exc)
+                    CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
                     pendingCaptures.decrementAndGet()
                     continuation.resume(ImageCaptureResult.Error(exc))
                 }
@@ -619,7 +615,7 @@ actual class CameraController(
             }
         }
     } catch (e: Exception) {
-        Log.e("CameraK", "Error processing image output: ${e.message}", e)
+        CameraKLogger.e("CameraK", "Error processing image output: ${e.message}", e)
         null
     }
 
@@ -684,7 +680,7 @@ actual class CameraController(
         // CameraX doesn't support AUTO torch mode, treat it as ON
         val enableTorch = torchMode == TorchMode.ON || torchMode == TorchMode.AUTO
         if (torchMode == TorchMode.AUTO) {
-            Log.w("CameraK", "TorchMode.AUTO not natively supported, using ON")
+            CameraKLogger.w("CameraK", "TorchMode.AUTO not natively supported, using ON")
         }
         camera?.cameraControl?.enableTorch(enableTorch)
     }
@@ -694,7 +690,7 @@ actual class CameraController(
         // CameraX doesn't support AUTO torch mode, treat it as ON
         val enableTorch = mode == TorchMode.ON || mode == TorchMode.AUTO
         if (mode == TorchMode.AUTO) {
-            Log.w("CameraK", "TorchMode.AUTO not natively supported, using ON")
+            CameraKLogger.w("CameraK", "TorchMode.AUTO not natively supported, using ON")
         }
         camera?.cameraControl?.enableTorch(enableTorch)
     }
@@ -801,9 +797,8 @@ actual class CameraController(
                 ),
                 null,
             )
-            Log.d("CameraK", "MediaStore notified: ${file.absolutePath}")
         } catch (e: Exception) {
-            Log.e("CameraK", "Failed to notify MediaStore: ${e.message}")
+            CameraKLogger.e("CameraK", "Failed to notify MediaStore: ${e.message}")
         }
     }
 
@@ -840,7 +835,7 @@ actual class CameraController(
                 .build()
             videoCapture = VideoCapture.withOutput(recorder)
         } catch (e: Exception) {
-            Log.w("CameraK", "VideoCapture use case not supported: ${e.message}")
+            CameraKLogger.w("CameraK", "VideoCapture use case not supported: ${e.message}")
             videoCapture = null
         }
     }
@@ -938,9 +933,8 @@ actual class CameraController(
                 arrayOf("video/mp4"),
                 null,
             )
-            Log.d("CameraK", "MediaStore notified for video: ${file.absolutePath}")
         } catch (e: Exception) {
-            Log.e("CameraK", "Failed to notify MediaStore for video: ${e.message}")
+            CameraKLogger.e("CameraK", "Failed to notify MediaStore for video: ${e.message}")
         }
     }
 

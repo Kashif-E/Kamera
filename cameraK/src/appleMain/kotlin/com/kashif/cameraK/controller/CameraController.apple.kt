@@ -1,5 +1,7 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.utils.CameraKLogger
+
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -166,7 +168,7 @@ actual class CameraController(
             try {
                 customCameraController.setupPreviewLayer(view)
             } catch (e: Exception) {
-                platform.Foundation.NSLog("CameraK Error: setupPreviewLayer - ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK Error: setupPreviewLayer - ${e.message}")
             }
 
             try {
@@ -174,7 +176,7 @@ actual class CameraController(
                     customCameraController.captureSession?.addOutput(metadataOutput)
                 }
             } catch (e: Exception) {
-                platform.Foundation.NSLog("CameraK Error: metadata output - ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK Error: metadata output - ${e.message}")
             }
 
             // Add movie file output for video recording
@@ -185,7 +187,7 @@ actual class CameraController(
                     movieFileOutput = movieOutput
                 }
             } catch (e: Exception) {
-                platform.Foundation.NSLog("CameraK Error: movie output - ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK Error: movie output - ${e.message}")
             }
 
             startSession()
@@ -194,7 +196,7 @@ actual class CameraController(
         try {
             customCameraController.setupSession(cameraDeviceType)
         } catch (e: Exception) {
-            platform.Foundation.NSLog("CameraK Error: setupSession - ${e.message}")
+            CameraKLogger.e("CameraK", "CameraK Error: setupSession - ${e.message}")
             return
         }
 
@@ -205,7 +207,7 @@ actual class CameraController(
         }
 
         customCameraController.onError = { error ->
-            platform.Foundation.NSLog("CameraK Error: $error")
+            CameraKLogger.e("CameraK", "CameraK Error: $error")
         }
     }
 
@@ -235,7 +237,7 @@ actual class CameraController(
                         memoryManager.recycleBuffer(buffer)
                     }
                 } catch (e: Exception) {
-                    platform.Foundation.NSLog("CameraK: Error processing image data: ${e.message ?: "Unknown error"}")
+                    CameraKLogger.e("CameraK", "CameraK: Error processing image data: ${e.message ?: "Unknown error"}")
                 }
             }
         }
@@ -277,7 +279,7 @@ actual class CameraController(
         // Atomic counter rejection pattern
         if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
             pendingCaptures.decrementAndGet()
-            platform.Foundation.NSLog(
+            CameraKLogger.e("CameraK", 
                 "CameraK: Burst queue full, dropping frame (${pendingCaptures.value} in progress)",
             )
             continuation.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
@@ -351,7 +353,7 @@ actual class CameraController(
                                             ImageCaptureResult.Error(Exception("Failed to write image to file"))
                                         }
                                     } catch (e: Exception) {
-                                        platform.Foundation.NSLog(
+                                        CameraKLogger.e("CameraK", 
                                             "CameraK: Error in file path mode: ${e.message ?: "Unknown error"}",
                                         )
                                         ImageCaptureResult.Error(e)
@@ -426,7 +428,7 @@ actual class CameraController(
     actual suspend fun takePictureToFile(): ImageCaptureResult = suspendCancellableCoroutine { continuation ->
         if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
             pendingCaptures.decrementAndGet()
-            platform.Foundation.NSLog("CameraK: Burst queue full, dropping frame")
+            CameraKLogger.e("CameraK", "CameraK: Burst queue full, dropping frame")
             continuation.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
             return@suspendCancellableCoroutine
         }
@@ -484,7 +486,7 @@ actual class CameraController(
                                         ImageCaptureResult.Error(Exception("Failed to write image to file"))
                                     }
                                 } catch (e: Exception) {
-                                    platform.Foundation.NSLog("CameraK: File capture error: ${e.message ?: "Unknown"}")
+                                    CameraKLogger.e("CameraK", "CameraK: File capture error: ${e.message ?: "Unknown"}")
                                     ImageCaptureResult.Error(e)
                                 }
 
@@ -808,7 +810,7 @@ actual class CameraController(
             completionHandler = { success, error ->
                 if (!success || error != null) {
                     saveError = error?.localizedDescription ?: "Failed to save to Photos"
-                    platform.Foundation.NSLog("CameraK: Failed to save to Photos: ${saveError ?: "Unknown error"}")
+                    CameraKLogger.e("CameraK", "CameraK: Failed to save to Photos: ${saveError ?: "Unknown error"}")
                 }
                 platform.darwin.dispatch_semaphore_signal(semaphore)
             },
@@ -846,7 +848,7 @@ actual class CameraController(
             completionHandler = { success, error ->
                 if (!success || error != null) {
                     saveError = error?.localizedDescription ?: "Failed to save video to Photos"
-                    platform.Foundation.NSLog(
+                    CameraKLogger.e("CameraK", 
                         "CameraK: Failed to save video to Photos: ${saveError}",
                     )
                 }

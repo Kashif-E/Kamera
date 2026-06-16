@@ -1,5 +1,7 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.utils.CameraKLogger
+
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -271,7 +273,7 @@ class CustomCameraController(
                 try {
                     change()
                 } catch (e: Exception) {
-                    NSLog("CameraK: Error processing configuration change: ${e.message}")
+                    CameraKLogger.e("CameraK", "CameraK: Error processing configuration change: ${e.message}")
                 }
             }
 
@@ -376,7 +378,7 @@ class CustomCameraController(
             flashMode = mode
         } else {
             // Device doesn't support flash (e.g., iPad) - use OFF
-            platform.Foundation.NSLog("CameraK: Flash mode not supported on this device, using OFF")
+            CameraKLogger.e("CameraK", "CameraK: Flash mode not supported on this device, using OFF")
             flashMode = AVCaptureFlashModeOff
         }
     }
