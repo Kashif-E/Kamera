@@ -203,7 +203,7 @@ sealed class CameraKState {
 |----------|-------------|---------|
 | Android | API 21+ | CameraX |
 | iOS | iOS 13.0+ | AVFoundation |
-| Desktop | JDK 11+ | JavaCV |
+| Desktop | JDK 17+ | JavaCV |
 
 ## Configuration
 

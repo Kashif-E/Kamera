@@ -1,0 +1,10 @@
+platform :ios, '16.2'
+
+target 'iosApp' do
+  use_frameworks!
+  # kflite (TensorFlow Lite) needs these linked into the app — provides
+  # TFLInterpreter / TFLCoreMLDelegate / TFLMetalDelegate symbols.
+  pod 'TensorFlowLiteObjC'
+  pod 'TensorFlowLiteObjC/Metal'
+  pod 'TensorFlowLiteObjC/CoreML'
+end

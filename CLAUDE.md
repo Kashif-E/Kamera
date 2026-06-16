@@ -16,7 +16,11 @@ CameraK is a Kotlin Multiplatform (KMP) camera library for Compose Multiplatform
 ./gradlew Sample:assembleDebug           # Build Android sample APK
 ./gradlew Sample:run                     # Run desktop sample app
 ./gradlew dokkaGeneratePublicationHtml   # Generate API docs
+./gradlew cameraK:desktopTest            # Run JVM tests for a module
+./gradlew cameraK:desktopTest --tests "com.kashif.cameraK.video.VideoTypesTest"  # Single test class
 ```
+
+Tests live in each module's `commonTest` (e.g. `cameraK/src/commonTest`). They run per-target — `desktopTest` is the fastest loop; `iosSimulatorArm64Test` / `testDebugUnitTest` cover the other targets.
 
 ## Module Structure
 
@@ -51,7 +55,7 @@ All library modules target: `androidTarget`, `jvm("desktop")`, `iosX64()`, `iosA
 
 - Package: `com.kashif.cameraK` (core), `com.kashif.*Plugin` or `com.kashif.*plugin` (plugins)
 - Formatting: Spotless + ktlint 1.5.0 with `.editorconfig`. Composable function naming is exempt from ktlint rules.
-- JVM toolchain: Java 11
+- JVM toolchain: Java 17
 - Android: minSdk 21, compileSdk 36
 - iOS: deployment target 13.0, static XCFrameworks
 - Compose stability: `@Stable` and `@Immutable` annotations used for optimization

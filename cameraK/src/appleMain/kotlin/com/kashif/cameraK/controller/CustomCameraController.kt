@@ -341,7 +341,9 @@ class CustomCameraController(
         val session = captureSession ?: return
 
         val newPreviewLayer = AVCaptureVideoPreviewLayer(session = session).apply {
-            videoGravity = AVLayerVideoGravityResizeAspectFill
+            // ResizeAspect (letterbox) so the preview shows the exact frame that gets captured — WYSIWYG (#119).
+            // ResizeAspectFill would crop the preview to fill the view, mismatching the full-frame captured photo.
+            videoGravity = AVLayerVideoGravityResizeAspect
             setFrame(view.bounds)
             connection?.videoOrientation = currentVideoOrientation()
         }

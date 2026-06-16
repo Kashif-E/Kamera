@@ -14,7 +14,7 @@ group = "com.kashif.camera_compose"
 version = "0.4"
 
 kotlin {
-    jvmToolchain(11)
+    jvmToolchain(17)
     androidTarget {
         publishLibraryVariants("release", "debug")
     }

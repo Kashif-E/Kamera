@@ -63,7 +63,14 @@ class ImagePanel : JPanel(true) {
                     RenderingHints.VALUE_INTERPOLATION_BILINEAR,
                 )
                 volatileG.composite = AlphaComposite.SrcOver
-                volatileG.drawImage(currentImage, 0, 0, width, height, null)
+                // Scale-to-fit preserving aspect ratio (letterbox), so the preview matches the
+                // captured frame instead of stretching to fill the panel (#119).
+                currentImage?.let { img ->
+                    val scale = minOf(width.toDouble() / img.width, height.toDouble() / img.height)
+                    val w = (img.width * scale).toInt()
+                    val h = (img.height * scale).toInt()
+                    volatileG.drawImage(img, (width - w) / 2, (height - h) / 2, w, h, null)
+                }
                 volatileG.dispose()
             }
 
