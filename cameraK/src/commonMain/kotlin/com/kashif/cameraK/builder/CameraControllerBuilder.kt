@@ -11,7 +11,7 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 
 /**
- * Builder interface for constructing a [CameraController] with customizable configurations and plugins.
+ * Builder interface for constructing a [CameraController] with customizable configuration.
  */
 interface CameraControllerBuilder {
     fun setFlashMode(flashMode: FlashMode): CameraControllerBuilder

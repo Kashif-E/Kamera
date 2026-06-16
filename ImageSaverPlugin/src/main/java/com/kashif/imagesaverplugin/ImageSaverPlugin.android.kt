@@ -72,7 +72,7 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
             CameraKLogger.d("CameraK", "Image saved successfully at URI: $imageUri")
             imageUri.toString()
         } catch (e: IOException) {
-            CameraKLogger.e("CameraK", "error", e)
+            CameraKLogger.e("CameraK", "Unhandled exception", e)
             CameraKLogger.e("CameraK", "Failed to save image: ${e.message}")
             null
         }
@@ -108,7 +108,7 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                 }
             }
         } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "error", e)
+            CameraKLogger.e("CameraK", "Unhandled exception", e)
             null
         }
     }

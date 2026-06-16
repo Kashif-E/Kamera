@@ -148,7 +148,7 @@ actual class CameraController(
                 onCameraReady()
             } catch (exc: Exception) {
                 CameraKLogger.e("CameraK", "==> Use case binding failed for $cameraDeviceType: ${exc.message}")
-                CameraKLogger.e("CameraK", "error", exc)
+                CameraKLogger.e("CameraK", "Unhandled exception", exc)
             }
         }, ContextCompat.getMainExecutor(context))
     }
@@ -384,6 +384,15 @@ actual class CameraController(
 
                     // Notify MediaStore so image appears in Gallery
                     notifyMediaStore(outputFile)
+
+                    // Notify capture listeners (e.g. ImageSaverPlugin auto-save) off the main
+                    // thread, reading the just-saved file only when someone is listening.
+                    if (imageCaptureListeners.isNotEmpty()) {
+                        imageProcessingExecutor.execute {
+                            val bytes = outputFile.readBytes()
+                            imageCaptureListeners.forEach { it(bytes) }
+                        }
+                    }
 
                     continuation.resume(ImageCaptureResult.SuccessWithFile(outputFile.absolutePath))
                 }

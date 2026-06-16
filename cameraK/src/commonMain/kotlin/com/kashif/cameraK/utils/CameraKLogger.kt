@@ -1,5 +1,7 @@
 package com.kashif.cameraK.utils
 
+import kotlin.concurrent.Volatile
+
 /**
  * Lightweight, opt-in logger for CameraK internals.
  *
@@ -20,9 +22,11 @@ object CameraKLogger {
     enum class Level { DEBUG, WARN, ERROR }
 
     /** Master switch. When false (default) nothing is logged. */
+    @Volatile
     var enabled: Boolean = false
 
     /** Optional custom sink. When null, [enabled] logs go to the platform console. */
+    @Volatile
     var sink: ((level: Level, tag: String, message: String, throwable: Throwable?) -> Unit)? = null
 
     fun d(tag: String, message: String) = log(Level.DEBUG, tag, message, null)

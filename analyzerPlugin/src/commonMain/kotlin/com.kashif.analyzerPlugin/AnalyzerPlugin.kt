@@ -56,7 +56,7 @@ class AnalyzerPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
                         startAnalyzer()
                     } catch (e: Exception) {
                         CameraKLogger.e("CameraK", "Analyzer: Failed to start analyzer: ${e.message}")
-                        CameraKLogger.e("CameraK", "error", e)
+                        CameraKLogger.e("CameraK", "Unhandled exception", e)
                     }
                 }
         }

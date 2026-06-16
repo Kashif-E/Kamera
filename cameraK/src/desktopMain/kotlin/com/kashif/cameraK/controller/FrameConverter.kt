@@ -54,7 +54,7 @@ class FrameConverter {
             graphics.dispose()
             cachedImage
         } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "error", e)
+            CameraKLogger.e("CameraK", "Unhandled exception", e)
             // On error return the original frame
             converter.convert(frame)
         }

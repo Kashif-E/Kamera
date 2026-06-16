@@ -37,7 +37,7 @@ data class ImageSaverConfig(
 /**
  * Abstract plugin for saving captured images to device storage.
  *
- * Supports both legacy [CameraPlugin] and new [CameraKPlugin] interfaces.
+ * Implements [CameraKPlugin] for Compose-first state management.
  * Provides automatic and manual image saving with configurable naming and directory options.
  *
  * @param config Configuration settings for image saving behavior.

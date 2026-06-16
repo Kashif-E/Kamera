@@ -80,7 +80,7 @@ actual class CameraController(
                 listener(outputStream.toByteArray())
                 ImageCaptureResult.Success(outputStream.toByteArray())
             } catch (e: Exception) {
-                CameraKLogger.e("CameraK", "error", e)
+                CameraKLogger.e("CameraK", "Unhandled exception", e)
                 ImageCaptureResult.Error(e)
             } finally {
                 outputStream.close()
@@ -207,7 +207,7 @@ actual class CameraController(
             // Which attempts to use the default camera
             cameraGrabber = CameraGrabber(_frameFlow, {
                 CameraKLogger.e("CameraK", "CameraK: Camera error: ${it.message}")
-                CameraKLogger.e("CameraK", "error", it)
+                CameraKLogger.e("CameraK", "Unhandled exception", it)
             }, targetResolution).apply {
                 setHorizontalFlip(horizontalFlip)
                 start(this@launch, customGrabber)
