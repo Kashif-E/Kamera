@@ -414,7 +414,7 @@ actual class CameraController(
         }
 
         // Trigger capture with constant quality (95)
-        customCameraController.captureImage(0.95)
+        customCameraController.captureImage()
     }
 
     /**
@@ -522,7 +522,7 @@ actual class CameraController(
             captureHandler.process(null, "Capture cancelled")
         }
 
-        customCameraController.captureImage(0.95)
+        customCameraController.captureImage()
     }
 
     actual fun toggleFlashMode() {
@@ -661,10 +661,11 @@ actual class CameraController(
         val delegate = VideoRecordingDelegate()
         videoRecordingDelegate = delegate
 
-        // Set video orientation on the movie file output connection
+        // Set video orientation on the movie file output connection. Use the effective
+        // orientation so a locked orientation (setTargetOrientation) is honored for recording.
         output.connectionWithMediaType(platform.AVFoundation.AVMediaTypeVideo)?.let { connection ->
             if (connection.isVideoOrientationSupported()) {
-                connection.videoOrientation = currentVideoOrientation()
+                connection.videoOrientation = effectiveVideoOrientation()
             }
         }
 

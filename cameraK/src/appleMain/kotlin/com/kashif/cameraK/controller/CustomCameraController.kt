@@ -447,10 +447,9 @@ class CustomCameraController(
     }
 
     /**
-     * Capture an image with specified quality
-     * @param quality Image quality factor (0.0 to 1.0)
+     * Capture an image. Output quality is governed by the configured [qualityPrioritization].
      */
-    fun captureImage(quality: Double = 0.9) {
+    fun captureImage() {
         if (photoOutput == null || captureSession?.isRunning() != true) {
             onError?.invoke(CameraException.ConfigurationError("Camera not ready for capture"))
             return
@@ -509,11 +508,6 @@ class CustomCameraController(
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
             photoOutput?.capturePhotoWithSettings(settings, delegate = this)
         }
-    }
-
-    fun captureImage() {
-        val quality = MemoryManager.getOptimalImageQuality()
-        captureImage(quality)
     }
 
     /**
