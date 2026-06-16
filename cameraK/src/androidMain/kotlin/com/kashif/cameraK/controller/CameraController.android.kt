@@ -2,11 +2,7 @@ package com.kashif.cameraK.controller
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
 import android.hardware.camera2.CameraCharacteristics
-import android.media.ExifInterface
 import android.os.Environment
 import com.kashif.cameraK.utils.CameraKLogger
 import android.util.Size
@@ -51,7 +47,6 @@ import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.InvalidConfigurationException
 import com.kashif.cameraK.utils.MemoryManager
-import com.kashif.cameraK.utils.compressToByteArray
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
@@ -155,7 +150,7 @@ actual class CameraController(
                 onCameraReady()
             } catch (exc: Exception) {
                 CameraKLogger.e("CameraK", "==> Use case binding failed for $cameraDeviceType: ${exc.message}")
-                exc.printStackTrace()
+                CameraKLogger.e("CameraK", "error", exc)
             }
         }, ContextCompat.getMainExecutor(context))
     }
@@ -347,34 +342,6 @@ actual class CameraController(
         }
     }
 
-    @Deprecated(
-        message = "Use takePictureToFile() instead for better performance",
-        replaceWith = ReplaceWith("takePictureToFile()"),
-        level = DeprecationLevel.WARNING,
-    )
-    actual suspend fun takePicture(): ImageCaptureResult = suspendCancellableCoroutine { cont ->
-        if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
-            pendingCaptures.decrementAndGet()
-            CameraKLogger.w("CameraK", "Burst queue full, dropping frame (${pendingCaptures.value} in progress)")
-            cont.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
-            return@suspendCancellableCoroutine
-        }
-
-        // Update memory status before capture
-        memoryManager.updateMemoryStatus()
-
-        // Perform capture with constant quality (95 for JPEG)
-        performCapture(cont, quality = 95)
-
-        cont.invokeOnCancellation {
-            pendingCaptures.decrementAndGet()
-        }
-    }
-
-    /**
-     * Fast capture method that returns file path directly without ByteArray processing.
-     * Significantly faster than takePicture() - skips decode/encode cycles.
-     */
     actual suspend fun takePictureToFile(): ImageCaptureResult = suspendCancellableCoroutine { cont ->
         if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
             pendingCaptures.decrementAndGet()
@@ -432,217 +399,6 @@ actual class CameraController(
         ) ?: run {
             pendingCaptures.decrementAndGet()
             continuation.resume(ImageCaptureResult.Error(Exception("ImageCapture use case is not initialized.")))
-        }
-    }
-
-    /**
-     * Perform the actual image capture with constant quality
-     */
-    private fun performCapture(continuation: CancellableContinuation<ImageCaptureResult>, quality: Int) {
-        val outputOptions =
-            ImageCapture.OutputFileOptions.Builder(createTempFile()).setMetadata(captureMetadata()).build()
-
-        imageCapture?.takePicture(
-            outputOptions,
-            ContextCompat.getMainExecutor(context),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    if (returnFilePath) {
-                        // File path mode: Return actual file path from savedUri
-                        val fileUri = output.savedUri
-                        if (fileUri != null) {
-                            // Convert content:// URI to actual file path
-                            val filePath = if (fileUri.scheme == "file") {
-                                fileUri.path
-                            } else {
-                                // For content:// URIs, get the real path
-                                val projection = arrayOf(android.provider.MediaStore.Images.Media.DATA)
-                                context.contentResolver.query(fileUri, projection, null, null, null)?.use { cursor ->
-                                    val columnIndex = cursor.getColumnIndexOrThrow(
-                                        android.provider.MediaStore.Images.Media.DATA,
-                                    )
-                                    if (cursor.moveToFirst()) cursor.getString(columnIndex) else null
-                                } ?: fileUri.path
-                            }
-
-                            if (filePath != null) {
-                                continuation.resume(ImageCaptureResult.SuccessWithFile(filePath))
-                            } else {
-                                CameraKLogger.e("CameraK", "Failed to get file path from capture result")
-                                continuation.resume(ImageCaptureResult.Error(Exception("Failed to get file path")))
-                            }
-                        } else {
-                            CameraKLogger.e("CameraK", "Capture result has no savedUri")
-                            continuation.resume(ImageCaptureResult.Error(Exception("No file URI returned")))
-                        }
-                        pendingCaptures.decrementAndGet()
-                    } else {
-                        // ByteArray mode: Process and return ByteArray
-                        imageProcessingExecutor.execute {
-                            try {
-                                val byteArray = processImageOutput(output, quality)
-
-                                if (byteArray != null) {
-                                    imageCaptureListeners.forEach { it(byteArray) }
-                                    continuation.resume(ImageCaptureResult.Success(byteArray))
-                                } else {
-                                    CameraKLogger.e("CameraK", "Failed to convert image to ByteArray")
-                                    continuation.resume(
-                                        ImageCaptureResult.Error(Exception("Failed to convert image to ByteArray.")),
-                                    )
-                                }
-                            } finally {
-                                pendingCaptures.decrementAndGet()
-                            }
-                        }
-                    }
-                }
-
-                override fun onError(exc: ImageCaptureException) {
-                    CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
-                    pendingCaptures.decrementAndGet()
-                    continuation.resume(ImageCaptureResult.Error(exc))
-                }
-            },
-        ) ?: run {
-            pendingCaptures.decrementAndGet()
-            continuation.resume(ImageCaptureResult.Error(Exception("ImageCapture use case is not initialized.")))
-        }
-    }
-
-    /**
-     * Process the saved image output with optimized approach.
-     *
-     * CameraX should apply targetRotation to the output file, but some devices (Samsung)
-     * strip EXIF data or apply rotation inconsistently. We verify EXIF orientation first.
-     *
-     * Fast path: Direct file read when EXIF orientation is correct (NORMAL)
-     * Slow path: Process when format conversion, memory pressure, or rotation needed
-     */
-    private fun processImageOutput(output: ImageCapture.OutputFileResults, quality: Int): ByteArray? = try {
-        output.savedUri?.let { uri ->
-            val tempFile = createTempFile("temp_image", ".jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                tempFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
-
-            try {
-                // Check EXIF orientation - Samsung devices may have incorrect orientation
-                val exif = ExifInterface(tempFile.absolutePath)
-                val orientation = exif.getAttributeInt(
-                    ExifInterface.TAG_ORIENTATION,
-                    ExifInterface.ORIENTATION_NORMAL,
-                )
-
-                val needsRotation = orientation != ExifInterface.ORIENTATION_NORMAL &&
-                    orientation != ExifInterface.ORIENTATION_UNDEFINED
-                val needsProcessing = imageFormat == ImageFormat.PNG ||
-                    memoryManager.isUnderMemoryPressure() ||
-                    needsRotation
-
-                if (!needsProcessing) {
-                    // Fast path: EXIF orientation is correct, read file bytes directly
-                    // This avoids decode→rotate→re-encode cycle (saves 2-3 seconds and quality loss)
-                    tempFile.readBytes().also { tempFile.delete() }
-                } else {
-                    // Slow path: Need format conversion, downsampling, or rotation fix
-                    val options = BitmapFactory.Options().apply {
-                        if (memoryManager.isUnderMemoryPressure()) {
-                            inJustDecodeBounds = true
-                            BitmapFactory.decodeFile(tempFile.absolutePath, this)
-                            inSampleSize = calculateSampleSize(outWidth, outHeight)
-                            inJustDecodeBounds = false
-                        }
-                    }
-
-                    val originalBitmap = BitmapFactory.decodeFile(tempFile.absolutePath, options)
-                    tempFile.delete()
-
-                    // Apply the full EXIF orientation transform. Decoding drops EXIF, so any
-                    // rotation (Samsung fix) AND any mirror flag (front-camera mirroring, #112)
-                    // must be baked into the pixels here or it would be silently lost.
-                    val transformedBitmap = if (originalBitmap != null && needsRotation) {
-                        val matrix = Matrix().apply {
-                            when (orientation) {
-                                ExifInterface.ORIENTATION_ROTATE_90 -> postRotate(90f)
-                                ExifInterface.ORIENTATION_ROTATE_180 -> postRotate(180f)
-                                ExifInterface.ORIENTATION_ROTATE_270 -> postRotate(270f)
-                                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> postScale(-1f, 1f)
-                                ExifInterface.ORIENTATION_FLIP_VERTICAL -> postScale(1f, -1f)
-                                ExifInterface.ORIENTATION_TRANSPOSE -> {
-                                    postRotate(90f)
-                                    postScale(-1f, 1f)
-                                }
-                                ExifInterface.ORIENTATION_TRANSVERSE -> {
-                                    postRotate(270f)
-                                    postScale(-1f, 1f)
-                                }
-                            }
-                        }
-
-                        if (!matrix.isIdentity) {
-                            Bitmap.createBitmap(
-                                originalBitmap,
-                                0,
-                                0,
-                                originalBitmap.width,
-                                originalBitmap.height,
-                                matrix,
-                                true,
-                            ).also { originalBitmap.recycle() }
-                        } else {
-                            originalBitmap
-                        }
-                    } else {
-                        originalBitmap
-                    }
-
-                    // Convert format and compress
-                    transformedBitmap?.compressToByteArray(
-                        format = when (imageFormat) {
-                            ImageFormat.JPEG -> Bitmap.CompressFormat.JPEG
-                            ImageFormat.PNG -> Bitmap.CompressFormat.PNG
-                        },
-                        quality = quality,
-                        recycleInput = true,
-                    )
-                }
-            } catch (e: Exception) {
-                tempFile.delete()
-                throw e
-            }
-        }
-    } catch (e: Exception) {
-        CameraKLogger.e("CameraK", "Error processing image output: ${e.message}", e)
-        null
-    }
-
-    /**
-     * Calculate appropriate sample size for bitmap decoding based on memory conditions
-     */
-    private fun calculateSampleSize(width: Int, height: Int): Int = when {
-        memoryManager.isUnderMemoryPressure() -> {
-            // Under memory pressure: downsample to ~2MP
-            var sampleSize = 1
-            val totalPixels = width * height
-            val targetPixels = 2_000_000
-
-            while ((totalPixels / (sampleSize * sampleSize)) > targetPixels) {
-                sampleSize *= 2
-            }
-            sampleSize
-        }
-
-        pendingCaptures.value > 1 -> {
-            // Multiple captures pending: downsample 2x for faster processing
-            2
-        }
-
-        else -> {
-            // Normal capture: full resolution
-            1
         }
     }
 

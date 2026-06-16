@@ -69,20 +69,6 @@ actual class CameraController(
         // default no-op listener
     }
 
-    /**
-     * Captures an image.
-     *
-     * @return The result of the image capture operation.
-     */
-    @Deprecated(
-        message = "Use takePictureToFile() instead for better performance",
-        replaceWith = ReplaceWith("takePictureToFile()"),
-        level = DeprecationLevel.WARNING,
-    )
-    actual suspend fun takePicture(): ImageCaptureResult {
-        TODO("Not yet implemented")
-    }
-
     actual suspend fun takePictureToFile(): ImageCaptureResult {
         return withContext(Dispatchers.IO) {
             val currentImage = cameraGrabber?.grabCurrentFrame()
@@ -97,7 +83,7 @@ actual class CameraController(
                 listener(outputStream.toByteArray())
                 ImageCaptureResult.Success(outputStream.toByteArray())
             } catch (e: Exception) {
-                e.printStackTrace()
+                CameraKLogger.e("CameraK", "error", e)
                 ImageCaptureResult.Error(e)
             } finally {
                 outputStream.close()
@@ -224,7 +210,7 @@ actual class CameraController(
             // Which attempts to use the default camera
             cameraGrabber = CameraGrabber(_frameFlow, {
                 CameraKLogger.e("CameraK", "CameraK: Camera error: ${it.message}")
-                it.printStackTrace()
+                CameraKLogger.e("CameraK", "error", it)
             }, targetResolution).apply {
                 setHorizontalFlip(horizontalFlip)
                 start(this@launch, customGrabber)

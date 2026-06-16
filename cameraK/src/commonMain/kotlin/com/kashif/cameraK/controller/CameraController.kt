@@ -17,26 +17,7 @@ import com.kashif.cameraK.video.VideoConfiguration
 expect class CameraController {
 
     /**
-     * Captures an image and returns it as a ByteArray.
-     *
-     * @return The result of the image capture operation with ByteArray.
-     * @deprecated Use takePictureToFile() for better performance. This method processes images
-     *             through decode/encode cycles which adds 2-3 seconds overhead. Will be removed in v2.0.
-     */
-    @Deprecated(
-        message = "Use takePictureToFile() instead for better performance",
-        replaceWith = ReplaceWith("takePictureToFile()"),
-        level = DeprecationLevel.WARNING,
-    )
-    suspend fun takePicture(): ImageCaptureResult
-
-    /**
      * Captures an image and saves it directly to a file.
-     *
-     * This method is significantly faster than takePicture() as it:
-     * - Saves directly to disk without ByteArray conversion
-     * - Skips decode/encode cycles (2-3 seconds faster)
-     * - Avoids memory overhead from ByteArray processing
      *
      * @return ImageCaptureResult.SuccessWithFile containing the file path, or an error result
      */

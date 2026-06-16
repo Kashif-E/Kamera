@@ -1,4 +1,5 @@
 package com.kashif.cameraK.controller
+import com.kashif.cameraK.utils.CameraKLogger
 
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.Java2DFrameConverter
@@ -54,7 +55,7 @@ class FrameConverter {
             graphics.dispose()
             cachedImage
         } catch (e: Exception) {
-            e.printStackTrace()
+            CameraKLogger.e("CameraK", "error", e)
             // On error return the original frame
             converter.convert(frame)
         }

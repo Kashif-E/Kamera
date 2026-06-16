@@ -91,7 +91,7 @@ class OcrPlugin(val coroutineScope: CoroutineScope) :
                             startRecognition()
                         } catch (e: Exception) {
                             CameraKLogger.e("CameraK", "OcrPlugin: Failed to start recognition: ${e.message}")
-                            e.printStackTrace()
+                            CameraKLogger.e("CameraK", "error", e)
                         }
                     }
             }
