@@ -73,7 +73,6 @@ actual class CameraController(
     internal var qualityPriority: QualityPrioritization,
     internal var directory: Directory,
     internal var cameraDeviceType: CameraDeviceType,
-    internal var returnFilePath: Boolean,
     internal var aspectRatio: AspectRatio,
     internal var targetResolution: Pair<Int, Int>? = null,
     internal var mirrorFrontCamera: Boolean = false,

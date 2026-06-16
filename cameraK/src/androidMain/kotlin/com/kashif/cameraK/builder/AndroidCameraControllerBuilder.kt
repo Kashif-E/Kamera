@@ -29,7 +29,6 @@ class AndroidCameraControllerBuilder(private val context: Context, private val l
     private var torchMode: TorchMode = TorchMode.AUTO
     private var qualityPriority: QualityPrioritization = QualityPrioritization.NONE
     private var cameraDeviceType: CameraDeviceType = CameraDeviceType.DEFAULT
-    private var returnFilePath: Boolean = false
     private var aspectRatio: AspectRatio = AspectRatio.RATIO_4_3
     private var targetResolution: Pair<Int, Int>? = null
     private var mirrorFrontCamera: Boolean = false
@@ -74,11 +73,6 @@ class AndroidCameraControllerBuilder(private val context: Context, private val l
         return this
     }
 
-    override fun setReturnFilePath(returnFilePath: Boolean): CameraControllerBuilder {
-        this.returnFilePath = returnFilePath
-        return this
-    }
-
     override fun setAspectRatio(aspectRatio: AspectRatio): CameraControllerBuilder {
         this.aspectRatio = aspectRatio
         return this
@@ -113,7 +107,6 @@ class AndroidCameraControllerBuilder(private val context: Context, private val l
             torchMode = torchMode,
             qualityPriority = qualityPriority,
             cameraDeviceType = cameraDeviceType,
-            returnFilePath = returnFilePath,
             aspectRatio = aspectRatio,
             targetResolution = targetResolution,
             mirrorFrontCamera = mirrorFrontCamera,

@@ -81,14 +81,6 @@ class DesktopCameraControllerBuilder : CameraControllerBuilder {
         return this
     }
 
-    /**
-     * Desktop does not support file path return; always returns ByteArray.
-     *
-     * @param returnFilePath Ignored on desktop platform.
-     * @return This builder instance for chaining.
-     */
-    override fun setReturnFilePath(returnFilePath: Boolean): CameraControllerBuilder = this
-
     override fun setAspectRatio(aspectRatio: AspectRatio): CameraControllerBuilder = this
 
     override fun setDirectory(directory: Directory): CameraControllerBuilder {

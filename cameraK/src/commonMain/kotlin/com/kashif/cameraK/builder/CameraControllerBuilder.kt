@@ -49,17 +49,6 @@ interface CameraControllerBuilder {
     fun setQualityPrioritization(prioritization: QualityPrioritization): CameraControllerBuilder
 
     /**
-     * Configure whether takePicture() should return file path or ByteArray.
-     *
-     * When true: Returns ImageCaptureResult.SuccessWithFile (fastest - no processing)
-     * When false: Returns ImageCaptureResult.Success with ByteArray (default)
-     *
-     * Note: File path option skips all processing for maximum performance.
-     * The file will be in the configured directory.
-     */
-    fun setReturnFilePath(returnFilePath: Boolean): CameraControllerBuilder
-
-    /**
      * Sets the aspect ratio for preview and capture.
      * Supported values map to platform defaults (16:9, 4:3). 9:16 uses 16:9 with rotation; 1:1 falls back to closest available.
      */

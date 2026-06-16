@@ -23,7 +23,6 @@ class IOSCameraControllerBuilder : CameraControllerBuilder {
     private var directory: Directory? = null
     private var qualityPriority: QualityPrioritization = QualityPrioritization.NONE
     private var cameraDeviceType: CameraDeviceType = CameraDeviceType.DEFAULT
-    private var returnFilePath: Boolean = false
     private var aspectRatio: AspectRatio = AspectRatio.RATIO_4_3
     private var targetResolution: Pair<Int, Int>? = null
     private var mirrorFrontCamera: Boolean = false
@@ -55,11 +54,6 @@ class IOSCameraControllerBuilder : CameraControllerBuilder {
 
     override fun setQualityPrioritization(prioritization: QualityPrioritization): CameraControllerBuilder {
         this.qualityPriority = prioritization
-        return this
-    }
-
-    override fun setReturnFilePath(returnFilePath: Boolean): CameraControllerBuilder {
-        this.returnFilePath = returnFilePath
         return this
     }
 
@@ -108,7 +102,6 @@ class IOSCameraControllerBuilder : CameraControllerBuilder {
             directory = dir,
             qualityPriority = qualityPriority,
             cameraDeviceType = cameraDeviceType,
-            returnFilePath = returnFilePath,
             aspectRatio = aspectRatio,
             targetResolution = targetResolution,
             mirrorFrontCamera = mirrorFrontCamera,

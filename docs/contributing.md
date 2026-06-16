@@ -132,10 +132,10 @@ Follow [Kotlin coding conventions](https://kotlinlang.org/docs/coding-convention
 /**
  * Captures an image and saves it directly to a file.
  *
- * This method is significantly faster than takePicture() as it:
- * - Saves directly to disk without ByteArray conversion
- * - Skips decode/encode cycles (2-3 seconds faster)
- * - Avoids memory overhead from ByteArray processing
+ * This method saves directly to disk, which:
+ * - Avoids ByteArray conversion
+ * - Skips decode/encode cycles
+ * - Avoids memory overhead from in-memory image processing
  *
  * @return ImageCaptureResult.SuccessWithFile containing the file path, or an error result
  *
@@ -293,11 +293,11 @@ Avoid breaking changes when possible. If necessary:
 
 ```kotlin
 @Deprecated(
-    message = "Use takePictureToFile() instead",
-    replaceWith = ReplaceWith("takePictureToFile()"),
+    message = "Use newMethod() instead",
+    replaceWith = ReplaceWith("newMethod()"),
     level = DeprecationLevel.WARNING  // v1.x
 )
-suspend fun takePicture(): ImageCaptureResult
+fun oldMethod()
 ```
 
 ## Documentation Changes
