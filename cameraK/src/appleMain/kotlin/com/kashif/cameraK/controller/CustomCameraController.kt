@@ -37,6 +37,7 @@ class CustomCameraController(
     private var initialCameraLens: CameraLens = CameraLens.BACK,
     private val aspectRatio: AspectRatio = AspectRatio.RATIO_4_3,
     private val targetResolution: Pair<Int, Int>? = null,
+    private val mirrorFrontCamera: Boolean = false,
 ) : NSObject(),
     AVCapturePhotoCaptureDelegateProtocol {
     var captureSession: AVCaptureSession? = null
@@ -502,6 +503,11 @@ class CustomCameraController(
         photoOutput?.connectionWithMediaType(AVMediaTypeVideo)?.let { connection ->
             if (connection.isVideoOrientationSupported()) {
                 connection.videoOrientation = currentVideoOrientation()
+            }
+            // Mirror the front-camera photo to match the mirrored preview when configured (#112).
+            if (connection.isVideoMirroringSupported()) {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.videoMirrored = mirrorFrontCamera && isUsingFrontCamera
             }
         }
 

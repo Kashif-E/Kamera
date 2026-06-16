@@ -80,6 +80,7 @@ actual class CameraController(
     internal var returnFilePath: Boolean,
     internal var plugins: MutableList<CameraPlugin>,
     internal var targetResolution: Pair<Int, Int>? = null,
+    internal var mirrorFrontCamera: Boolean = false,
 ) : UIViewController(null, null) {
     private var isCapturing = atomic(false)
     private val customCameraController = CustomCameraController(
@@ -87,6 +88,7 @@ actual class CameraController(
         initialCameraLens = cameraLens,
         aspectRatio = aspectRatio,
         targetResolution = targetResolution,
+        mirrorFrontCamera = mirrorFrontCamera,
     )
     private var imageCaptureListeners = mutableListOf<(ByteArray) -> Unit>()
     private var metadataOutput = AVCaptureMetadataOutput()

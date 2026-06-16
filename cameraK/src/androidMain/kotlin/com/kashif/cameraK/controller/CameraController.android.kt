@@ -83,6 +83,7 @@ actual class CameraController(
     internal var aspectRatio: AspectRatio,
     internal var plugins: MutableList<CameraPlugin>,
     internal var targetResolution: Pair<Int, Int>? = null,
+    internal var mirrorFrontCamera: Boolean = false,
 ) {
 
     private var cameraProvider: ProcessCameraProvider? = null
@@ -394,13 +395,23 @@ actual class CameraController(
     }
 
     /**
+     * Capture metadata: mirror the saved image horizontally for the front camera when configured,
+     * so the photo matches the mirrored preview (#112).
+     */
+    private fun captureMetadata(): ImageCapture.Metadata =
+        ImageCapture.Metadata().apply {
+            isReversedHorizontal = mirrorFrontCamera && cameraLens == CameraLens.FRONT
+        }
+
+    /**
      * Perform fast file-based capture without ByteArray processing.
      * Directly saves to final destination and returns file path.
      */
     private fun performCaptureToFile(continuation: CancellableContinuation<ImageCaptureResult>) {
         // Create final output file directly in desired directory
         val outputFile = createFinalOutputFile()
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
+        val outputOptions =
+            ImageCapture.OutputFileOptions.Builder(outputFile).setMetadata(captureMetadata()).build()
 
         imageCapture?.takePicture(
             outputOptions,
@@ -432,7 +443,8 @@ actual class CameraController(
      * Perform the actual image capture with constant quality
      */
     private fun performCapture(continuation: CancellableContinuation<ImageCaptureResult>, quality: Int) {
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(createTempFile()).build()
+        val outputOptions =
+            ImageCapture.OutputFileOptions.Builder(createTempFile()).setMetadata(captureMetadata()).build()
 
         imageCapture?.takePicture(
             outputOptions,
@@ -552,27 +564,38 @@ actual class CameraController(
                     val originalBitmap = BitmapFactory.decodeFile(tempFile.absolutePath, options)
                     tempFile.delete()
 
-                    // Apply rotation if needed (Samsung device fix)
-                    val rotatedBitmap = if (originalBitmap != null && needsRotation) {
-                        val rotationAngle = when (orientation) {
-                            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-                            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-                            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-                            else -> 0f
+                    // Apply the full EXIF orientation transform. Decoding drops EXIF, so any
+                    // rotation (Samsung fix) AND any mirror flag (front-camera mirroring, #112)
+                    // must be baked into the pixels here or it would be silently lost.
+                    val transformedBitmap = if (originalBitmap != null && needsRotation) {
+                        val matrix = Matrix().apply {
+                            when (orientation) {
+                                ExifInterface.ORIENTATION_ROTATE_90 -> postRotate(90f)
+                                ExifInterface.ORIENTATION_ROTATE_180 -> postRotate(180f)
+                                ExifInterface.ORIENTATION_ROTATE_270 -> postRotate(270f)
+                                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> postScale(-1f, 1f)
+                                ExifInterface.ORIENTATION_FLIP_VERTICAL -> postScale(1f, -1f)
+                                ExifInterface.ORIENTATION_TRANSPOSE -> {
+                                    postRotate(90f)
+                                    postScale(-1f, 1f)
+                                }
+                                ExifInterface.ORIENTATION_TRANSVERSE -> {
+                                    postRotate(270f)
+                                    postScale(-1f, 1f)
+                                }
+                            }
                         }
 
-                        if (rotationAngle != 0f) {
-                            Matrix().apply { postRotate(rotationAngle) }.let { matrix ->
-                                Bitmap.createBitmap(
-                                    originalBitmap,
-                                    0,
-                                    0,
-                                    originalBitmap.width,
-                                    originalBitmap.height,
-                                    matrix,
-                                    true,
-                                ).also { originalBitmap.recycle() }
-                            }
+                        if (!matrix.isIdentity) {
+                            Bitmap.createBitmap(
+                                originalBitmap,
+                                0,
+                                0,
+                                originalBitmap.width,
+                                originalBitmap.height,
+                                matrix,
+                                true,
+                            ).also { originalBitmap.recycle() }
                         } else {
                             originalBitmap
                         }
@@ -581,7 +604,7 @@ actual class CameraController(
                     }
 
                     // Convert format and compress
-                    rotatedBitmap?.compressToByteArray(
+                    transformedBitmap?.compressToByteArray(
                         format = when (imageFormat) {
                             ImageFormat.JPEG -> Bitmap.CompressFormat.JPEG
                             ImageFormat.PNG -> Bitmap.CompressFormat.PNG

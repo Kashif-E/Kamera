@@ -79,4 +79,10 @@ interface CameraControllerBuilder {
      * Platforms may fall back to the closest supported resolution if an exact match is unavailable.
      */
     fun setResolution(width: Int, height: Int): CameraControllerBuilder
+
+    /**
+     * When true, front-camera captures are horizontally mirrored to match the mirrored preview.
+     * No effect on the back camera. Defaults to a no-op on platforms without a front/back lens.
+     */
+    fun setMirrorFrontCamera(mirror: Boolean): CameraControllerBuilder = this
 }
