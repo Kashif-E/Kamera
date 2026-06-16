@@ -6,7 +6,6 @@ import com.kashif.cameraK.controller.CameraController
 import kotlinx.atomicfu.locks.ReentrantLock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bytedeco.leptonica.PIX
@@ -83,6 +82,7 @@ class OCRProcessor {
      * @return Extracted text if successful, null if no text found, processing is throttled, or OCR is disabled
      */
     fun scanImage(image: BufferedImage): String? {
+
         if (!isInitialized || !lock.tryLock()) return null
 
         return try {
@@ -178,12 +178,13 @@ actual fun startRecognition(cameraController: CameraController, onText: (text: S
     val scope = CoroutineScope(Dispatchers.Default)
 
     scope.launch {
-        cameraController.getFrameChannel().consumeAsFlow().collect { image ->
+        cameraController.frameFlow.collect { image ->
             ocrProcessor.scanImage(image)?.let { text ->
                 withContext(Dispatchers.Main) {
                     onText(text)
                 }
             }
+
         }
     }
 }

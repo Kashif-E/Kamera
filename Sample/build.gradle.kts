@@ -10,10 +10,6 @@ plugins {
 }
 
 kotlin {
-    // Re-apply explicitly: the manual dependsOn wiring for tfliteMain (below) otherwise
-    // disables the automatic default hierarchy, severing iosArm64Main -> iosMain.
-    applyDefaultHierarchyTemplate()
-
     jvmToolchain(17)
     androidTarget {
         // https://www.jetbrains.com/help/kotlin-multiplatform-dev/compose-test.html
@@ -32,19 +28,12 @@ kotlin {
         }
     }
 
+    applyDefaultHierarchyTemplate()
+
     sourceSets {
         val desktopMain by getting
 
-        // kflite (TFLite) has no desktop artifact, so it can't live in commonMain.
-        // Share the real impl across android + iOS only; desktop gets a no-op actual.
-        val tfliteMain by creating {
-            dependsOn(commonMain.get())
-            dependencies {
-                implementation(libs.kflite)
-            }
-        }
-        androidMain.get().dependsOn(tfliteMain)
-        iosMain.get().dependsOn(tfliteMain)
+        val mobileMain by creating
 
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -61,6 +50,25 @@ kotlin {
             implementation(projects.videoRecorderPlugin)
             implementation(libs.lucide.icons.cmp)
         }
+
+        mobileMain.dependsOn(commonMain.get())
+
+        mobileMain.dependencies {
+            implementation(libs.kflite)
+        }
+
+        androidMain {
+            dependsOn(mobileMain)
+            dependencies {
+                implementation(compose.uiTooling)
+                implementation(libs.androidx.activityCompose)
+            }
+        }
+
+        iosMain {
+            dependsOn(mobileMain)
+        }
+
 
         commonTest.dependencies {
             implementation(kotlin("test"))
@@ -85,7 +93,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        minSdk = 23
+        minSdk = 24
         targetSdk = 34
 
         applicationId = "org.company.app.androidApp"

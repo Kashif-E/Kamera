@@ -17,9 +17,11 @@ import com.kashif.cameraK.builder.CameraControllerBuilder
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.controller.DesktopCameraControllerBuilder
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.launch
 
+/**
+ * @deprecated This is an internal function for the deprecated [CameraPreview] API.
+ */
 @Composable
 actual fun expectCameraPreview(
     modifier: Modifier,
@@ -36,7 +38,6 @@ actual fun expectCameraPreview(
     BoxWithConstraints(modifier = modifier) {
         val scope = rememberCoroutineScope()
 
-        val frameChannel = cameraController.getFrameChannel()
         var img by remember { mutableStateOf<ImageBitmap?>(null) }
 
         DisposableEffect(Unit) {
@@ -46,7 +47,7 @@ actual fun expectCameraPreview(
 
             val frameJob =
                 scope.launch(Dispatchers.Main) {
-                    frameChannel.consumeAsFlow().collect { image ->
+                    cameraController.frameFlow.collect { image ->
                         img = image.toComposeImageBitmap()
                     }
                 }

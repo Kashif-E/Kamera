@@ -1,5 +1,7 @@
 package org.company.app
 
+import kotlinx.coroutines.CoroutineScope
+
 /**
  * Multiplatform-safe alternative to `String.format` for simple numeric formatting.
  *
@@ -90,8 +92,4 @@ private fun Double.pow(n: Int): Double {
 }
 
 
-/**
- * Runs the bundled TFLite model over this image's bytes.
- * Backed by kflite on Android/iOS; a no-op on desktop (kflite ships no JVM artifact).
- */
-expect suspend fun ByteArray.runTFliteModel()
+expect fun getTFliteRunner(): (ByteArray.(CoroutineScope) -> Unit)?
