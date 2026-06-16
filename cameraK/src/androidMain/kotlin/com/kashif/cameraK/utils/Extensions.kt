@@ -4,6 +4,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
+import android.graphics.ImageFormat
+import android.graphics.Rect
+import android.graphics.YuvImage
 import androidx.camera.core.ImageProxy
 import java.io.ByteArrayOutputStream
 
@@ -47,21 +50,59 @@ fun Bitmap.compressToByteArray(
     return outputStream.toByteArray()
 }
 
-fun ImageProxy.toByteArray(): ByteArray {
-    val yPlane = planes[0]
-    val uPlane = planes[1]
-    val vPlane = planes[2]
+/**
+ * Encodes a YUV_420_888 [ImageProxy] frame to JPEG bytes.
+ *
+ * Analyzer consumers receive a decodable image (matching the iOS analyzer, which emits JPEG)
+ * rather than raw YUV that `BitmapFactory` can't read.
+ */
+fun ImageProxy.toByteArray(quality: Int = 85): ByteArray {
+    val nv21 = yuv420888ToNv21()
+    val out = ByteArrayOutputStream()
+    YuvImage(nv21, ImageFormat.NV21, width, height, null)
+        .compressToJpeg(Rect(0, 0, width, height), quality, out)
+    return out.toByteArray()
+}
 
-    val ySize = yPlane.buffer.remaining()
-    val uSize = uPlane.buffer.remaining()
-    val vSize = vPlane.buffer.remaining()
+/**
+ * Converts this YUV_420_888 frame to a contiguous NV21 (Y plane followed by interleaved V/U),
+ * honoring row/pixel strides so padded planes don't corrupt the output.
+ */
+private fun ImageProxy.yuv420888ToNv21(): ByteArray {
+    val ySize = width * height
+    val nv21 = ByteArray(ySize + ySize / 2)
 
-    val nv21 = ByteArray(ySize + uSize + vSize)
+    val yBuffer = planes[0].buffer
+    val yRowStride = planes[0].rowStride
+    val yPixelStride = planes[0].pixelStride
+    var pos = 0
+    if (yRowStride == width && yPixelStride == 1) {
+        yBuffer.get(nv21, 0, ySize)
+        pos = ySize
+    } else {
+        for (row in 0 until height) {
+            val rowStart = row * yRowStride
+            for (col in 0 until width) {
+                nv21[pos++] = yBuffer.get(rowStart + col * yPixelStride)
+            }
+        }
+    }
 
-    yPlane.buffer.get(nv21, 0, ySize)
-
-    vPlane.buffer.get(nv21, ySize, vSize)
-    uPlane.buffer.get(nv21, ySize + vSize, uSize)
-
+    val uBuffer = planes[1].buffer
+    val vBuffer = planes[2].buffer
+    val uRowStride = planes[1].rowStride
+    val uPixelStride = planes[1].pixelStride
+    val vRowStride = planes[2].rowStride
+    val vPixelStride = planes[2].pixelStride
+    val chromaWidth = width / 2
+    val chromaHeight = height / 2
+    for (row in 0 until chromaHeight) {
+        val uRow = row * uRowStride
+        val vRow = row * vRowStride
+        for (col in 0 until chromaWidth) {
+            nv21[pos++] = vBuffer.get(vRow + col * vPixelStride)
+            nv21[pos++] = uBuffer.get(uRow + col * uPixelStride)
+        }
+    }
     return nv21
 }

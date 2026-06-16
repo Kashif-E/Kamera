@@ -225,16 +225,26 @@ private fun CameraContent(
         }
     }
 
+    // Config-level settings: these have no runtime setter, so changing one rebuilds the
+    // CameraConfiguration and re-initializes the camera (data-class equality keeps it stable
+    // while unchanged). Declared before rememberCameraKState so the config can read them.
+    var aspectRatio by remember { mutableStateOf(AspectRatio.RATIO_4_3) }
+    var resolution by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var imageFormat by remember { mutableStateOf(ImageFormat.JPEG) }
+    var qualityPrioritization by remember { mutableStateOf(QualityPrioritization.BALANCED) }
+    var cameraDeviceType by remember { mutableStateOf(CameraDeviceType.WIDE_ANGLE) }
+
     val cameraState by rememberCameraKState(
         config = CameraConfiguration(
             cameraLens = CameraLens.BACK,
             flashMode = FlashMode.OFF,
-            imageFormat = ImageFormat.JPEG,
+            imageFormat = imageFormat,
             directory = Directory.PICTURES,
             torchMode = TorchMode.OFF,
-            qualityPrioritization = QualityPrioritization.BALANCED,
-            cameraDeviceType = CameraDeviceType.WIDE_ANGLE,
-            aspectRatio = AspectRatio.RATIO_4_3,
+            qualityPrioritization = qualityPrioritization,
+            cameraDeviceType = cameraDeviceType,
+            aspectRatio = aspectRatio,
+            targetResolution = resolution,
         ),
         setupPlugins = { stateHolder ->
             stateHolder.attachPlugin(analyzerPlugin)
@@ -295,7 +305,17 @@ private fun CameraContent(
             videoRecorderPlugin = videoRecorderPlugin,
             qrCodes = qrCodes,
             recognizedText = recognizedText,
-            latestFrame = latestFrame
+            latestFrame = latestFrame,
+            aspectRatio = aspectRatio,
+            onAspectRatioChange = { aspectRatio = it },
+            resolution = resolution,
+            onResolutionChange = { resolution = it },
+            imageFormat = imageFormat,
+            onImageFormatChange = { imageFormat = it },
+            qualityPrioritization = qualityPrioritization,
+            onQualityPrioritizationChange = { qualityPrioritization = it },
+            cameraDeviceType = cameraDeviceType,
+            onCameraDeviceTypeChange = { cameraDeviceType = it },
         )
     }
 }
@@ -313,7 +333,18 @@ private fun CameraScreen(
     videoRecorderPlugin: VideoRecorderPlugin,
     qrCodes: List<String>,
     recognizedText: String?,
-    latestFrame: ByteArray?
+    latestFrame: ByteArray?,
+    // Config-level settings hoisted to the caller (changing one re-initializes the camera).
+    aspectRatio: AspectRatio,
+    onAspectRatioChange: (AspectRatio) -> Unit,
+    resolution: Pair<Int, Int>?,
+    onResolutionChange: (Pair<Int, Int>?) -> Unit,
+    imageFormat: ImageFormat,
+    onImageFormatChange: (ImageFormat) -> Unit,
+    qualityPrioritization: QualityPrioritization,
+    onQualityPrioritizationChange: (QualityPrioritization) -> Unit,
+    cameraDeviceType: CameraDeviceType,
+    onCameraDeviceTypeChange: (CameraDeviceType) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val cameraController = cameraState.controller
@@ -330,11 +361,6 @@ private fun CameraScreen(
     var torchMode by remember { mutableStateOf(TorchMode.OFF) }
     var zoomLevel by remember { mutableFloatStateOf(1f) }
     var maxZoom by remember { mutableFloatStateOf(1f) }
-    var aspectRatio by remember { mutableStateOf(AspectRatio.RATIO_4_3) }
-    var resolution by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    var imageFormat by remember { mutableStateOf(ImageFormat.JPEG) }
-    var qualityPrioritization by remember { mutableStateOf(QualityPrioritization.BALANCED) }
-    var cameraDeviceType by remember { mutableStateOf(CameraDeviceType.WIDE_ANGLE) }
 
 
     var isQRScanningEnabled by remember { mutableStateOf(true) }
@@ -457,7 +483,7 @@ private fun CameraScreen(
             onAspectRatioCycle = {
                 val entries = AspectRatio.entries
                 val next = entries[(entries.indexOf(aspectRatio) + 1) % entries.size]
-                aspectRatio = next
+                onAspectRatioChange(next)
             },
         )
 
@@ -564,13 +590,10 @@ private fun CameraScreen(
                 isOCREnabled = isOCREnabled,
                 lockedOrientation = lockedOrientation,
                 deviceOrientation = deviceOrientation,
-                onResolutionChange = { resolution = it },
-                onImageFormatChange = { imageFormat = it },
-                onQualityPrioritizationChange = { qualityPrioritization = it },
-                onCameraDeviceTypeChange = {
-                    cameraDeviceType = it
-                    cameraController.setPreferredCameraDeviceType(it)
-                },
+                onResolutionChange = onResolutionChange,
+                onImageFormatChange = onImageFormatChange,
+                onQualityPrioritizationChange = onQualityPrioritizationChange,
+                onCameraDeviceTypeChange = onCameraDeviceTypeChange,
                 onQRScanningToggle = { isQRScanningEnabled = it },
                 onOCRToggle = { isOCREnabled = it },
                 onOrientationLockChange = { orientation ->
