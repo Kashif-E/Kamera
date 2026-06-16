@@ -1,7 +1,9 @@
 platform :ios, '16.2'
 
 target 'iosApp' do
-  use_frameworks!
+  # Static linkage: TensorFlowLite links into the app binary, so no
+  # "[CP] Embed Pods Frameworks" phase is needed (avoids missing-dylib crashes at launch).
+  use_frameworks! :linkage => :static
   # kflite (TensorFlow Lite) needs these linked into the app — provides
   # TFLInterpreter / TFLCoreMLDelegate / TFLMetalDelegate symbols.
   pod 'TensorFlowLiteObjC'
