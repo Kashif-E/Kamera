@@ -55,10 +55,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.decodeToImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -100,7 +100,6 @@ import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKState
-import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
 import com.kashif.imagesaverplugin.ImageSaverConfig
@@ -421,8 +420,12 @@ private fun CameraScreen(
         zoomLevel = cameraController.getZoom()
     }
 
-    LaunchedEffect(latestFrame) {
-        latestFrame?.runTFliteModel()
+    val runTFliteModel = remember { getTFliteRunner() }
+
+    if(runTFliteModel != null) {
+        LaunchedEffect(latestFrame) {
+            latestFrame?.runTFliteModel(scope)
+        }
     }
 
     Box(
