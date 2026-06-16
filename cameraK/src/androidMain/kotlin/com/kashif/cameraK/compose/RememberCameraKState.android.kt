@@ -45,6 +45,7 @@ actual fun rememberCameraKState(
                                 setPreferredCameraDeviceType(config.cameraDeviceType)
                                 setAspectRatio(config.aspectRatio)
                                 setDirectory(config.directory)
+                                setMirrorFrontCamera(config.mirrorFrontCamera)
                                 config.targetResolution?.let { (width, height) ->
                                     setResolution(width, height)
                                 }

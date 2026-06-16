@@ -238,6 +238,8 @@ sealed class CameraKEvent {
  * @property targetResolution Target resolution (width x height) or null for auto.
  * @property directory Directory for saving captured images.
  * @property returnFilePath If true, returns file path instead of byte array (faster).
+ * @property mirrorFrontCamera If true, front-camera captures are horizontally mirrored to match
+ *   the mirrored preview (selfie "what you see is what you get"). No effect on the back camera.
  *
  * @example
  * ```kotlin
@@ -263,4 +265,5 @@ data class CameraConfiguration(
     val targetResolution: Pair<Int, Int>? = null,
     val directory: Directory = Directory.PICTURES,
     val returnFilePath: Boolean = true,
+    val mirrorFrontCamera: Boolean = false,
 )

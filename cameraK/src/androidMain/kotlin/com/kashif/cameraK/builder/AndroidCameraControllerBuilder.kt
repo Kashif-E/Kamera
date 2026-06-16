@@ -33,7 +33,13 @@ class AndroidCameraControllerBuilder(private val context: Context, private val l
     private var returnFilePath: Boolean = false
     private var aspectRatio: AspectRatio = AspectRatio.RATIO_4_3
     private var targetResolution: Pair<Int, Int>? = null
+    private var mirrorFrontCamera: Boolean = false
     private val plugins = mutableListOf<CameraPlugin>()
+
+    override fun setMirrorFrontCamera(mirror: Boolean): CameraControllerBuilder {
+        this.mirrorFrontCamera = mirror
+        return this
+    }
 
     override fun setFlashMode(flashMode: FlashMode): CameraControllerBuilder {
         this.flashMode = flashMode
@@ -121,6 +127,7 @@ class AndroidCameraControllerBuilder(private val context: Context, private val l
             returnFilePath = returnFilePath,
             aspectRatio = aspectRatio,
             targetResolution = targetResolution,
+            mirrorFrontCamera = mirrorFrontCamera,
         )
         plugins.forEach {
             it.initialize(cameraController)

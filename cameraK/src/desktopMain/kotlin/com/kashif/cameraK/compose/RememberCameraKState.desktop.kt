@@ -31,6 +31,7 @@ actual fun rememberCameraKState(
                         .apply {
                             setImageFormat(config.imageFormat)
                             setDirectory(config.directory)
+                            setMirrorFrontCamera(config.mirrorFrontCamera)
                             config.targetResolution?.let { (width, height) ->
                                 setResolution(width, height)
                             }

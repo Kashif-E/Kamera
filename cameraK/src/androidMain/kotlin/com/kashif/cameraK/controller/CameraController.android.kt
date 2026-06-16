@@ -83,6 +83,7 @@ actual class CameraController(
     internal var aspectRatio: AspectRatio,
     internal var plugins: MutableList<CameraPlugin>,
     internal var targetResolution: Pair<Int, Int>? = null,
+    internal var mirrorFrontCamera: Boolean = false,
 ) {
 
     private var cameraProvider: ProcessCameraProvider? = null
@@ -397,10 +398,20 @@ actual class CameraController(
      * Perform fast file-based capture without ByteArray processing.
      * Directly saves to final destination and returns file path.
      */
+    /**
+     * Capture metadata: mirror the saved image horizontally for the front camera when configured,
+     * so the photo matches the mirrored preview (#112).
+     */
+    private fun captureMetadata(): ImageCapture.Metadata =
+        ImageCapture.Metadata().apply {
+            isReversedHorizontal = mirrorFrontCamera && cameraLens == CameraLens.FRONT
+        }
+
     private fun performCaptureToFile(continuation: CancellableContinuation<ImageCaptureResult>) {
         // Create final output file directly in desired directory
         val outputFile = createFinalOutputFile()
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
+        val outputOptions =
+            ImageCapture.OutputFileOptions.Builder(outputFile).setMetadata(captureMetadata()).build()
 
         imageCapture?.takePicture(
             outputOptions,
@@ -432,7 +443,8 @@ actual class CameraController(
      * Perform the actual image capture with constant quality
      */
     private fun performCapture(continuation: CancellableContinuation<ImageCaptureResult>, quality: Int) {
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(createTempFile()).build()
+        val outputOptions =
+            ImageCapture.OutputFileOptions.Builder(createTempFile()).setMetadata(captureMetadata()).build()
 
         imageCapture?.takePicture(
             outputOptions,
