@@ -142,6 +142,7 @@ actual class CameraController(
         customCameraController.safeAddOutput(output)
     }
 
+    @Volatile
     private var lastVideoOrientation: AVCaptureVideoOrientation = AVCaptureVideoOrientationPortrait
 
     internal fun currentVideoOrientation(): AVCaptureVideoOrientation {

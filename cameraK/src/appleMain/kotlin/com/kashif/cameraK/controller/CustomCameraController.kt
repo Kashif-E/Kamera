@@ -350,6 +350,7 @@ class CustomCameraController(
         cameraPreviewLayer = newPreviewLayer
     }
 
+    @Volatile
     private var lastVideoOrientation: AVCaptureVideoOrientation = AVCaptureVideoOrientationPortrait
 
     fun currentVideoOrientation(): AVCaptureVideoOrientation {
