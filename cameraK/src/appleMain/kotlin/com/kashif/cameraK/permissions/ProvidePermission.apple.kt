@@ -76,18 +76,6 @@ private class IOSPermissionsImpl : Permissions {
 }
 
 /**
- * Helper function to create and remember the IOSPermissions instance.
- * @deprecated Use providePermissions() instead for consistent cross-platform API
- */
-@Deprecated(
-    message = "Use providePermissions() instead",
-    replaceWith = ReplaceWith("providePermissions()"),
-    level = DeprecationLevel.WARNING,
-)
-@Composable
-fun rememberIOSPermissions(): Permissions = remember { IOSPermissionsImpl() }
-
-/**
  * Factory function to provide platform-specific [Permissions] implementation.
  */
 @Composable

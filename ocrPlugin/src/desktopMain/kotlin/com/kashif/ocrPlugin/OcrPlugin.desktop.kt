@@ -1,8 +1,8 @@
 package com.kashif.ocrPlugin
-
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toAwtImage
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.locks.ReentrantLock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,10 +36,10 @@ class OCRProcessor {
         try {
             val tessdataDir = findTessdataDirectory()
             if (tessdataDir == null) {
-                System.err.println("Warning: Could not find tessdata directory. OCR will be disabled.")
+                CameraKLogger.w("CameraK", "Warning: Could not find tessdata directory. OCR will be disabled.")
                 isInitialized = false
             } else if (api.Init(tessdataDir, "eng") != 0) {
-                System.err.println("Warning: Could not initialize Tesseract. OCR will be disabled.")
+                CameraKLogger.w("CameraK", "Warning: Could not initialize Tesseract. OCR will be disabled.")
                 isInitialized = false
             } else {
                 api.SetVariable(
@@ -50,7 +50,7 @@ class OCRProcessor {
                 isInitialized = true
             }
         } catch (e: Exception) {
-            System.err.println("Warning: Failed to initialize OCR: ${e.message}")
+            CameraKLogger.w("CameraK", "Warning: Failed to initialize OCR: ${e.message}")
             isInitialized = false
         }
     }
@@ -82,7 +82,6 @@ class OCRProcessor {
      * @return Extracted text if successful, null if no text found, processing is throttled, or OCR is disabled
      */
     fun scanImage(image: BufferedImage): String? {
-
         if (!isInitialized || !lock.tryLock()) return null
 
         return try {
@@ -184,7 +183,6 @@ actual fun startRecognition(cameraController: CameraController, onText: (text: S
                     onText(text)
                 }
             }
-
         }
     }
 }

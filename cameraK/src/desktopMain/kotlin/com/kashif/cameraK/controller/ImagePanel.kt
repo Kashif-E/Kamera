@@ -12,8 +12,6 @@ import javax.swing.JPanel
 class ImagePanel : JPanel(true) {
     private var volatileImage: VolatileImage? = null
     var currentImage: BufferedImage? = null
-    private var renderCount = 0
-    private var lastRenderTime = System.currentTimeMillis()
 
     init {
         background = Color(0, 0, 0, 0)
@@ -27,13 +25,6 @@ class ImagePanel : JPanel(true) {
 
     fun updateImage(image: BufferedImage?) {
         currentImage = image
-        renderCount++
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastRenderTime >= 1000) {
-            println("Render FPS: $renderCount")
-            renderCount = 0
-            lastRenderTime = currentTime
-        }
         repaint()
     }
 

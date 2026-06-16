@@ -4,12 +4,12 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.QualityPrioritization
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.MemoryManager
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AVFoundation.*
 import platform.Foundation.NSData
 import platform.Foundation.NSError
-import platform.Foundation.NSLog
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIView
@@ -271,7 +271,7 @@ class CustomCameraController(
                 try {
                     change()
                 } catch (e: Exception) {
-                    NSLog("CameraK: Error processing configuration change: ${e.message}")
+                    CameraKLogger.e("CameraK", "CameraK: Error processing configuration change: ${e.message}")
                 }
             }
 
@@ -376,7 +376,7 @@ class CustomCameraController(
             flashMode = mode
         } else {
             // Device doesn't support flash (e.g., iPad) - use OFF
-            platform.Foundation.NSLog("CameraK: Flash mode not supported on this device, using OFF")
+            CameraKLogger.e("CameraK", "CameraK: Flash mode not supported on this device, using OFF")
             flashMode = AVCaptureFlashModeOff
         }
     }

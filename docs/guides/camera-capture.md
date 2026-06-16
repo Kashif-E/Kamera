@@ -48,8 +48,7 @@ suspend fun takePictureToFile(): ImageCaptureResult
 - `ImageCaptureResult.Error(exception: Exception)`
 
 **Benefits:**
-- 2-3 seconds faster than `takePicture()`
-- No ByteArray conversion — direct disk write
+- Direct disk write — no ByteArray conversion
 - Lower memory usage — no decode/encode cycles
 
 **Example with error handling:**
@@ -73,40 +72,6 @@ scope.launch {
     } catch (e: CancellationException) {
         println("Capture was cancelled")
         throw e  // Re-throw cancellation
-    }
-}
-```
-
-## Legacy: `takePicture()`
-
-**Deprecated** — Returns image as `ByteArray`. Use `takePictureToFile()` instead.
-
-```kotlin
-@Deprecated("Use takePictureToFile() for better performance")
-suspend fun takePicture(): ImageCaptureResult
-```
-
-**Returns:**
-- `ImageCaptureResult.Success(byteArray: ByteArray)`
-- `ImageCaptureResult.Error(exception: Exception)`
-
-**Only use if:**
-- You need to process the image in memory before saving
-- You're uploading directly to a server without saving locally
-- You're applying immediate image transformations
-
-**Example:**
-
-```kotlin
-scope.launch {
-    when (val result = controller.takePicture()) {
-        is ImageCaptureResult.Success -> {
-            val imageData = result.byteArray
-            uploadToServer(imageData)
-        }
-        is ImageCaptureResult.Error -> {
-            showError(result.exception.message)
-        }
     }
 }
 ```

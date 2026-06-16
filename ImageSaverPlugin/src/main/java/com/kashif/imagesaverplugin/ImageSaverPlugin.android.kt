@@ -1,11 +1,11 @@
 package com.kashif.imagesaverplugin
-
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import coil3.PlatformContext
+import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -69,11 +69,11 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                 resolver.update(imageUri, contentValues, null, null)
             }
 
-            println("Image saved successfully at URI: $imageUri")
+            CameraKLogger.d("CameraK", "Image saved successfully at URI: $imageUri")
             imageUri.toString()
         } catch (e: IOException) {
-            e.printStackTrace()
-            println("Failed to save image: ${e.message}")
+            CameraKLogger.e("CameraK", "Unhandled exception", e)
+            CameraKLogger.e("CameraK", "Failed to save image: ${e.message}")
             null
         }
     }
@@ -108,7 +108,7 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            CameraKLogger.e("CameraK", "Unhandled exception", e)
             null
         }
     }

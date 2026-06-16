@@ -8,8 +8,8 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.CoroutineScope
@@ -37,7 +37,6 @@ import javax.imageio.ImageIO
  * Interface defining the core functionalities of the CameraController.
  */
 actual class CameraController(
-    internal var plugins: MutableList<CameraPlugin>,
     private val imageFormat: ImageFormat,
     private val directory: Directory,
     private val horizontalFlip: Boolean = false,
@@ -48,7 +47,7 @@ actual class CameraController(
     private val _frameFlow = MutableSharedFlow<BufferedImage>(
         replay = 0,
         extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val frameFlow: Flow<BufferedImage> get() = _frameFlow
     private val qualityPriority: QualityPrioritization = QualityPrioritization.NONE
@@ -67,20 +66,6 @@ actual class CameraController(
         // default no-op listener
     }
 
-    /**
-     * Captures an image.
-     *
-     * @return The result of the image capture operation.
-     */
-    @Deprecated(
-        message = "Use takePictureToFile() instead for better performance",
-        replaceWith = ReplaceWith("takePictureToFile()"),
-        level = DeprecationLevel.WARNING,
-    )
-    actual suspend fun takePicture(): ImageCaptureResult {
-        TODO("Not yet implemented")
-    }
-
     actual suspend fun takePictureToFile(): ImageCaptureResult {
         return withContext(Dispatchers.IO) {
             val currentImage = cameraGrabber?.grabCurrentFrame()
@@ -95,7 +80,7 @@ actual class CameraController(
                 listener(outputStream.toByteArray())
                 ImageCaptureResult.Success(outputStream.toByteArray())
             } catch (e: Exception) {
-                e.printStackTrace()
+                CameraKLogger.e("CameraK", "Unhandled exception", e)
                 ImageCaptureResult.Error(e)
             } finally {
                 outputStream.close()
@@ -221,8 +206,8 @@ actual class CameraController(
             // If there is a custom grabber, use it, else use the default camera grabber
             // Which attempts to use the default camera
             cameraGrabber = CameraGrabber(_frameFlow, {
-                System.err.println("CameraK: Camera error: ${it.message}")
-                it.printStackTrace()
+                CameraKLogger.e("CameraK", "CameraK: Camera error: ${it.message}")
+                CameraKLogger.e("CameraK", "Unhandled exception", it)
             }, targetResolution).apply {
                 setHorizontalFlip(horizontalFlip)
                 start(this@launch, customGrabber)
@@ -246,12 +231,6 @@ actual class CameraController(
         this.listener = listener
     }
 
-    actual fun initializeControllerPlugins() {
-        plugins.forEach {
-            it.initialize(this)
-        }
-    }
-
     actual fun getDeviceOrientation(): DeviceOrientation = DeviceOrientation.PORTRAIT
 
     actual fun setOnOrientationChangedListener(callback: ((DeviceOrientation) -> Unit)?) {
@@ -266,7 +245,6 @@ actual class CameraController(
         stopVideoRecorderIfActive()
         cameraGrabber?.stop()
     }
-
 
     actual suspend fun startRecording(configuration: VideoConfiguration): String = withContext(Dispatchers.IO) {
         val outputPath = createVideoOutputPath(configuration)
@@ -306,14 +284,14 @@ actual class CameraController(
                                 val videoFrame = converter.convert(frame)
                                 recorder.record(videoFrame)
                             } catch (e: Exception) {
-                                System.err.println("CameraK recording frame error: ${e.message}")
+                                CameraKLogger.e("CameraK", "CameraK recording frame error: ${e.message}")
                             }
                         }
                     }
                     delay(33) // ~30fps
                 }
             } catch (e: Exception) {
-                System.err.println("CameraK recording loop error: ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK recording loop error: ${e.message}")
             }
         }
 
@@ -352,7 +330,7 @@ actual class CameraController(
                 frameRecorder?.stop()
                 frameRecorder?.release()
             } catch (e: Exception) {
-                System.err.println("CameraK: Error stopping recorder: ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK: Error stopping recorder: ${e.message}")
             }
             frameRecorder = null
         }

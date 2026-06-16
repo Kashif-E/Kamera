@@ -231,20 +231,6 @@ controller.setZoom(savedZoom.coerceIn(1f, controller.getMaxZoom()))
 
 ## Performance Issues
 
-### Slow Capture
-
-**Cause:** Using deprecated `takePicture()` instead of `takePictureToFile()`.
-
-**Solution:** Use recommended method:
-
-```kotlin
-// Slow (deprecated)
-val result = controller.takePicture()
-
-// Fast (recommended)
-val result = controller.takePictureToFile()
-```
-
 ### App Crashes on Capture
 
 **Cause:** Out of memory or too many concurrent captures.

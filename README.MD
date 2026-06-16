@@ -383,13 +383,14 @@ when (cameraState) {
     is CameraKState.Ready -> {
         val controller = (cameraState as CameraKState.Ready).controller
         scope.launch {
-            when (val result = controller.takePicture()) {
-                is ImageCaptureResult.Success -> {
+            when (val result = controller.takePictureToFile()) {
+                is ImageCaptureResult.SuccessWithFile -> {
                     imageSaverPlugin.saveImage(
-                        byteArray = result.byteArray,
+                        byteArray = imageSaverPlugin.getByteArrayFrom(result.filePath),
                         imageName = "Photo_${System.currentTimeMillis()}"
                     )
                 }
+                is ImageCaptureResult.Error -> { /* handle error */ }
             }
         }
     }
@@ -743,9 +744,7 @@ Low-level camera operations returned in `CameraKState.Ready`:
 ```kotlin
 expect class CameraController {
     // Capture operations
-    suspend fun takePictureToFile(): ImageCaptureResult        // Recommended - direct file save
-    @Deprecated("Use takePictureToFile()")
-    suspend fun takePicture(): ImageCaptureResult              // Legacy - returns ByteArray
+    suspend fun takePictureToFile(): ImageCaptureResult        // Direct file save
 
     // Zoom control
     fun setZoom(zoom: Float)
@@ -858,210 +857,23 @@ sealed class CameraKEvent {
 }
 ```
 
-## Migration Guide: Legacy API -> v0.2.0+
+## Removed APIs (breaking)
 
-### API Migration
+The legacy callback-based API has been removed. Use the Compose-first reactive API instead:
 
-The v0.2.0 release introduces a new Compose-first reactive API. The old callback-based API is deprecated but still supported with a one-year deprecation timeline:
+| Removed | Replacement |
+|---------|-------------|
+| `CameraPreview { onCameraControllerReady = ... }` | `rememberCameraKState(config)` + `CameraPreviewView(controller)` |
+| `CameraController.takePicture()` (ByteArray) | `CameraController.takePictureToFile()` |
+| `CameraPlugin` interface (`initialize(controller)`) | `CameraKPlugin` (`onAttach`/`onDetach`) |
+| `rememberIOSPermissions()` | `providePermissions()` |
 
-- **v0.2.0**: New reactive API available, old API functional with warnings
-- **v1.0.0**: Old API marked as error-level deprecation (IDE warnings, future removal)
-- **v2.0.0**: Old API removed completely
-
-#### Option 1: Simple Migration (Recommended)
-
-Old callback-based approach:
-
-```kotlin
-// OLD - Callback based
-CameraPreview(
-    cameraConfiguration = { /* ... */ },
-    onCameraControllerReady = { controller ->
-        // Manual controller management
-    }
-)
-```
-
-New reactive approach:
+Logging is now controlled via `CameraKLogger` (disabled by default):
 
 ```kotlin
-// NEW - Reactive StateFlow based
-@Composable
-fun CameraScreen() {
-    val cameraState by rememberCameraKState(
-        config = CameraConfiguration(
-            cameraLens = CameraLens.BACK,
-            flashMode = FlashMode.OFF,
-        ),
-    )
-
-    when (cameraState) {
-        is CameraKState.Ready -> {
-            val readyState = cameraState as CameraKState.Ready
-            val controller = readyState.controller
-            val uiState = readyState.uiState
-            // Use controller and uiState here
-        }
-    }
-}
+CameraKLogger.enabled = true                 // turn on internal logs (e.g. debug builds)
+CameraKLogger.sink = { level, tag, msg, t -> /* forward to your logger */ }
 ```
-
-#### Option 2: Using Helper Method
-
-If you need to wait for camera readiness:
-
-```kotlin
-scope.launch {
-    val controller = stateHolder.getReadyCameraController()
-    if (controller != null) {
-        // Camera is ready - safe to use
-        when (val result = controller.takePictureToFile()) {
-            is ImageCaptureResult.SuccessWithFile -> { /* ... */ }
-            is ImageCaptureResult.Error -> { /* ... */ }
-        }
-    }
-}
-```
-
-### Plugin Migration
-
-If you've created custom plugins using the old API:
-
-#### Old Pattern (v0.2.0)
-
-```kotlin
-class MyPlugin : CameraKPlugin {
-    override fun onAttach(stateHolder: CameraKStateHolder) {
-        val controller = stateHolder.getController()  // Deprecated
-        // Directly use controller - race condition risk!
-        startDetection(controller)
-    }
-}
-```
-
-#### New Pattern (v0.2.0+)
-
-Option A - Stream observation (reactive):
-
-```kotlin
-class MyPlugin : CameraKPlugin {
-    private var job: Job? = null
-
-    override fun onAttach(stateHolder: CameraKStateHolder) {
-        job = stateHolder.pluginScope.launch {
-            stateHolder.cameraState
-                .filterIsInstance<CameraKState.Ready>()
-                .collect { ready ->
-                    startDetection(ready.controller)
-                }
-        }
-    }
-
-    override fun onDetach() {
-        job?.cancel()
-    }
-}
-```
-
-Option B - Suspend until ready:
-
-```kotlin
-class MyPlugin : CameraKPlugin {
-    override fun onAttach(stateHolder: CameraKStateHolder) {
-        stateHolder.pluginScope.launch {
-            val controller = stateHolder.getReadyCameraController()
-            if (controller != null) {
-                startDetection(controller)
-            }
-        }
-    }
-
-    override fun onDetach() {
-        // Cleanup if needed
-    }
-}
-```
-
-#### Deprecation Timeline for Custom Plugins
-
-The old `getController()` method is deprecated:
-
-```kotlin
-// Warning level (v0.2.0)
-@Deprecated(
-    "Use cameraState.filterIsInstance<Ready>() instead. " +
-            "Will be removed in v2.0.0",
-    replaceWith = ReplaceWith(
-        "pluginScope.launch { cameraState.filterIsInstance<CameraKState.Ready>().collect { ... } }"
-    ),
-    level = DeprecationLevel.WARNING
-)
-fun getController(): CameraController?
-
-// Error level (v1.0.0)
-// Same method but with DeprecationLevel.ERROR
-
-// Removed (v2.0.0)
-// Method no longer exists
-```
-
-### Image Capture API
-
-The `takePicture()` method is deprecated in favor of `takePictureToFile()`:
-
-```kotlin
-// Deprecated - Manual file handling required
-@Deprecated("Use takePictureToFile() instead")
-suspend fun takePicture(): ImageCaptureResult
-
-// Recommended - Direct file save, 2-3x faster
-suspend fun takePictureToFile(): ImageCaptureResult
-```
-
-**Performance Benefit:**
-- `takePicture()`: ByteArray in memory -> manual file write (slower, ~2-3 seconds)
-- `takePictureToFile()`: Direct file save (faster, ~0.5-1 second)
-
-### Breaking Changes Summary
-
-| Feature | v0.2.0 | v0.2.0+ | Timeline |
-|---------|--------|---------|----------|
-| Callback-based API | Supported | Deprecated | v2.0.0 removal |
-| Reactive StateFlow API | N/A | Recommended | Current |
-| `getController()` | Supported | Deprecated | v2.0.0 removal |
-| `takePicture()` | Supported | Deprecated | v2.0.0 removal |
-| `takePictureToFile()` | N/A | Recommended | Current |
-| Plugin auto-activation | N/A | Built-in | Current |
-| `rememberCameraKState()` | N/A | New | Current |
-
-### Need More Help?
-
-See [PLUGIN_MIGRATION_GUIDE.md](PLUGIN_MIGRATION_GUIDE.md) for comprehensive custom plugin migration examples.
-
-## Deprecation Notices (Legacy)
-
-### v1.0 Migration
-
-#### `takePicture()` -> `takePictureToFile()`
-
-```kotlin
-// Deprecated (slower, will be removed in v2.0)
-when (val result = controller.takePicture()) {
-    is ImageCaptureResult.Success -> {
-        val byteArray = result.byteArray
-        // Manual file save required
-    }
-}
-
-// Recommended (2-3x faster)
-when (val result = controller.takePictureToFile()) {
-    is ImageCaptureResult.SuccessWithFile -> {
-        val filePath = result.filePath
-        // File already saved
-    }
-}
-```
-
 
 ## Troubleshooting
 
@@ -1099,14 +911,6 @@ override fun onAttach(stateHolder: CameraKStateHolder) {
 **Solution**: Ensure you're using `rememberCameraKState()` with `setupPlugins`:
 
 ```kotlin
-// Wrong - old callback API
-CameraPreview(
-    onCameraControllerReady = { controller ->
-        // Auto-activation not supported
-    }
-)
-
-// Correct - new reactive API
 val cameraState by rememberCameraKState(
     setupPlugins = { stateHolder ->
         stateHolder.attachPlugin(myPlugin)  // Auto-activates when Ready

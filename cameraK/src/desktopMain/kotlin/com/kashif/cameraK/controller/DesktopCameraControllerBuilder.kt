@@ -9,7 +9,6 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.utils.InvalidConfigurationException
 import org.bytedeco.javacv.FrameGrabber
 
@@ -26,7 +25,6 @@ class DesktopCameraControllerBuilder : CameraControllerBuilder {
     private var imageFormat: ImageFormat? = null
     private var directory: Directory? = null
     private var qualityPriority: QualityPrioritization = QualityPrioritization.NONE
-    private val plugins = mutableListOf<CameraPlugin>()
     private var targetResolution: Pair<Int, Int>? = null
 
     /**
@@ -83,14 +81,6 @@ class DesktopCameraControllerBuilder : CameraControllerBuilder {
         return this
     }
 
-    /**
-     * Desktop does not support file path return; always returns ByteArray.
-     *
-     * @param returnFilePath Ignored on desktop platform.
-     * @return This builder instance for chaining.
-     */
-    override fun setReturnFilePath(returnFilePath: Boolean): CameraControllerBuilder = this
-
     override fun setAspectRatio(aspectRatio: AspectRatio): CameraControllerBuilder = this
 
     override fun setDirectory(directory: Directory): CameraControllerBuilder {
@@ -98,25 +88,16 @@ class DesktopCameraControllerBuilder : CameraControllerBuilder {
         return this
     }
 
-    override fun addPlugin(plugin: CameraPlugin): CameraControllerBuilder {
-        plugins.add(plugin)
-        return this
-    }
-
     override fun build(): CameraController {
         val format = imageFormat ?: throw InvalidConfigurationException("ImageFormat must be set.")
         val dir = directory ?: throw InvalidConfigurationException("Directory must be set.")
 
-        val cameraController =
-            CameraController(
-                imageFormat = format,
-                directory = dir,
-                plugins = plugins,
-                horizontalFlip = horizontalFlip,
-                customGrabber = grabber,
-                targetResolution = targetResolution,
-            )
-
-        return cameraController
+        return CameraController(
+            imageFormat = format,
+            directory = dir,
+            horizontalFlip = horizontalFlip,
+            customGrabber = grabber,
+            targetResolution = targetResolution,
+        )
     }
 }
