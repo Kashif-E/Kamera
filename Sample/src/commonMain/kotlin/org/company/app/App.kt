@@ -225,13 +225,15 @@ private fun CameraContent(
         }
     }
 
-    // Config-level settings: these have no runtime setter, so changing one rebuilds the
-    // CameraConfiguration and re-initializes the camera (data-class equality keeps it stable
-    // while unchanged). Declared before rememberCameraKState so the config can read them.
+    // Config-level settings with no runtime setter: changing one rebuilds the CameraConfiguration
+    // and re-initializes the camera (data-class equality keeps it stable while unchanged).
     var aspectRatio by remember { mutableStateOf(AspectRatio.RATIO_4_3) }
     var resolution by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var imageFormat by remember { mutableStateOf(ImageFormat.JPEG) }
     var qualityPrioritization by remember { mutableStateOf(QualityPrioritization.BALANCED) }
+    // Device type is applied with the runtime setter (live re-bind), so it's NOT part of the
+    // re-init config; the initial value seeds the first bind and CameraScreen re-applies the
+    // current selection whenever the controller is (re)created.
     var cameraDeviceType by remember { mutableStateOf(CameraDeviceType.WIDE_ANGLE) }
 
     val cameraState by rememberCameraKState(
@@ -242,7 +244,7 @@ private fun CameraContent(
             directory = Directory.PICTURES,
             torchMode = TorchMode.OFF,
             qualityPrioritization = qualityPrioritization,
-            cameraDeviceType = cameraDeviceType,
+            cameraDeviceType = CameraDeviceType.WIDE_ANGLE,
             aspectRatio = aspectRatio,
             targetResolution = resolution,
         ),
@@ -350,6 +352,12 @@ private fun CameraScreen(
     val cameraController = cameraState.controller
     var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
+
+    // Re-apply the selected camera device type whenever the controller is (re)created — config
+    // re-inits (aspect ratio, etc.) start from the default, so this preserves the user's choice.
+    LaunchedEffect(cameraController) {
+        cameraController.setPreferredCameraDeviceType(cameraDeviceType)
+    }
 
 
     var cameraMode by remember { mutableStateOf(CameraMode.Photo) }
@@ -597,7 +605,12 @@ private fun CameraScreen(
                 onResolutionChange = { if (!isRecording) onResolutionChange(it) },
                 onImageFormatChange = { if (!isRecording) onImageFormatChange(it) },
                 onQualityPrioritizationChange = { if (!isRecording) onQualityPrioritizationChange(it) },
-                onCameraDeviceTypeChange = { if (!isRecording) onCameraDeviceTypeChange(it) },
+                onCameraDeviceTypeChange = {
+                    if (!isRecording) {
+                        onCameraDeviceTypeChange(it)
+                        cameraController.setPreferredCameraDeviceType(it) // live re-bind
+                    }
+                },
                 onQRScanningToggle = { isQRScanningEnabled = it },
                 onOCRToggle = { isOCREnabled = it },
                 onOrientationLockChange = { orientation ->

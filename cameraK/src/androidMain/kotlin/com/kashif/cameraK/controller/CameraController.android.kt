@@ -492,7 +492,11 @@ actual class CameraController(
     actual fun getPreferredCameraDeviceType(): CameraDeviceType = cameraDeviceType
 
     actual fun setPreferredCameraDeviceType(deviceType: CameraDeviceType) {
+        if (cameraDeviceType == deviceType) return
         cameraDeviceType = deviceType
+        // Live switch: re-bind the use cases with a camera selector for the new device type
+        // (this rebind keeps the session/plugins; the field alone has no effect until a bind).
+        previewView?.let { bindCamera(it) }
     }
 
     actual fun startSession() {
