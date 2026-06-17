@@ -42,6 +42,7 @@ actual class CameraController(
     private val horizontalFlip: Boolean = false,
     private val customGrabber: FrameGrabber? = null,
     private val targetResolution: Pair<Int, Int>? = null,
+    private val aspectRatio: AspectRatio = AspectRatio.RATIO_16_9,
 ) {
     private var cameraGrabber: CameraGrabber? = null
     private val _frameFlow = MutableSharedFlow<BufferedImage>(
@@ -156,9 +157,9 @@ actual class CameraController(
      */
     actual fun getImageFormat(): ImageFormat = imageFormat
 
-    // Desktop renders the webcam's native frame directly (no ViewPort crop), so the preview
-    // doesn't letterbox by aspect ratio. Report 16:9 as a sane default.
-    actual fun getAspectRatio(): AspectRatio = AspectRatio.RATIO_16_9
+    // Reports the configured ratio so multiplatform UI can size consistently. The desktop capture
+    // path itself renders the webcam's native frame (no ViewPort crop), so it doesn't enforce it.
+    actual fun getAspectRatio(): AspectRatio = aspectRatio
 
     /**
      * Gets the current quality prioritization setting.

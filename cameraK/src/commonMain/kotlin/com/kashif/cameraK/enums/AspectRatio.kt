@@ -20,7 +20,7 @@ enum class AspectRatio {
  *
  * The camera sensor's field of view is fixed (e.g. 4:3); this returns how the matching preview box
  * should be proportioned so the displayed frame equals the captured frame. In portrait the long
- * edge runs vertically, so the ratio is inverted. Used to letterbox the preview (see [previewAspectRatio]).
+ * edge runs vertically, so the ratio is inverted. Used to letterbox the preview to match the capture.
  */
 fun AspectRatio.previewAspectRatio(orientation: DeviceOrientation): Float {
     val landscapeRatio = when (this) {

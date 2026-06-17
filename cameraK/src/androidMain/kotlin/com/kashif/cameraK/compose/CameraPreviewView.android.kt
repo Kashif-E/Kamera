@@ -38,13 +38,17 @@ actual fun CameraPreviewView(
     val ratio = controller.getAspectRatio().previewAspectRatio(deviceOrientation)
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        AndroidView(
-            factory = { previewView },
-            modifier = Modifier.aspectRatio(ratio),
-        )
-        if (overlay != null) {
-            val scope = CameraPreviewScopeImpl(this, deviceOrientation)
-            scope.overlay()
+        // Preview and overlay share the same aspect-ratio box so overlay coordinates (focus
+        // reticles, bounding boxes) align with the letterboxed preview frame, not the outer bounds.
+        Box(modifier = Modifier.aspectRatio(ratio)) {
+            AndroidView(
+                factory = { previewView },
+                modifier = Modifier.matchParentSize(),
+            )
+            if (overlay != null) {
+                val scope = CameraPreviewScopeImpl(this, deviceOrientation)
+                scope.overlay()
+            }
         }
     }
 }
