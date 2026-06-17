@@ -8,7 +8,6 @@ import kotlin.test.assertTrue
 
 class VideoTypesTest {
 
-
     @Test
     fun videoQuality_SD_hasDimensions640x480() {
         assertEquals(640, VideoQuality.SD.width)
@@ -49,7 +48,6 @@ class VideoTypesTest {
         assertTrue(entries.contains(VideoQuality.FHD))
         assertTrue(entries.contains(VideoQuality.UHD))
     }
-
 
     @Test
     fun videoConfiguration_defaultValues() {
@@ -104,7 +102,6 @@ class VideoTypesTest {
         val b = VideoConfiguration(quality = VideoQuality.HD)
         assertNotEquals(a, b)
     }
-
 
     @Test
     fun videoCaptureResult_successHoldsFilePathAndDuration() {

@@ -1,13 +1,13 @@
 package org.company.app
 
 import cameracompose.sample.generated.resources.Res
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.kmp.playground.kflite.DelegateType
 import org.kmp.playground.kflite.InterpreterOptions
 import org.kmp.playground.kflite.Kflite
-import kotlinx.atomicfu.atomic
 import org.kmp.playground.kflite.bytesToScaledByteBuffer
 import kotlin.math.floor
 

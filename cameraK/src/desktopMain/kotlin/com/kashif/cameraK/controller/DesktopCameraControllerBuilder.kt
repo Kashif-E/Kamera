@@ -26,6 +26,7 @@ class DesktopCameraControllerBuilder : CameraControllerBuilder {
     private var directory: Directory? = null
     private var qualityPriority: QualityPrioritization = QualityPrioritization.NONE
     private var targetResolution: Pair<Int, Int>? = null
+    private var aspectRatio: AspectRatio = AspectRatio.RATIO_16_9
 
     /**
      * Sets the frame grabber for camera input.
@@ -81,7 +82,10 @@ class DesktopCameraControllerBuilder : CameraControllerBuilder {
         return this
     }
 
-    override fun setAspectRatio(aspectRatio: AspectRatio): CameraControllerBuilder = this
+    override fun setAspectRatio(aspectRatio: AspectRatio): CameraControllerBuilder {
+        this.aspectRatio = aspectRatio
+        return this
+    }
 
     override fun setDirectory(directory: Directory): CameraControllerBuilder {
         this.directory = directory
@@ -98,6 +102,7 @@ class DesktopCameraControllerBuilder : CameraControllerBuilder {
             horizontalFlip = horizontalFlip,
             customGrabber = grabber,
             targetResolution = targetResolution,
+            aspectRatio = aspectRatio,
         )
     }
 }

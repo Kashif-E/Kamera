@@ -1,5 +1,6 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
@@ -87,6 +88,16 @@ expect class CameraController {
      * @return The configured [ImageFormat] (JPEG or PNG)
      */
     fun getImageFormat(): ImageFormat
+
+    /**
+     * Gets the configured capture aspect ratio.
+     *
+     * Used by the preview to letterbox itself to match the captured field of view,
+     * so what the user sees equals what is captured.
+     *
+     * @return The configured [AspectRatio]
+     */
+    fun getAspectRatio(): AspectRatio
 
     /**
      * Gets the current quality prioritization setting.

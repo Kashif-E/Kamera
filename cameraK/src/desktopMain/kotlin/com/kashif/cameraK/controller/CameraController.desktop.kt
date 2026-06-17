@@ -1,5 +1,6 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
@@ -41,6 +42,7 @@ actual class CameraController(
     private val horizontalFlip: Boolean = false,
     private val customGrabber: FrameGrabber? = null,
     private val targetResolution: Pair<Int, Int>? = null,
+    private val aspectRatio: AspectRatio = AspectRatio.RATIO_16_9,
 ) {
     private var cameraGrabber: CameraGrabber? = null
     private val _frameFlow = MutableSharedFlow<BufferedImage>(
@@ -154,6 +156,10 @@ actual class CameraController(
      * @return The configured [ImageFormat]
      */
     actual fun getImageFormat(): ImageFormat = imageFormat
+
+    // Reports the configured ratio so multiplatform UI can size consistently. The desktop capture
+    // path itself renders the webcam's native frame (no ViewPort crop), so it doesn't enforce it.
+    actual fun getAspectRatio(): AspectRatio = aspectRatio
 
     /**
      * Gets the current quality prioritization setting.
