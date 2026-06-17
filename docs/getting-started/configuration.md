@@ -217,7 +217,7 @@ import com.kashif.cameraK.utils.CameraKLogger
 
 CameraKLogger.enabled = true                          // turn on internal logs
 CameraKLogger.sink = { level, tag, msg, throwable ->  // optional: forward to your logger
-    Log.d(tag, "[$level] $msg")
+    println("[$level] $tag: $msg")                    // e.g. Log.d on Android, os_log on iOS
 }
 ```
 

@@ -496,7 +496,7 @@ ocrPlugin.stopRecognition()
 
 ### Analyzer Plugin
 
-Image Analyzer - observe the latest frame (as JPEG-encoded `ByteArray`) in a thread-safe environment. Frames are delivered through the plugin's `getAnalyzerFlow()`.
+Image Analyzer - observe the latest frame as a `ByteArray` in a thread-safe environment. Frames are delivered through the plugin's `getAnalyzerFlow()`. The byte layout is platform-dependent: JPEG-encoded on Android and iOS, raw pixel bytes (`DataBufferByte`) on Desktop — decode accordingly.
 
 #### Setup
 

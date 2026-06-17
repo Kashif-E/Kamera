@@ -100,7 +100,9 @@ when (result) {
         // Error occurred
         val error = result.exception
     }
-    else -> {} // Success(byteArray) is not returned by takePictureToFile()
+    is ImageCaptureResult.Success -> {
+        // Not produced by takePictureToFile(); handle defensively
+    }
 }
 ```
 
