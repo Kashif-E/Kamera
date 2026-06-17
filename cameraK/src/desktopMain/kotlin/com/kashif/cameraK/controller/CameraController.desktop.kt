@@ -75,10 +75,7 @@ actual class CameraController(
 
             return@withContext try {
                 val ext = if (imageFormat == ImageFormat.PNG) "png" else "jpg"
-                val outFile = File(
-                    System.getProperty("java.io.tmpdir"),
-                    "CameraK_${System.currentTimeMillis()}.$ext",
-                )
+                val outFile = File.createTempFile("CameraK_", ".$ext")
                 ImageIO.write(currentImage, ext, outFile)
                 listener(outFile.readBytes())
                 ImageCaptureResult.SuccessWithFile(outFile.absolutePath)

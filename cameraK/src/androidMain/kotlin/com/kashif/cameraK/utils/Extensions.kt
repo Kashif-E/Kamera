@@ -74,8 +74,9 @@ private fun ImageProxy.yuv420888ToNv21(): ByteArray {
 
     // Duplicate so the bulk read below doesn't advance the shared plane buffer — the same
     // ImageProxy is handed to every registered analyzer, so mutating its position corrupts
-    // the others. The strided/chroma reads use absolute get(index) and never mutate position.
-    val yBuffer = planes[0].buffer.duplicate()
+    // the others. Rewind the copy so the read starts at 0 regardless of the original's position.
+    // The strided/chroma reads use absolute get(index) and never depend on position.
+    val yBuffer = planes[0].buffer.duplicate().apply { rewind() }
     val yRowStride = planes[0].rowStride
     val yPixelStride = planes[0].pixelStride
     var pos = 0

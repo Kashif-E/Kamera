@@ -27,7 +27,7 @@ fun ByteArray.runTFliteModel(scope: CoroutineScope) {
     // Atomic check+set so only one inference is ever in flight even if frames arrive concurrently.
     if (!inferenceInFlight.compareAndSet(expect = false, update = true)) return
     val frame = this
-    scope.launch(Dispatchers.Default) {
+    val job = scope.launch(Dispatchers.Default) {
         try {
             if (!modelReady.value) {
                 Kflite.init(
@@ -66,10 +66,11 @@ fun ByteArray.runTFliteModel(scope: CoroutineScope) {
             printDetections(outputs)
         } catch (e: Exception) {
             // Frame couldn't be processed (e.g. undecodable bytes) — skip it rather than crash.
-        } finally {
-            inferenceInFlight.value = false
         }
     }
+    // Reset via invokeOnCompletion so the flag is cleared even if the scope was already cancelled
+    // and the block never ran (otherwise it would stay true and drop every future frame).
+    job.invokeOnCompletion { inferenceInFlight.value = false }
 }
 
 /**
