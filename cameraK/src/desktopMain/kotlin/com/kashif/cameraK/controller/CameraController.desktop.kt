@@ -27,7 +27,6 @@ import org.bytedeco.javacv.FFmpegFrameRecorder
 import org.bytedeco.javacv.FrameGrabber
 import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -74,16 +73,15 @@ actual class CameraController(
                 return@withContext ImageCaptureResult.Error(IllegalStateException("No image available"))
             }
 
-            val outputStream = ByteArrayOutputStream()
             return@withContext try {
-                ImageIO.write(currentImage, "jpg", outputStream)
-                listener(outputStream.toByteArray())
-                ImageCaptureResult.Success(outputStream.toByteArray())
+                val ext = if (imageFormat == ImageFormat.PNG) "png" else "jpg"
+                val outFile = File.createTempFile("CameraK_", ".$ext")
+                ImageIO.write(currentImage, ext, outFile)
+                listener(outFile.readBytes())
+                ImageCaptureResult.SuccessWithFile(outFile.absolutePath)
             } catch (e: Exception) {
                 CameraKLogger.e("CameraK", "Unhandled exception", e)
                 ImageCaptureResult.Error(e)
-            } finally {
-                outputStream.close()
             }
         }
     }
