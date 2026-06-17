@@ -1,7 +1,7 @@
-# CameraK
+# Kamera
 
 <p align="center">
-  <img src="docs/assets/kamera.jpg" alt="CameraK Poster" width="800" style="border-radius: 50%;"/>
+  <img src="docs/assets/kamera.jpg" alt="Kamera Poster" width="800" style="border-radius: 50%;"/>
 </p>
 
 <p align="center">
@@ -11,7 +11,7 @@ A modern camera library for Compose Multiplatform supporting Android, iOS, and D
 <p align="center">
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.kashif-mehmood-km/camerak?label=Maven%20Central&color=blue)](https://search.maven.org/search?q=g:io.github.kashif-mehmood-km)
-[![GitHub Release](https://img.shields.io/github/v/release/kashif-e/camerak)](https://github.com/Kashif-E/CameraK/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/kashif-e/Kamera)](https://github.com/Kashif-E/Kamera/releases)
 [![Kotlin Weekly](https://img.shields.io/badge/Kotlin_Weekly-425-7F52FF)](https://mailchi.mp/kotlinweekly/kotlin-weekly-425)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 </p>
@@ -34,14 +34,14 @@ Add dependencies to your `build.gradle.kts`:
 ```kotlin
 dependencies {
     // Core library
-    implementation("io.github.kashif-mehmood-km:camerak:0.2.0")
+    implementation("io.github.kashif-mehmood-km:camerak:0.4")
 
     // Optional plugins
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.2.0")
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.2.0")
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.2.0")
-    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:0.3")
-    implementation("io.github.kashif-mehmood-km:analyzer_plugin:0.3")
+    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.4")
+    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.4")
+    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.4")
+    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:0.4")
+    implementation("io.github.kashif-mehmood-km:analyzer_plugin:0.4")
 }
 ```
 
@@ -51,14 +51,14 @@ Add to your `libs.versions.toml`:
 
 ```toml
 [versions]
-camerak = "0.2.0"
+camerak = "0.4"
 
 [libraries]
 camerak = { module = "io.github.kashif-mehmood-km:camerak", version.ref = "camerak" }
 camerak-image-saver = { module = "io.github.kashif-mehmood-km:image_saver_plugin", version.ref = "camerak" }
 camerak-qr-scanner = { module = "io.github.kashif-mehmood-km:qr_scanner_plugin", version.ref = "camerak" }
 camerak-ocr = { module = "io.github.kashif-mehmood-km:ocr_plugin", version.ref = "camerak" }
-camerak-analyzer = { module = "io.github.kashif-mehmood-km:analzer_plugin", version.ref = "camerak" }
+camerak-analyzer = { module = "io.github.kashif-mehmood-km:analyzer_plugin", version.ref = "camerak" }
 camerak-video-recorder = { module = "io.github.kashif-mehmood-km:video_recorder_plugin", version.ref = "camerak" }
 ```
 
@@ -230,10 +230,12 @@ val cameraState by rememberCameraKState(
         // Image output
         imageFormat = ImageFormat.JPEG,          // JPEG or PNG
         directory = Directory.PICTURES,         // PICTURES, DCIM, DOCUMENTS
-        returnFilePath = true,
 
         // Quality
         qualityPrioritization = QualityPrioritization.BALANCED,
+
+        // Mirror front-camera captures to match the preview (Android/iOS)
+        mirrorFrontCamera = false,
 
         // iOS only: Advanced camera device types
         cameraDeviceType = CameraDeviceType.DEFAULT,
@@ -258,8 +260,8 @@ val cameraState by rememberCameraKState(
 | `torchMode` | `TorchMode` | `OFF` | ON, OFF, or AUTO |
 | `imageFormat` | `ImageFormat` | `JPEG` | JPEG or PNG |
 | `directory` | `Directory` | `PICTURES` | PICTURES, DCIM, or DOCUMENTS |
-| `returnFilePath` | `Boolean` | `true` | Whether to return file path in capture result |
 | `qualityPrioritization` | `QualityPrioritization` | `BALANCED` | Capture quality vs speed tradeoff |
+| `mirrorFrontCamera` | `Boolean` | `false` | Mirror front-camera captures to match preview (Android/iOS) |
 | `cameraDeviceType` | `CameraDeviceType` | `DEFAULT` | iOS: DEFAULT, WIDE_ANGLE, ULTRA_WIDE, TELEPHOTO, MACRO |
 
 ### Camera Runtime Control
@@ -494,24 +496,25 @@ ocrPlugin.stopRecognition()
 
 ### Analyzer Plugin
 
-Image Aalyzer - observe latest frame in a thread safe environment. Results are delivered through `CameraKEvent.LatestFrame` events via the `events` SharedFlow on `CameraKStateHolder`.
+Image Analyzer - observe the latest frame (as JPEG-encoded `ByteArray`) in a thread-safe environment. Frames are delivered through the plugin's `getAnalyzerFlow()`.
 
 #### Setup
 
 ```kotlin
-val scope = rememberCoroutineScope()
-val analyzerPlugin = remember { AnalyzerPlugin(scope) }
+val analyzerPlugin = rememberAnalyzerPlugin()
 var latestFrame by remember { mutableStateOf<ByteArray?>(null) }
 
-val cameraState by rememberCameraKState(-> stateHolder
-    analyzerPlugin.attachToStateHolder(stateHolder)
+val cameraState by rememberCameraKState(
+    setupPlugins = { stateHolder ->
+        stateHolder.attachPlugin(analyzerPlugin)
+    },
 )
 
-// Observe latest frame events
+// Observe the latest frame
 LaunchedEffect(analyzerPlugin) {
-    analyzerPlugin.getAnalyzerFlow().collect{-> frame
-	latestFrame = frame
-  }
+    analyzerPlugin.getAnalyzerFlow().collect { frame ->
+        latestFrame = frame
+    }
 }
 ```
 
@@ -972,22 +975,22 @@ LaunchedEffect(Unit) {
 
 **Problem**: Text recognition accuracy low on camera stream.
 
-**Solution**: Use high-resolution images for recognition:
+**Solution**: Text recognition runs on the live camera stream. Recognized text is delivered through `ocrPlugin.ocrFlow` (and as `CameraKEvent.TextRecognized` on `stateHolder.events`). For better accuracy, hold the camera steady and move closer so the text fills more of the frame:
 
 ```kotlin
-// Better accuracy - from captured image
-scope.launch {
-    when (val result = controller.takePictureToFile()) {
-        is ImageCaptureResult.SuccessWithFile -> {
-            val file = File(result.filePath)
-            val byteArray = file.readBytes()
-            val text = ocrPlugin.recognizeText(byteArray)
-        }
+// Recognized text is delivered on the OCR flow
+LaunchedEffect(ocrPlugin) {
+    for (text in ocrPlugin.ocrFlow) {
+        recognizedText = text
     }
 }
 
-// Lower accuracy - real-time stream
-// Text recognized events auto-delivered via stateHolder.events
+// Or observe TextRecognized events via the state holder
+LaunchedEffect(stateHolder) {
+    stateHolder.events.collect { event ->
+        if (event is CameraKEvent.TextRecognized) recognizedText = event.text
+    }
+}
 ```
 
 #### Compilation errors with plugins
@@ -998,10 +1001,10 @@ scope.launch {
 
 ```gradle
 dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:0.2.0")
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.2.0")
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.2.0")
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.2.0")
+    implementation("io.github.kashif-mehmood-km:camerak:0.4")
+    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.4")
+    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.4")
+    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.4")
 }
 ```
 

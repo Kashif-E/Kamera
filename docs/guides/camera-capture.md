@@ -82,13 +82,13 @@ Sealed class ensures exhaustive pattern matching:
 
 ```kotlin
 sealed class ImageCaptureResult {
-    data class SuccessWithFile(val filePath: String) : ImageCaptureResult()
     data class Success(val byteArray: ByteArray) : ImageCaptureResult()
+    data class SuccessWithFile(val filePath: String) : ImageCaptureResult()
     data class Error(val exception: Exception) : ImageCaptureResult()
 }
 ```
 
-**Handle all cases:**
+`takePictureToFile()` only ever returns `SuccessWithFile` or `Error` — the `Success(byteArray)` variant is never produced by it, so handling those two cases is enough:
 
 ```kotlin
 when (result) {
@@ -96,14 +96,11 @@ when (result) {
         // File saved, path available
         val path = result.filePath
     }
-    is ImageCaptureResult.Success -> {
-        // ByteArray available (deprecated path)
-        val data = result.byteArray
-    }
     is ImageCaptureResult.Error -> {
         // Error occurred
         val error = result.exception
     }
+    else -> {} // Success(byteArray) is not returned by takePictureToFile()
 }
 ```
 
@@ -352,7 +349,7 @@ scope.launch {
 
 ## Performance Tips
 
-1. **Use `takePictureToFile()`** — 2-3x faster than `takePicture()`
+1. **Use `takePictureToFile()`** — direct file capture avoids holding the full image in memory
 2. **Lower resolution** — Set `targetResolution` in `CameraConfiguration` for faster capture
 3. **JPEG format** — Faster than PNG
 4. **Quality prioritization** — Use `QualityPrioritization.SPEED` for rapid capture

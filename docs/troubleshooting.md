@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common issues and solutions for CameraK.
+Common issues and solutions for Kamera.
 
 ## Installation Issues
 
@@ -238,7 +238,7 @@ controller.setZoom(savedZoom.coerceIn(1f, controller.getMaxZoom()))
 **Solution:**
 1. Limit burst captures to 3-5 photos
 2. Use lower resolution
-3. Use `takePictureToFile()` instead of `takePicture()`
+3. Use `takePictureToFile()` — it writes straight to disk instead of buffering the image in memory
 
 ```kotlin
 val cameraState by rememberCameraKState(
@@ -284,10 +284,12 @@ val cameraState by rememberCameraKState(
 **Solution:** Add plugins during initialization using `setupPlugins`:
 
 ```kotlin
+val qrScannerPlugin = rememberQRScannerPlugin()
+val ocrPlugin = rememberOcrPlugin()
 val cameraState by rememberCameraKState(
     setupPlugins = { stateHolder ->
-        stateHolder.attachPlugin(rememberQRScannerPlugin())
-        stateHolder.attachPlugin(rememberOcrPlugin())
+        stateHolder.attachPlugin(qrScannerPlugin)
+        stateHolder.attachPlugin(ocrPlugin)
     },
 )
 ```
@@ -323,7 +325,7 @@ if (lens == null) {
 
 **Issue:** "Camera preview upside down"
 
-**Solution:** Device orientation handling. CameraK handles this automatically - report if issue persists.
+**Solution:** Device orientation handling. Kamera handles this automatically - report if issue persists.
 
 **Issue:** "Camera types not available (TELEPHOTO, ULTRA_WIDE)"
 
@@ -386,15 +388,15 @@ pod install
 
 If you're still stuck:
 
-1. **Check Examples**: [Sample Projects](https://github.com/Kashif-E/CameraK/tree/main/Sample)
-2. **Search Issues**: [GitHub Issues](https://github.com/Kashif-E/CameraK/issues)
-3. **Ask Questions**: [GitHub Discussions](https://github.com/Kashif-E/CameraK/discussions)
-4. **Report Bugs**: [New Issue](https://github.com/Kashif-E/CameraK/issues/new)
+1. **Check Examples**: [Sample Projects](https://github.com/Kashif-E/Kamera/tree/main/Sample)
+2. **Search Issues**: [GitHub Issues](https://github.com/Kashif-E/Kamera/issues)
+3. **Ask Questions**: [GitHub Discussions](https://github.com/Kashif-E/Kamera/discussions)
+4. **Report Bugs**: [New Issue](https://github.com/Kashif-E/Kamera/issues/new)
 
 ### When Reporting Issues
 
 Include:
-- CameraK version
+- Kamera version
 - Platform (Android/iOS/Desktop)
 - Device/emulator details
 - Minimal reproducible code
@@ -403,7 +405,7 @@ Include:
 
 **Good issue:**
 ```
-CameraK 0.3
+Kamera 0.3
 Android 13 (Pixel 6)
 
 Preview shows black screen when using:

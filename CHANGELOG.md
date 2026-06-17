@@ -1,52 +1,36 @@
 # Changelog
 
-All notable changes to the CameraK project will be documented in this file.
+All notable changes to the Kamera project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-- **Plugin Initialization Timing (#52)**: Fixed plugins attempting to initialize before camera is ready
-  - Added null checks in `QRScannerPlugin.android.kt` to prevent crashes when `cameraProvider` is null
-  - Wrapped `OcrPlugin.onAttach()` in try-catch to gracefully handle initialization failures
-  - Made OCR plugin fail silently (with warning logs) if tessdata not found instead of crashing the app
-  - Added validation to ensure camera is fully bound before updating image analyzer
-
-- **Desktop Tesseract Path Resolution (#51)**: Fixed hardcoded tessdata path breaking on other machines
-  - Implemented dynamic path resolution checking multiple locations for tessdata files
-  - Added graceful degradation when tessdata is not found on desktop
-  - Desktop app now runs without OCR errors even when tessdata is unavailable
-
-- **Desktop QR Scanner Syntax Error (#50)**: Fixed duplicate `put()` statement in decode hints map
-  - Corrected malformed EnumMap initialization in QRScannerPlugin
-
 ### Added
-- **API Toggle Feature**: Added UI toggle button to switch between new and old camera APIs
-  - New Compose-first `CameraKScreen` with reactive state management
-  - Legacy callback-based `CameraPreview` API available via toggle
-  - Both APIs work seamlessly with all plugins (ImageSaver, QRScanner, OCR)
-  - Toggle button in camera controls bottom sheet for easy switching
+- **Opt-in logging (`CameraKLogger`)** (#133): internal logging is now disabled by default and routed through `CameraKLogger`. Set `CameraKLogger.enabled = true` to turn it on, or provide a custom `CameraKLogger.sink` to forward logs to your own logger.
+- **`mirrorFrontCamera` configuration** (#112): optionally mirror front-camera captures to match the mirrored preview. Defaults to `false`. iOS and the Android byte-array path bake the flip into pixels; the Android file path records it as an EXIF orientation tag.
+- **CI build check** (#129): a workflow builds all targets on every PR; merges are gated on passing checks and resolved review conversations.
 
-- **iOS Image Orientation Issue (#44)**: Fixed images being saved in wrong orientation on iOS
-  - Added device orientation detection at photo capture time by setting `videoOrientation` on the photo output connection
-  - Photos captured in portrait mode now save as portrait, landscape photos save as landscape
-  - Optimized image processing to use original `fileDataRepresentation()` when quality is high (>85%), preserving original EXIF orientation metadata
-  - Added `UIImage.fixOrientation()` utility function that applies orientation metadata to pixel data when re-encoding is necessary (format conversion or quality reduction)
-  - Updated `ImageSaverPlugin` to apply orientation correction when saving images to Photos library
-  - Ensured orientation is correctly preserved across portrait, landscape, and upside-down device orientations
+### Changed
+- **Better barcode/QR detection** (#130) on Android and iOS (stride-aware luminance, `TRY_HARDER`, inverted retry).
+- **Android analyzer** now emits decodable JPEG frames (matching iOS) and runs off the main thread, fixing frame backpressure and `Could not decode ByteArray to Bitmap` consumers.
+- **`setPreferredCameraDeviceType()`** now performs a live re-bind instead of requiring reinitialization.
 
-### Technical Details
-The iOS camera implementation previously had an issue where:
-1. Photos were captured with correct EXIF orientation metadata
-2. But when converted from `NSData` → `UIImage` → `JPEG/PNG` data, the orientation was lost or incorrectly applied
+### Removed (breaking)
+- Deprecated `CameraController.takePicture()` (returned `ByteArray`) — use `takePictureToFile()`.
+- Legacy callback-based `CameraPreview` API and the new/old API toggle.
+- Dead `returnFilePath` flag and other removed-API references in docs. See the migration table in the README.
 
-The fix implements a multi-layered approach:
-1. **Capture Level**: Set `videoOrientation` on `AVCapturePhotoOutput` connection before capture to ensure correct EXIF metadata
-2. **Processing Level**: Use original capture data directly when possible (JPEG format with high quality)
-3. **Re-encoding Level**: When format conversion or quality reduction is needed, apply `fixOrientation()` to bake orientation into pixel data
-4. **Save Level**: Apply orientation correction in `ImageSaverPlugin` before saving to Photos library
-
-This ensures images display correctly regardless of how they were captured (portrait, landscape, etc.) and regardless of the output format (JPEG, PNG).
+### Fixed
+- **iOS preview/capture mismatch on flat devices** (#115, #109): preview no longer distorts when the device is face-up.
+- **iOS crash from deprecated video stabilization API** (#113).
+- **Android auto-save after capture**: capture listeners are now fired on `takePictureToFile()`.
+- **Cross-analyzer buffer corruption**: the shared `ImageProxy` Y-plane buffer is duplicated before reads so concurrent analyzers aren't affected.
+- **Desktop `takePictureToFile()`** now writes a real file instead of returning an empty path.
+- **`ImageSaverPlugin.getByteArrayFrom()`** (Android) now reads raw file paths before falling back to `ContentResolver`.
+- **Plugin initialization timing** (#52): null checks and graceful failure when the camera isn't ready yet.
+- **Desktop Tesseract path resolution** (#51): dynamic tessdata lookup with graceful degradation.
+- **Desktop QR scanner** (#50): fixed malformed decode-hints `EnumMap` initialization.
+- **iOS image orientation** (#44): captures save in the correct orientation across portrait, landscape, and upside-down.
 

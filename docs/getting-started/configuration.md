@@ -195,6 +195,32 @@ config = CameraConfiguration(
 - `BALANCED`: General-purpose apps
 - `SPEED`: Burst mode, document scanning
 
+## Front Camera Mirroring
+
+Mirror front-camera captures so a selfie matches the mirrored preview ("what you see is what you get"). No effect on the back camera.
+
+```kotlin
+config = CameraConfiguration(
+    cameraLens = CameraLens.FRONT,
+    mirrorFrontCamera = true  // default: false
+)
+```
+
+**Representation note:** iOS and the Android byte-array path bake the flip into the pixels. The Android file path (`takePictureToFile()`, the fast path) records it as an EXIF orientation tag — EXIF-aware viewers honor it, but raw-pixel consumers may ignore it.
+
+## Logging
+
+Internal logging is off by default. Enable it (e.g. in debug builds) or route it to your own logger via `CameraKLogger`:
+
+```kotlin
+import com.kashif.cameraK.utils.CameraKLogger
+
+CameraKLogger.enabled = true                          // turn on internal logs
+CameraKLogger.sink = { level, tag, msg, throwable ->  // optional: forward to your logger
+    Log.d(tag, "[$level] $msg")
+}
+```
+
 ## Complete Example
 
 ```kotlin
@@ -331,6 +357,7 @@ controller.toggleCameraLens()  // BACK <-> FRONT
 | `directory` | `Directory` | `PICTURES` | All |
 | `qualityPrioritization` | `QualityPrioritization` | `BALANCED` | All |
 | `torchMode` | `TorchMode` | `OFF` | Android, iOS |
+| `mirrorFrontCamera` | `Boolean` | `false` | Android, iOS |
 
 ## Next Steps
 

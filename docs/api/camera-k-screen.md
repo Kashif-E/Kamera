@@ -20,9 +20,11 @@ Convenience wrapper composable that simplifies camera state handling with automa
 fun CameraKScreen(
     modifier: Modifier = Modifier,
     cameraState: CameraKState,
+    deviceOrientation: DeviceOrientation = DeviceOrientation.PORTRAIT,
     loadingContent: @Composable () -> Unit = { DefaultLoadingScreen() },
     errorContent: @Composable (CameraKState.Error) -> Unit = { DefaultErrorScreen(it) },
     showPreview: Boolean = true,
+    overlay: @Composable (CameraPreviewScope.() -> Unit)? = null,
     content: @Composable (CameraKState.Ready) -> Unit
 )
 ```
@@ -50,6 +52,22 @@ Whether to automatically show camera preview when ready.
 
 - `true` (default) -- Preview shown automatically in background
 - `false` -- No preview, useful for custom preview implementations
+
+### deviceOrientation
+
+```kotlin
+deviceOrientation: DeviceOrientation = DeviceOrientation.PORTRAIT
+```
+
+Orientation passed to the preview so frames and captures are rotated correctly. One of `PORTRAIT`, `LANDSCAPE_LEFT`, `PORTRAIT_UPSIDE_DOWN`, `LANDSCAPE_RIGHT`.
+
+### overlay
+
+```kotlin
+overlay: @Composable (CameraPreviewScope.() -> Unit)? = null
+```
+
+Optional content drawn on top of the preview (e.g. focus reticles, grids). Receives a `CameraPreviewScope`. Defaults to `null` (no overlay).
 
 ### loadingContent
 
@@ -247,11 +265,13 @@ fun CustomPreviewCamera() {
 ```kotlin
 @Composable
 fun CameraWithPlugins() {
-    val scope = rememberCoroutineScope()
+    // Create plugins in composable scope, then attach them inside setupPlugins.
+    val qrScannerPlugin = rememberQRScannerPlugin()
+    val ocrPlugin = rememberOcrPlugin()
     val cameraState by rememberCameraKState(
         setupPlugins = { stateHolder ->
-            stateHolder.attachPlugin(QRScannerPlugin())
-            stateHolder.attachPlugin(OcrPlugin())
+            stateHolder.attachPlugin(qrScannerPlugin)
+            stateHolder.attachPlugin(ocrPlugin)
         }
     )
 
