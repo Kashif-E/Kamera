@@ -1,5 +1,6 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
@@ -154,6 +155,10 @@ actual class CameraController(
      * @return The configured [ImageFormat]
      */
     actual fun getImageFormat(): ImageFormat = imageFormat
+
+    // Desktop renders the webcam's native frame directly (no ViewPort crop), so the preview
+    // doesn't letterbox by aspect ratio. Report 16:9 as a sane default.
+    actual fun getAspectRatio(): AspectRatio = AspectRatio.RATIO_16_9
 
     /**
      * Gets the current quality prioritization setting.

@@ -20,7 +20,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Composable
-
 actual fun CameraPreviewView(
     controller: CameraController,
     modifier: Modifier,

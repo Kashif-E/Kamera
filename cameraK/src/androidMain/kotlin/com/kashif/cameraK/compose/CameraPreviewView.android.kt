@@ -2,15 +2,17 @@ package com.kashif.cameraK.compose
 
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.enums.previewAspectRatio
 
 @Composable
 actual fun CameraPreviewView(
@@ -20,17 +22,25 @@ actual fun CameraPreviewView(
     overlay: @Composable (CameraPreviewScope.() -> Unit)?,
 ) {
     val context = LocalContext.current
-    val previewView = remember { PreviewView(context) }
+    // FIT_CENTER shows the whole frame (letterboxed) instead of cropping it to fill the view,
+    // so the preview matches the captured field of view.
+    val previewView = remember {
+        PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_CENTER }
+    }
 
     DisposableEffect(controller, previewView) {
         controller.bindCamera(previewView) {}
         onDispose {}
     }
 
-    Box(modifier = modifier) {
+    // Size the preview to the configured aspect ratio. The UseCaseGroup's ViewPort is derived from
+    // this view, so matching it here means the capture is no longer double-cropped to the screen.
+    val ratio = controller.getAspectRatio().previewAspectRatio(deviceOrientation)
+
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
         AndroidView(
             factory = { previewView },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.aspectRatio(ratio),
         )
         if (overlay != null) {
             val scope = CameraPreviewScopeImpl(this, deviceOrientation)

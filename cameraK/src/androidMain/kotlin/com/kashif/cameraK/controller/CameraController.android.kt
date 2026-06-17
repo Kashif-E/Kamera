@@ -487,6 +487,8 @@ actual class CameraController(
 
     actual fun getImageFormat(): ImageFormat = imageFormat
 
+    actual fun getAspectRatio(): AspectRatio = aspectRatio
+
     actual fun getQualityPrioritization(): QualityPrioritization = qualityPriority
 
     actual fun getPreferredCameraDeviceType(): CameraDeviceType = cameraDeviceType

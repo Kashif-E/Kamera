@@ -359,17 +359,14 @@ private fun CameraScreen(
         cameraController.setPreferredCameraDeviceType(cameraDeviceType)
     }
 
-
     var cameraMode by remember { mutableStateOf(CameraMode.Photo) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingDurationMs by remember { mutableStateOf(0L) }
-
 
     var flashMode by remember { mutableStateOf(FlashMode.OFF) }
     var torchMode by remember { mutableStateOf(TorchMode.OFF) }
     var zoomLevel by remember { mutableFloatStateOf(1f) }
     var maxZoom by remember { mutableFloatStateOf(1f) }
-
 
     var isQRScanningEnabled by remember { mutableStateOf(true) }
     var isOCREnabled by remember { mutableStateOf(true) }
@@ -397,7 +394,7 @@ private fun CameraScreen(
                 is CameraKEvent.RecordingStopped,
                 is CameraKEvent.RecordingFailed,
                 is CameraKEvent.RecordingMaxDurationReached,
-                    -> {
+                -> {
                     isRecording = false
                     recordingDurationMs = 0L
                 }
@@ -456,7 +453,7 @@ private fun CameraScreen(
 
     val runTFliteModel = remember { getTFliteRunner() }
 
-    if(runTFliteModel != null) {
+    if (runTFliteModel != null) {
         LaunchedEffect(latestFrame) {
             latestFrame?.runTFliteModel(scope)
         }
@@ -637,8 +634,6 @@ private fun TopBar(
     onTorchToggle: () -> Unit,
     onAspectRatioCycle: () -> Unit,
 ) {
-
-
     Row(
         modifier = modifier
             .fillMaxWidth()
