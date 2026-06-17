@@ -7,8 +7,8 @@ import kotlinx.coroutines.launch
 import org.kmp.playground.kflite.DelegateType
 import org.kmp.playground.kflite.InterpreterOptions
 import org.kmp.playground.kflite.Kflite
+import kotlinx.atomicfu.atomic
 import org.kmp.playground.kflite.bytesToScaledByteBuffer
-import kotlin.concurrent.Volatile
 import kotlin.math.floor
 
 const val FLOAT_TYPE_SIZE = 3
@@ -18,18 +18,18 @@ private const val SCORE_THRESHOLD = 0.4f
 
 // The model is initialized once and reused; inference runs off the main thread, and a new frame is
 // dropped while one is already in flight (the analyzer produces frames far faster than inference).
-@Volatile private var modelReady = false
-@Volatile private var inferenceInFlight = false
+private val modelReady = atomic(false)
+private val inferenceInFlight = atomic(false)
 
 actual fun getTFliteRunner(): (ByteArray.(CoroutineScope) -> Unit)? = ByteArray::runTFliteModel
 
 fun ByteArray.runTFliteModel(scope: CoroutineScope) {
-    if (inferenceInFlight) return
-    inferenceInFlight = true
+    // Atomic check+set so only one inference is ever in flight even if frames arrive concurrently.
+    if (!inferenceInFlight.compareAndSet(expect = false, update = true)) return
     val frame = this
     scope.launch(Dispatchers.Default) {
         try {
-            if (!modelReady) {
+            if (!modelReady.value) {
                 Kflite.init(
                     model = Res.readBytes("files/efficientdet-lite2.tflite"),
                     options = InterpreterOptions(
@@ -38,7 +38,7 @@ fun ByteArray.runTFliteModel(scope: CoroutineScope) {
                         allowFp16PrecisionForFp32 = true,
                     ),
                 )
-                modelReady = true
+                modelReady.value = true
             }
 
             val inputWidth = Kflite.getInputTensor(0).shape[1]
@@ -67,7 +67,7 @@ fun ByteArray.runTFliteModel(scope: CoroutineScope) {
         } catch (e: Exception) {
             // Frame couldn't be processed (e.g. undecodable bytes) — skip it rather than crash.
         } finally {
-            inferenceInFlight = false
+            inferenceInFlight.value = false
         }
     }
 }

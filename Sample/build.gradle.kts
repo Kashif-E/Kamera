@@ -55,6 +55,7 @@ kotlin {
 
         mobileMain.dependencies {
             implementation(libs.kflite)
+            implementation(libs.atomicfu)
         }
 
         androidMain {

@@ -437,6 +437,7 @@ actual class CameraController(
     actual fun getPreferredCameraDeviceType(): CameraDeviceType = cameraDeviceType
 
     actual fun setPreferredCameraDeviceType(deviceType: CameraDeviceType) {
+        if (cameraDeviceType == deviceType) return // avoid a redundant AVCaptureSession input swap
         cameraDeviceType = deviceType
         customCameraController.switchToDeviceType(deviceType)
     }
