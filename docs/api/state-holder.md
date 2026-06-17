@@ -1,6 +1,6 @@
 # CameraKStateHolder API
 
-Core state management for CameraK. Manages camera lifecycle, exposes reactive state, and handles plugin coordination.
+Core state management for Kamera. Manages camera lifecycle, exposes reactive state, and handles plugin coordination.
 
 ## Overview
 
@@ -27,6 +27,11 @@ expect fun rememberCameraKState(
 **Example:**
 
 ```kotlin
+// Create plugins in composable scope first — the remember…Plugin(...) factories
+// are @Composable and cannot be called inside the setupPlugins lambda.
+val qrScannerPlugin = rememberQRScannerPlugin()
+val ocrPlugin = rememberOcrPlugin()
+
 val cameraState by rememberCameraKState(
     config = CameraConfiguration(
         cameraLens = CameraLens.BACK,
@@ -34,8 +39,8 @@ val cameraState by rememberCameraKState(
         aspectRatio = AspectRatio.RATIO_16_9
     ),
     setupPlugins = { stateHolder ->
-        stateHolder.attachPlugin(QRScannerPlugin())
-        stateHolder.attachPlugin(OcrPlugin())
+        stateHolder.attachPlugin(qrScannerPlugin)
+        stateHolder.attachPlugin(ocrPlugin)
     }
 )
 ```
@@ -93,6 +98,9 @@ data class CameraUIState(
     val cameraDeviceType: CameraDeviceType = CameraDeviceType.DEFAULT,
     val isCapturing: Boolean = false,
     val lastError: String? = null,
+    val isRecording: Boolean = false,
+    val isPaused: Boolean = false,
+    val recordingDurationMs: Long = 0L,
 )
 ```
 
@@ -123,6 +131,10 @@ sealed class CameraKEvent {
     data class QRCodeScanned(val qrCode: String) : CameraKEvent()
     data class TextRecognized(val text: String) : CameraKEvent()
     data class PermissionDenied(val permission: String) : CameraKEvent()
+    data class RecordingStarted(val filePath: String) : CameraKEvent()
+    data class RecordingStopped(val result: VideoCaptureResult) : CameraKEvent()
+    data class RecordingFailed(val exception: Exception) : CameraKEvent()
+    data class RecordingMaxDurationReached(val filePath: String, val durationMs: Long) : CameraKEvent()
 }
 ```
 
@@ -381,6 +393,7 @@ Cleans up resources. Called automatically when composable leaves composition.
 @Composable
 fun CompleteStateHolderExample() {
     val scope = rememberCoroutineScope()
+    val qrScannerPlugin = rememberQRScannerPlugin()
 
     val cameraState by rememberCameraKState(
         config = CameraConfiguration(
@@ -389,7 +402,7 @@ fun CompleteStateHolderExample() {
             aspectRatio = AspectRatio.RATIO_16_9
         ),
         setupPlugins = { stateHolder ->
-            stateHolder.attachPlugin(QRScannerPlugin())
+            stateHolder.attachPlugin(qrScannerPlugin)
         }
     )
 

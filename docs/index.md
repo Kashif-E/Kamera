@@ -1,4 +1,4 @@
-# CameraK Documentation
+# Kamera Documentation
 
 **Modern camera SDK for Kotlin Multiplatform** -- Android, iOS, and Desktop with a unified API.
 
@@ -6,7 +6,7 @@
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:0.3")
+    implementation("io.github.kashif-mehmood-km:camerak:0.4")
 }
 ```
 
@@ -48,7 +48,7 @@ fun CameraScreen() {
 
 Start with installation and configuration:
 
-- [Installation](getting-started/installation.md) -- Add CameraK to your project
+- [Installation](getting-started/installation.md) -- Add Kamera to your project
 - [Quick Start](getting-started/quick-start.md) -- Build your first camera app in 5 minutes
 - [Configuration](getting-started/configuration.md) -- Customize camera behavior
 - [Android Example](examples/android.md) -- Android-specific setup
@@ -57,7 +57,7 @@ Start with installation and configuration:
 
 ### State Management
 
-CameraK uses reactive state management via `CameraKStateHolder`:
+Kamera uses reactive state management via `CameraKStateHolder`:
 
 ```kotlin
 sealed class CameraKState {
@@ -87,13 +87,16 @@ expect class CameraController {
 Extend camera functionality modularly:
 
 ```kotlin
+// Create plugins in composable scope, then attach the instances inside setupPlugins.
+val qrScannerPlugin = rememberQRScannerPlugin()
+val ocrPlugin = rememberOcrPlugin()
 val cameraState by rememberCameraKState(
     config = CameraConfiguration(
         cameraLens = CameraLens.BACK,
     ),
     setupPlugins = { stateHolder ->
-        stateHolder.attachPlugin(rememberQRScannerPlugin())
-        stateHolder.attachPlugin(rememberOcrPlugin())
+        stateHolder.attachPlugin(qrScannerPlugin)
+        stateHolder.attachPlugin(ocrPlugin)
     },
 )
 ```
@@ -125,13 +128,13 @@ val cameraState by rememberCameraKState(
 |----------|-----------------|---------|
 | Android  | API 21 (5.0)    | CameraX |
 | iOS      | 13.0            | AVFoundation |
-| Desktop  | JDK 11+         | JavaCV |
+| Desktop  | JDK 17+         | JavaCV |
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/Kashif-E/CameraK/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Kashif-E/CameraK/discussions)
-- **Examples**: [Sample Projects](https://github.com/Kashif-E/CameraK/tree/main/Sample)
+- **Issues**: [GitHub Issues](https://github.com/Kashif-E/Kamera/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Kashif-E/Kamera/discussions)
+- **Examples**: [Sample Projects](https://github.com/Kashif-E/Kamera/tree/main/Sample)
 
 ## License
 

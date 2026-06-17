@@ -1,6 +1,6 @@
 # Android Setup
 
-Setup CameraK for Android applications.
+Setup Kamera for Android applications.
 
 ## Requirements
 
@@ -16,7 +16,7 @@ Setup CameraK for Android applications.
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:0.3")
+    implementation("io.github.kashif-mehmood-km:camerak:0.4")
 }
 ```
 
@@ -26,7 +26,7 @@ dependencies {
 
 ```toml
 [versions]
-camerak = "0.3"
+camerak = "0.4"
 
 [libraries]
 camerak = { module = "io.github.kashif-mehmood-km:camerak", version.ref = "camerak" }
@@ -83,9 +83,9 @@ dependencies {
 
 ## Step 3: Request Permissions
 
-CameraK includes a built-in, cross-platform permission API. No third-party libraries needed.
+Kamera includes a built-in, cross-platform permission API. No third-party libraries needed.
 
-### Using CameraK's Permission API
+### Using Kamera's Permission API
 
 ```kotlin
 @Composable
@@ -223,7 +223,7 @@ If using ProGuard/R8, add rules:
 ### proguard-rules.pro
 
 ```proguard
-# CameraK
+# Kamera
 -keep class com.kashif.cameraK.** { *; }
 -keepclassmembers class com.kashif.cameraK.** { *; }
 
@@ -281,7 +281,7 @@ Test on real device for:
 
 **Cause:** CameraX version conflict.
 
-**Solution:** CameraK includes CameraX automatically -- don't add manual CameraX dependencies.
+**Solution:** Kamera includes CameraX automatically -- don't add manual CameraX dependencies.
 
 ## Platform-Specific Features
 

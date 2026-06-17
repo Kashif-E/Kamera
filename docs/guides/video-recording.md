@@ -2,20 +2,20 @@
 
 # Video Recording
 
-Record high-quality videos with CameraK’s VideoRecorderPlugin. This guide matches the actual usage patterns from the sample app.
+Record high-quality videos with Kamera’s VideoRecorderPlugin. This guide matches the actual usage patterns from the sample app.
 
 ---
 
 ## Overview
 
-CameraK’s video recording is powered by the `VideoRecorderPlugin`, which provides a simple API for starting, stopping, and monitoring video capture. It supports audio, duration limits, and quality selection.
+Kamera’s video recording is powered by the `VideoRecorderPlugin`, which provides a simple API for starting, stopping, and monitoring video capture. It supports audio, duration limits, and quality selection.
 
 ---
 
 
 ## 1. Prerequisites & Permissions
 
-- CameraK and VideoRecorderPlugin dependencies added to your project
+- Kamera and VideoRecorderPlugin dependencies added to your project
 - Camera and storage permissions granted (Android/iOS)
 
 ### Android: Update `AndroidManifest.xml`
@@ -49,7 +49,7 @@ Add the plugin dependency to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:0.3")
+    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:0.4")
 }
 ```
 
@@ -184,7 +184,7 @@ Row(
 
 ## 9. See Also
 
-- [Sample App Usage](https://github.com/Kashif-E/CameraK/blob/main/Sample/src/commonMain/kotlin/org/company/app/App.kt)
+- [Sample App Usage](https://github.com/Kashif-E/Kamera/blob/main/Sample/src/commonMain/kotlin/org/company/app/App.kt)
 - [Plugins Guide](plugins.md)
 - [CameraKScreen API](../api/camera-k-screen.md)
 
