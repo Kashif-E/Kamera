@@ -975,20 +975,13 @@ LaunchedEffect(Unit) {
 
 **Problem**: Text recognition accuracy low on camera stream.
 
-**Solution**: Text recognition runs on the live camera stream. Recognized text is delivered through `ocrPlugin.ocrFlow` (and as `CameraKEvent.TextRecognized` on `stateHolder.events`). For better accuracy, hold the camera steady and move closer so the text fills more of the frame:
+**Solution**: Text recognition runs on the live camera stream. Recognized text is delivered through `ocrPlugin.ocrFlow` (and also emitted as a `CameraKEvent.TextRecognized` event for anyone collecting the state holder's `events`). For better accuracy, hold the camera steady and move closer so the text fills more of the frame:
 
 ```kotlin
 // Recognized text is delivered on the OCR flow
 LaunchedEffect(ocrPlugin) {
     for (text in ocrPlugin.ocrFlow) {
         recognizedText = text
-    }
-}
-
-// Or observe TextRecognized events via the state holder
-LaunchedEffect(stateHolder) {
-    stateHolder.events.collect { event ->
-        if (event is CameraKEvent.TextRecognized) recognizedText = event.text
     }
 }
 ```

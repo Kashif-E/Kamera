@@ -27,6 +27,11 @@ expect fun rememberCameraKState(
 **Example:**
 
 ```kotlin
+// Create plugins in composable scope first — the remember…Plugin(...) factories
+// are @Composable and cannot be called inside the setupPlugins lambda.
+val qrScannerPlugin = rememberQRScannerPlugin()
+val ocrPlugin = rememberOcrPlugin()
+
 val cameraState by rememberCameraKState(
     config = CameraConfiguration(
         cameraLens = CameraLens.BACK,
@@ -39,8 +44,6 @@ val cameraState by rememberCameraKState(
     }
 )
 ```
-
-> Create plugins with their `remember…Plugin(...)` factories in composable scope first (e.g. `val qrScannerPlugin = rememberQRScannerPlugin()`), then attach those instances inside `setupPlugins`. The factories are `@Composable` and cannot be called inside the `setupPlugins` lambda.
 
 ## Properties
 

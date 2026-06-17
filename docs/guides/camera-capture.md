@@ -88,7 +88,7 @@ sealed class ImageCaptureResult {
 }
 ```
 
-`takePictureToFile()` only ever returns `SuccessWithFile` or `Error` — the `Success(byteArray)` variant is never produced by it, so handling those two cases is enough:
+`takePictureToFile()` only ever returns `SuccessWithFile` or `Error` — the `Success(byteArray)` variant is never produced by it. Since `ImageCaptureResult` is a sealed class, the `when` must still be exhaustive, so keep a `Success` branch as defensive handling (it simply won't be hit for this API):
 
 ```kotlin
 when (result) {
