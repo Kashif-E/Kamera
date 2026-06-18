@@ -4,7 +4,6 @@ import kotlinx.atomicfu.atomic
 import platform.Foundation.NSLock
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
-import platform.Foundation.NSProcessInfo
 import platform.UIKit.UIApplicationDidReceiveMemoryWarningNotification
 
 /**
@@ -12,15 +11,11 @@ import platform.UIKit.UIApplicationDidReceiveMemoryWarningNotification
  * Monitors memory pressure and optimizes memory usage for image capture operations
  */
 object MemoryManager {
-    private const val MEMORY_PRESSURE_THRESHOLD = 0.8
-
     private val smallBufferLock = NSLock()
     private val mediumBufferLock = NSLock()
     private val largeBufferLock = NSLock()
 
     private val memoryPressure = atomic(false)
-
-    private var memoryUsage = atomic(0.0)
 
     private val smallBufferPool = mutableListOf<ByteArray>()
     private val mediumBufferPool = mutableListOf<ByteArray>()
@@ -54,20 +49,12 @@ object MemoryManager {
      * This should be called periodically, especially before major memory operations
      */
     fun updateMemoryStatus() {
-        val usedMemory = getUsedMemory()
-        val totalMemory = getTotalMemory()
-
-        if (totalMemory > 0) {
-            val usage = usedMemory / totalMemory
-            memoryUsage.value = usage
-
-            if (usage > MEMORY_PRESSURE_THRESHOLD && !memoryPressure.value) {
-                memoryPressure.value = true
-                handleHighMemoryPressure()
-            } else if (usage <= MEMORY_PRESSURE_THRESHOLD && memoryPressure.value) {
-                memoryPressure.value = false
-            }
-        }
+        // No-op: iOS exposes no cheap, reliable per-process memory gauge, so pressure is driven
+        // solely by the system memory-warning notification (see registerMemoryWarningNotification),
+        // which callers can observe via isUnderMemoryPressure(). The previous code compared
+        // physicalMemory to itself — pinning "usage" at 100% and latching pressure on permanently,
+        // which made every capture downshift the session preset and underexpose the photo (#138).
+        // Kept as a hook so existing call sites stay valid.
     }
 
     /**
@@ -172,29 +159,10 @@ object MemoryManager {
     /**
      * Get optimal image quality based on memory conditions
      */
-    fun getOptimalImageQuality(): Double = when {
-        memoryPressure.value -> 0.6
-        memoryUsage.value > 0.7 -> 0.75
-        else -> 0.95
-    }
+    fun getOptimalImageQuality(): Double = if (memoryPressure.value) 0.6 else 0.95
 
     /**
      * Check if memory is under pressure
      */
     fun isUnderMemoryPressure(): Boolean = memoryPressure.value
-
-    /**
-     * Get memory usage as a percentage
-     */
-    fun getMemoryUsagePercentage(): Double = memoryUsage.value * 100
-
-    /**
-     * Get used memory in bytes - uses physical footprint for accurate measurement
-     */
-    private fun getUsedMemory(): Double = NSProcessInfo.processInfo.physicalMemory.toDouble()
-
-    /**
-     * Get total available memory in bytes
-     */
-    private fun getTotalMemory(): Double = NSProcessInfo.processInfo.physicalMemory.toDouble()
 }

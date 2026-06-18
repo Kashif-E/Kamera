@@ -5,7 +5,6 @@ import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.utils.MemoryManager
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AVFoundation.*
 import platform.Foundation.NSData
@@ -428,26 +427,6 @@ class CustomCameraController(
     fun getMaxZoom(): Float = currentCamera?.activeFormat?.videoMaxZoomFactor?.toFloat() ?: 1.0f
 
     /**
-     * Sets the session preset quality based on memory conditions
-     * This allows for dynamic adjustment of capture quality
-     */
-    private fun adjustSessionQuality() {
-        captureSession?.beginConfiguration()
-
-        val memoryUsage = MemoryManager.getMemoryUsagePercentage()
-        val underPressure = MemoryManager.isUnderMemoryPressure()
-
-        val newPreset = when {
-            underPressure -> AVCaptureSessionPresetMedium
-            memoryUsage > 70 -> AVCaptureSessionPresetHigh
-            else -> AVCaptureSessionPresetPhoto
-        }
-
-        captureSession?.sessionPreset = newPreset
-        captureSession?.commitConfiguration()
-    }
-
-    /**
      * Capture an image. Output quality is governed by the configured [qualityPrioritization].
      */
     fun captureImage() {
@@ -456,9 +435,10 @@ class CustomCameraController(
             return
         }
 
-        if (MemoryManager.isUnderMemoryPressure()) {
-            adjustSessionQuality()
-        }
+        // Do NOT reconfigure the session preset here. Switching the preset synchronously right
+        // before capturePhotoWithSettings disrupts auto-exposure, so the still is captured
+        // mid-reconfiguration and comes out underexposed (#138). The preset is chosen once at
+        // setup; memory pressure is handled by clearing buffer pools, not by downshifting capture.
 
         val settings = AVCapturePhotoSettings.photoSettingsWithFormat(
             mapOf(
