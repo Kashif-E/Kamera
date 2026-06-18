@@ -49,15 +49,12 @@ object MemoryManager {
      * This should be called periodically, especially before major memory operations
      */
     fun updateMemoryStatus() {
-        // Pressure is driven by the system memory-warning notification (the reliable iOS signal,
-        // see registerMemoryWarningNotification). We can't cheaply measure this process's footprint
-        // here, and the previous code compared physicalMemory to itself — pinning "usage" at 100%
-        // and latching pressure on forever, which made every capture downshift the session preset
-        // and underexpose the photo (#138). Treat a prior warning as transient: now that buffers
-        // have been freed and we're between operations, clear the flag.
-        if (memoryPressure.value) {
-            memoryPressure.value = false
-        }
+        // No-op: iOS exposes no cheap, reliable per-process memory gauge, so pressure is driven
+        // solely by the system memory-warning notification (see registerMemoryWarningNotification),
+        // which callers can observe via isUnderMemoryPressure(). The previous code compared
+        // physicalMemory to itself — pinning "usage" at 100% and latching pressure on permanently,
+        // which made every capture downshift the session preset and underexpose the photo (#138).
+        // Kept as a hook so existing call sites stay valid.
     }
 
     /**
