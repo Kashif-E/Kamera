@@ -176,19 +176,24 @@ class CameraKStateHolder(
             // Initialize UI state from controller
             updateUIStateFromController(newController)
 
-            // Initialize plugins (snapshot under lock; call onAttach outside it).
-            val plugins = synchronized(pluginLock) { attachedPlugins.toList() }
+            // Flip isInitialized AND snapshot the plugins atomically. This closes the race with a
+            // concurrent attachPlugin(): it either lands in this snapshot (added before the lock, so
+            // initialize attaches it) or observes isInitialized == true (added after) and attaches
+            // itself — never neither. onAttach runs outside the lock so it can't deadlock/stall it.
+            val plugins = synchronized(pluginLock) {
+                isInitialized = true
+                attachedPlugins.toList()
+            }
             plugins.forEach { plugin -> plugin.onAttach(this) }
 
-            // Update to ready statein
+            // Update to ready state
             _cameraState.value =
                 CameraKState.Ready(
                     controller = newController,
                     uiState = _uiState.value,
                 )
-
-            isInitialized = true
         } catch (e: Exception) {
+            synchronized(pluginLock) { isInitialized = false }
             _cameraState.value =
                 CameraKState.Error(
                     exception = e,
@@ -275,12 +280,15 @@ class CameraKStateHolder(
      * @param plugin The [CameraKPlugin] to attach.
      */
     fun attachPlugin(plugin: CameraKPlugin) {
-        synchronized(pluginLock) {
+        // Read isInitialized under the same lock that initialize() uses when it flips the flag +
+        // snapshots, so this plugin is either in that snapshot or attached here — never dropped.
+        val attachNow = synchronized(pluginLock) {
             if (attachedPlugins.contains(plugin)) return
             attachedPlugins.add(plugin)
+            isInitialized
         }
 
-        if (isInitialized) {
+        if (attachNow) {
             plugin.onAttach(this)
         }
     }
