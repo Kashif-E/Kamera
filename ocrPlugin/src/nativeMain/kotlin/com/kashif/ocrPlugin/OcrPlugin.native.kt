@@ -37,10 +37,6 @@ import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
-// Track the current video output to prevent duplicates and allow cleanup
-private var currentVideoOutput: AVCaptureVideoDataOutput? = null
-private var currentController: CameraController? = null
-
 @OptIn(ExperimentalForeignApi::class)
 actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String = suspendCoroutine { continuation ->
     val imageData = bitmap.toByteArray()?.toNSData()
@@ -270,18 +266,9 @@ class VideoDataDelegate(private val onText: (String) -> Unit) :
  * @param onText Callback invoked when text is detected with the extracted text
  */
 @OptIn(ExperimentalForeignApi::class)
-actual fun startRecognition(cameraController: CameraController, onText: (String) -> Unit) {
-    // If same controller and already has output, skip setup
-    if (currentController === cameraController && currentVideoOutput != null) {
-        return
-    }
-
-    // If different controller, we need fresh setup
-    if (currentController !== cameraController) {
-        currentVideoOutput = null
-        currentController = cameraController
-    }
-
+actual fun startRecognition(cameraController: CameraController, onText: (String) -> Unit): RecognitionHandle {
+    // Idempotency/teardown is owned by the plugin (it stops the prior handle before re-starting),
+    // so no module-global dedup is needed here.
     val videoDataOutput =
         AVCaptureVideoDataOutput().apply {
             setVideoSettings(
@@ -295,9 +282,6 @@ actual fun startRecognition(cameraController: CameraController, onText: (String)
                 dispatch_queue_create("com.kashif.ocrPlugin.videoQueue", null),
             )
         }
-
-    // Store reference for tracking
-    currentVideoOutput = videoDataOutput
 
     // Queue configuration change atomically (prevents startRunning inside begin/commit crash)
     cameraController.queueConfigurationChange {
@@ -313,5 +297,10 @@ actual fun startRecognition(cameraController: CameraController, onText: (String)
                 )
             }
         }
+    }
+
+    return RecognitionHandle {
+        videoDataOutput.setSampleBufferDelegate(null, null)
+        cameraController.safeRemoveOutput(videoDataOutput)
     }
 }

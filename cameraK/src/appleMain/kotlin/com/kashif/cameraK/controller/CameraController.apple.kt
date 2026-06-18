@@ -246,6 +246,14 @@ actual class CameraController(
         metadataOutput.setMetadataObjectsDelegate(delegate, dispatch_get_main_queue())
     }
 
+    /**
+     * Clears the metadata delegate so QR/barcode callbacks stop. Used by the QR plugin on detach.
+     */
+    fun clearMetadataObjectsDelegate() {
+        metadataObjectsDelegate = null
+        metadataOutput.setMetadataObjectsDelegate(null, dispatch_get_main_queue())
+    }
+
     fun updateMetadataObjectTypes(newTypes: List<String>) {
         // Note: This is called from queueConfigurationChange, so session may be in config mode
         // Don't check isRunning() - just set the types

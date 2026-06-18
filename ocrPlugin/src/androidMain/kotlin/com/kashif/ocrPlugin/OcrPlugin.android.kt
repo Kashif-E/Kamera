@@ -132,7 +132,10 @@ internal class TextRecognitionAnalyzer(
     }
 }
 
-actual fun startRecognition(cameraController: CameraController, onText: (text: String) -> Unit) {
-    // Store analyzer reference for cleanup (would need to be stored in a property)
-    cameraController.enableTextRecognition(onText)
+actual fun startRecognition(cameraController: CameraController, onText: (text: String) -> Unit): RecognitionHandle {
+    val analyzer = cameraController.enableTextRecognition(onText)
+    return RecognitionHandle {
+        cameraController.unregisterImageAnalyzer(analyzer)
+        analyzer.shutdown() // close the ML Kit recognizer
+    }
 }
