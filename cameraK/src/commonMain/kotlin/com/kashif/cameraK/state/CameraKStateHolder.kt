@@ -4,8 +4,12 @@ import androidx.compose.runtime.Stable
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +17,6 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -106,8 +109,11 @@ class CameraKStateHolder(
 
     /**
      * CoroutineScope for plugins to launch their operations.
-     * This scope is tied to the StateHolder's lifecycle - it cancels when StateHolder shuts down.
-     * Plugins should use this scope to launch their auto-activation observers.
+     *
+     * This is a child of the scope passed to the StateHolder (so it dies with the host, e.g. when
+     * the composable leaves composition), but it is owned here: [shutdown] cancels every coroutine
+     * launched in it. A failure in one plugin's coroutine is isolated (SupervisorJob) and does not
+     * tear down the others. Plugins should still cancel their own jobs in [CameraKPlugin.onDetach].
      *
      * @example
      * ```kotlin
@@ -122,13 +128,17 @@ class CameraKStateHolder(
      * }
      * ```
      */
-    val pluginScope: CoroutineScope = coroutineScope
+    val pluginScope: CoroutineScope =
+        CoroutineScope(coroutineScope.coroutineContext + SupervisorJob(coroutineScope.coroutineContext[Job]))
 
     // ═══════════════════════════════════════════════════════════════
     // Internal State
     // ═══════════════════════════════════════════════════════════════
 
     private var controller: CameraController? = null
+
+    // Guards attachedPlugins: attach/detach/initialize/shutdown can run from different threads.
+    private val pluginLock = SynchronizedObject()
     private val attachedPlugins = mutableListOf<CameraKPlugin>()
     private var isInitialized = false
     private var recordingTimerJob: Job? = null
@@ -166,10 +176,9 @@ class CameraKStateHolder(
             // Initialize UI state from controller
             updateUIStateFromController(newController)
 
-            // Initialize plugins
-            attachedPlugins.forEach { plugin ->
-                plugin.onAttach(this)
-            }
+            // Initialize plugins (snapshot under lock; call onAttach outside it).
+            val plugins = synchronized(pluginLock) { attachedPlugins.toList() }
+            plugins.forEach { plugin -> plugin.onAttach(this) }
 
             // Update to ready statein
             _cameraState.value =
@@ -201,11 +210,17 @@ class CameraKStateHolder(
             // Reset recording state if active
             resetRecordingState()
 
-            // Detach plugins
-            attachedPlugins.forEach { plugin ->
-                plugin.onDetach()
+            // Detach plugins (snapshot+clear under lock; call onDetach outside it).
+            val plugins = synchronized(pluginLock) {
+                val snapshot = attachedPlugins.toList()
+                attachedPlugins.clear()
+                snapshot
             }
-            attachedPlugins.clear()
+            plugins.forEach { plugin -> plugin.onDetach() }
+
+            // Cancel any coroutines plugins launched in pluginScope (belt-and-suspenders: onDetach
+            // should already cancel them, but this guarantees nothing leaks past shutdown).
+            pluginScope.coroutineContext[Job]?.cancelChildren()
 
             // Stop orientation listener and session
             controller?.setOnOrientationChangedListener(null)
@@ -240,10 +255,11 @@ class CameraKStateHolder(
      * }
      * ```
      */
-    suspend fun getReadyCameraController(): CameraController? = cameraState
-        .filterIsInstance<CameraKState.Ready>()
-        .first() // Suspends until Ready state, emits once
-        .controller
+    suspend fun getReadyCameraController(): CameraController? {
+        // Suspend until the camera resolves either way; return null on Error instead of hanging forever.
+        val state = cameraState.first { it is CameraKState.Ready || it is CameraKState.Error }
+        return (state as? CameraKState.Ready)?.controller
+    }
 
     // ═══════════════════════════════════════════════════════════════
     // Plugin Management
@@ -257,7 +273,10 @@ class CameraKStateHolder(
      * @param plugin The [CameraKPlugin] to attach.
      */
     fun attachPlugin(plugin: CameraKPlugin) {
-        attachedPlugins.add(plugin)
+        synchronized(pluginLock) {
+            if (attachedPlugins.contains(plugin)) return
+            attachedPlugins.add(plugin)
+        }
 
         if (isInitialized) {
             plugin.onAttach(this)
@@ -270,7 +289,8 @@ class CameraKStateHolder(
      * @param plugin The [CameraKPlugin] to detach.
      */
     fun detachPlugin(plugin: CameraKPlugin) {
-        if (attachedPlugins.remove(plugin)) {
+        val removed = synchronized(pluginLock) { attachedPlugins.remove(plugin) }
+        if (removed) {
             plugin.onDetach()
         }
     }
@@ -444,6 +464,15 @@ class CameraKStateHolder(
      */
     @OptIn(ExperimentalTime::class)
     fun startRecording(configuration: VideoConfiguration = VideoConfiguration()) {
+        // Guard against double-start: a second start while recording would orphan the timer and the
+        // platform recorder (leaking encoders/file handles) and confuse the duration/state.
+        if (_uiState.value.isRecording) {
+            coroutineScope.launch {
+                _events.emit(CameraKEvent.RecordingFailed(Exception("Recording already in progress")))
+            }
+            return
+        }
+
         val currentController =
             controller ?: run {
                 coroutineScope.launch {

@@ -235,6 +235,13 @@ actual class CameraController(
         this.listener = listener
     }
 
+    actual fun removeImageCaptureListener(listener: (ByteArray) -> Unit) {
+        // Desktop holds a single listener; clear it back to a no-op if it's the one being removed.
+        if (this.listener == listener) {
+            this.listener = {}
+        }
+    }
+
     actual fun getDeviceOrientation(): DeviceOrientation = DeviceOrientation.PORTRAIT
 
     actual fun setOnOrientationChangedListener(callback: ((DeviceOrientation) -> Unit)?) {

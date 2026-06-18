@@ -137,6 +137,13 @@ actual class CameraController(
         customCameraController.safeAddOutput(output)
     }
 
+    /**
+     * Safely removes an output previously added via [safeAddOutput].
+     */
+    fun safeRemoveOutput(output: AVCaptureOutput) {
+        customCameraController.safeRemoveOutput(output)
+    }
+
     @Volatile
     private var lastVideoOrientation: AVCaptureVideoOrientation = AVCaptureVideoOrientationPortrait
 
@@ -462,6 +469,10 @@ actual class CameraController(
 
     actual fun addImageCaptureListener(listener: (ByteArray) -> Unit) {
         imageCaptureListeners.add(listener)
+    }
+
+    actual fun removeImageCaptureListener(listener: (ByteArray) -> Unit) {
+        imageCaptureListeners.remove(listener)
     }
 
     actual fun cleanup() {

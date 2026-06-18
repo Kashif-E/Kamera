@@ -291,6 +291,19 @@ class CustomCameraController(
         }
     }
 
+    /**
+     * Safely removes an output from the capture session, wrapped in its own configuration
+     * transaction. Plugins must call this on detach to remove outputs they added via
+     * [safeAddOutput]; a dangling output keeps the pipeline streaming after the plugin is gone.
+     */
+    fun safeRemoveOutput(output: AVCaptureOutput) {
+        val session = captureSession ?: return
+        if (!session.outputs.contains(output)) return
+        session.beginConfiguration()
+        session.removeOutput(output)
+        session.commitConfiguration()
+    }
+
     fun startSession() {
         processPendingConfigurations()
 

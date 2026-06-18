@@ -515,6 +515,10 @@ actual class CameraController(
         imageCaptureListeners.add(listener)
     }
 
+    actual fun removeImageCaptureListener(listener: (ByteArray) -> Unit) {
+        imageCaptureListeners.remove(listener)
+    }
+
     private fun createTempFile(): File {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 
