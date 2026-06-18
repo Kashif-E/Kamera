@@ -229,7 +229,13 @@ class CameraKStateHolder(
             // should already cancel them, but this guarantees nothing leaks past shutdown).
             pluginScope.coroutineContext[Job]?.cancelChildren()
 
-            // Stop orientation listener and session
+            // Stop orientation listener and session.
+            // Note: if a recording was in progress, the recorder plugin's onDetach (above) fires a
+            // fire-and-forget stopRecording() on coroutineScope; shutdown() can't await it because
+            // it (and Compose's onDispose) are synchronous. cleanup() below still finalizes the
+            // recording file at the platform level, but the RecordingStopped event may be missed
+            // when the host is disposed mid-recording. A fully awaited stop would require a suspend
+            // shutdown, which onDispose can't call anyway.
             controller?.setOnOrientationChangedListener(null)
             controller?.stopSession()
             controller?.cleanup()
