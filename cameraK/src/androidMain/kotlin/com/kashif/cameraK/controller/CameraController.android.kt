@@ -669,6 +669,10 @@ actual class CameraController(
         val recording = activeRecording ?: return VideoCaptureResult.Error(
             IllegalStateException("No active recording"),
         )
+        // The channel is CONFLATED, so a late finalize from a previous recording (or a previously
+        // timed-out stop) can still be buffered. Drain it so receive() below corresponds to THIS stop.
+        while (recordingFinalizeChannel.tryReceive().isSuccess) { /* discard stale finalize */ }
+
         recording.stop()
         activeRecording = null
         // Don't wait forever: if the CameraX finalize event never arrives (already finalized,
