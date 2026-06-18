@@ -557,6 +557,9 @@ actual class CameraController(
         }
     }
 
+    // Known limitation: AVCaptureMovieFileOutput does not support true pause/resume — these base
+    // AVCaptureFileOutput calls are effectively no-ops, so the file keeps recording continuously
+    // while the UI shows "paused". Real pause would require segmented recording + concatenation.
     actual suspend fun pauseRecording() {
         movieFileOutput?.pauseRecording()
     }

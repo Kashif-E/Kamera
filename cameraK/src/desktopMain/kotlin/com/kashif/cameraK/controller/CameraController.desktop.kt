@@ -324,6 +324,9 @@ actual class CameraController(
         }
     }
 
+    // Known limitation: while paused the frame loop stops feeding the recorder but wall-clock keeps
+    // advancing, so the resumed video has a frozen-frame gap equal to the pause duration rather than
+    // a seamless cut. Acceptable for now; a true pause would re-base the FFmpeg frame timestamps.
     actual suspend fun pauseRecording() {
         isPausedRecording = true
     }

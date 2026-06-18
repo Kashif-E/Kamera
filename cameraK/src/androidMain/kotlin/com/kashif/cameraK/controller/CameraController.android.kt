@@ -53,6 +53,7 @@ import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -99,6 +100,7 @@ actual class CameraController(
     private val memoryManager = MemoryManager
     private val pendingCaptures = atomic(0)
     private val maxConcurrentCaptures = 3
+    private val stopFinalizeTimeoutMs = 5000L
 
     private val imageProcessingExecutor = Executors.newFixedThreadPool(2)
     private val analyzerExecutor = Executors.newSingleThreadExecutor()
@@ -669,7 +671,10 @@ actual class CameraController(
         )
         recording.stop()
         activeRecording = null
-        return recordingFinalizeChannel.receive()
+        // Don't wait forever: if the CameraX finalize event never arrives (already finalized,
+        // dropped, etc.) this would hang the caller and leave isRecording stuck true.
+        return withTimeoutOrNull(stopFinalizeTimeoutMs) { recordingFinalizeChannel.receive() }
+            ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
     }
 
     actual suspend fun pauseRecording() {

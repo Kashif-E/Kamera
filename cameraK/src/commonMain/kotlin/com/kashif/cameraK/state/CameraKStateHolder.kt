@@ -207,16 +207,18 @@ class CameraKStateHolder(
         if (!isInitialized) return
 
         try {
-            // Reset recording state if active
-            resetRecordingState()
-
-            // Detach plugins (snapshot+clear under lock; call onDetach outside it).
+            // Detach plugins BEFORE resetting recording state, so a recorder plugin can still see
+            // isRecording == true in onDetach and stop the recording (emitting RecordingStopped)
+            // before we tear the controller down. (Snapshot+clear under lock; onDetach outside it.)
             val plugins = synchronized(pluginLock) {
                 val snapshot = attachedPlugins.toList()
                 attachedPlugins.clear()
                 snapshot
             }
             plugins.forEach { plugin -> plugin.onDetach() }
+
+            // Now reset recording UI state (cancels the duration timer).
+            resetRecordingState()
 
             // Cancel any coroutines plugins launched in pluginScope (belt-and-suspenders: onDetach
             // should already cancel them, but this guarantees nothing leaks past shutdown).
