@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dead `returnFilePath` flag and other removed-API references in docs. See the migration table in the README.
 
 ### Fixed
+- **iOS underexposed/black photos** (#138): `MemoryManager` compared `physicalMemory` to itself, so it reported 100% usage and `isUnderMemoryPressure()` latched on permanently. That made every capture downshift the session preset (`adjustSessionQuality`) synchronously right before `capturePhotoWithSettings`, capturing the still mid-reconfiguration before auto-exposure re-converged. Most visible on front-camera selfies; masked when a plugin (OCR/QR/Analyzer) kept an `AVCaptureVideoDataOutput` streaming. Memory pressure is now driven by the system memory-warning notification, and the capture no longer reconfigures the preset at shot time.
 - **Android aspect ratio mismatch** (#136): a configured ratio (e.g. `RATIO_4_3`) no longer produces a photo that's a crop of the full-screen (≈16:9) field of view. The preview is now letterboxed to the configured ratio (`FIT_CENTER`) so its shared CameraX `ViewPort` matches the capture — preview FOV equals captured FOV. Adds `CameraController.getAspectRatio()`.
 - **iOS preview/capture mismatch on flat devices** (#115, #109): preview no longer distorts when the device is face-up.
 - **iOS crash from deprecated video stabilization API** (#113).
