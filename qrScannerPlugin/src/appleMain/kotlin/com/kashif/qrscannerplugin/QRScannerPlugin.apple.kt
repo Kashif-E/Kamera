@@ -4,6 +4,7 @@ import com.kashif.cameraK.controller.CameraController
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import platform.AVFoundation.AVCaptureConnection
@@ -90,7 +91,7 @@ sealed class ScannedCode {
  * @param controller The camera controller to enable scanning on
  * @param onQrScanner Callback invoked when a QR code is detected with the scanned text
  */
-actual fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit) {
+actual fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit): ScannerHandle {
     val codeAnalyzer =
         CodeAnalyzer(onCodeScanned = {
             onQrScanner(it.value)
@@ -116,6 +117,11 @@ actual fun startScanning(controller: CameraController, onQrScanner: (String) -> 
                 AVMetadataObjectTypeUPCECode!!,
             ),
         )
+    }
+
+    return ScannerHandle {
+        controller.clearMetadataObjectsDelegate()
+        codeAnalyzer.stop()
     }
 }
 
@@ -171,5 +177,10 @@ private class CodeAnalyzer(private val onCodeScanned: (ScannedCode) -> Unit) :
                 }
             }
         }
+    }
+
+    /** Cancels the debounce scope so this orphaned delegate stops doing work after detach. */
+    fun stop() {
+        scope.cancel()
     }
 }

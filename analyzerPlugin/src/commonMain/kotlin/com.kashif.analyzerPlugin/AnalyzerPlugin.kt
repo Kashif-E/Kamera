@@ -10,31 +10,46 @@ import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 
+/**
+ * Handle to a started analyzer. Call [stop] to remove the underlying platform analyzer/output so it
+ * stops consuming frames — the plugin keeps no other way to tear that registration down.
+ */
+fun interface AnalyzerHandle {
+    fun stop()
+}
+
 class AnalyzerPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
-    private val analyzerFlow = MutableSharedFlow<ByteArray>()
+    private val analyzerFlow = MutableSharedFlow<ByteArray>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
     private var isAnalyzing = atomic(false)
     private var collectorJob: Job? = null
+    private var analyzerHandle: AnalyzerHandle? = null
 
     fun startAnalyzer() {
+        val controller = cameraController ?: return
+        // Tear down any previous registration first so re-init (new Ready) doesn't stack
+        // analyzers (Android) or outputs (iOS), which would multiply per-frame work and leak.
+        analyzerHandle?.stop()
         isAnalyzing.value = true
-        startAnalyzer(cameraController!!) {
-            if (isAnalyzing.value) {
-                coroutineScope.launch {
-                    analyzerFlow.emit(it)
-                }
-            }
+        analyzerHandle = startAnalyzer(controller) { frame ->
+            if (isAnalyzing.value) analyzerFlow.tryEmit(frame)
         }
     }
 
     fun stopAnalyzer() {
         isAnalyzing.value = false
+        analyzerHandle?.stop()
+        analyzerHandle = null
     }
 
     /**
@@ -92,7 +107,7 @@ class AnalyzerPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
     fun getAnalyzerFlow() = analyzerFlow.asSharedFlow()
 }
 
-expect fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit)
+expect fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit): AnalyzerHandle
 
 @Composable
 fun rememberAnalyzerPlugin(coroutineScope: CoroutineScope = rememberCoroutineScope()): AnalyzerPlugin =

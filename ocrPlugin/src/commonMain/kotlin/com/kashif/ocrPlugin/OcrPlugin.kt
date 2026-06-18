@@ -40,9 +40,13 @@ import kotlinx.coroutines.launch
 class OcrPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
-    val ocrFlow = Channel<String>()
+
+    // Buffered (not rendezvous): trySend no longer silently drops when no consumer is parked.
+    // Intentionally never closed — closing a val channel would make a later re-attach throw.
+    val ocrFlow = Channel<String>(Channel.BUFFERED)
     private var isRecognising = atomic(false)
-    private var collectorJob: kotlinx.coroutines.Job? = null
+    private var collectorJob: Job? = null
+    private var recognitionHandle: RecognitionHandle? = null
 
     /**
      * Attaches the plugin to the state holder (new API).
@@ -78,7 +82,7 @@ class OcrPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
         stopRecognition()
         collectorJob?.cancel()
         collectorJob = null
-        ocrFlow.close()
+        // Note: ocrFlow is deliberately NOT closed — the plugin instance can be re-attached.
         this.stateHolder = null
         this.cameraController = null
     }
@@ -105,15 +109,16 @@ class OcrPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
     }
 
     fun startRecognition() {
+        val controller = cameraController ?: return
+        // Tear down any previous analyzer/output so re-init doesn't stack recognizers.
+        recognitionHandle?.stop()
         isRecognising.value = true
-        cameraController?.let { controller ->
-            startRecognition(controller) { text ->
-                if (isRecognising.value) {
-                    ocrFlow.trySend(text)
-                    // Emit event to state holder if available (new API)
-                    coroutineScope.launch {
-                        stateHolder?.emitEvent(CameraKEvent.TextRecognized(text))
-                    }
+        recognitionHandle = startRecognition(controller) { text ->
+            if (isRecognising.value) {
+                ocrFlow.trySend(text)
+                // emitEvent is suspend → launch on the owned plugin scope (cancelled on shutdown).
+                stateHolder?.let { holder ->
+                    holder.pluginScope.launch { holder.emitEvent(CameraKEvent.TextRecognized(text)) }
                 }
             }
         }
@@ -121,12 +126,22 @@ class OcrPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
 
     fun stopRecognition() {
         isRecognising.value = false
+        recognitionHandle?.stop()
+        recognitionHandle = null
     }
+}
+
+/**
+ * Handle to active recognition. [stop] removes the underlying platform analyzer/output so OCR
+ * stops consuming frames — the plugin keeps no other way to tear that registration down.
+ */
+fun interface RecognitionHandle {
+    fun stop()
 }
 
 expect suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String
 
-expect fun startRecognition(cameraController: CameraController, onText: (text: String) -> Unit)
+expect fun startRecognition(cameraController: CameraController, onText: (text: String) -> Unit): RecognitionHandle
 
 @Composable
 fun rememberOcrPlugin(coroutineScope: CoroutineScope = rememberCoroutineScope()): OcrPlugin = remember {

@@ -53,6 +53,7 @@ import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -99,6 +100,7 @@ actual class CameraController(
     private val memoryManager = MemoryManager
     private val pendingCaptures = atomic(0)
     private val maxConcurrentCaptures = 3
+    private val stopFinalizeTimeoutMs = 5000L
 
     private val imageProcessingExecutor = Executors.newFixedThreadPool(2)
     private val analyzerExecutor = Executors.newSingleThreadExecutor()
@@ -515,6 +517,10 @@ actual class CameraController(
         imageCaptureListeners.add(listener)
     }
 
+    actual fun removeImageCaptureListener(listener: (ByteArray) -> Unit) {
+        imageCaptureListeners.remove(listener)
+    }
+
     private fun createTempFile(): File {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 
@@ -663,9 +669,21 @@ actual class CameraController(
         val recording = activeRecording ?: return VideoCaptureResult.Error(
             IllegalStateException("No active recording"),
         )
+        // The channel is CONFLATED, so a late finalize from a previous recording (or a previously
+        // timed-out stop) can still be buffered. Drain it so receive() below corresponds to THIS stop.
+        while (recordingFinalizeChannel.tryReceive().isSuccess) { /* discard stale finalize */ }
+
         recording.stop()
         activeRecording = null
-        return recordingFinalizeChannel.receive()
+        // Don't wait forever: if the CameraX finalize event never arrives (already finalized,
+        // dropped, etc.) this would hang the caller and leave isRecording stuck true. Also guard
+        // against cleanup() closing the channel mid-stop (receive() would throw).
+        return try {
+            withTimeoutOrNull(stopFinalizeTimeoutMs) { recordingFinalizeChannel.receive() }
+                ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
+        } catch (e: Exception) {
+            VideoCaptureResult.Error(e)
+        }
     }
 
     actual suspend fun pauseRecording() {

@@ -18,12 +18,8 @@ import platform.UIKit.UIImage
 import platform.darwin.NSObject
 import platform.darwin.dispatch_get_main_queue
 
-actual fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit) {
-    cameraController.enableAnalyzer(onFrameAvailable)
-}
-
 @OptIn(ExperimentalForeignApi::class)
-internal fun CameraController.enableAnalyzer(onFrameAvailable: (ByteArray) -> Unit): CameraAnalyzer {
+actual fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit): AnalyzerHandle {
     val analyzer = CameraAnalyzer(onFrameAvailable = onFrameAvailable)
 
     val output = AVCaptureVideoDataOutput().apply {
@@ -33,9 +29,12 @@ internal fun CameraController.enableAnalyzer(onFrameAvailable: (ByteArray) -> Un
         )
     }
 
-    safeAddOutput(output)
+    cameraController.safeAddOutput(output)
 
-    return analyzer
+    return AnalyzerHandle {
+        output.setSampleBufferDelegate(null, null)
+        cameraController.safeRemoveOutput(output)
+    }
 }
 
 internal class CameraAnalyzer(private val onFrameAvailable: (ByteArray) -> Unit) :

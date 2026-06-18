@@ -137,6 +137,13 @@ actual class CameraController(
         customCameraController.safeAddOutput(output)
     }
 
+    /**
+     * Safely removes an output previously added via [safeAddOutput].
+     */
+    fun safeRemoveOutput(output: AVCaptureOutput) {
+        customCameraController.safeRemoveOutput(output)
+    }
+
     @Volatile
     private var lastVideoOrientation: AVCaptureVideoOrientation = AVCaptureVideoOrientationPortrait
 
@@ -237,6 +244,14 @@ actual class CameraController(
     fun setMetadataObjectsDelegate(delegate: AVCaptureMetadataOutputObjectsDelegateProtocol) {
         metadataObjectsDelegate = delegate
         metadataOutput.setMetadataObjectsDelegate(delegate, dispatch_get_main_queue())
+    }
+
+    /**
+     * Clears the metadata delegate so QR/barcode callbacks stop. Used by the QR plugin on detach.
+     */
+    fun clearMetadataObjectsDelegate() {
+        metadataObjectsDelegate = null
+        metadataOutput.setMetadataObjectsDelegate(null, dispatch_get_main_queue())
     }
 
     fun updateMetadataObjectTypes(newTypes: List<String>) {
@@ -464,6 +479,10 @@ actual class CameraController(
         imageCaptureListeners.add(listener)
     }
 
+    actual fun removeImageCaptureListener(listener: (ByteArray) -> Unit) {
+        imageCaptureListeners.remove(listener)
+    }
+
     actual fun cleanup() {
         removeOrientationObserver()
         orientationChangedCallback = null
@@ -538,6 +557,9 @@ actual class CameraController(
         }
     }
 
+    // Known limitation: AVCaptureMovieFileOutput does not support true pause/resume — these base
+    // AVCaptureFileOutput calls are effectively no-ops, so the file keeps recording continuously
+    // while the UI shows "paused". Real pause would require segmented recording + concatenation.
     actual suspend fun pauseRecording() {
         movieFileOutput?.pauseRecording()
     }

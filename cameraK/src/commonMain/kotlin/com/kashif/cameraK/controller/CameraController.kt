@@ -169,6 +169,17 @@ expect class CameraController {
     fun addImageCaptureListener(listener: (ByteArray) -> Unit)
 
     /**
+     * Removes a previously added image capture listener.
+     *
+     * Pass the same function reference that was given to [addImageCaptureListener]. Plugins must
+     * call this in `onDetach` to avoid leaking the listener (and saving each capture more than once
+     * after a re-attach).
+     *
+     * @param listener The listener to remove.
+     */
+    fun removeImageCaptureListener(listener: (ByteArray) -> Unit)
+
+    /**
      * Cleans up resources when the controller is no longer needed.
      * Should be called when disposing the controller to prevent memory leaks.
      *

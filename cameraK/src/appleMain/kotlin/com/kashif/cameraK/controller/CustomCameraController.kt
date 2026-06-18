@@ -291,6 +291,21 @@ class CustomCameraController(
         }
     }
 
+    /**
+     * Safely removes an output previously added via [safeAddOutput]. Routed through the same
+     * [queueConfigurationChange] batching so removal shares one begin/commit transaction with any
+     * other pending changes (avoids overlapping/nested configuration transactions). Plugins must
+     * call this on detach; a dangling output keeps the pipeline streaming after the plugin is gone.
+     */
+    fun safeRemoveOutput(output: AVCaptureOutput) {
+        queueConfigurationChange {
+            val session = captureSession ?: return@queueConfigurationChange
+            if (session.outputs.contains(output)) {
+                session.removeOutput(output)
+            }
+        }
+    }
+
     fun startSession() {
         processPendingConfigurations()
 

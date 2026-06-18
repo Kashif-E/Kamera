@@ -19,13 +19,16 @@ import java.util.EnumMap
  *
  * @param onQrScanner Callback invoked when a QR code is detected with the scanned text
  */
-fun CameraController.enableQrCodeScanner(onQrScanner: (String) -> Unit) {
+fun CameraController.enableQrCodeScanner(onQrScanner: (String) -> Unit): ImageAnalysis.Analyzer? {
     CameraKLogger.d("QRScanner", "Enabling QR code scanner")
-    try {
-        registerImageAnalyzer(QRCodeAnalyzer(onQrScanner))
+    return try {
+        val analyzer = QRCodeAnalyzer(onQrScanner)
+        registerImageAnalyzer(analyzer)
+        analyzer
     } catch (e: Exception) {
         CameraKLogger.e("QRScanner", "Failed to enable QR scanner: ${e.message}", e)
         // Camera might not be fully initialized yet - this is expected during startup
+        null
     }
 }
 
@@ -149,7 +152,8 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
     }
 }
 
-actual fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit) {
+actual fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit): ScannerHandle {
     CameraKLogger.d("QRScanner", "Starting QR scanner")
-    controller.enableQrCodeScanner(onQrScanner)
+    val analyzer = controller.enableQrCodeScanner(onQrScanner)
+    return ScannerHandle { analyzer?.let { controller.unregisterImageAnalyzer(it) } }
 }
