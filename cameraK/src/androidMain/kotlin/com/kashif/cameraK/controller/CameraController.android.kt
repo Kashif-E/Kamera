@@ -676,9 +676,14 @@ actual class CameraController(
         recording.stop()
         activeRecording = null
         // Don't wait forever: if the CameraX finalize event never arrives (already finalized,
-        // dropped, etc.) this would hang the caller and leave isRecording stuck true.
-        return withTimeoutOrNull(stopFinalizeTimeoutMs) { recordingFinalizeChannel.receive() }
-            ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
+        // dropped, etc.) this would hang the caller and leave isRecording stuck true. Also guard
+        // against cleanup() closing the channel mid-stop (receive() would throw).
+        return try {
+            withTimeoutOrNull(stopFinalizeTimeoutMs) { recordingFinalizeChannel.receive() }
+                ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
+        } catch (e: Exception) {
+            VideoCaptureResult.Error(e)
+        }
     }
 
     actual suspend fun pauseRecording() {

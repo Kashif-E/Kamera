@@ -50,7 +50,8 @@ class JVMImageSaverPlugin(
     // Resolve a real per-user directory (the old code wrote to a relative dir literally named
     // "PICTURES" in the process CWD and ignored customFolderName/imageFormat).
     private fun resolveOutputDirectory(): File {
-        val home = File(System.getProperty("user.home"))
+        // user.home can be null in sandboxed runtimes; fall back to the working dir.
+        val home = File(System.getProperty("user.home") ?: System.getProperty("user.dir") ?: ".")
         val base = when (config.directory) {
             Directory.PICTURES, Directory.DCIM -> File(home, "Pictures")
             Directory.DOCUMENTS -> File(home, "Documents")
