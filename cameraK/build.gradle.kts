@@ -144,7 +144,7 @@ mavenPublishing {
 
 tasks.withType<org.jetbrains.dokka.gradle.DokkaTask>().configureEach {
     moduleName.set("CameraK")
-    moduleVersion.set("0.4")
+    moduleVersion.set("1.0")
     outputDirectory.set(file("${layout.buildDirectory}/dokka/html"))
 
     pluginsMapConfiguration.set(
