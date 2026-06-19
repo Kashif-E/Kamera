@@ -5,7 +5,8 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    # 14 GB runner; macos-latest (Apple silicon) only has ~7 GB which OOMs the iOS native link.
+    runs-on: macos-13
 
     steps:
       - name: Checkout code
@@ -17,11 +18,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Raise Gradle heap for the Kotlin/Native link
+        run: |
+          mkdir -p ~/.gradle
+          echo "org.gradle.jvmargs=-Xmx10g -XX:MaxMetaspaceSize=1g" >> ~/.gradle/gradle.properties
+
       - name: Decode GPG Key
         run: echo "${{ secrets.SIGNING_SECRET_KEY_RING_FILE }}" | base64 --decode > $HOME/secring.gpg
-
-      - name: Build with Gradle
-        run: ./gradlew build
 
       - name: Publish to Maven Central
         run: |
