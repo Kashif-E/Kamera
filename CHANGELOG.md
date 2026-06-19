@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0] - 2026-06-19
+
 ### Added
 - **Opt-in logging (`CameraKLogger`)** (#133): internal logging is now disabled by default and routed through `CameraKLogger`. Set `CameraKLogger.enabled = true` to turn it on, or provide a custom `CameraKLogger.sink` to forward logs to your own logger.
 - **`mirrorFrontCamera` configuration** (#112): optionally mirror front-camera captures to match the mirrored preview. Defaults to `false`. iOS and the Android byte-array path bake the flip into pixels; the Android file path records it as an EXIF orientation tag.
