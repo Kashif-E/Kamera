@@ -6,7 +6,7 @@
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:0.4")
+    implementation("io.github.kashif-mehmood-km:camerak:1.0")
 }
 ```
 

@@ -34,14 +34,14 @@ Add dependencies to your `build.gradle.kts`:
 ```kotlin
 dependencies {
     // Core library
-    implementation("io.github.kashif-mehmood-km:camerak:0.4")
+    implementation("io.github.kashif-mehmood-km:camerak:1.0")
 
     // Optional plugins
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.4")
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.4")
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.4")
-    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:0.4")
-    implementation("io.github.kashif-mehmood-km:analyzer_plugin:0.4")
+    implementation("io.github.kashif-mehmood-km:image_saver_plugin:1.0")
+    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:1.0")
+    implementation("io.github.kashif-mehmood-km:ocr_plugin:1.0")
+    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:1.0")
+    implementation("io.github.kashif-mehmood-km:analyzer_plugin:1.0")
 }
 ```
 
@@ -51,7 +51,7 @@ Add to your `libs.versions.toml`:
 
 ```toml
 [versions]
-camerak = "0.4"
+camerak = "1.0"
 
 [libraries]
 camerak = { module = "io.github.kashif-mehmood-km:camerak", version.ref = "camerak" }
@@ -994,10 +994,10 @@ LaunchedEffect(ocrPlugin) {
 
 ```gradle
 dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:0.4")
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.4")
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.4")
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.4")
+    implementation("io.github.kashif-mehmood-km:camerak:1.0")
+    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:1.0")
+    implementation("io.github.kashif-mehmood-km:ocr_plugin:1.0")
+    implementation("io.github.kashif-mehmood-km:image_saver_plugin:1.0")
 }
 ```
 

@@ -405,7 +405,7 @@ Include:
 
 **Good issue:**
 ```
-Kamera 0.4
+Kamera 1.0
 Android 13 (Pixel 6)
 
 Preview shows black screen when using:
