@@ -109,6 +109,11 @@ actual class CameraController(
     private val imageProcessingExecutor = Executors.newFixedThreadPool(2)
     private val analyzerExecutor = Executors.newSingleThreadExecutor()
 
+    // Portrait/landscape category of the display rotation used to build the current ViewPort. The
+    // ViewPort is immutable once bound, so when the display flips category we must rebind to rebuild
+    // it — otherwise the capture crop stays at the old orientation (reintroduces #136 after rotation).
+    private var lastViewPortPortrait: Boolean? = null
+
     fun bindCamera(previewView: PreviewView, onCameraReady: () -> Unit = {}) {
         this.previewView = previewView
 
@@ -203,6 +208,7 @@ actual class CameraController(
         // landscape Rational forced a landscape crop in portrait — preview and photo came out 4:3
         // when 3:4 was expected (#136). Flip width/height for portrait.
         val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
+        lastViewPortPortrait = portrait
         val rational = when (aspectRatio) {
             AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 ->
                 if (portrait) Rational(9, 16) else Rational(16, 9)
@@ -213,6 +219,21 @@ actual class CameraController(
         return ViewPort.Builder(rational, rotation)
             .setScaleType(ViewPort.FILL_CENTER)
             .build()
+    }
+
+    /**
+     * Rebinds the camera when the display rotation flips between portrait and landscape, so the
+     * (immutable) ViewPort is rebuilt with the matching Rational. Gated on the *display* rotation —
+     * an activity locked to one orientation never rotates the display, so it never needlessly
+     * rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
+     */
+    private fun rebindIfViewPortOrientationChanged() {
+        val pv = previewView ?: return
+        val rotation = currentDisplayRotation(pv)
+        val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
+        if (lastViewPortPortrait != null && portrait != lastViewPortPortrait) {
+            bindCamera(pv)
+        }
     }
 
     /**
@@ -804,6 +825,8 @@ actual class CameraController(
                             if (targetOrientation == null) {
                                 applyTargetRotation(newOrientation)
                             }
+                            // Rebuild the ViewPort if the display flipped portrait<->landscape.
+                            rebindIfViewPortOrientationChanged()
                             orientationChangedCallback?.invoke(newOrientation)
                         }
                     }
