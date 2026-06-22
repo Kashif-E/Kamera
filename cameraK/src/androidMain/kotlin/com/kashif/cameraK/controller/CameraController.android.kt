@@ -139,6 +139,13 @@ actual class CameraController(
                 configureCaptureUseCase(resolutionSelector)
                 configureVideoCaptureUseCase()
 
+                // Align capture rotation with the display rotation that also drives the ViewPort and
+                // the preview box, so all three agree (WYSIWYG). Relying on the accelerometer
+                // OrientationEventListener for this let the crop (display-based) and the EXIF
+                // (sensor-based) disagree — producing a portrait-rotated capture of a landscape crop
+                // (and vice-versa) when the device was flat or the display was orientation-locked (#136).
+                applyCaptureRotation(previewView)
+
                 val useCaseGroupBuilder = UseCaseGroup.Builder()
                     .addUseCase(preview!!)
                     .addUseCase(imageCapture!!)
@@ -821,9 +828,12 @@ actual class CameraController(
                         }
                         if (newOrientation != currentDeviceOrientation) {
                             currentDeviceOrientation = newOrientation
-                            // Update capture rotation when in auto mode
+                            // Update capture rotation from the DISPLAY rotation (not this sensor
+                            // angle) so it stays consistent with the ViewPort/preview. On an
+                            // orientation-locked screen this is a no-op; on an unlocked one it tracks
+                            // the on-screen rotation. (Auto mode only; explicit override untouched.)
                             if (targetOrientation == null) {
-                                applyTargetRotation(newOrientation)
+                                previewView?.let { applyCaptureRotation(it) }
                             }
                             // Rebuild the ViewPort if the display flipped portrait<->landscape.
                             rebindIfViewPortOrientationChanged()
@@ -846,11 +856,28 @@ actual class CameraController(
 
     private fun applyTargetRotation(orientation: DeviceOrientation) {
         val rotation = when (orientation) {
-            DeviceOrientation.PORTRAIT -> android.view.Surface.ROTATION_0
-            DeviceOrientation.LANDSCAPE_LEFT -> android.view.Surface.ROTATION_90
-            DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> android.view.Surface.ROTATION_180
-            DeviceOrientation.LANDSCAPE_RIGHT -> android.view.Surface.ROTATION_270
+            DeviceOrientation.PORTRAIT -> Surface.ROTATION_0
+            DeviceOrientation.LANDSCAPE_LEFT -> Surface.ROTATION_90
+            DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> Surface.ROTATION_180
+            DeviceOrientation.LANDSCAPE_RIGHT -> Surface.ROTATION_270
         }
+        imageCapture?.targetRotation = rotation
+        videoCapture?.targetRotation = rotation
+    }
+
+    /**
+     * Sets the capture rotation from the current display rotation (auto mode) or the explicit
+     * [targetOrientation] override. Keeping capture rotation tied to the display — the same source
+     * as the ViewPort and the preview box — guarantees the saved photo's orientation matches what
+     * the user saw (#136).
+     */
+    private fun applyCaptureRotation(previewView: PreviewView) {
+        val override = targetOrientation
+        if (override != null) {
+            applyTargetRotation(override)
+            return
+        }
+        val rotation = currentDisplayRotation(previewView)
         imageCapture?.targetRotation = rotation
         videoCapture?.targetRotation = rotation
     }

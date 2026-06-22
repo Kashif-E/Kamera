@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Android captured photo aspect ratio** (#136): the saved photo now matches the configured `aspectRatio` and the preview (e.g. portrait `RATIO_4_3` produces a 3:4 portrait photo, not a cropped 4:3). The crop is now driven by an explicit `ViewPort` built from the configured ratio (orientation-aware) and rebuilt on a portrait↔landscape rotation, instead of the unreliable `previewView.viewPort`.
+- **Android captured photo aspect ratio & orientation** (#136): the saved photo now matches the configured `aspectRatio` and the preview (e.g. portrait `RATIO_4_3` produces a 3:4 portrait photo, not a cropped 4:3 landscape). Two fixes: (1) the crop is driven by an explicit `ViewPort` built from the configured ratio (orientation-aware), rebuilt on a portrait↔landscape rotation, instead of the unreliable `previewView.viewPort`; (2) capture rotation now follows the **display** rotation — the same source as the ViewPort and preview — instead of the accelerometer orientation, which could disagree (when the device was flat or the display orientation-locked) and produce a portrait-rotated capture of a landscape crop. Verified on a Galaxy S23 across all four ratios in both orientations, with and without the analyzer plugin (CameraX StreamSharing).
 
 ### Changed (behavior)
 - **`targetResolution` no longer overrides `aspectRatio`** (Android): when both are set, the aspect ratio is now the primary constraint and the resolution is the preferred size within it. Previously a target like `1920×1080` forced 16:9 output even when `RATIO_4_3` was requested. If you relied on the old "resolution wins" behavior, set `aspectRatio` to match your target.
