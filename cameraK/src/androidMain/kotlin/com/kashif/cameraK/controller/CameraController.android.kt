@@ -198,9 +198,16 @@ actual class CameraController(
      */
     private fun buildViewPort(previewView: PreviewView): ViewPort? {
         val rotation = currentDisplayRotation(previewView)
+        // The ViewPort Rational is width:height in the display's CURRENT orientation. In portrait a
+        // "4:3" capture is taller than wide (3:4); only in landscape is it 4:3. Hard-coding the
+        // landscape Rational forced a landscape crop in portrait — preview and photo came out 4:3
+        // when 3:4 was expected (#136). Flip width/height for portrait.
+        val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
         val rational = when (aspectRatio) {
-            AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> Rational(16, 9)
-            AspectRatio.RATIO_4_3 -> Rational(4, 3)
+            AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 ->
+                if (portrait) Rational(9, 16) else Rational(16, 9)
+            AspectRatio.RATIO_4_3 ->
+                if (portrait) Rational(3, 4) else Rational(4, 3)
             AspectRatio.RATIO_1_1 -> Rational(1, 1)
         }
         return ViewPort.Builder(rational, rotation)
