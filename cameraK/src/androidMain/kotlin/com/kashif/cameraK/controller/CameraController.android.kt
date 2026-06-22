@@ -109,6 +109,11 @@ actual class CameraController(
     private val imageProcessingExecutor = Executors.newFixedThreadPool(2)
     private val analyzerExecutor = Executors.newSingleThreadExecutor()
 
+    // Portrait/landscape category of the display rotation used to build the current ViewPort. The
+    // ViewPort is immutable once bound, so when the display flips category we must rebind to rebuild
+    // it — otherwise the capture crop stays at the old orientation (reintroduces #136 after rotation).
+    private var lastViewPortPortrait: Boolean? = null
+
     fun bindCamera(previewView: PreviewView, onCameraReady: () -> Unit = {}) {
         this.previewView = previewView
 
@@ -133,6 +138,13 @@ actual class CameraController(
 
                 configureCaptureUseCase(resolutionSelector)
                 configureVideoCaptureUseCase()
+
+                // Align capture rotation with the display rotation that also drives the ViewPort and
+                // the preview box, so all three agree (WYSIWYG). Relying on the accelerometer
+                // OrientationEventListener for this let the crop (display-based) and the EXIF
+                // (sensor-based) disagree — producing a portrait-rotated capture of a landscape crop
+                // (and vice-versa) when the device was flat or the display was orientation-locked (#136).
+                applyCaptureRotation(previewView)
 
                 val useCaseGroupBuilder = UseCaseGroup.Builder()
                     .addUseCase(preview!!)
@@ -198,14 +210,37 @@ actual class CameraController(
      */
     private fun buildViewPort(previewView: PreviewView): ViewPort? {
         val rotation = currentDisplayRotation(previewView)
+        // The ViewPort Rational is width:height in the display's CURRENT orientation. In portrait a
+        // "4:3" capture is taller than wide (3:4); only in landscape is it 4:3. Hard-coding the
+        // landscape Rational forced a landscape crop in portrait — preview and photo came out 4:3
+        // when 3:4 was expected (#136). Flip width/height for portrait.
+        val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
+        lastViewPortPortrait = portrait
         val rational = when (aspectRatio) {
-            AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> Rational(16, 9)
-            AspectRatio.RATIO_4_3 -> Rational(4, 3)
+            AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 ->
+                if (portrait) Rational(9, 16) else Rational(16, 9)
+            AspectRatio.RATIO_4_3 ->
+                if (portrait) Rational(3, 4) else Rational(4, 3)
             AspectRatio.RATIO_1_1 -> Rational(1, 1)
         }
         return ViewPort.Builder(rational, rotation)
             .setScaleType(ViewPort.FILL_CENTER)
             .build()
+    }
+
+    /**
+     * Rebinds the camera when the display rotation flips between portrait and landscape, so the
+     * (immutable) ViewPort is rebuilt with the matching Rational. Gated on the *display* rotation —
+     * an activity locked to one orientation never rotates the display, so it never needlessly
+     * rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
+     */
+    private fun rebindIfViewPortOrientationChanged() {
+        val pv = previewView ?: return
+        val rotation = currentDisplayRotation(pv)
+        val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
+        if (lastViewPortPortrait != null && portrait != lastViewPortPortrait) {
+            bindCamera(pv)
+        }
     }
 
     /**
@@ -793,10 +828,15 @@ actual class CameraController(
                         }
                         if (newOrientation != currentDeviceOrientation) {
                             currentDeviceOrientation = newOrientation
-                            // Update capture rotation when in auto mode
+                            // Update capture rotation from the DISPLAY rotation (not this sensor
+                            // angle) so it stays consistent with the ViewPort/preview. On an
+                            // orientation-locked screen this is a no-op; on an unlocked one it tracks
+                            // the on-screen rotation. (Auto mode only; explicit override untouched.)
                             if (targetOrientation == null) {
-                                applyTargetRotation(newOrientation)
+                                previewView?.let { applyCaptureRotation(it) }
                             }
+                            // Rebuild the ViewPort if the display flipped portrait<->landscape.
+                            rebindIfViewPortOrientationChanged()
                             orientationChangedCallback?.invoke(newOrientation)
                         }
                     }
@@ -816,11 +856,28 @@ actual class CameraController(
 
     private fun applyTargetRotation(orientation: DeviceOrientation) {
         val rotation = when (orientation) {
-            DeviceOrientation.PORTRAIT -> android.view.Surface.ROTATION_0
-            DeviceOrientation.LANDSCAPE_LEFT -> android.view.Surface.ROTATION_90
-            DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> android.view.Surface.ROTATION_180
-            DeviceOrientation.LANDSCAPE_RIGHT -> android.view.Surface.ROTATION_270
+            DeviceOrientation.PORTRAIT -> Surface.ROTATION_0
+            DeviceOrientation.LANDSCAPE_LEFT -> Surface.ROTATION_90
+            DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> Surface.ROTATION_180
+            DeviceOrientation.LANDSCAPE_RIGHT -> Surface.ROTATION_270
         }
+        imageCapture?.targetRotation = rotation
+        videoCapture?.targetRotation = rotation
+    }
+
+    /**
+     * Sets the capture rotation from the current display rotation (auto mode) or the explicit
+     * [targetOrientation] override. Keeping capture rotation tied to the display — the same source
+     * as the ViewPort and the preview box — guarantees the saved photo's orientation matches what
+     * the user saw (#136).
+     */
+    private fun applyCaptureRotation(previewView: PreviewView) {
+        val override = targetOrientation
+        if (override != null) {
+            applyTargetRotation(override)
+            return
+        }
+        val rotation = currentDisplayRotation(previewView)
         imageCapture?.targetRotation = rotation
         videoCapture?.targetRotation = rotation
     }
