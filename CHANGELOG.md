@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Android captured photo aspect ratio & orientation** (#136, follow-up): the 1.0 fix letterboxed the preview but, on real hardware, the **saved photo** still came out wrong — e.g. a portrait `RATIO_4_3` capture saved as a cropped 4:3 *landscape*. Root cause (found via on-device testing): three orientation sources disagreed — the capture rotation/EXIF was driven by the accelerometer while the ViewPort crop and preview followed the **display** rotation. Fixes: (1) the ViewPort `Rational` is now orientation-aware (portrait `RATIO_4_3` → 3:4) and rebuilt on a portrait↔landscape rotation; (2) capture `targetRotation` now follows the display rotation — the same source as the ViewPort and preview — so all three agree (WYSIWYG). Verified on a Galaxy S23 across all four ratios × both orientations × with/without the analyzer plugin (StreamSharing).
+
+### Changed (behavior)
+- **`targetResolution` no longer overrides `aspectRatio`** (Android): when both are set, the aspect ratio is the primary constraint and the resolution is the preferred size within it. Previously a target like `1920×1080` forced 16:9 output even when `RATIO_4_3` was requested.
+- **Capture orientation in display-locked apps** (Android): an activity locked to one orientation now produces photos in that orientation (matching its preview) rather than sensor-rotated stills. Apps wanting sensor-based rotation should leave the activity orientation unlocked or use `setTargetOrientation()`.
+
 ## [1.0] - 2026-06-19
 
 ### Added
