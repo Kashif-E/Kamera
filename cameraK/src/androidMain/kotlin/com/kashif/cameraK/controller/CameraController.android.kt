@@ -49,6 +49,7 @@ import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.InvalidConfigurationException
 import com.kashif.cameraK.utils.MemoryManager
+import com.kashif.cameraK.utils.getActivityOrNull
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
@@ -196,7 +197,7 @@ actual class CameraController(
      * sensor (landscape) orientation; CameraX rotates it for the current display rotation.
      */
     private fun buildViewPort(previewView: PreviewView): ViewPort? {
-        val rotation = previewView.display?.rotation ?: Surface.ROTATION_0
+        val rotation = currentDisplayRotation(previewView)
         val rational = when (aspectRatio) {
             AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> Rational(16, 9)
             AspectRatio.RATIO_4_3 -> Rational(4, 3)
@@ -205,6 +206,20 @@ actual class CameraController(
         return ViewPort.Builder(rational, rotation)
             .setScaleType(ViewPort.FILL_CENTER)
             .build()
+    }
+
+    /**
+     * Current display rotation. `previewView.display` is null until the view is attached (bindCamera
+     * runs from a DisposableEffect before layout), so fall back to the hosting activity's display —
+     * otherwise a landscape start would build the ViewPort with the wrong rotation and crop to the
+     * wrong orientation until a rebind.
+     */
+    @Suppress("DEPRECATION")
+    private fun currentDisplayRotation(previewView: PreviewView): Int {
+        val display = previewView.display
+            ?: previewView.context.getActivityOrNull()?.windowManager?.defaultDisplay
+            ?: context.getActivityOrNull()?.windowManager?.defaultDisplay
+        return display?.rotation ?: Surface.ROTATION_0
     }
 
     /**
