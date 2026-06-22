@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.os.Environment
+import android.util.Rational
 import android.util.Size
 import android.view.OrientationEventListener
+import android.view.Surface
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
@@ -18,6 +20,7 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.ViewPort
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
@@ -46,6 +49,7 @@ import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.InvalidConfigurationException
 import com.kashif.cameraK.utils.MemoryManager
+import com.kashif.cameraK.utils.getActivityOrNull
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
@@ -137,7 +141,13 @@ actual class CameraController(
                 videoCapture?.let { useCaseGroupBuilder.addUseCase(it) }
                 imageAnalyzer?.let { useCaseGroupBuilder.addUseCase(it) }
 
-                previewView.viewPort?.let { useCaseGroupBuilder.setViewPort(it) }
+                // Build the ViewPort explicitly from the configured aspect ratio rather than reading
+                // previewView.viewPort. The latter is null until the view is laid out (so the crop is
+                // often dropped at bind time) and, with a FIT_CENTER preview, reflects the full sensor
+                // buffer — which left the captured still at the sensor ratio (e.g. 16:9) even when a
+                // 4:3 preview was requested (#136). An explicit ViewPort crops preview + capture +
+                // analyzer to the same ratio, so what you see equals what you capture.
+                buildViewPort(previewView)?.let { useCaseGroupBuilder.setViewPort(it) }
 
                 val useCaseGroup = useCaseGroupBuilder.build()
 
@@ -161,27 +171,55 @@ actual class CameraController(
     private fun createResolutionSelector(): ResolutionSelector {
         memoryManager.updateMemoryStatus()
 
-        return if (targetResolution != null) {
-            // When target resolution is set, prioritize it over aspect ratio
-            ResolutionSelector.Builder()
-                .setResolutionStrategy(
-                    ResolutionStrategy(
-                        Size(targetResolution!!.first, targetResolution!!.second),
-                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
-                    ),
-                )
-                .build()
-        } else {
-            ResolutionSelector.Builder()
-                .setAspectRatioStrategy(aspectRatio.toCameraXAspectRatioStrategy())
-                .build()
+        // Always honor the configured aspect ratio. When a target resolution is also set, keep the
+        // ratio as the primary constraint and use the resolution as the preferred size within it —
+        // previously targetResolution dropped the ratio entirely, so a 16:9 target produced 16:9
+        // captures even when 4:3 was requested (#136).
+        val builder = ResolutionSelector.Builder()
+            .setAspectRatioStrategy(aspectRatio.toCameraXAspectRatioStrategy())
+        targetResolution?.let { (w, h) ->
+            builder.setResolutionStrategy(
+                ResolutionStrategy(Size(w, h), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
+            )
         }
+        return builder.build()
     }
 
     private fun AspectRatio.toCameraXAspectRatioStrategy(): AspectRatioStrategy = when (this) {
         AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
         AspectRatio.RATIO_4_3 -> AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
         AspectRatio.RATIO_1_1 -> AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY // closest available
+    }
+
+    /**
+     * Builds a [ViewPort] matching the configured aspect ratio so every use case (preview, capture,
+     * analyzer) is cropped to the same field of view. The [Rational] is expressed in the natural
+     * sensor (landscape) orientation; CameraX rotates it for the current display rotation.
+     */
+    private fun buildViewPort(previewView: PreviewView): ViewPort? {
+        val rotation = currentDisplayRotation(previewView)
+        val rational = when (aspectRatio) {
+            AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> Rational(16, 9)
+            AspectRatio.RATIO_4_3 -> Rational(4, 3)
+            AspectRatio.RATIO_1_1 -> Rational(1, 1)
+        }
+        return ViewPort.Builder(rational, rotation)
+            .setScaleType(ViewPort.FILL_CENTER)
+            .build()
+    }
+
+    /**
+     * Current display rotation. `previewView.display` is null until the view is attached (bindCamera
+     * runs from a DisposableEffect before layout), so fall back to the hosting activity's display —
+     * otherwise a landscape start would build the ViewPort with the wrong rotation and crop to the
+     * wrong orientation until a rebind.
+     */
+    @Suppress("DEPRECATION")
+    private fun currentDisplayRotation(previewView: PreviewView): Int {
+        val display = previewView.display
+            ?: previewView.context.getActivityOrNull()?.windowManager?.defaultDisplay
+            ?: context.getActivityOrNull()?.windowManager?.defaultDisplay
+        return display?.rotation ?: Surface.ROTATION_0
     }
 
     /**
