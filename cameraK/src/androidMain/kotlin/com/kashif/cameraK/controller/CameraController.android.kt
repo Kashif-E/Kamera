@@ -114,6 +114,11 @@ actual class CameraController(
     // it — otherwise the capture crop stays at the old orientation (reintroduces #136 after rotation).
     private var lastViewPortPortrait: Boolean? = null
 
+    // Set when a portrait↔landscape flip is detected during recording (when rebinding would tear
+    // down the recording). The deferred rebind runs once the recording finalizes.
+    @Volatile
+    private var pendingViewPortRebind = false
+
     fun bindCamera(previewView: PreviewView, onCameraReady: () -> Unit = {}) {
         this.previewView = previewView
 
@@ -236,16 +241,18 @@ actual class CameraController(
      * rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
      */
     private fun rebindIfViewPortOrientationChanged() {
-        // Never rebind mid-recording: unbindAll/rebind would tear down the VideoCapture session,
-        // stopping the recording and leaving activeRecording/recordingFinalizeChannel inconsistent.
-        // The aspect ratio shouldn't change mid-clip anyway; the next bind picks up the new rotation.
-        if (activeRecording != null) return
         val pv = previewView ?: return
         val rotation = currentDisplayRotation(pv)
         val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
-        if (lastViewPortPortrait != null && portrait != lastViewPortPortrait) {
-            bindCamera(pv)
+        if (lastViewPortPortrait == null || portrait == lastViewPortPortrait) return
+
+        if (activeRecording != null) {
+            // Don't rebind mid-recording: unbindAll/rebind would tear down the VideoCapture session.
+            // Defer it — the recording's Finalize callback performs the rebind once it's safe.
+            pendingViewPortRebind = true
+            return
         }
+        bindCamera(pv)
     }
 
     /**
@@ -736,6 +743,15 @@ actual class CameraController(
                         )
                     }
                     recordingOutputFile = null
+                    // Clear here too: a recording can finalize on error without stopRecording() being
+                    // called, and a stale non-null activeRecording would permanently block ViewPort
+                    // rebinds on rotation.
+                    activeRecording = null
+                    // Apply any rotation flip that was deferred while recording was in progress.
+                    if (pendingViewPortRebind) {
+                        pendingViewPortRebind = false
+                        rebindIfViewPortOrientationChanged()
+                    }
                 }
             }
         }
