@@ -560,6 +560,11 @@ actual class CameraController(
     actual fun getTorchMode(): TorchMode? = torchMode
 
     actual fun toggleCameraLens() {
+        // A lens switch rebinds (unbindAll), which would tear down a live recording session.
+        if (activeRecording != null) {
+            CameraKLogger.w("CameraController", "Ignoring lens switch while recording")
+            return
+        }
         memoryManager.updateMemoryStatus()
 
         if (memoryManager.isUnderMemoryPressure()) {
@@ -583,6 +588,11 @@ actual class CameraController(
 
     actual fun setPreferredCameraDeviceType(deviceType: CameraDeviceType) {
         if (cameraDeviceType == deviceType) return
+        // Same as the lens switch: this rebinds and would kill a live recording.
+        if (activeRecording != null) {
+            CameraKLogger.w("CameraController", "Ignoring device type change while recording")
+            return
+        }
         cameraDeviceType = deviceType
         // Live switch: re-bind the use cases with a camera selector for the new device type
         // (this rebind keeps the session/plugins; the field alone has no effect until a bind).
@@ -701,6 +711,9 @@ actual class CameraController(
 
     @android.annotation.SuppressLint("MissingPermission")
     actual suspend fun startRecording(configuration: VideoConfiguration): String {
+        // Reject a second start: starting again would overwrite activeRecording and orphan the
+        // first recording's session (it could never be stopped/finalized).
+        if (activeRecording != null) throw IllegalStateException("A recording is already in progress")
         // VideoCapture is bound lazily (it isn't part of the photo session — see includeVideoUseCase).
         // Bind it now and wait for the rebind before recording.
         if (videoCapture == null) {
@@ -713,7 +726,17 @@ actual class CameraController(
                 suspendCancellableCoroutine<Unit> { c -> bindCamera(pv) { if (c.isActive) c.resume(Unit) } }
             }
         }
-        return startRecordingInternal(configuration)
+        return try {
+            startRecordingInternal(configuration)
+        } catch (e: Exception) {
+            // Recording never started — drop the lazily-bound VideoCapture and rebind, otherwise the
+            // flag stays set and every later photo silently reverts to the cropped FOV (#136).
+            if (includeVideoUseCase) {
+                includeVideoUseCase = false
+                previewView?.let { bindCamera(it) }
+            }
+            throw e
+        }
     }
 
     private suspend fun startRecordingInternal(configuration: VideoConfiguration): String =
