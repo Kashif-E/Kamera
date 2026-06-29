@@ -810,10 +810,17 @@ actual class CameraController(
         } catch (e: Exception) {
             VideoCaptureResult.Error(e)
         }
-        // Drop VideoCapture and rebind back to the full-FOV photo session.
+        // Drop VideoCapture and rebind back to the full-FOV photo session. Await the rebind before
+        // returning: a fire-and-forget rebind lets an immediate photo (or a quick startRecording)
+        // race the pending bind — capturing on the old UseCaseGroup, or the late rebind unbinding a
+        // freshly-started recording's use cases.
         if (includeVideoUseCase) {
             includeVideoUseCase = false
-            previewView?.let { bindCamera(it) }
+            previewView?.let { pv ->
+                withTimeoutOrNull(stopFinalizeTimeoutMs) {
+                    suspendCancellableCoroutine<Unit> { c -> bindCamera(pv) { if (c.isActive) c.resume(Unit) } }
+                }
+            }
         }
         return result
     }
