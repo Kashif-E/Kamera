@@ -99,6 +99,15 @@ actual class CameraController(
     private var recordingOutputFile: File? = null
     private val recordingFinalizeChannel = Channel<VideoCaptureResult>(Channel.CONFLATED)
 
+    // VideoCapture is only bound while recording. A 16:9 VideoCapture in the photo UseCaseGroup
+    // shares the ViewPort and shrinks the common field of view, so every still gets cropped/zoomed
+    // (#136) — unless StreamSharing happens to merge it. Binding it lazily keeps photos full-FOV.
+    @Volatile
+    private var includeVideoUseCase = false
+
+    @Volatile
+    private var pendingVideoQuality = VideoQuality.FHD
+
     private val imageCaptureListeners = mutableListOf<(ByteArray) -> Unit>()
 
     private val memoryManager = MemoryManager
@@ -137,7 +146,8 @@ actual class CameraController(
                 val cameraSelector = createCameraSelector()
 
                 configureCaptureUseCase(resolutionSelector)
-                configureVideoCaptureUseCase()
+                // Only build VideoCapture when a recording is active/about to start — see field doc.
+                if (includeVideoUseCase) configureVideoCaptureUseCase(pendingVideoQuality) else videoCapture = null
 
                 // Align capture rotation with the display rotation that also drives the ViewPort and
                 // the preview box, so all three agree (WYSIWYG). Relying on the accelerometer
@@ -150,7 +160,7 @@ actual class CameraController(
                     .addUseCase(preview!!)
                     .addUseCase(imageCapture!!)
 
-                videoCapture?.let { useCaseGroupBuilder.addUseCase(it) }
+                if (includeVideoUseCase) videoCapture?.let { useCaseGroupBuilder.addUseCase(it) }
                 imageAnalyzer?.let { useCaseGroupBuilder.addUseCase(it) }
 
                 // Build the ViewPort explicitly from the configured aspect ratio rather than reading
@@ -235,6 +245,9 @@ actual class CameraController(
      * rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
      */
     private fun rebindIfViewPortOrientationChanged() {
+        // Never rebind mid-recording: unbindAll/rebind would tear down the active VideoCapture
+        // session. The aspect ratio shouldn't change mid-clip anyway.
+        if (activeRecording != null) return
         val pv = previewView ?: return
         val rotation = currentDisplayRotation(pv)
         val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
@@ -547,6 +560,11 @@ actual class CameraController(
     actual fun getTorchMode(): TorchMode? = torchMode
 
     actual fun toggleCameraLens() {
+        // A lens switch rebinds (unbindAll), which would tear down a live recording session.
+        if (activeRecording != null) {
+            CameraKLogger.w("CameraController", "Ignoring lens switch while recording")
+            return
+        }
         memoryManager.updateMemoryStatus()
 
         if (memoryManager.isUnderMemoryPressure()) {
@@ -570,6 +588,11 @@ actual class CameraController(
 
     actual fun setPreferredCameraDeviceType(deviceType: CameraDeviceType) {
         if (cameraDeviceType == deviceType) return
+        // Same as the lens switch: this rebinds and would kill a live recording.
+        if (activeRecording != null) {
+            CameraKLogger.w("CameraController", "Ignoring device type change while recording")
+            return
+        }
         cameraDeviceType = deviceType
         // Live switch: re-bind the use cases with a camera selector for the new device type
         // (this rebind keeps the session/plugins; the field alone has no effect until a bind).
@@ -687,56 +710,86 @@ actual class CameraController(
     }
 
     @android.annotation.SuppressLint("MissingPermission")
-    actual suspend fun startRecording(configuration: VideoConfiguration): String = suspendCancellableCoroutine { cont ->
-        val vc = videoCapture ?: run {
-            cont.resumeWithException(IllegalStateException("VideoCapture use case not available"))
-            return@suspendCancellableCoroutine
-        }
-
-        val outputFile = createVideoOutputFile(configuration)
-        recordingOutputFile = outputFile
-        val outputOptions = FileOutputOptions.Builder(outputFile).build()
-
-        val hasAudioPermission = ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val pendingRecording = vc.output.prepareRecording(context, outputOptions).apply {
-            if (configuration.enableAudio && hasAudioPermission) {
-                withAudioEnabled()
+    actual suspend fun startRecording(configuration: VideoConfiguration): String {
+        // Reject a second start: starting again would overwrite activeRecording and orphan the
+        // first recording's session (it could never be stopped/finalized).
+        if (activeRecording != null) throw IllegalStateException("A recording is already in progress")
+        // VideoCapture is bound lazily (it isn't part of the photo session — see includeVideoUseCase).
+        // Bind it now and wait for the rebind before recording.
+        if (videoCapture == null) {
+            val pv = previewView ?: throw IllegalStateException("Camera preview not ready for recording")
+            pendingVideoQuality = configuration.quality
+            includeVideoUseCase = true
+            // Wait for the rebind, but don't hang forever if it fails (bindCamera only invokes
+            // onCameraReady on success). On timeout, startRecordingInternal reports a clean error.
+            withTimeoutOrNull(stopFinalizeTimeoutMs) {
+                suspendCancellableCoroutine<Unit> { c -> bindCamera(pv) { if (c.isActive) c.resume(Unit) } }
             }
         }
+        return try {
+            startRecordingInternal(configuration)
+        } catch (e: Exception) {
+            // Recording never started — drop the lazily-bound VideoCapture and rebind, otherwise the
+            // flag stays set and every later photo silently reverts to the cropped FOV (#136).
+            if (includeVideoUseCase) {
+                includeVideoUseCase = false
+                previewView?.let { bindCamera(it) }
+            }
+            throw e
+        }
+    }
 
-        activeRecording = pendingRecording.start(
-            ContextCompat.getMainExecutor(context),
-        ) { event ->
-            when (event) {
-                is VideoRecordEvent.Finalize -> {
-                    val file = recordingOutputFile
-                    if (event.hasError()) {
-                        recordingFinalizeChannel.trySend(
-                            VideoCaptureResult.Error(
-                                Exception("Recording error code: ${event.error}"),
-                            ),
-                        )
-                    } else {
-                        // Notify MediaStore so video appears in Gallery
-                        file?.let { notifyMediaStoreVideo(it) }
-                        recordingFinalizeChannel.trySend(
-                            VideoCaptureResult.Success(
-                                filePath = file?.absolutePath ?: "",
-                                durationMs = event.recordingStats.recordedDurationNanos / 1_000_000,
-                            ),
-                        )
-                    }
-                    recordingOutputFile = null
+    private suspend fun startRecordingInternal(configuration: VideoConfiguration): String =
+        suspendCancellableCoroutine { cont ->
+            val vc = videoCapture ?: run {
+                cont.resumeWithException(IllegalStateException("VideoCapture use case not available"))
+                return@suspendCancellableCoroutine
+            }
+
+            val outputFile = createVideoOutputFile(configuration)
+            recordingOutputFile = outputFile
+            val outputOptions = FileOutputOptions.Builder(outputFile).build()
+
+            val hasAudioPermission = ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.RECORD_AUDIO,
+            ) == PackageManager.PERMISSION_GRANTED
+
+            val pendingRecording = vc.output.prepareRecording(context, outputOptions).apply {
+                if (configuration.enableAudio && hasAudioPermission) {
+                    withAudioEnabled()
                 }
             }
-        }
 
-        cont.resume(outputFile.absolutePath)
-    }
+            activeRecording = pendingRecording.start(
+                ContextCompat.getMainExecutor(context),
+            ) { event ->
+                when (event) {
+                    is VideoRecordEvent.Finalize -> {
+                        val file = recordingOutputFile
+                        if (event.hasError()) {
+                            recordingFinalizeChannel.trySend(
+                                VideoCaptureResult.Error(
+                                    Exception("Recording error code: ${event.error}"),
+                                ),
+                            )
+                        } else {
+                            // Notify MediaStore so video appears in Gallery
+                            file?.let { notifyMediaStoreVideo(it) }
+                            recordingFinalizeChannel.trySend(
+                                VideoCaptureResult.Success(
+                                    filePath = file?.absolutePath ?: "",
+                                    durationMs = event.recordingStats.recordedDurationNanos / 1_000_000,
+                                ),
+                            )
+                        }
+                        recordingOutputFile = null
+                    }
+                }
+            }
+
+            cont.resume(outputFile.absolutePath)
+        }
 
     actual suspend fun stopRecording(): VideoCaptureResult {
         val recording = activeRecording ?: return VideoCaptureResult.Error(
@@ -751,12 +804,25 @@ actual class CameraController(
         // Don't wait forever: if the CameraX finalize event never arrives (already finalized,
         // dropped, etc.) this would hang the caller and leave isRecording stuck true. Also guard
         // against cleanup() closing the channel mid-stop (receive() would throw).
-        return try {
+        val result = try {
             withTimeoutOrNull(stopFinalizeTimeoutMs) { recordingFinalizeChannel.receive() }
                 ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
         } catch (e: Exception) {
             VideoCaptureResult.Error(e)
         }
+        // Drop VideoCapture and rebind back to the full-FOV photo session. Await the rebind before
+        // returning: a fire-and-forget rebind lets an immediate photo (or a quick startRecording)
+        // race the pending bind — capturing on the old UseCaseGroup, or the late rebind unbinding a
+        // freshly-started recording's use cases.
+        if (includeVideoUseCase) {
+            includeVideoUseCase = false
+            previewView?.let { pv ->
+                withTimeoutOrNull(stopFinalizeTimeoutMs) {
+                    suspendCancellableCoroutine<Unit> { c -> bindCamera(pv) { if (c.isActive) c.resume(Unit) } }
+                }
+            }
+        }
+        return result
     }
 
     actual suspend fun pauseRecording() {
