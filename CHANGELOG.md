@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Android photos cropped / reduced field-of-view** (#136): captured stills were zoomed-in vs the preview (e.g. a 4080×3060 sensor saved as a 3060×2295 centre crop). Cause: CameraK always bound a 16:9 `VideoCapture` use case in the photo `UseCaseGroup`, and the shared `ViewPort` had to fit every use case — so the 16:9 video shrank the common field of view for the 4:3 still (StreamSharing masked it only when 4+ use cases were bound). `VideoCapture` is now bound lazily — only while a recording is active — so photos use the full sensor field of view. Verified on a Galaxy S23 across photo/record/photo-after-record.
+
+### Fixed
 - **Android captured photo aspect ratio & orientation** (#136, follow-up): the 1.0 fix letterboxed the preview but, on real hardware, the **saved photo** still came out wrong — e.g. a portrait `RATIO_4_3` capture saved as a cropped 4:3 *landscape*. Root cause (found via on-device testing): three orientation sources disagreed — the capture rotation/EXIF was driven by the accelerometer while the ViewPort crop and preview followed the **display** rotation. Fixes: (1) the ViewPort `Rational` is now orientation-aware (portrait `RATIO_4_3` → 3:4) and rebuilt on a portrait↔landscape rotation; (2) capture `targetRotation` now follows the display rotation — the same source as the ViewPort and preview — so all three agree (WYSIWYG). Verified on a Galaxy S23 across all four ratios × both orientations × with/without the analyzer plugin (StreamSharing).
 
 ### Changed (behavior)
