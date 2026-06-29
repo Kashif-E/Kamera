@@ -132,6 +132,9 @@ fun App() = AppTheme {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         modifier = Modifier.windowInsetsPadding(WindowInsets.systemBars),
+        // Camera app: black background so the preview re-bind on aspect-ratio change (and any
+        // letterbox bars) never flashes the default white surface.
+        containerColor = Color.Black,
     ) {
         val cameraPermissionState = remember { mutableStateOf(permissions.hasCameraPermission()) }
         val storagePermissionState = remember { mutableStateOf(permissions.hasStoragePermission()) }
