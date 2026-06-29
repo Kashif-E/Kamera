@@ -102,7 +102,10 @@ actual class CameraController(
     // VideoCapture is only bound while recording. A 16:9 VideoCapture in the photo UseCaseGroup
     // shares the ViewPort and shrinks the common field of view, so every still gets cropped/zoomed
     // (#136) — unless StreamSharing happens to merge it. Binding it lazily keeps photos full-FOV.
+    @Volatile
     private var includeVideoUseCase = false
+
+    @Volatile
     private var pendingVideoQuality = VideoQuality.FHD
 
     private val imageCaptureListeners = mutableListOf<(ByteArray) -> Unit>()
@@ -242,6 +245,9 @@ actual class CameraController(
      * rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
      */
     private fun rebindIfViewPortOrientationChanged() {
+        // Never rebind mid-recording: unbindAll/rebind would tear down the active VideoCapture
+        // session. The aspect ratio shouldn't change mid-clip anyway.
+        if (activeRecording != null) return
         val pv = previewView ?: return
         val rotation = currentDisplayRotation(pv)
         val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
