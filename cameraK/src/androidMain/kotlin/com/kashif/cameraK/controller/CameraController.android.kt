@@ -123,6 +123,11 @@ actual class CameraController(
     // it — otherwise the capture crop stays at the old orientation (reintroduces #136 after rotation).
     private var lastViewPortPortrait: Boolean? = null
 
+    // Set when a portrait↔landscape flip is detected during recording (when rebinding would tear
+    // down the recording). The deferred rebind runs once the recording finalizes.
+    @Volatile
+    private var pendingViewPortRebind = false
+
     fun bindCamera(previewView: PreviewView, onCameraReady: () -> Unit = {}) {
         this.previewView = previewView
 
@@ -215,8 +220,9 @@ actual class CameraController(
 
     /**
      * Builds a [ViewPort] matching the configured aspect ratio so every use case (preview, capture,
-     * analyzer) is cropped to the same field of view. The [Rational] is expressed in the natural
-     * sensor (landscape) orientation; CameraX rotates it for the current display rotation.
+     * analyzer) is cropped to the same field of view. The [Rational] is expressed as width:height in
+     * the display's CURRENT orientation (the convention `PreviewView.getViewPort()` uses), so it is
+     * flipped for portrait — e.g. `RATIO_4_3` is `3:4` in portrait and `4:3` in landscape.
      */
     private fun buildViewPort(previewView: PreviewView): ViewPort? {
         val rotation = currentDisplayRotation(previewView)
@@ -245,15 +251,18 @@ actual class CameraController(
      * rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
      */
     private fun rebindIfViewPortOrientationChanged() {
-        // Never rebind mid-recording: unbindAll/rebind would tear down the active VideoCapture
-        // session. The aspect ratio shouldn't change mid-clip anyway.
-        if (activeRecording != null) return
         val pv = previewView ?: return
         val rotation = currentDisplayRotation(pv)
         val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
-        if (lastViewPortPortrait != null && portrait != lastViewPortPortrait) {
-            bindCamera(pv)
+        if (lastViewPortPortrait == null || portrait == lastViewPortPortrait) return
+
+        if (activeRecording != null) {
+            // Don't rebind mid-recording: unbindAll/rebind would tear down the VideoCapture session.
+            // Defer it — the recording's Finalize callback performs the rebind once it's safe.
+            pendingViewPortRebind = true
+            return
         }
+        bindCamera(pv)
     }
 
     /**
@@ -784,6 +793,15 @@ actual class CameraController(
                             )
                         }
                         recordingOutputFile = null
+                        // Clear here too: a recording can finalize on error without stopRecording()
+                        // being called, and a stale non-null activeRecording would permanently block
+                        // ViewPort rebinds on rotation.
+                        activeRecording = null
+                        // Apply any rotation flip that was deferred while recording was in progress.
+                        if (pendingViewPortRebind) {
+                            pendingViewPortRebind = false
+                            rebindIfViewPortOrientationChanged()
+                        }
                     }
                 }
             }
@@ -917,7 +935,12 @@ actual class CameraController(
 
     actual fun setTargetOrientation(orientation: DeviceOrientation?) {
         targetOrientation = orientation
-        applyTargetRotation(orientation ?: currentDeviceOrientation)
+        // applyCaptureRotation honors the override when set, and otherwise uses the DISPLAY rotation
+        // (consistent with auto mode) — so clearing the override (null) immediately reverts to the
+        // display rotation instead of a possibly-stale sensor orientation. Fall back to the sensor
+        // orientation only if there's no preview view yet.
+        previewView?.let { applyCaptureRotation(it) }
+            ?: applyTargetRotation(orientation ?: currentDeviceOrientation)
     }
 
     private fun applyTargetRotation(orientation: DeviceOrientation) {
