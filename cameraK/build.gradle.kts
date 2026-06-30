@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.kashif.camera_compose"
-version = "1.0"
+version = "1.1"
 
 kotlin {
     jvmToolchain(17)
@@ -106,7 +106,7 @@ mavenPublishing {
     coordinates(
         groupId = "io.github.kashif-mehmood-km",
         artifactId = "camerak",
-        version = "1.0",
+        version = "1.1",
     )
 
     pom {
