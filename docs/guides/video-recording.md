@@ -49,7 +49,7 @@ Add the plugin dependency to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:1.0")
+    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:1.1")
 }
 ```
 
