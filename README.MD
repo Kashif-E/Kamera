@@ -21,7 +21,7 @@ A modern camera library for Compose Multiplatform supporting Android, iOS, and D
 
 - **Cross-Platform**: Android, iOS, and JVM Desktop
 - **Compose-First**: Native Compose Multiplatform API
-- **Flexible Configuration**: Aspect ratios, zoom, flash control
+- **Flexible Configuration**: Aspect ratios, zoom, focus, flash control
 - **Video Recording**: Record video with pause/resume, configurable quality, and max duration
 - **Plugin System**: Modular QR/barcode scanning, OCR, image saving, video recording, Image Analyzer
 - **Optimized Capture**: Direct file saving with `takePictureToFile()`
@@ -719,6 +719,7 @@ class CameraKStateHolder {
 
     // Camera control
     fun captureImage()
+    fun setFocus(x: Float, y: Float, size: Float)
     fun setZoom(zoom: Float)
     fun toggleFlashMode()
     fun setFlashMode(mode: FlashMode)
@@ -748,6 +749,9 @@ Low-level camera operations returned in `CameraKState.Ready`:
 expect class CameraController {
     // Capture operations
     suspend fun takePictureToFile(): ImageCaptureResult        // Direct file save
+
+    // Focus control
+    fun setFocus(x: Float, y: Float, size: Float)
 
     // Zoom control
     fun setZoom(zoom: Float)
