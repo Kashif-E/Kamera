@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Crash on Mac Catalyst during QR/barcode setup** (#70): the scanner assigned a fixed list of 13 metadata object types, but a Mac camera advertises far fewer (sometimes none). Assigning a type not in `availableMetadataObjectTypes` aborts the process (`NSInvalidArgumentException` in `_buildAndRunGraph`). CameraK now only ever assigns the intersection with the supported types, so QR scanning degrades gracefully on Mac/Catalyst instead of crashing. iPhone/iPad behavior is unchanged (all types remain supported). Note: this covers running an iOS app via Mac Catalyst; a native macOS (AppKit) target is not yet provided.
+
 ## [1.1] - 2026-06-30
 
 ### Fixed

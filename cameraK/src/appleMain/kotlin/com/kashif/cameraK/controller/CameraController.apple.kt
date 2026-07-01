@@ -255,18 +255,18 @@ actual class CameraController(
     }
 
     fun updateMetadataObjectTypes(newTypes: List<String>) {
-        // Note: This is called from queueConfigurationChange, so session may be in config mode
-        // Don't check isRunning() - just set the types
-        if (metadataOutput.availableMetadataObjectTypes.isNotEmpty()) {
-            // Filter to only supported types
-            val supportedTypes = newTypes.filter { type ->
-                metadataOutput.availableMetadataObjectTypes.contains(type)
-            }
-            metadataOutput.metadataObjectTypes = supportedTypes
-        } else {
-            // Metadata output not fully ready yet, try setting all requested types
-            metadataOutput.metadataObjectTypes = newTypes
-        }
+        // Only ever assign the intersection with availableMetadataObjectTypes. Assigning a type the
+        // hardware doesn't advertise throws NSInvalidArgumentException (SIGABRT) inside
+        // _buildAndRunGraph — most visible on Mac Catalyst, where the camera advertises far fewer
+        // barcode types than an iPhone (and sometimes none). Never force-set the full list. (#70)
+        val available = metadataOutput.availableMetadataObjectTypes
+        val supportedTypes = newTypes.filter { available.contains(it) }
+        // Nothing supported yet: the output isn't connected, or the platform (some Macs) advertises
+        // no barcode metadata types at all. Leave types unset — scanning is a no-op, not a crash.
+        // (A Kotlin try/catch can't rescue this: an NSException from the setter aborts the process,
+        // so the filter — never assigning an unavailable type — IS the guard.)
+        if (supportedTypes.isEmpty()) return
+        metadataOutput.metadataObjectTypes = supportedTypes
     }
 
     @OptIn(ExperimentalForeignApi::class)
