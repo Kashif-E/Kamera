@@ -1,0 +1,1762 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kotlin Multiplatform Camera SDK">
+      
+      
+        <meta name="author" content="Kashif-E">
+      
+      
+        <link rel="canonical" href="https://kashif-e.github.io/Kamera/examples/android/">
+      
+      
+        <link rel="prev" href="../../api/camera-k-screen/">
+      
+      
+        <link rel="next" href="../../troubleshooting/">
+      
+      
+      <link rel="icon" href="../../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.5.3, mkdocs-material-9.5.18">
+    
+    
+      
+        <title>Android - Kamera</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.66ac8b77.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#android-setup" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Kamera" class="md-header__button md-logo" aria-label="Kamera" data-md-component="logo">
+      
+  <img src="../../assets/cameraklogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Kamera
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Android
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kashif-e/Kamera" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kashif-e/Kamera
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Kamera" class="md-nav__button md-logo" aria-label="Kamera" data-md-component="logo">
+      
+  <img src="../../assets/cameraklogo.png" alt="logo">
+
+    </a>
+    Kamera
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kashif-e/Kamera" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kashif-e/Kamera
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting Started
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Installation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Quick Start
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Guides
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Guides
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/camera-capture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Camera Capture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/flash-and-torch/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Flash and Torch
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/zoom-control/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Zoom Control
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/camera-switching/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Camera Switching
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/video-recording/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Video Recording
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/plugins/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    API Reference
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/state-holder/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraKStateHolder
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/controller/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraController
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/camera-k-screen/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraKScreen
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Examples
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Examples
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Android
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Android
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      Requirements
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-add-dependency" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 1: Add Dependency
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 1: Add Dependency">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#buildgradlekts-module-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      build.gradle.kts (Module-level)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#version-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      Version Catalog
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 2: Permissions
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Permissions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#androidmanifestxml" class="md-nav__link">
+    <span class="md-ellipsis">
+      AndroidManifest.xml
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-request-permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 3: Request Permissions
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 3: Request Permissions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-kameras-permission-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      Using Kamera's Permission API
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#camera-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      Camera Screen
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-basic-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 4: Basic Implementation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-proguard-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 5: ProGuard Rules
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 5: ProGuard Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#proguard-rulespro" class="md-nav__link">
+    <span class="md-ellipsis">
+      proguard-rules.pro
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-storage-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      File Storage Paths
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Testing
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#emulator-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Emulator Setup
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#physical-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      Physical Device
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Common Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#camera-not-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Camera not available"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#permission-denied" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Permission denied"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no-space-left-on-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      "No space left on device"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#camerax-initialization-error" class="md-nav__link">
+    <span class="md-ellipsis">
+      CameraX Initialization Error
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#platform-specific-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Platform-Specific Features
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Platform-Specific Features">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#android-only-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Android-Only Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration Example
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      Next Steps
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../license/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    License
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      Requirements
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-add-dependency" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 1: Add Dependency
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 1: Add Dependency">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#buildgradlekts-module-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      build.gradle.kts (Module-level)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#version-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      Version Catalog
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 2: Permissions
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Permissions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#androidmanifestxml" class="md-nav__link">
+    <span class="md-ellipsis">
+      AndroidManifest.xml
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-request-permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 3: Request Permissions
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 3: Request Permissions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#using-kameras-permission-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      Using Kamera's Permission API
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#camera-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      Camera Screen
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-basic-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 4: Basic Implementation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-proguard-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 5: ProGuard Rules
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 5: ProGuard Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#proguard-rulespro" class="md-nav__link">
+    <span class="md-ellipsis">
+      proguard-rules.pro
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-storage-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      File Storage Paths
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Testing
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#emulator-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      Emulator Setup
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#physical-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      Physical Device
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Common Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#camera-not-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Camera not available"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#permission-denied" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Permission denied"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no-space-left-on-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      "No space left on device"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#camerax-initialization-error" class="md-nav__link">
+    <span class="md-ellipsis">
+      CameraX Initialization Error
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#platform-specific-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Platform-Specific Features
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Platform-Specific Features">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#android-only-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Android-Only Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration Example
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      Next Steps
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="android-setup">Android Setup<a class="headerlink" href="#android-setup" title="Permanent link">&para;</a></h1>
+<p>Setup Kamera for Android applications.</p>
+<h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Minimum SDK</strong>: API 21 (Android 5.0 Lollipop)</li>
+<li><strong>Target SDK</strong>: API 34+ recommended</li>
+<li><strong>Kotlin</strong>: 1.9.0+</li>
+<li><strong>Gradle</strong>: 8.0+</li>
+<li><strong>Compose</strong>: 1.5.0+</li>
+</ul>
+<h2 id="step-1-add-dependency">Step 1: Add Dependency<a class="headerlink" href="#step-1-add-dependency" title="Permanent link">&para;</a></h2>
+<h3 id="buildgradlekts-module-level">build.gradle.kts (Module-level)<a class="headerlink" href="#buildgradlekts-module-level" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="n">dependencies</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">implementation</span><span class="p">(</span><span class="s">&quot;io.github.kashif-mehmood-km:camerak:1.1&quot;</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="version-catalog">Version Catalog<a class="headerlink" href="#version-catalog" title="Permanent link">&para;</a></h3>
+<p><code>gradle/libs.versions.toml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[versions]</span>
+<span class="n">camerak</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;1.0&quot;</span>
+
+<span class="k">[libraries]</span>
+<span class="n">camerak</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">module</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">&quot;io.github.kashif-mehmood-km:camerak&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">version</span><span class="p">.</span><span class="n">ref</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">&quot;camerak&quot;</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p><code>build.gradle.kts</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="n">dependencies</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">implementation</span><span class="p">(</span><span class="n">libs</span><span class="p">.</span><span class="na">camerak</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="step-2-permissions">Step 2: Permissions<a class="headerlink" href="#step-2-permissions" title="Permanent link">&para;</a></h2>
+<h3 id="androidmanifestxml">AndroidManifest.xml<a class="headerlink" href="#androidmanifestxml" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="cp">&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;</span>
+<span class="nt">&lt;manifest</span><span class="w"> </span><span class="na">xmlns:android=</span><span class="s">&quot;http://schemas.android.com/apk/res/android&quot;</span><span class="nt">&gt;</span>
+
+<span class="w">    </span><span class="cm">&lt;!-- Camera feature --&gt;</span>
+<span class="w">    </span><span class="nt">&lt;uses-feature</span>
+<span class="w">        </span><span class="na">android:name=</span><span class="s">&quot;android.hardware.camera&quot;</span>
+<span class="w">        </span><span class="na">android:required=</span><span class="s">&quot;true&quot;</span><span class="w"> </span><span class="nt">/&gt;</span>
+
+<span class="w">    </span><span class="cm">&lt;!-- Camera permission --&gt;</span>
+<span class="w">    </span><span class="nt">&lt;uses-permission</span><span class="w"> </span><span class="na">android:name=</span><span class="s">&quot;android.permission.CAMERA&quot;</span><span class="w"> </span><span class="nt">/&gt;</span>
+
+<span class="w">    </span><span class="cm">&lt;!-- Storage permission (Android 9 and below) --&gt;</span>
+<span class="w">    </span><span class="nt">&lt;uses-permission</span>
+<span class="w">        </span><span class="na">android:name=</span><span class="s">&quot;android.permission.WRITE_EXTERNAL_STORAGE&quot;</span>
+<span class="w">        </span><span class="na">android:maxSdkVersion=</span><span class="s">&quot;28&quot;</span><span class="w"> </span><span class="nt">/&gt;</span>
+
+<span class="w">    </span><span class="nt">&lt;application</span>
+<span class="w">        </span><span class="na">android:name=</span><span class="s">&quot;.MyApplication&quot;</span>
+<span class="w">        </span><span class="na">android:allowBackup=</span><span class="s">&quot;true&quot;</span>
+<span class="w">        </span><span class="na">android:icon=</span><span class="s">&quot;@mipmap/ic_launcher&quot;</span>
+<span class="w">        </span><span class="na">android:label=</span><span class="s">&quot;@string/app_name&quot;</span>
+<span class="w">        </span><span class="na">android:theme=</span><span class="s">&quot;@style/Theme.App&quot;</span><span class="nt">&gt;</span>
+
+<span class="w">        </span><span class="nt">&lt;activity</span>
+<span class="w">            </span><span class="na">android:name=</span><span class="s">&quot;.MainActivity&quot;</span>
+<span class="w">            </span><span class="na">android:exported=</span><span class="s">&quot;true&quot;</span><span class="nt">&gt;</span>
+<span class="w">            </span><span class="nt">&lt;intent-filter&gt;</span>
+<span class="w">                </span><span class="nt">&lt;action</span><span class="w"> </span><span class="na">android:name=</span><span class="s">&quot;android.intent.action.MAIN&quot;</span><span class="w"> </span><span class="nt">/&gt;</span>
+<span class="w">                </span><span class="nt">&lt;category</span><span class="w"> </span><span class="na">android:name=</span><span class="s">&quot;android.intent.category.LAUNCHER&quot;</span><span class="w"> </span><span class="nt">/&gt;</span>
+<span class="w">            </span><span class="nt">&lt;/intent-filter&gt;</span>
+<span class="w">        </span><span class="nt">&lt;/activity&gt;</span>
+
+<span class="w">    </span><span class="nt">&lt;/application&gt;</span>
+<span class="nt">&lt;/manifest&gt;</span>
+</code></pre></div>
+<h2 id="step-3-request-permissions">Step 3: Request Permissions<a class="headerlink" href="#step-3-request-permissions" title="Permanent link">&para;</a></h2>
+<p>Kamera includes a built-in, cross-platform permission API. No third-party libraries needed.</p>
+<h3 id="using-kameras-permission-api">Using Kamera's Permission API<a class="headerlink" href="#using-kameras-permission-api" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nd">@Composable</span>
+<span class="kd">fun</span><span class="w"> </span><span class="nf">CameraScreenWithPermissions</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">permissions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">providePermissions</span><span class="p">()</span>
+<span class="w">    </span><span class="kd">var</span><span class="w"> </span><span class="nv">cameraGranted</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">remember</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">mutableStateOf</span><span class="p">(</span><span class="n">permissions</span><span class="p">.</span><span class="na">hasCameraPermission</span><span class="p">())</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="kd">var</span><span class="w"> </span><span class="nv">storageGranted</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">remember</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">mutableStateOf</span><span class="p">(</span><span class="n">permissions</span><span class="p">.</span><span class="na">hasStoragePermission</span><span class="p">())</span><span class="w"> </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">cameraGranted</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">permissions</span><span class="p">.</span><span class="na">RequestCameraPermission</span><span class="p">(</span>
+<span class="w">            </span><span class="n">onGranted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">cameraGranted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
+<span class="w">            </span><span class="n">onDenied</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* Show rationale or denied UI */</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">storageGranted</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">permissions</span><span class="p">.</span><span class="na">RequestStoragePermission</span><span class="p">(</span>
+<span class="w">            </span><span class="n">onGranted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">storageGranted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
+<span class="w">            </span><span class="n">onDenied</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="cm">/* Show rationale or denied UI */</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">cameraGranted</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">storageGranted</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">CameraScreen</span><span class="p">()</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="camera-screen">Camera Screen<a class="headerlink" href="#camera-screen" title="Permanent link">&para;</a></h3>
+<p>Once permissions are granted, use <code>rememberCameraKState()</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@Composable</span>
+<span class="kd">fun</span><span class="w"> </span><span class="nf">CameraScreen</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">cameraState</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">rememberCameraKState</span><span class="p">()</span>
+
+<span class="w">    </span><span class="k">when</span><span class="w"> </span><span class="p">(</span><span class="n">cameraState</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">is</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Ready</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="kd">val</span><span class="w"> </span><span class="nv">ready</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cameraState</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Ready</span>
+<span class="w">            </span><span class="n">CameraPreviewView</span><span class="p">(</span>
+<span class="w">                </span><span class="n">controller</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ready</span><span class="p">.</span><span class="na">controller</span><span class="p">,</span>
+<span class="w">                </span><span class="n">modifier</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Modifier</span><span class="p">.</span><span class="na">fillMaxSize</span><span class="p">()</span>
+<span class="w">            </span><span class="p">)</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">is</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Error</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="kd">val</span><span class="w"> </span><span class="nv">error</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cameraState</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Error</span>
+<span class="w">            </span><span class="n">Text</span><span class="p">(</span><span class="s">&quot;Camera error: </span><span class="si">${</span><span class="n">error</span><span class="p">.</span><span class="na">message</span><span class="si">}</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Initializing</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">CircularProgressIndicator</span><span class="p">()</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="step-4-basic-implementation">Step 4: Basic Implementation<a class="headerlink" href="#step-4-basic-implementation" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="nd">@Composable</span>
+<span class="kd">fun</span><span class="w"> </span><span class="nf">AndroidCameraScreen</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">scope</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rememberCoroutineScope</span><span class="p">()</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">cameraState</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">rememberCameraKState</span><span class="p">(</span>
+<span class="w">        </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraConfiguration</span><span class="p">(</span>
+<span class="w">            </span><span class="n">cameraLens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span><span class="p">,</span>
+<span class="w">            </span><span class="n">flashMode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">FlashMode</span><span class="p">.</span><span class="na">AUTO</span><span class="p">,</span>
+<span class="w">            </span><span class="n">aspectRatio</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AspectRatio</span><span class="p">.</span><span class="na">RATIO_16_9</span><span class="p">,</span>
+<span class="w">            </span><span class="n">imageFormat</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ImageFormat</span><span class="p">.</span><span class="na">JPEG</span><span class="p">,</span>
+<span class="w">            </span><span class="n">directory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Directory</span><span class="p">.</span><span class="na">PICTURES</span><span class="p">,</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">    </span><span class="p">)</span>
+
+<span class="w">    </span><span class="n">Box</span><span class="p">(</span><span class="n">modifier</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Modifier</span><span class="p">.</span><span class="na">fillMaxSize</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">when</span><span class="w"> </span><span class="p">(</span><span class="n">cameraState</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">is</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Ready</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="kd">val</span><span class="w"> </span><span class="nv">ready</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cameraState</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Ready</span>
+<span class="w">                </span><span class="kd">val</span><span class="w"> </span><span class="nv">controller</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ready</span><span class="p">.</span><span class="na">controller</span>
+
+<span class="w">                </span><span class="c1">// Camera preview</span>
+<span class="w">                </span><span class="n">CameraPreviewView</span><span class="p">(</span>
+<span class="w">                    </span><span class="n">controller</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">controller</span><span class="p">,</span>
+<span class="w">                    </span><span class="n">modifier</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Modifier</span><span class="p">.</span><span class="na">fillMaxSize</span><span class="p">()</span>
+<span class="w">                </span><span class="p">)</span>
+
+<span class="w">                </span><span class="c1">// Capture button</span>
+<span class="w">                </span><span class="n">FloatingActionButton</span><span class="p">(</span>
+<span class="w">                    </span><span class="n">onClick</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="n">scope</span><span class="p">.</span><span class="na">launch</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                            </span><span class="k">when</span><span class="w"> </span><span class="p">(</span><span class="kd">val</span><span class="w"> </span><span class="nv">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">controller</span><span class="p">.</span><span class="na">takePictureToFile</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                                </span><span class="k">is</span><span class="w"> </span><span class="n">ImageCaptureResult</span><span class="p">.</span><span class="na">SuccessWithFile</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                                    </span><span class="n">Toast</span><span class="p">.</span><span class="na">makeText</span><span class="p">(</span>
+<span class="w">                                        </span><span class="n">context</span><span class="p">,</span>
+<span class="w">                                        </span><span class="s">&quot;Photo saved: </span><span class="si">${</span><span class="n">result</span><span class="p">.</span><span class="na">filePath</span><span class="si">}</span><span class="s">&quot;</span><span class="p">,</span>
+<span class="w">                                        </span><span class="n">Toast</span><span class="p">.</span><span class="na">LENGTH_SHORT</span>
+<span class="w">                                    </span><span class="p">).</span><span class="na">show</span><span class="p">()</span>
+<span class="w">                                </span><span class="p">}</span>
+<span class="w">                                </span><span class="k">is</span><span class="w"> </span><span class="n">ImageCaptureResult</span><span class="p">.</span><span class="na">Error</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                                    </span><span class="n">Toast</span><span class="p">.</span><span class="na">makeText</span><span class="p">(</span>
+<span class="w">                                        </span><span class="n">context</span><span class="p">,</span>
+<span class="w">                                        </span><span class="s">&quot;Error: </span><span class="si">${</span><span class="n">result</span><span class="p">.</span><span class="na">exception</span><span class="p">.</span><span class="na">message</span><span class="si">}</span><span class="s">&quot;</span><span class="p">,</span>
+<span class="w">                                        </span><span class="n">Toast</span><span class="p">.</span><span class="na">LENGTH_SHORT</span>
+<span class="w">                                    </span><span class="p">).</span><span class="na">show</span><span class="p">()</span>
+<span class="w">                                </span><span class="p">}</span>
+<span class="w">                            </span><span class="p">}</span>
+<span class="w">                        </span><span class="p">}</span>
+<span class="w">                    </span><span class="p">},</span>
+<span class="w">                    </span><span class="n">modifier</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Modifier</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">align</span><span class="p">(</span><span class="n">Alignment</span><span class="p">.</span><span class="na">BottomCenter</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">padding</span><span class="p">(</span><span class="m">32.</span><span class="n">dp</span><span class="p">)</span>
+<span class="w">                </span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">Icon</span><span class="p">(</span><span class="n">Icons</span><span class="p">.</span><span class="na">Default</span><span class="p">.</span><span class="na">CameraAlt</span><span class="p">,</span><span class="w"> </span><span class="n">contentDescription</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Capture&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}</span>
+
+<span class="w">            </span><span class="k">is</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Error</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="kd">val</span><span class="w"> </span><span class="nv">error</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cameraState</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Error</span>
+<span class="w">                </span><span class="n">Text</span><span class="p">(</span>
+<span class="w">                    </span><span class="n">text</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Camera Error: </span><span class="si">${</span><span class="n">error</span><span class="p">.</span><span class="na">message</span><span class="si">}</span><span class="s">&quot;</span><span class="p">,</span>
+<span class="w">                    </span><span class="n">modifier</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Modifier</span><span class="p">.</span><span class="na">align</span><span class="p">(</span><span class="n">Alignment</span><span class="p">.</span><span class="na">Center</span><span class="p">)</span>
+<span class="w">                </span><span class="p">)</span>
+<span class="w">            </span><span class="p">}</span>
+
+<span class="w">            </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Initializing</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">CircularProgressIndicator</span><span class="p">(</span><span class="n">modifier</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Modifier</span><span class="p">.</span><span class="na">align</span><span class="p">(</span><span class="n">Alignment</span><span class="p">.</span><span class="na">Center</span><span class="p">))</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="step-5-proguard-rules">Step 5: ProGuard Rules<a class="headerlink" href="#step-5-proguard-rules" title="Permanent link">&para;</a></h2>
+<p>If using ProGuard/R8, add rules:</p>
+<h3 id="proguard-rulespro">proguard-rules.pro<a class="headerlink" href="#proguard-rulespro" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code># Kamera
+-keep class com.kashif.cameraK.** { *; }
+-keepclassmembers class com.kashif.cameraK.** { *; }
+
+# CameraX
+-keep class androidx.camera.** { *; }
+-keepclassmembers class androidx.camera.** { *; }
+</code></pre></div>
+<h2 id="file-storage-paths">File Storage Paths<a class="headerlink" href="#file-storage-paths" title="Permanent link">&para;</a></h2>
+<p>On Android, photos are saved to:</p>
+<ul>
+<li><code>Directory.PICTURES</code> -&gt; <code>/storage/emulated/0/Pictures/</code></li>
+<li><code>Directory.DCIM</code> -&gt; <code>/storage/emulated/0/DCIM/</code></li>
+<li><code>Directory.DOCUMENTS</code> -&gt; <code>/data/data/your.package/files/Documents/</code></li>
+</ul>
+<h2 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h2>
+<h3 id="emulator-setup">Emulator Setup<a class="headerlink" href="#emulator-setup" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Create AVD with camera support</li>
+<li>Enable camera in AVD settings:</li>
+<li><strong>Front camera</strong>: Webcam or Emulated</li>
+<li><strong>Back camera</strong>: VirtualScene or Emulated</li>
+</ol>
+<h3 id="physical-device">Physical Device<a class="headerlink" href="#physical-device" title="Permanent link">&para;</a></h3>
+<p>Test on real device for:
+- Flash/torch functionality
+- Camera switching
+- High-resolution capture
+- Performance testing</p>
+<h2 id="common-issues">Common Issues<a class="headerlink" href="#common-issues" title="Permanent link">&para;</a></h2>
+<h3 id="camera-not-available">"Camera not available"<a class="headerlink" href="#camera-not-available" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Emulator doesn't have camera configured.</p>
+<p><strong>Solution:</strong> Use physical device or configure AVD camera.</p>
+<h3 id="permission-denied">"Permission denied"<a class="headerlink" href="#permission-denied" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Camera permission not granted.</p>
+<p><strong>Solution:</strong> Check manifest has <code>&lt;uses-permission android:name="android.permission.CAMERA" /&gt;</code>.</p>
+<h3 id="no-space-left-on-device">"No space left on device"<a class="headerlink" href="#no-space-left-on-device" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Storage full.</p>
+<p><strong>Solution:</strong> Clear device storage or reduce image resolution.</p>
+<h3 id="camerax-initialization-error">CameraX Initialization Error<a class="headerlink" href="#camerax-initialization-error" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> CameraX version conflict.</p>
+<p><strong>Solution:</strong> Kamera includes CameraX automatically -- don't add manual CameraX dependencies.</p>
+<h2 id="platform-specific-features">Platform-Specific Features<a class="headerlink" href="#platform-specific-features" title="Permanent link">&para;</a></h2>
+<h3 id="android-only-features">Android-Only Features<a class="headerlink" href="#android-only-features" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Image Analysis</strong> -- Process frames in real-time</li>
+<li><strong>CameraX Integration</strong> -- Built on Android's CameraX</li>
+<li><strong>Scoped Storage</strong> -- Android 10+ privacy-safe storage</li>
+</ul>
+<h3 id="configuration-example">Configuration Example<a class="headerlink" href="#configuration-example" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">cameraState</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">rememberCameraKState</span><span class="p">(</span>
+<span class="w">    </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraConfiguration</span><span class="p">(</span>
+<span class="w">        </span><span class="c1">// Android supports all features</span>
+<span class="w">        </span><span class="n">cameraLens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span><span class="p">,</span>
+<span class="w">        </span><span class="n">aspectRatio</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AspectRatio</span><span class="p">.</span><span class="na">RATIO_16_9</span><span class="p">,</span>
+<span class="w">        </span><span class="n">targetResolution</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">1920</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="m">1080</span><span class="p">,</span>
+<span class="w">        </span><span class="n">flashMode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">FlashMode</span><span class="p">.</span><span class="na">AUTO</span><span class="p">,</span>
+<span class="w">        </span><span class="n">imageFormat</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ImageFormat</span><span class="p">.</span><span class="na">JPEG</span><span class="p">,</span>
+<span class="w">        </span><span class="n">directory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Directory</span><span class="p">.</span><span class="na">PICTURES</span><span class="p">,</span>
+<span class="w">        </span><span class="n">qualityPrioritization</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QualityPrioritization</span><span class="p">.</span><span class="na">BALANCED</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span>
+<span class="p">)</span>
+</code></pre></div>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../getting-started/quick-start/">Quick Start</a> -- Build your first camera app</li>
+<li><a href="../../getting-started/configuration/">Configuration</a> -- Customize settings</li>
+<li><a href="../../guides/camera-capture/">Camera Capture</a> -- Advanced capture techniques</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024 Kamera
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/kashif-e/Kamera" target="_blank" rel="noopener" title="GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "toc.follow", "content.code.copy", "content.code.select", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": 1.0}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.3220b9d7.min.js"></script>
+      
+    
+  </body>
+</html>

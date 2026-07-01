@@ -1,0 +1,1795 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kotlin Multiplatform Camera SDK">
+      
+      
+        <meta name="author" content="Kashif-E">
+      
+      
+        <link rel="canonical" href="https://kashif-e.github.io/Kamera/contributing/">
+      
+      
+        <link rel="prev" href="../troubleshooting/">
+      
+      
+        <link rel="next" href="../license/">
+      
+      
+      <link rel="icon" href="../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.5.3, mkdocs-material-9.5.18">
+    
+    
+      
+        <title>Contributing - Kamera</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.66ac8b77.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#contributing-to-kamera" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Kamera" class="md-header__button md-logo" aria-label="Kamera" data-md-component="logo">
+      
+  <img src="../assets/cameraklogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Kamera
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Contributing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kashif-e/Kamera" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kashif-e/Kamera
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Kamera" class="md-nav__button md-logo" aria-label="Kamera" data-md-component="logo">
+      
+  <img src="../assets/cameraklogo.png" alt="logo">
+
+    </a>
+    Kamera
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kashif-e/Kamera" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kashif-e/Kamera
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting Started
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/installation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Installation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Quick Start
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Guides
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Guides
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/camera-capture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Camera Capture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/flash-and-torch/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Flash and Torch
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/zoom-control/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Zoom Control
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/camera-switching/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Camera Switching
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/video-recording/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Video Recording
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/plugins/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    API Reference
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/state-holder/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraKStateHolder
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/controller/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraController
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/camera-k-screen/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraKScreen
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Examples
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Examples
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/android/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Android
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Contributing
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Contributing
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#ways-to-contribute" class="md-nav__link">
+    <span class="md-ellipsis">
+      Ways to Contribute
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Reporting Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reporting Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#good-issue-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Good Issue Example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      Build Project
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-sample-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      Run Sample App
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      Code Guidelines
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code Guidelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#kotlin-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      Kotlin Style
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#naming-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Naming Conventions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Documentation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Error Handling
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Testing
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pull-request-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pull Request Process
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pull Request Process">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-fork-and-branch" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Fork and Branch
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-make-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Make Changes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-commit-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Commit Messages
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-push-and-create-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Push and Create PR
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-code-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Code Review
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-merge" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Merge
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      Architecture Guidelines
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Architecture Guidelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#layer-1-platform-specific-expectactual" class="md-nav__link">
+    <span class="md-ellipsis">
+      Layer 1: Platform-Specific (expect/actual)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-2-state-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      Layer 2: State Management
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-3-compose-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      Layer 3: Compose UI
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Breaking Changes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#documentation-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Documentation Changes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#community-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      Community Guidelines
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recognition" class="md-nav__link">
+    <span class="md-ellipsis">
+      Recognition
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Questions?
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thank-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      Thank You!
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../license/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    License
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#ways-to-contribute" class="md-nav__link">
+    <span class="md-ellipsis">
+      Ways to Contribute
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Reporting Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reporting Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#good-issue-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Good Issue Example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      Build Project
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-sample-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      Run Sample App
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      Code Guidelines
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code Guidelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#kotlin-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      Kotlin Style
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#naming-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Naming Conventions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Documentation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Error Handling
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Testing
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pull-request-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pull Request Process
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pull Request Process">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-fork-and-branch" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Fork and Branch
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-make-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Make Changes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-commit-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Commit Messages
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-push-and-create-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Push and Create PR
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-code-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Code Review
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-merge" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Merge
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      Architecture Guidelines
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Architecture Guidelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#layer-1-platform-specific-expectactual" class="md-nav__link">
+    <span class="md-ellipsis">
+      Layer 1: Platform-Specific (expect/actual)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-2-state-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      Layer 2: State Management
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-3-compose-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      Layer 3: Compose UI
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Breaking Changes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#documentation-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Documentation Changes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#community-guidelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      Community Guidelines
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recognition" class="md-nav__link">
+    <span class="md-ellipsis">
+      Recognition
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Questions?
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#thank-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      Thank You!
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="contributing-to-kamera">Contributing to Kamera<a class="headerlink" href="#contributing-to-kamera" title="Permanent link">&para;</a></h1>
+<p>Thank you for your interest in contributing to Kamera! This document provides guidelines and steps for contributing.</p>
+<h2 id="ways-to-contribute">Ways to Contribute<a class="headerlink" href="#ways-to-contribute" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Report Bugs</strong> -- Found an issue? Let us know</li>
+<li><strong>Suggest Features</strong> -- Have an idea? Share it</li>
+<li><strong>Improve Documentation</strong> -- Fix typos, add examples, clarify</li>
+<li><strong>Submit Pull Requests</strong> -- Fix bugs, add features</li>
+<li><strong>Help Others</strong> -- Answer questions in Discussions</li>
+</ul>
+<h2 id="reporting-issues">Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permanent link">&para;</a></h2>
+<p>Before creating an issue, please:</p>
+<ol>
+<li><strong>Search existing issues</strong> to avoid duplicates</li>
+<li><strong>Use the issue template</strong> if available</li>
+<li><strong>Provide details</strong>:</li>
+<li>Kamera version</li>
+<li>Platform (Android/iOS/Desktop) and OS version</li>
+<li>Device/emulator details</li>
+<li>Minimal reproducible example</li>
+<li>Expected vs actual behavior</li>
+<li>Stack trace/error messages</li>
+</ol>
+<h3 id="good-issue-example">Good Issue Example<a class="headerlink" href="#good-issue-example" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="gs">**Kamera Version:**</span> 1.0
+<span class="gs">**Platform:**</span> Android 13 (Pixel 6)
+
+<span class="gs">**Description:**</span>
+Camera preview shows black screen when using RATIO_1_1 aspect ratio.
+
+<span class="gs">**Steps to Reproduce:**</span>
+<span class="k">1.</span> Configure camera with <span class="sb">`aspectRatio = AspectRatio.RATIO_1_1`</span>
+<span class="k">2.</span> Launch camera screen
+<span class="k">3.</span> Preview displays as black screen
+
+<span class="gs">**Expected:**</span> Square camera preview displays
+<span class="gs">**Actual:**</span> Black screen
+
+<span class="gs">**Code:**</span>
+```kotlin
+val cameraState by rememberCameraKState(
+    config = CameraConfiguration(
+        aspectRatio = AspectRatio.RATIO_1_1
+    )
+)
+</code></pre></div>
+<p><strong>Error Log:</strong>
+<div class="highlight"><pre><span></span><code>E/CameraK: Failed to bind camera...
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>## Development Setup
+
+### Prerequisites
+
+- JDK 17+
+- Android Studio Hedgehog or later
+- Xcode 14+ (for iOS development)
+- Kotlin 1.9.0+
+
+### Clone Repository
+
+```bash
+git clone https://github.com/Kashif-E/Kamera.git
+cd Kamera
+</code></pre></div></p>
+<h3 id="build-project">Build Project<a class="headerlink" href="#build-project" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>./gradlew<span class="w"> </span>build
+</code></pre></div>
+<h3 id="run-sample-app">Run Sample App<a class="headerlink" href="#run-sample-app" title="Permanent link">&para;</a></h3>
+<p><strong>Android:</strong>
+<div class="highlight"><pre><span></span><code>./gradlew<span class="w"> </span>:Sample:installDebug
+</code></pre></div></p>
+<p><strong>Desktop:</strong>
+<div class="highlight"><pre><span></span><code>./gradlew<span class="w"> </span>:Sample:run
+</code></pre></div></p>
+<p><strong>iOS:</strong>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>iosApp
+pod<span class="w"> </span>install
+open<span class="w"> </span>iosApp.xcworkspace
+</code></pre></div></p>
+<h2 id="code-guidelines">Code Guidelines<a class="headerlink" href="#code-guidelines" title="Permanent link">&para;</a></h2>
+<h3 id="kotlin-style">Kotlin Style<a class="headerlink" href="#kotlin-style" title="Permanent link">&para;</a></h3>
+<p>Follow <a href="https://kotlinlang.org/docs/coding-conventions.html">Kotlin coding conventions</a>:</p>
+<ul>
+<li>Use 4 spaces for indentation</li>
+<li>Use camelCase for functions and variables</li>
+<li>Use PascalCase for classes</li>
+<li>Maximum line length: 120 characters</li>
+</ul>
+<h3 id="naming-conventions">Naming Conventions<a class="headerlink" href="#naming-conventions" title="Permanent link">&para;</a></h3>
+<p><strong>Critical: Follow SDK naming rules</strong></p>
+<ul>
+<li>Methods: <code>[Verb][Object]</code> pattern</li>
+<li><code>captureImage()</code>, <code>setZoom()</code>, <code>getFlashMode()</code></li>
+<li>
+<p>Not: <code>imageCapturer()</code>, <code>zoomSet()</code>, <code>flashModeGet()</code></p>
+</li>
+<li>
+<p>Classes: Singular nouns</p>
+</li>
+<li><code>CameraController</code>, <code>ImageCaptureResult</code></li>
+<li>
+<p>Not: <code>Controllers</code>, <code>ImageCaptureResults</code></p>
+</li>
+<li>
+<p>Packages: Domain-based</p>
+</li>
+<li><code>com.kashif.cameraK.controller</code></li>
+<li>Not: <code>com.kashif.cameraK.utils</code></li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<p><strong>All public APIs must have KDoc:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="cm">/**</span>
+<span class="cm"> * Captures an image and saves it directly to a file.</span>
+<span class="cm"> *</span>
+<span class="cm"> * This method saves directly to disk, which:</span>
+<span class="cm"> * - Avoids ByteArray conversion</span>
+<span class="cm"> * - Skips decode/encode cycles</span>
+<span class="cm"> * - Avoids memory overhead from in-memory image processing</span>
+<span class="cm"> *</span>
+<span class="cm"> * @return ImageCaptureResult.SuccessWithFile containing the file path, or an error result</span>
+<span class="cm"> *</span>
+<span class="cm"> * @throws IOException if file cannot be written</span>
+<span class="cm"> *</span>
+<span class="cm"> * @example</span>
+<span class="cm"> * ```kotlin</span>
+<span class="cm"> * when (val result = controller.takePictureToFile()) {</span>
+<span class="cm"> *     is ImageCaptureResult.SuccessWithFile -&gt; println(&quot;Saved: ${result.filePath}&quot;)</span>
+<span class="cm"> *     is ImageCaptureResult.Error -&gt; println(&quot;Error: ${result.exception.message}&quot;)</span>
+<span class="cm"> * }</span>
+<span class="cm"> * ```</span>
+<span class="cm"> */</span>
+<span class="kd">suspend</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">takePictureToFile</span><span class="p">():</span><span class="w"> </span><span class="n">ImageCaptureResult</span>
+</code></pre></div>
+<h3 id="error-handling">Error Handling<a class="headerlink" href="#error-handling" title="Permanent link">&para;</a></h3>
+<p><strong>Use sealed classes for expected errors:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kd">sealed</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nc">ImageCaptureResult</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">data</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nc">SuccessWithFile</span><span class="p">(</span><span class="kd">val</span><span class="w"> </span><span class="nv">filePath</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">ImageCaptureResult</span><span class="p">()</span>
+<span class="w">    </span><span class="kd">data</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nc">Error</span><span class="p">(</span><span class="kd">val</span><span class="w"> </span><span class="nv">exception</span><span class="p">:</span><span class="w"> </span><span class="n">Exception</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">ImageCaptureResult</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Use specific exceptions for unexpected errors:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kd">class</span><span class="w"> </span><span class="nc">CameraNotInitializedException</span><span class="p">(</span><span class="n">message</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">Exception</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h3>
+<p>Add tests for new features:</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@Test</span>
+<span class="kd">fun</span><span class="w"> </span><span class="nf">`takePictureToFile returns success with file path`</span><span class="p">()</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">runTest</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">controller</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">createTestController</span><span class="p">()</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">controller</span><span class="p">.</span><span class="na">takePictureToFile</span><span class="p">()</span>
+
+<span class="w">    </span><span class="n">assertTrue</span><span class="p">(</span><span class="n">result</span><span class="w"> </span><span class="k">is</span><span class="w"> </span><span class="n">ImageCaptureResult</span><span class="p">.</span><span class="na">SuccessWithFile</span><span class="p">)</span>
+<span class="w">    </span><span class="n">assertNotNull</span><span class="p">((</span><span class="n">result</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">ImageCaptureResult</span><span class="p">.</span><span class="na">SuccessWithFile</span><span class="p">).</span><span class="na">filePath</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="pull-request-process">Pull Request Process<a class="headerlink" href="#pull-request-process" title="Permanent link">&para;</a></h2>
+<h3 id="1-fork-and-branch">1. Fork and Branch<a class="headerlink" href="#1-fork-and-branch" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>feature/your-feature-name
+<span class="c1"># or</span>
+git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>fix/your-bug-fix
+</code></pre></div>
+<h3 id="2-make-changes">2. Make Changes<a class="headerlink" href="#2-make-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Write clear, focused commits</li>
+<li>Follow code guidelines</li>
+<li>Add tests for new features</li>
+<li>Update documentation</li>
+</ul>
+<h3 id="3-commit-messages">3. Commit Messages<a class="headerlink" href="#3-commit-messages" title="Permanent link">&para;</a></h3>
+<p>Use conventional commits:</p>
+<div class="highlight"><pre><span></span><code>feat: add pinch-to-zoom gesture support
+fix: resolve camera preview freeze on rotation
+docs: update installation guide for iOS
+test: add zoom control unit tests
+refactor: simplify flash mode toggle logic
+</code></pre></div>
+<h3 id="4-push-and-create-pr">4. Push and Create PR<a class="headerlink" href="#4-push-and-create-pr" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>feature/your-feature-name
+</code></pre></div>
+<p>Create pull request on GitHub with:</p>
+<ul>
+<li><strong>Title</strong>: Clear, concise description</li>
+<li><strong>Description</strong>:</li>
+<li>What changed</li>
+<li>Why (reference issue if applicable)</li>
+<li>How to test</li>
+<li>Screenshots/videos if UI change</li>
+<li><strong>Checklist</strong>:</li>
+<li>[ ] Code follows style guidelines</li>
+<li>[ ] Documentation updated</li>
+<li>[ ] Tests added/updated</li>
+<li>[ ] All tests pass</li>
+<li>[ ] No breaking changes (or documented)</li>
+</ul>
+<h3 id="5-code-review">5. Code Review<a class="headerlink" href="#5-code-review" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Address reviewer feedback</li>
+<li>Keep discussion respectful</li>
+<li>Update PR as needed</li>
+</ul>
+<h3 id="6-merge">6. Merge<a class="headerlink" href="#6-merge" title="Permanent link">&para;</a></h3>
+<p>Once approved, maintainers will merge your PR.</p>
+<h2 id="architecture-guidelines">Architecture Guidelines<a class="headerlink" href="#architecture-guidelines" title="Permanent link">&para;</a></h2>
+<h3 id="layer-1-platform-specific-expectactual">Layer 1: Platform-Specific (expect/actual)<a class="headerlink" href="#layer-1-platform-specific-expectactual" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1">// commonMain</span>
+<span class="kd">expect</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nc">CameraController</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">suspend</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">takePictureToFile</span><span class="p">():</span><span class="w"> </span><span class="n">ImageCaptureResult</span>
+<span class="p">}</span>
+
+<span class="c1">// androidMain</span>
+<span class="kd">actual</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nc">CameraController</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">actual</span><span class="w"> </span><span class="kd">suspend</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">takePictureToFile</span><span class="p">():</span><span class="w"> </span><span class="n">ImageCaptureResult</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Android-specific CameraX implementation</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="layer-2-state-management">Layer 2: State Management<a class="headerlink" href="#layer-2-state-management" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nd">@Stable</span>
+<span class="kd">class</span><span class="w"> </span><span class="nc">CameraKStateHolder</span><span class="p">(</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">val</span><span class="w"> </span><span class="nv">controllerFactory</span><span class="p">:</span><span class="w"> </span><span class="n">suspend</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">CameraController</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">val</span><span class="w"> </span><span class="nv">coroutineScope</span><span class="p">:</span><span class="w"> </span><span class="n">CoroutineScope</span>
+<span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">cameraState</span><span class="p">:</span><span class="w"> </span><span class="n">StateFlow</span><span class="o">&lt;</span><span class="n">CameraKState</span><span class="o">&gt;</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">uiState</span><span class="p">:</span><span class="w"> </span><span class="n">StateFlow</span><span class="o">&lt;</span><span class="n">CameraUIState</span><span class="o">&gt;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="layer-3-compose-ui">Layer 3: Compose UI<a class="headerlink" href="#layer-3-compose-ui" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nd">@Composable</span>
+<span class="kd">fun</span><span class="w"> </span><span class="nf">rememberCameraKState</span><span class="p">(...):</span><span class="w"> </span><span class="n">State</span><span class="o">&lt;</span><span class="n">CameraKState</span><span class="o">&gt;</span>
+</code></pre></div>
+<h2 id="breaking-changes">Breaking Changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h2>
+<p>Avoid breaking changes when possible. If necessary:</p>
+<ol>
+<li><strong>Deprecate first</strong> (12-month timeline)</li>
+<li><strong>Provide migration path</strong></li>
+<li><strong>Document in CHANGELOG</strong></li>
+<li><strong>Bump major version</strong></li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="nd">@Deprecated</span><span class="p">(</span>
+<span class="w">    </span><span class="n">message</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Use newMethod() instead&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="n">replaceWith</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReplaceWith</span><span class="p">(</span><span class="s">&quot;newMethod()&quot;</span><span class="p">),</span>
+<span class="w">    </span><span class="n">level</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DeprecationLevel</span><span class="p">.</span><span class="na">WARNING</span><span class="w">  </span><span class="c1">// v1.x</span>
+<span class="p">)</span>
+<span class="kd">fun</span><span class="w"> </span><span class="nf">oldMethod</span><span class="p">()</span>
+</code></pre></div>
+<h2 id="documentation-changes">Documentation Changes<a class="headerlink" href="#documentation-changes" title="Permanent link">&para;</a></h2>
+<p>Update documentation in <code>docs/</code>:</p>
+<ul>
+<li><code>getting-started/</code> -- Installation, quick start, configuration</li>
+<li><code>guides/</code> -- Feature-specific guides</li>
+<li><code>api/</code> -- API reference</li>
+<li><code>examples/</code> -- Platform-specific examples</li>
+</ul>
+<p>Use Stripe-style documentation:
+- Clear, concise examples
+- Real, working code
+- Copy-paste ready
+- Progressive disclosure (simple -&gt; advanced)</p>
+<h2 id="community-guidelines">Community Guidelines<a class="headerlink" href="#community-guidelines" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Be respectful and inclusive</li>
+<li>Help others learn</li>
+<li>Provide constructive feedback</li>
+<li>Follow the Code of Conduct</li>
+</ul>
+<h2 id="recognition">Recognition<a class="headerlink" href="#recognition" title="Permanent link">&para;</a></h2>
+<p>Contributors are recognized in:
+- GitHub contributors page
+- Release notes (for significant contributions)
+- CHANGELOG (for bug fixes and features)</p>
+<h2 id="questions">Questions?<a class="headerlink" href="#questions" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>GitHub Discussions</strong>: <a href="https://github.com/Kashif-E/Kamera/discussions">Discussions</a></li>
+<li><strong>Issues</strong>: <a href="https://github.com/Kashif-E/Kamera/issues">Issues</a></li>
+</ul>
+<h2 id="thank-you">Thank You!<a class="headerlink" href="#thank-you" title="Permanent link">&para;</a></h2>
+<p>Your contributions make Kamera better for everyone. We appreciate your time and effort!</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024 Kamera
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/kashif-e/Kamera" target="_blank" rel="noopener" title="GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "toc.follow", "content.code.copy", "content.code.select", "content.code.annotate"], "search": "../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": 1.0}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.3220b9d7.min.js"></script>
+      
+    
+  </body>
+</html>

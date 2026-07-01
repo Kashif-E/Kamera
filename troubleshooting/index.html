@@ -1,0 +1,2091 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kotlin Multiplatform Camera SDK">
+      
+      
+        <meta name="author" content="Kashif-E">
+      
+      
+        <link rel="canonical" href="https://kashif-e.github.io/Kamera/troubleshooting/">
+      
+      
+        <link rel="prev" href="../examples/android/">
+      
+      
+        <link rel="next" href="../contributing/">
+      
+      
+      <link rel="icon" href="../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.5.3, mkdocs-material-9.5.18">
+    
+    
+      
+        <title>Troubleshooting - Kamera</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.66ac8b77.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#troubleshooting" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Kamera" class="md-header__button md-logo" aria-label="Kamera" data-md-component="logo">
+      
+  <img src="../assets/cameraklogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Kamera
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Troubleshooting
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kashif-e/Kamera" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kashif-e/Kamera
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Kamera" class="md-nav__button md-logo" aria-label="Kamera" data-md-component="logo">
+      
+  <img src="../assets/cameraklogo.png" alt="logo">
+
+    </a>
+    Kamera
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kashif-e/Kamera" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kashif-e/Kamera
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting Started
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/installation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Installation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Quick Start
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Guides
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Guides
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/camera-capture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Camera Capture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/flash-and-torch/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Flash and Torch
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/zoom-control/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Zoom Control
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/camera-switching/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Camera Switching
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/video-recording/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Video Recording
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/plugins/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    API Reference
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/state-holder/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraKStateHolder
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/controller/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraController
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/camera-k-screen/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraKScreen
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Examples
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Examples
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/android/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Android
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#installation-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Installation Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Installation Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#could-not-find-iogithubkashif-mehmood-kmcamerak" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Could not find io.github.kashif-mehmood-km:camerak"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gradle-sync-failed" class="md-nav__link">
+    <span class="md-ellipsis">
+      Gradle Sync Failed
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#permission-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Permission Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Permission Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#camera-permission-denied-android" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Camera permission denied" (Android)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#camera-access-requires-nscamerausagedescription-ios" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Camera access requires NSCameraUsageDescription" (iOS)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#camera-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      Camera Not Working
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Camera Not Working">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#camera-not-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Camera not available"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#camera-preview-black-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      Camera Preview Black Screen
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preview-frozen" class="md-nav__link">
+    <span class="md-ellipsis">
+      Preview Frozen
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capture-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Capture Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Capture Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#capture-failed-camera-not-initialized" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Capture failed: Camera not initialized"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#storage-permission-denied-android-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Storage permission denied" (Android &lt; 10)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#images-not-saving" class="md-nav__link">
+    <span class="md-ellipsis">
+      Images Not Saving
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#poor-image-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      Poor Image Quality
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flashtorch-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Flash/Torch Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flash/Torch Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flash-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      Flash Not Working
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#torch-stays-on-after-closing-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      Torch Stays On After Closing App
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#zoom-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zoom Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Zoom Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#zoom-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zoom Not Working
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#zoom-resets-when-switching-cameras" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zoom Resets When Switching Cameras
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Performance Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#app-crashes-on-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      App Crashes on Capture
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#high-memory-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      High Memory Usage
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#plugin-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Plugin Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Plugin Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#qr-scanner-not-detecting-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      QR Scanner Not Detecting Codes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ocr-not-recognizing-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      OCR Not Recognizing Text
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-not-activating" class="md-nav__link">
+    <span class="md-ellipsis">
+      Plugin Not Activating
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#platform-specific-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Platform-Specific Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Platform-Specific Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#android" class="md-nav__link">
+    <span class="md-ellipsis">
+      Android
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ios" class="md-nav__link">
+    <span class="md-ellipsis">
+      iOS
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      Desktop
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Build Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Build Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#duplicate-class-error" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Duplicate class" Error
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ios-build-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      iOS Build Fails
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      Getting Help
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Getting Help">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-reporting-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      When Reporting Issues
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Known Limitations
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      Next Steps
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../license/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    License
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#installation-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Installation Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Installation Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#could-not-find-iogithubkashif-mehmood-kmcamerak" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Could not find io.github.kashif-mehmood-km:camerak"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gradle-sync-failed" class="md-nav__link">
+    <span class="md-ellipsis">
+      Gradle Sync Failed
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#permission-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Permission Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Permission Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#camera-permission-denied-android" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Camera permission denied" (Android)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#camera-access-requires-nscamerausagedescription-ios" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Camera access requires NSCameraUsageDescription" (iOS)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#camera-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      Camera Not Working
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Camera Not Working">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#camera-not-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Camera not available"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#camera-preview-black-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      Camera Preview Black Screen
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preview-frozen" class="md-nav__link">
+    <span class="md-ellipsis">
+      Preview Frozen
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capture-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Capture Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Capture Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#capture-failed-camera-not-initialized" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Capture failed: Camera not initialized"
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#storage-permission-denied-android-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Storage permission denied" (Android &lt; 10)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#images-not-saving" class="md-nav__link">
+    <span class="md-ellipsis">
+      Images Not Saving
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#poor-image-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      Poor Image Quality
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flashtorch-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Flash/Torch Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flash/Torch Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flash-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      Flash Not Working
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#torch-stays-on-after-closing-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      Torch Stays On After Closing App
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#zoom-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zoom Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Zoom Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#zoom-not-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zoom Not Working
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#zoom-resets-when-switching-cameras" class="md-nav__link">
+    <span class="md-ellipsis">
+      Zoom Resets When Switching Cameras
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Performance Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#app-crashes-on-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      App Crashes on Capture
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#high-memory-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      High Memory Usage
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#plugin-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Plugin Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Plugin Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#qr-scanner-not-detecting-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      QR Scanner Not Detecting Codes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ocr-not-recognizing-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      OCR Not Recognizing Text
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin-not-activating" class="md-nav__link">
+    <span class="md-ellipsis">
+      Plugin Not Activating
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#platform-specific-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Platform-Specific Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Platform-Specific Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#android" class="md-nav__link">
+    <span class="md-ellipsis">
+      Android
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ios" class="md-nav__link">
+    <span class="md-ellipsis">
+      iOS
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      Desktop
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      Build Issues
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Build Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#duplicate-class-error" class="md-nav__link">
+    <span class="md-ellipsis">
+      "Duplicate class" Error
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ios-build-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      iOS Build Fails
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      Getting Help
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Getting Help">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-reporting-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      When Reporting Issues
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Known Limitations
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      Next Steps
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h1>
+<p>Common issues and solutions for Kamera.</p>
+<h2 id="installation-issues">Installation Issues<a class="headerlink" href="#installation-issues" title="Permanent link">&para;</a></h2>
+<h3 id="could-not-find-iogithubkashif-mehmood-kmcamerak">"Could not find io.github.kashif-mehmood-km:camerak"<a class="headerlink" href="#could-not-find-iogithubkashif-mehmood-kmcamerak" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Repository not configured.</p>
+<p><strong>Solution:</strong> Ensure Maven Central is in repositories:</p>
+<div class="highlight"><pre><span></span><code><span class="n">repositories</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">mavenCentral</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="gradle-sync-failed">Gradle Sync Failed<a class="headerlink" href="#gradle-sync-failed" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Version conflict or network issue.</p>
+<p><strong>Solution:</strong>
+1. Check internet connection
+2. Invalidate caches: <code>File</code> -&gt; <code>Invalidate Caches / Restart</code>
+3. Clean build: <code>./gradlew clean build</code></p>
+<h2 id="permission-issues">Permission Issues<a class="headerlink" href="#permission-issues" title="Permanent link">&para;</a></h2>
+<h3 id="camera-permission-denied-android">"Camera permission denied" (Android)<a class="headerlink" href="#camera-permission-denied-android" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> User denied camera permission.</p>
+<p><strong>Solution:</strong> Request permission in manifest and code:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">&lt;uses-permission</span><span class="w"> </span><span class="na">android:name=</span><span class="s">&quot;android.permission.CAMERA&quot;</span><span class="w"> </span><span class="nt">/&gt;</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">cameraPermission</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rememberPermissionState</span><span class="p">(</span><span class="n">android</span><span class="p">.</span><span class="na">Manifest</span><span class="p">.</span><span class="na">permission</span><span class="p">.</span><span class="na">CAMERA</span><span class="p">)</span>
+<span class="n">LaunchedEffect</span><span class="p">(</span><span class="kt">Unit</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">cameraPermission</span><span class="p">.</span><span class="na">status</span><span class="p">.</span><span class="na">isGranted</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">cameraPermission</span><span class="p">.</span><span class="na">launchPermissionRequest</span><span class="p">()</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="camera-access-requires-nscamerausagedescription-ios">"Camera access requires NSCameraUsageDescription" (iOS)<a class="headerlink" href="#camera-access-requires-nscamerausagedescription-ios" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Missing usage description in Info.plist.</p>
+<p><strong>Solution:</strong> Add to Info.plist:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">&lt;key&gt;</span>NSCameraUsageDescription<span class="nt">&lt;/key&gt;</span>
+<span class="nt">&lt;string&gt;</span>Camera<span class="w"> </span>access<span class="w"> </span>required<span class="w"> </span>for<span class="w"> </span>taking<span class="w"> </span>photos<span class="nt">&lt;/string&gt;</span>
+</code></pre></div>
+<h2 id="camera-not-working">Camera Not Working<a class="headerlink" href="#camera-not-working" title="Permanent link">&para;</a></h2>
+<h3 id="camera-not-available">"Camera not available"<a class="headerlink" href="#camera-not-available" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Device has no camera or emulator misconfigured.</p>
+<p><strong>Solution:</strong>
+- <strong>Physical device</strong>: Ensure camera hardware exists
+- <strong>Emulator</strong>: Configure camera in AVD settings
+- <strong>Desktop</strong>: Connect webcam</p>
+<h3 id="camera-preview-black-screen">Camera Preview Black Screen<a class="headerlink" href="#camera-preview-black-screen" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Camera not initialized or permission denied.</p>
+<p><strong>Solution:</strong>
+1. Check camera state is <code>Ready</code>
+2. Verify permissions granted
+3. Restart app</p>
+<div class="highlight"><pre><span></span><code><span class="k">when</span><span class="w"> </span><span class="p">(</span><span class="n">cameraState</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">is</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Ready</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Camera operational</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">is</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Error</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">error</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cameraState</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Error</span>
+<span class="w">        </span><span class="n">println</span><span class="p">(</span><span class="s">&quot;Error: </span><span class="si">${</span><span class="n">error</span><span class="p">.</span><span class="na">message</span><span class="si">}</span><span class="s"> (retryable: </span><span class="si">${</span><span class="n">error</span><span class="p">.</span><span class="na">isRetryable</span><span class="si">}</span><span class="s">)&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="preview-frozen">Preview Frozen<a class="headerlink" href="#preview-frozen" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Camera session stopped.</p>
+<p><strong>Solution:</strong> Restart camera session:</p>
+<div class="highlight"><pre><span></span><code><span class="n">DisposableEffect</span><span class="p">(</span><span class="kt">Unit</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">controller</span><span class="p">.</span><span class="na">startSession</span><span class="p">()</span>
+<span class="w">    </span><span class="n">onDispose</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">controller</span><span class="p">.</span><span class="na">stopSession</span><span class="p">()</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="capture-issues">Capture Issues<a class="headerlink" href="#capture-issues" title="Permanent link">&para;</a></h2>
+<h3 id="capture-failed-camera-not-initialized">"Capture failed: Camera not initialized"<a class="headerlink" href="#capture-failed-camera-not-initialized" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Attempting capture before camera ready.</p>
+<p><strong>Solution:</strong> Only capture when state is <code>Ready</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">when</span><span class="w"> </span><span class="p">(</span><span class="n">cameraState</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">is</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Ready</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">controller</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">cameraState</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">CameraKState</span><span class="p">.</span><span class="na">Ready</span><span class="p">).</span><span class="na">controller</span>
+<span class="w">        </span><span class="n">Button</span><span class="p">(</span><span class="n">onClick</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">scope</span><span class="p">.</span><span class="na">launch</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">controller</span><span class="p">.</span><span class="na">takePictureToFile</span><span class="p">()</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">})</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">Text</span><span class="p">(</span><span class="s">&quot;Capture&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="storage-permission-denied-android-10">"Storage permission denied" (Android &lt; 10)<a class="headerlink" href="#storage-permission-denied-android-10" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Missing WRITE_EXTERNAL_STORAGE permission.</p>
+<p><strong>Solution:</strong> Add to manifest:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">&lt;uses-permission</span>
+<span class="w">    </span><span class="na">android:name=</span><span class="s">&quot;android.permission.WRITE_EXTERNAL_STORAGE&quot;</span>
+<span class="w">    </span><span class="na">android:maxSdkVersion=</span><span class="s">&quot;28&quot;</span><span class="w"> </span><span class="nt">/&gt;</span>
+</code></pre></div>
+<h3 id="images-not-saving">Images Not Saving<a class="headerlink" href="#images-not-saving" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Invalid directory or storage full.</p>
+<p><strong>Solution:</strong>
+1. Check storage space
+2. Use valid directory:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">cameraState</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">rememberCameraKState</span><span class="p">(</span>
+<span class="w">    </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraConfiguration</span><span class="p">(</span>
+<span class="w">        </span><span class="n">directory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Directory</span><span class="p">.</span><span class="na">PICTURES</span><span class="w">  </span><span class="c1">// or DCIM, DOCUMENTS</span>
+<span class="w">    </span><span class="p">)</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="poor-image-quality">Poor Image Quality<a class="headerlink" href="#poor-image-quality" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Low quality prioritization or resolution.</p>
+<p><strong>Solution:</strong> Configure for quality:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">cameraState</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">rememberCameraKState</span><span class="p">(</span>
+<span class="w">    </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraConfiguration</span><span class="p">(</span>
+<span class="w">        </span><span class="n">qualityPrioritization</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QualityPrioritization</span><span class="p">.</span><span class="na">QUALITY</span><span class="p">,</span>
+<span class="w">        </span><span class="n">targetResolution</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">3840</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="m">2160</span><span class="p">,</span><span class="w">  </span><span class="c1">// 4K</span>
+<span class="w">        </span><span class="n">imageFormat</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ImageFormat</span><span class="p">.</span><span class="na">PNG</span><span class="p">,</span><span class="w">  </span><span class="c1">// Lossless</span>
+<span class="w">    </span><span class="p">)</span>
+<span class="p">)</span>
+</code></pre></div>
+<h2 id="flashtorch-issues">Flash/Torch Issues<a class="headerlink" href="#flashtorch-issues" title="Permanent link">&para;</a></h2>
+<h3 id="flash-not-working">Flash Not Working<a class="headerlink" href="#flash-not-working" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Front camera selected (no flash) or device doesn't support flash.</p>
+<p><strong>Solution:</strong> Switch to rear camera:</p>
+<div class="highlight"><pre><span></span><code><span class="n">controller</span><span class="p">.</span><span class="na">toggleCameraLens</span><span class="p">()</span>
+<span class="n">controller</span><span class="p">.</span><span class="na">setFlashMode</span><span class="p">(</span><span class="n">FlashMode</span><span class="p">.</span><span class="na">ON</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="torch-stays-on-after-closing-app">Torch Stays On After Closing App<a class="headerlink" href="#torch-stays-on-after-closing-app" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Torch not disabled in cleanup.</p>
+<p><strong>Solution:</strong> Disable in cleanup:</p>
+<div class="highlight"><pre><span></span><code><span class="n">DisposableEffect</span><span class="p">(</span><span class="kt">Unit</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">onDispose</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">controller</span><span class="p">.</span><span class="na">setTorchMode</span><span class="p">(</span><span class="n">TorchMode</span><span class="p">.</span><span class="na">OFF</span><span class="p">)</span>
+<span class="w">        </span><span class="n">controller</span><span class="p">.</span><span class="na">cleanup</span><span class="p">()</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="zoom-issues">Zoom Issues<a class="headerlink" href="#zoom-issues" title="Permanent link">&para;</a></h2>
+<h3 id="zoom-not-working">Zoom Not Working<a class="headerlink" href="#zoom-not-working" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Camera doesn't support zoom or at max zoom.</p>
+<p><strong>Solution:</strong> Check zoom support:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">maxZoom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">controller</span><span class="p">.</span><span class="na">getMaxZoom</span><span class="p">()</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">maxZoom</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="m">1.0f</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">controller</span><span class="p">.</span><span class="na">setZoom</span><span class="p">(</span><span class="m">2.0f</span><span class="p">)</span>
+<span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">println</span><span class="p">(</span><span class="s">&quot;Zoom not supported&quot;</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="zoom-resets-when-switching-cameras">Zoom Resets When Switching Cameras<a class="headerlink" href="#zoom-resets-when-switching-cameras" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Each camera has independent zoom settings.</p>
+<p><strong>Solution:</strong> Re-apply zoom after switch:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">savedZoom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">controller</span><span class="p">.</span><span class="na">getZoom</span><span class="p">()</span>
+<span class="n">controller</span><span class="p">.</span><span class="na">toggleCameraLens</span><span class="p">()</span>
+<span class="n">delay</span><span class="p">(</span><span class="m">200</span><span class="p">)</span>
+<span class="n">controller</span><span class="p">.</span><span class="na">setZoom</span><span class="p">(</span><span class="n">savedZoom</span><span class="p">.</span><span class="na">coerceIn</span><span class="p">(</span><span class="m">1f</span><span class="p">,</span><span class="w"> </span><span class="n">controller</span><span class="p">.</span><span class="na">getMaxZoom</span><span class="p">()))</span>
+</code></pre></div>
+<h2 id="performance-issues">Performance Issues<a class="headerlink" href="#performance-issues" title="Permanent link">&para;</a></h2>
+<h3 id="app-crashes-on-capture">App Crashes on Capture<a class="headerlink" href="#app-crashes-on-capture" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Out of memory or too many concurrent captures.</p>
+<p><strong>Solution:</strong>
+1. Limit burst captures to 3-5 photos
+2. Use lower resolution
+3. Use <code>takePictureToFile()</code> — it writes straight to disk instead of buffering the image in memory</p>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">cameraState</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">rememberCameraKState</span><span class="p">(</span>
+<span class="w">    </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraConfiguration</span><span class="p">(</span>
+<span class="w">        </span><span class="n">targetResolution</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">1920</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="m">1080</span><span class="w">  </span><span class="c1">// Lower resolution</span>
+<span class="w">    </span><span class="p">)</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="high-memory-usage">High Memory Usage<a class="headerlink" href="#high-memory-usage" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Multiple plugins or high-resolution processing.</p>
+<p><strong>Solution:</strong>
+1. Reduce plugin count
+2. Lower resolution
+3. Use <code>ImageFormat.JPEG</code> instead of PNG</p>
+<h2 id="plugin-issues">Plugin Issues<a class="headerlink" href="#plugin-issues" title="Permanent link">&para;</a></h2>
+<h3 id="qr-scanner-not-detecting-codes">QR Scanner Not Detecting Codes<a class="headerlink" href="#qr-scanner-not-detecting-codes" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Poor lighting or QR code quality.</p>
+<p><strong>Solution:</strong>
+1. Enable torch for better lighting
+2. Ensure QR code is clear and unobstructed
+3. Move camera closer to QR code</p>
+<h3 id="ocr-not-recognizing-text">OCR Not Recognizing Text<a class="headerlink" href="#ocr-not-recognizing-text" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Text too small, blurry, or language not supported.</p>
+<p><strong>Solution:</strong>
+1. Move camera closer
+2. Ensure good lighting
+3. Hold camera steady (avoid motion blur)</p>
+<h3 id="plugin-not-activating">Plugin Not Activating<a class="headerlink" href="#plugin-not-activating" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Plugin added after camera already ready.</p>
+<p><strong>Solution:</strong> Add plugins during initialization using <code>setupPlugins</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">qrScannerPlugin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rememberQRScannerPlugin</span><span class="p">()</span>
+<span class="kd">val</span><span class="w"> </span><span class="nv">ocrPlugin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rememberOcrPlugin</span><span class="p">()</span>
+<span class="kd">val</span><span class="w"> </span><span class="nv">cameraState</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">rememberCameraKState</span><span class="p">(</span>
+<span class="w">    </span><span class="n">setupPlugins</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">stateHolder</span><span class="w"> </span><span class="o">-&gt;</span>
+<span class="w">        </span><span class="n">stateHolder</span><span class="p">.</span><span class="na">attachPlugin</span><span class="p">(</span><span class="n">qrScannerPlugin</span><span class="p">)</span>
+<span class="w">        </span><span class="n">stateHolder</span><span class="p">.</span><span class="na">attachPlugin</span><span class="p">(</span><span class="n">ocrPlugin</span><span class="p">)</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="p">)</span>
+</code></pre></div>
+<h2 id="platform-specific-issues">Platform-Specific Issues<a class="headerlink" href="#platform-specific-issues" title="Permanent link">&para;</a></h2>
+<h3 id="android">Android<a class="headerlink" href="#android" title="Permanent link">&para;</a></h3>
+<p><strong>Issue:</strong> "CameraX binding failed"</p>
+<p><strong>Solution:</strong> Ensure minSdk is 21+:</p>
+<div class="highlight"><pre><span></span><code><span class="n">android</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">defaultConfig</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">minSdk</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">21</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Issue:</strong> "No suitable camera found"</p>
+<p><strong>Solution:</strong> Check device has both front and back cameras, or handle gracefully:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">lens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">controller</span><span class="p">.</span><span class="na">getCameraLens</span><span class="p">()</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">lens</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">println</span><span class="p">(</span><span class="s">&quot;Camera not available&quot;</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="ios">iOS<a class="headerlink" href="#ios" title="Permanent link">&para;</a></h3>
+<p><strong>Issue:</strong> "Camera preview upside down"</p>
+<p><strong>Solution:</strong> Device orientation handling. Kamera handles this automatically - report if issue persists.</p>
+<p><strong>Issue:</strong> "Camera types not available (TELEPHOTO, ULTRA_WIDE)"</p>
+<p><strong>Solution:</strong> These features require specific iPhone models:
+- Ultra-wide: iPhone 11+
+- Telephoto: iPhone 7 Plus+</p>
+<p>Check availability:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">cameraState</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">rememberCameraKState</span><span class="p">(</span>
+<span class="w">    </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraConfiguration</span><span class="p">(</span>
+<span class="w">        </span><span class="n">cameraDeviceType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">ULTRA_WIDE</span>
+<span class="w">    </span><span class="p">)</span>
+<span class="p">)</span>
+<span class="c1">// Falls back to DEFAULT if not available</span>
+</code></pre></div>
+<h3 id="desktop">Desktop<a class="headerlink" href="#desktop" title="Permanent link">&para;</a></h3>
+<p><strong>Issue:</strong> "No webcam detected"</p>
+<p><strong>Solution:</strong> Ensure webcam is:
+1. Connected to computer
+2. Not in use by another application
+3. Drivers installed</p>
+<p><strong>Issue:</strong> Flash/torch not working</p>
+<p><strong>Cause:</strong> Desktop webcams don't have flash hardware.</p>
+<p><strong>Solution:</strong> Use external lighting.</p>
+<h2 id="build-issues">Build Issues<a class="headerlink" href="#build-issues" title="Permanent link">&para;</a></h2>
+<h3 id="duplicate-class-error">"Duplicate class" Error<a class="headerlink" href="#duplicate-class-error" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Conflicting dependencies.</p>
+<p><strong>Solution:</strong> Check for duplicate libraries:</p>
+<div class="highlight"><pre><span></span><code>./gradlew<span class="w"> </span>:app:dependencies
+</code></pre></div>
+<p>Remove conflicting CameraX or Kotlin versions.</p>
+<h3 id="ios-build-fails">iOS Build Fails<a class="headerlink" href="#ios-build-fails" title="Permanent link">&para;</a></h3>
+<p><strong>Cause:</strong> Cocoapods not configured.</p>
+<p><strong>Solution:</strong> Run in iOS project:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>iosApp
+pod<span class="w"> </span>install
+</code></pre></div>
+<h2 id="getting-help">Getting Help<a class="headerlink" href="#getting-help" title="Permanent link">&para;</a></h2>
+<p>If you're still stuck:</p>
+<ol>
+<li><strong>Check Examples</strong>: <a href="https://github.com/Kashif-E/Kamera/tree/main/Sample">Sample Projects</a></li>
+<li><strong>Search Issues</strong>: <a href="https://github.com/Kashif-E/Kamera/issues">GitHub Issues</a></li>
+<li><strong>Ask Questions</strong>: <a href="https://github.com/Kashif-E/Kamera/discussions">GitHub Discussions</a></li>
+<li><strong>Report Bugs</strong>: <a href="https://github.com/Kashif-E/Kamera/issues/new">New Issue</a></li>
+</ol>
+<h3 id="when-reporting-issues">When Reporting Issues<a class="headerlink" href="#when-reporting-issues" title="Permanent link">&para;</a></h3>
+<p>Include:
+- Kamera version
+- Platform (Android/iOS/Desktop)
+- Device/emulator details
+- Minimal reproducible code
+- Stack trace/error messages
+- Expected vs actual behavior</p>
+<p><strong>Good issue:</strong>
+<div class="highlight"><pre><span></span><code>Kamera 1.0
+Android 13 (Pixel 6)
+
+Preview shows black screen when using:
+```kotlin
+val cameraState by rememberCameraKState(
+    config = CameraConfiguration(...)
+)
+</code></pre></div></p>
+<p>Error: "Camera not available"</p>
+<p>Expected: Camera preview displays
+```</p>
+<h2 id="known-limitations">Known Limitations<a class="headerlink" href="#known-limitations" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Desktop</strong>: Limited flash/torch support (hardware limitation)</li>
+<li><strong>iOS Simulator</strong>: Camera not available (use real device)</li>
+<li><strong>Android Emulator</strong>: Limited camera features (use real device for testing)</li>
+<li><strong>Burst Capture</strong>: Max 3 concurrent captures (prevents memory issues)</li>
+</ol>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../getting-started/quick-start/">Quick Start</a> -- Get started quickly</li>
+<li><a href="../getting-started/configuration/">Configuration</a> -- Customize behavior</li>
+<li><a href="../api/state-holder/">API Reference</a> -- Full API documentation</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024 Kamera
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/kashif-e/Kamera" target="_blank" rel="noopener" title="GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "toc.follow", "content.code.copy", "content.code.select", "content.code.annotate"], "search": "../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": 1.0}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.3220b9d7.min.js"></script>
+      
+    
+  </body>
+</html>
