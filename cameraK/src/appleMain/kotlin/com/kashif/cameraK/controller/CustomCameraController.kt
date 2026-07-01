@@ -4,13 +4,12 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.QualityPrioritization
-import com.kashif.cameraK.utils.MemoryManager
+import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import platform.AVFoundation.*
 import platform.Foundation.NSData
 import platform.Foundation.NSError
-import platform.Foundation.NSLog
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIView
@@ -272,7 +271,7 @@ class CustomCameraController(
                 try {
                     change()
                 } catch (e: Exception) {
-                    NSLog("CameraK: Error processing configuration change: ${e.message}")
+                    CameraKLogger.e("CameraK", "CameraK: Error processing configuration change: ${e.message}")
                 }
             }
 
@@ -290,6 +289,21 @@ class CustomCameraController(
         val session = captureSession
         if (session != null && session.canAddOutput(output)) {
             session.addOutput(output)
+        }
+    }
+
+    /**
+     * Safely removes an output previously added via [safeAddOutput]. Routed through the same
+     * [queueConfigurationChange] batching so removal shares one begin/commit transaction with any
+     * other pending changes (avoids overlapping/nested configuration transactions). Plugins must
+     * call this on detach; a dangling output keeps the pipeline streaming after the plugin is gone.
+     */
+    fun safeRemoveOutput(output: AVCaptureOutput) {
+        queueConfigurationChange {
+            val session = captureSession ?: return@queueConfigurationChange
+            if (session.outputs.contains(output)) {
+                session.removeOutput(output)
+            }
         }
     }
 
@@ -377,7 +391,7 @@ class CustomCameraController(
             flashMode = mode
         } else {
             // Device doesn't support flash (e.g., iPad) - use OFF
-            platform.Foundation.NSLog("CameraK: Flash mode not supported on this device, using OFF")
+            CameraKLogger.e("CameraK", "CameraK: Flash mode not supported on this device, using OFF")
             flashMode = AVCaptureFlashModeOff
         }
     }
@@ -492,9 +506,10 @@ class CustomCameraController(
             return
         }
 
-        if (MemoryManager.isUnderMemoryPressure()) {
-            adjustSessionQuality()
-        }
+        // Do NOT reconfigure the session preset here. Switching the preset synchronously right
+        // before capturePhotoWithSettings disrupts auto-exposure, so the still is captured
+        // mid-reconfiguration and comes out underexposed (#138). The preset is chosen once at
+        // setup; memory pressure is handled by clearing buffer pools, not by downshifting capture.
 
         val settings = AVCapturePhotoSettings.photoSettingsWithFormat(
             mapOf(

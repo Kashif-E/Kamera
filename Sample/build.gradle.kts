@@ -55,6 +55,7 @@ kotlin {
 
         mobileMain.dependencies {
             implementation(libs.kflite)
+            implementation(libs.atomicfu)
         }
 
         androidMain {
@@ -68,7 +69,6 @@ kotlin {
         iosMain {
             dependsOn(mobileMain)
         }
-
 
         commonTest.dependencies {
             implementation(kotlin("test"))

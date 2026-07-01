@@ -48,8 +48,7 @@ suspend fun takePictureToFile(): ImageCaptureResult
 - `ImageCaptureResult.Error(exception: Exception)`
 
 **Benefits:**
-- 2-3 seconds faster than `takePicture()`
-- No ByteArray conversion — direct disk write
+- Direct disk write — no ByteArray conversion
 - Lower memory usage — no decode/encode cycles
 
 **Example with error handling:**
@@ -77,53 +76,19 @@ scope.launch {
 }
 ```
 
-## Legacy: `takePicture()`
-
-**Deprecated** — Returns image as `ByteArray`. Use `takePictureToFile()` instead.
-
-```kotlin
-@Deprecated("Use takePictureToFile() for better performance")
-suspend fun takePicture(): ImageCaptureResult
-```
-
-**Returns:**
-- `ImageCaptureResult.Success(byteArray: ByteArray)`
-- `ImageCaptureResult.Error(exception: Exception)`
-
-**Only use if:**
-- You need to process the image in memory before saving
-- You're uploading directly to a server without saving locally
-- You're applying immediate image transformations
-
-**Example:**
-
-```kotlin
-scope.launch {
-    when (val result = controller.takePicture()) {
-        is ImageCaptureResult.Success -> {
-            val imageData = result.byteArray
-            uploadToServer(imageData)
-        }
-        is ImageCaptureResult.Error -> {
-            showError(result.exception.message)
-        }
-    }
-}
-```
-
 ## Result Types
 
 Sealed class ensures exhaustive pattern matching:
 
 ```kotlin
 sealed class ImageCaptureResult {
-    data class SuccessWithFile(val filePath: String) : ImageCaptureResult()
     data class Success(val byteArray: ByteArray) : ImageCaptureResult()
+    data class SuccessWithFile(val filePath: String) : ImageCaptureResult()
     data class Error(val exception: Exception) : ImageCaptureResult()
 }
 ```
 
-**Handle all cases:**
+`takePictureToFile()` only ever returns `SuccessWithFile` or `Error` — the `Success(byteArray)` variant is never produced by it. Since `ImageCaptureResult` is a sealed class, the `when` must still be exhaustive, so keep a `Success` branch as defensive handling (it simply won't be hit for this API):
 
 ```kotlin
 when (result) {
@@ -131,13 +96,12 @@ when (result) {
         // File saved, path available
         val path = result.filePath
     }
-    is ImageCaptureResult.Success -> {
-        // ByteArray available (deprecated path)
-        val data = result.byteArray
-    }
     is ImageCaptureResult.Error -> {
         // Error occurred
         val error = result.exception
+    }
+    is ImageCaptureResult.Success -> {
+        // Not produced by takePictureToFile(); handle defensively
     }
 }
 ```
@@ -387,7 +351,7 @@ scope.launch {
 
 ## Performance Tips
 
-1. **Use `takePictureToFile()`** — 2-3x faster than `takePicture()`
+1. **Use `takePictureToFile()`** — direct file capture avoids holding the full image in memory
 2. **Lower resolution** — Set `targetResolution` in `CameraConfiguration` for faster capture
 3. **JPEG format** — Faster than PNG
 4. **Quality prioritization** — Use `QualityPrioritization.SPEED` for rapid capture

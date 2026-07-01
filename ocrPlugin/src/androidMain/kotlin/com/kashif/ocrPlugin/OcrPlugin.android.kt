@@ -1,6 +1,5 @@
 package com.kashif.ocrPlugin
 
-import android.util.Log
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -10,6 +9,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -18,7 +18,7 @@ import kotlin.coroutines.resumeWithException
 actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String = withContext(Dispatchers.Default) {
     try {
         suspendCancellableCoroutine { continuation ->
-            Log.d("TextRecognition", "Starting text extraction from bitmap")
+            CameraKLogger.d("TextRecognition", "Starting text extraction from bitmap")
 
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
@@ -34,7 +34,7 @@ actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String = with
                 .process(image)
                 .addOnSuccessListener { result ->
                     val extractedText = result.text
-                    Log.d(
+                    CameraKLogger.d(
                         "TextRecognition",
                         "Text extracted successfully: ${extractedText.take(100)}...",
                     )
@@ -42,7 +42,7 @@ actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String = with
                         recognizer.close()
                     }
                 }.addOnFailureListener { exception ->
-                    Log.e("TextRecognition", "Text extraction failed", exception)
+                    CameraKLogger.e("TextRecognition", "Text extraction failed", exception)
                     continuation.resumeWithException(exception)
                 }
 
@@ -51,16 +51,16 @@ actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String = with
             }
         }
     } catch (e: Exception) {
-        Log.e("TextRecognition", "Error during text extraction", e)
+        CameraKLogger.e("TextRecognition", "Error during text extraction", e)
         throw e
     }
 }
 
 internal fun CameraController.enableTextRecognition(
     onTextRecognized: (String) -> Unit,
-    onError: (Exception) -> Unit = { Log.e("TextRecognition", "Recognition error", it) },
+    onError: (Exception) -> Unit = { CameraKLogger.e("TextRecognition", "Recognition error", it) },
 ): TextRecognitionAnalyzer {
-    Log.d("TextRecognition", "Configuring text recognition analyzer")
+    CameraKLogger.d("TextRecognition", "Configuring text recognition analyzer")
 
     val analyzer =
         TextRecognitionAnalyzer(
@@ -101,7 +101,7 @@ internal class TextRecognitionAnalyzer(
                     // Avoid duplicate emissions for same text
                     if (text.isNotEmpty() && !processedTexts.contains(text)) {
                         processedTexts.add(text)
-                        Log.d("TextRecognition", "Text detected: ${text.take(100)}...")
+                        CameraKLogger.d("TextRecognition", "Text detected: ${text.take(100)}...")
                         onTextRecognized(text)
 
                         // Clear cache periodically to avoid memory buildup
@@ -110,13 +110,13 @@ internal class TextRecognitionAnalyzer(
                         }
                     }
                 }.addOnFailureListener { exception ->
-                    Log.e("TextRecognition", "Recognition failed", exception)
+                    CameraKLogger.e("TextRecognition", "Recognition failed", exception)
                     onError(exception)
                 }.addOnCompleteListener {
                     imageProxy.close()
                 }
         } catch (e: Exception) {
-            Log.e("TextRecognition", "Analyzer error", e)
+            CameraKLogger.e("TextRecognition", "Analyzer error", e)
             onError(e)
             imageProxy.close()
         }
@@ -127,12 +127,15 @@ internal class TextRecognitionAnalyzer(
             recognizer.close()
             processedTexts.clear()
         } catch (e: Exception) {
-            Log.e("TextRecognition", "Error closing recognizer", e)
+            CameraKLogger.e("TextRecognition", "Error closing recognizer", e)
         }
     }
 }
 
-actual fun startRecognition(cameraController: CameraController, onText: (text: String) -> Unit) {
-    // Store analyzer reference for cleanup (would need to be stored in a property)
-    cameraController.enableTextRecognition(onText)
+actual fun startRecognition(cameraController: CameraController, onText: (text: String) -> Unit): RecognitionHandle {
+    val analyzer = cameraController.enableTextRecognition(onText)
+    return RecognitionHandle {
+        cameraController.unregisterImageAnalyzer(analyzer)
+        analyzer.shutdown() // close the ML Kit recognizer
+    }
 }

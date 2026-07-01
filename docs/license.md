@@ -1,6 +1,6 @@
 # License
 
-CameraK is licensed under the Apache License 2.0.
+Kamera is licensed under the Apache License 2.0.
 
 ```
 Copyright 2024 Kashif Mehmood
@@ -21,11 +21,11 @@ limitations under the License.
 ## What This Means
 
 ### You CAN:
-- ✅ Use CameraK in commercial projects
+- ✅ Use Kamera in commercial projects
 - ✅ Modify the source code
 - ✅ Distribute modified versions
-- ✅ Include CameraK in proprietary software
-- ✅ Use CameraK for private projects
+- ✅ Include Kamera in proprietary software
+- ✅ Use Kamera for private projects
 
 ### You MUST:
 - 📄 Include a copy of the Apache 2.0 license
@@ -34,12 +34,12 @@ limitations under the License.
 
 ### You CANNOT:
 - ❌ Hold the author liable for damages
-- ❌ Use CameraK trademarks without permission
+- ❌ Use Kamera trademarks without permission
 - ❌ Claim you wrote the original code
 
 ## Third-Party Licenses
 
-CameraK uses the following open-source libraries:
+Kamera uses the following open-source libraries:
 
 ### Android
 - **CameraX** — Apache 2.0
@@ -60,4 +60,4 @@ https://www.apache.org/licenses/LICENSE-2.0
 
 For licensing questions, contact:
 - GitHub: [@Kashif-E](https://github.com/Kashif-E)
-- Issues: [github.com/Kashif-E/CameraK/issues](https://github.com/Kashif-E/CameraK/issues)
+- Issues: [github.com/Kashif-E/Kamera/issues](https://github.com/Kashif-E/Kamera/issues)

@@ -1,9 +1,9 @@
-site_name: CameraK
+site_name: Kamera
 site_description: Kotlin Multiplatform Camera SDK
 site_author: Kashif-E
-site_url: https://kashif-e.github.io/CameraK/
-repo_url: https://github.com/kashif-e/CameraK
-repo_name: kashif-e/CameraK
+site_url: https://kashif-e.github.io/Kamera/
+repo_url: https://github.com/kashif-e/Kamera
+repo_name: kashif-e/Kamera
 edit_uri: edit/main/docs/
 
 theme:
@@ -83,11 +83,11 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/kashif-e/CameraK
+      link: https://github.com/kashif-e/Kamera
       name: GitHub
-  version: 0.3
+  version: 1.0
 
 extra_css:
   - stylesheets/extra.css
 
-copyright: Copyright &copy; 2024 CameraK
+copyright: Copyright &copy; 2024 Kamera

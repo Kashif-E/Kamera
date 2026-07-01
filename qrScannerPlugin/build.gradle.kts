@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.kashif.qr_scanner_plugin"
-version = "0.4"
+version = "1.1"
 
 kotlin {
     jvmToolchain(17)
@@ -83,7 +83,7 @@ mavenPublishing {
     coordinates(
         groupId = "io.github.kashif-mehmood-km",
         artifactId = "qr_scanner_plugin",
-        version = "0.4",
+        version = "1.1",
     )
 
     pom {

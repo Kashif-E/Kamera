@@ -30,7 +30,7 @@ import com.kashif.cameraK.state.CameraKStateHolder
  *
  *     when (cameraState) {
  *         CameraKState.Initializing -> LoadingIndicator()
- *         is CameraKState.Ready -> CameraPreview(cameraState.controller)
+ *         is CameraKState.Ready -> CameraPreviewView(cameraState.controller)
  *         is CameraKState.Error -> ErrorScreen(cameraState.message)
  *     }
  * }

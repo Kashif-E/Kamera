@@ -2,14 +2,12 @@ package com.kashif.cameraK.controller
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
 import android.hardware.camera2.CameraCharacteristics
-import android.media.ExifInterface
 import android.os.Environment
-import android.util.Log
+import android.util.Rational
 import android.util.Size
+import android.view.OrientationEventListener
+import android.view.Surface
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
@@ -23,6 +21,7 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.ViewPort
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
@@ -38,7 +37,6 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
-import android.view.OrientationEventListener
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -48,11 +46,11 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.InvalidConfigurationException
 import com.kashif.cameraK.utils.MemoryManager
-import com.kashif.cameraK.utils.compressToByteArray
+import com.kashif.cameraK.utils.getActivityOrNull
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
@@ -60,6 +58,7 @@ import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -81,9 +80,7 @@ actual class CameraController(
     internal var qualityPriority: QualityPrioritization,
     internal var directory: Directory,
     internal var cameraDeviceType: CameraDeviceType,
-    internal var returnFilePath: Boolean,
     internal var aspectRatio: AspectRatio,
-    internal var plugins: MutableList<CameraPlugin>,
     internal var targetResolution: Pair<Int, Int>? = null,
     internal var mirrorFrontCamera: Boolean = false,
 ) {
@@ -104,16 +101,36 @@ actual class CameraController(
     private var recordingOutputFile: File? = null
     private val recordingFinalizeChannel = Channel<VideoCaptureResult>(Channel.CONFLATED)
 
+    // VideoCapture is only bound while recording. A 16:9 VideoCapture in the photo UseCaseGroup
+    // shares the ViewPort and shrinks the common field of view, so every still gets cropped/zoomed
+    // (#136) — unless StreamSharing happens to merge it. Binding it lazily keeps photos full-FOV.
+    @Volatile
+    private var includeVideoUseCase = false
+
+    @Volatile
+    private var pendingVideoQuality = VideoQuality.FHD
+
     private val imageCaptureListeners = mutableListOf<(ByteArray) -> Unit>()
 
     private val memoryManager = MemoryManager
     private val pendingCaptures = atomic(0)
     private val maxConcurrentCaptures = 3
+    private val stopFinalizeTimeoutMs = 5000L
 
     private val imageProcessingExecutor = Executors.newFixedThreadPool(2)
+    private val analyzerExecutor = Executors.newSingleThreadExecutor()
+
+    // Portrait/landscape category of the display rotation used to build the current ViewPort. The
+    // ViewPort is immutable once bound, so when the display flips category we must rebind to rebuild
+    // it — otherwise the capture crop stays at the old orientation (reintroduces #136 after rotation).
+    private var lastViewPortPortrait: Boolean? = null
+
+    // Set when a portrait↔landscape flip is detected during recording (when rebinding would tear
+    // down the recording). The deferred rebind runs once the recording finalizes.
+    @Volatile
+    private var pendingViewPortRebind = false
 
     fun bindCamera(previewView: PreviewView, onCameraReady: () -> Unit = {}) {
-        Log.d("CameraK", "==> bindCamera() called for deviceType: $cameraDeviceType")
         this.previewView = previewView
 
         memoryManager.initialize(context)
@@ -123,7 +140,6 @@ actual class CameraController(
             try {
                 cameraProvider = cameraProviderFuture.get()
                 cameraProvider?.unbindAll()
-                Log.d("CameraK", "==> Unbind all existing cameras")
 
                 val resolutionSelector = createResolutionSelector()
 
@@ -135,19 +151,32 @@ actual class CameraController(
                     }
 
                 val cameraSelector = createCameraSelector()
-                Log.d("CameraK", "==> Camera selector created for: $cameraDeviceType")
 
                 configureCaptureUseCase(resolutionSelector)
-                configureVideoCaptureUseCase()
+                // Only build VideoCapture when a recording is active/about to start — see field doc.
+                if (includeVideoUseCase) configureVideoCaptureUseCase(pendingVideoQuality) else videoCapture = null
+
+                // Align capture rotation with the display rotation that also drives the ViewPort and
+                // the preview box, so all three agree (WYSIWYG). Relying on the accelerometer
+                // OrientationEventListener for this let the crop (display-based) and the EXIF
+                // (sensor-based) disagree — producing a portrait-rotated capture of a landscape crop
+                // (and vice-versa) when the device was flat or the display was orientation-locked (#136).
+                applyCaptureRotation(previewView)
 
                 val useCaseGroupBuilder = UseCaseGroup.Builder()
                     .addUseCase(preview!!)
                     .addUseCase(imageCapture!!)
 
-                videoCapture?.let { useCaseGroupBuilder.addUseCase(it) }
+                if (includeVideoUseCase) videoCapture?.let { useCaseGroupBuilder.addUseCase(it) }
                 imageAnalyzer?.let { useCaseGroupBuilder.addUseCase(it) }
 
-                previewView.viewPort?.let { useCaseGroupBuilder.setViewPort(it) }
+                // Build the ViewPort explicitly from the configured aspect ratio rather than reading
+                // previewView.viewPort. The latter is null until the view is laid out (so the crop is
+                // often dropped at bind time) and, with a FIT_CENTER preview, reflects the full sensor
+                // buffer — which left the captured still at the sensor ratio (e.g. 16:9) even when a
+                // 4:3 preview was requested (#136). An explicit ViewPort crops preview + capture +
+                // analyzer to the same ratio, so what you see equals what you capture.
+                buildViewPort(previewView)?.let { useCaseGroupBuilder.setViewPort(it) }
 
                 val useCaseGroup = useCaseGroupBuilder.build()
 
@@ -156,12 +185,11 @@ actual class CameraController(
                     cameraSelector,
                     useCaseGroup,
                 )
-                Log.d("CameraK", "==> Camera successfully bound with deviceType: $cameraDeviceType")
 
                 onCameraReady()
             } catch (exc: Exception) {
-                Log.e("CameraK", "==> Use case binding failed for $cameraDeviceType: ${exc.message}")
-                exc.printStackTrace()
+                CameraKLogger.e("CameraK", "==> Use case binding failed for $cameraDeviceType: ${exc.message}")
+                CameraKLogger.e("CameraK", "Unhandled exception", exc)
             }
         }, ContextCompat.getMainExecutor(context))
     }
@@ -172,27 +200,85 @@ actual class CameraController(
     private fun createResolutionSelector(): ResolutionSelector {
         memoryManager.updateMemoryStatus()
 
-        return if (targetResolution != null) {
-            // When target resolution is set, prioritize it over aspect ratio
-            ResolutionSelector.Builder()
-                .setResolutionStrategy(
-                    ResolutionStrategy(
-                        Size(targetResolution!!.first, targetResolution!!.second),
-                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
-                    ),
-                )
-                .build()
-        } else {
-            ResolutionSelector.Builder()
-                .setAspectRatioStrategy(aspectRatio.toCameraXAspectRatioStrategy())
-                .build()
+        // Always honor the configured aspect ratio. When a target resolution is also set, keep the
+        // ratio as the primary constraint and use the resolution as the preferred size within it —
+        // previously targetResolution dropped the ratio entirely, so a 16:9 target produced 16:9
+        // captures even when 4:3 was requested (#136).
+        val builder = ResolutionSelector.Builder()
+            .setAspectRatioStrategy(aspectRatio.toCameraXAspectRatioStrategy())
+        targetResolution?.let { (w, h) ->
+            builder.setResolutionStrategy(
+                ResolutionStrategy(Size(w, h), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
+            )
         }
+        return builder.build()
     }
 
     private fun AspectRatio.toCameraXAspectRatioStrategy(): AspectRatioStrategy = when (this) {
         AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
         AspectRatio.RATIO_4_3 -> AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
         AspectRatio.RATIO_1_1 -> AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY // closest available
+    }
+
+    /**
+     * Builds a [ViewPort] matching the configured aspect ratio so every use case (preview, capture,
+     * analyzer) is cropped to the same field of view. The [Rational] is expressed as width:height in
+     * the display's CURRENT orientation (the convention `PreviewView.getViewPort()` uses), so it is
+     * flipped for portrait — e.g. `RATIO_4_3` is `3:4` in portrait and `4:3` in landscape.
+     */
+    private fun buildViewPort(previewView: PreviewView): ViewPort? {
+        val rotation = currentDisplayRotation(previewView)
+        // The ViewPort Rational is width:height in the display's CURRENT orientation. In portrait a
+        // "4:3" capture is taller than wide (3:4); only in landscape is it 4:3. Hard-coding the
+        // landscape Rational forced a landscape crop in portrait — preview and photo came out 4:3
+        // when 3:4 was expected (#136). Flip width/height for portrait.
+        val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
+        lastViewPortPortrait = portrait
+        val rational = when (aspectRatio) {
+            AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 ->
+                if (portrait) Rational(9, 16) else Rational(16, 9)
+            AspectRatio.RATIO_4_3 ->
+                if (portrait) Rational(3, 4) else Rational(4, 3)
+            AspectRatio.RATIO_1_1 -> Rational(1, 1)
+        }
+        return ViewPort.Builder(rational, rotation)
+            .setScaleType(ViewPort.FILL_CENTER)
+            .build()
+    }
+
+    /**
+     * Rebinds the camera when the display rotation flips between portrait and landscape, so the
+     * (immutable) ViewPort is rebuilt with the matching Rational. Gated on the *display* rotation —
+     * an activity locked to one orientation never rotates the display, so it never needlessly
+     * rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
+     */
+    private fun rebindIfViewPortOrientationChanged() {
+        val pv = previewView ?: return
+        val rotation = currentDisplayRotation(pv)
+        val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
+        if (lastViewPortPortrait == null || portrait == lastViewPortPortrait) return
+
+        if (activeRecording != null) {
+            // Don't rebind mid-recording: unbindAll/rebind would tear down the VideoCapture session.
+            // Defer it — the recording's Finalize callback performs the rebind once it's safe.
+            pendingViewPortRebind = true
+            return
+        }
+        bindCamera(pv)
+    }
+
+    /**
+     * Current display rotation. `previewView.display` is null until the view is attached (bindCamera
+     * runs from a DisposableEffect before layout), so fall back to the hosting activity's display —
+     * otherwise a landscape start would build the ViewPort with the wrong rotation and crop to the
+     * wrong orientation until a rebind.
+     */
+    @Suppress("DEPRECATION")
+    private fun currentDisplayRotation(previewView: PreviewView): Int {
+        val display = previewView.display
+            ?: previewView.context.getActivityOrNull()?.windowManager?.defaultDisplay
+            ?: context.getActivityOrNull()?.windowManager?.defaultDisplay
+        return display?.rotation ?: Surface.ROTATION_0
     }
 
     /**
@@ -226,7 +312,7 @@ actual class CameraController(
                             false
                         }
                     }.ifEmpty {
-                        Log.w("CameraK", "Telephoto camera not available, using default")
+                        CameraKLogger.w("CameraK", "Telephoto camera not available, using default")
                         cameraInfos.take(1)
                     }
                 }
@@ -244,7 +330,7 @@ actual class CameraController(
                             false
                         }
                     }.ifEmpty {
-                        Log.w("CameraK", "Ultra-wide camera not available, using default")
+                        CameraKLogger.w("CameraK", "Ultra-wide camera not available, using default")
                         cameraInfos.take(1)
                     }
                 }
@@ -262,7 +348,7 @@ actual class CameraController(
                             false
                         }
                     }.ifEmpty {
-                        Log.w("CameraK", "Macro camera not available, using default")
+                        CameraKLogger.w("CameraK", "Macro camera not available, using default")
                         cameraInfos.take(1)
                     }
                 }
@@ -332,7 +418,9 @@ actual class CameraController(
     private fun rebuildMultiplexedAnalyzer() {
         if (registeredAnalyzers.isEmpty()) {
             if (imageAnalyzer != null) {
-                try { cameraProvider?.unbind(imageAnalyzer) } catch (_: Exception) {}
+                try {
+                    cameraProvider?.unbind(imageAnalyzer)
+                } catch (_: Exception) {}
                 imageAnalyzer = null
             }
             return
@@ -343,7 +431,9 @@ actual class CameraController(
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .build()
             .apply {
-                setAnalyzer(ContextCompat.getMainExecutor(context), composite)
+                // Run analysis off the main thread — frame work (e.g. JPEG-encoding the analyzer
+                // frame, QR/OCR) is too heavy to block the UI thread.
+                setAnalyzer(analyzerExecutor, composite)
             }
 
         try {
@@ -353,38 +443,10 @@ actual class CameraController(
         }
     }
 
-    @Deprecated(
-        message = "Use takePictureToFile() instead for better performance",
-        replaceWith = ReplaceWith("takePictureToFile()"),
-        level = DeprecationLevel.WARNING,
-    )
-    actual suspend fun takePicture(): ImageCaptureResult = suspendCancellableCoroutine { cont ->
-        if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
-            pendingCaptures.decrementAndGet()
-            Log.w("CameraK", "Burst queue full, dropping frame (${pendingCaptures.value} in progress)")
-            cont.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
-            return@suspendCancellableCoroutine
-        }
-
-        // Update memory status before capture
-        memoryManager.updateMemoryStatus()
-
-        // Perform capture with constant quality (95 for JPEG)
-        performCapture(cont, quality = 95)
-
-        cont.invokeOnCancellation {
-            pendingCaptures.decrementAndGet()
-        }
-    }
-
-    /**
-     * Fast capture method that returns file path directly without ByteArray processing.
-     * Significantly faster than takePicture() - skips decode/encode cycles.
-     */
     actual suspend fun takePictureToFile(): ImageCaptureResult = suspendCancellableCoroutine { cont ->
         if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
             pendingCaptures.decrementAndGet()
-            Log.w("CameraK", "Burst queue full, dropping frame")
+            CameraKLogger.w("CameraK", "Burst queue full, dropping frame")
             cont.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
             return@suspendCancellableCoroutine
         }
@@ -400,10 +462,9 @@ actual class CameraController(
      * Capture metadata: mirror the saved image horizontally for the front camera when configured,
      * so the photo matches the mirrored preview (#112).
      */
-    private fun captureMetadata(): ImageCapture.Metadata =
-        ImageCapture.Metadata().apply {
-            isReversedHorizontal = mirrorFrontCamera && cameraLens == CameraLens.FRONT
-        }
+    private fun captureMetadata(): ImageCapture.Metadata = ImageCapture.Metadata().apply {
+        isReversedHorizontal = mirrorFrontCamera && cameraLens == CameraLens.FRONT
+    }
 
     /**
      * Perform fast file-based capture without ByteArray processing.
@@ -425,11 +486,20 @@ actual class CameraController(
                     // Notify MediaStore so image appears in Gallery
                     notifyMediaStore(outputFile)
 
+                    // Notify capture listeners (e.g. ImageSaverPlugin auto-save) off the main
+                    // thread, reading the just-saved file only when someone is listening.
+                    if (imageCaptureListeners.isNotEmpty()) {
+                        imageProcessingExecutor.execute {
+                            val bytes = outputFile.readBytes()
+                            imageCaptureListeners.forEach { it(bytes) }
+                        }
+                    }
+
                     continuation.resume(ImageCaptureResult.SuccessWithFile(outputFile.absolutePath))
                 }
 
                 override fun onError(exc: ImageCaptureException) {
-                    Log.e("CameraK", "Image capture failed: ${exc.message}", exc)
+                    CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
                     pendingCaptures.decrementAndGet()
                     outputFile.delete() // Clean up failed capture file
                     continuation.resume(ImageCaptureResult.Error(exc))
@@ -438,217 +508,6 @@ actual class CameraController(
         ) ?: run {
             pendingCaptures.decrementAndGet()
             continuation.resume(ImageCaptureResult.Error(Exception("ImageCapture use case is not initialized.")))
-        }
-    }
-
-    /**
-     * Perform the actual image capture with constant quality
-     */
-    private fun performCapture(continuation: CancellableContinuation<ImageCaptureResult>, quality: Int) {
-        val outputOptions =
-            ImageCapture.OutputFileOptions.Builder(createTempFile()).setMetadata(captureMetadata()).build()
-
-        imageCapture?.takePicture(
-            outputOptions,
-            ContextCompat.getMainExecutor(context),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    if (returnFilePath) {
-                        // File path mode: Return actual file path from savedUri
-                        val fileUri = output.savedUri
-                        if (fileUri != null) {
-                            // Convert content:// URI to actual file path
-                            val filePath = if (fileUri.scheme == "file") {
-                                fileUri.path
-                            } else {
-                                // For content:// URIs, get the real path
-                                val projection = arrayOf(android.provider.MediaStore.Images.Media.DATA)
-                                context.contentResolver.query(fileUri, projection, null, null, null)?.use { cursor ->
-                                    val columnIndex = cursor.getColumnIndexOrThrow(
-                                        android.provider.MediaStore.Images.Media.DATA,
-                                    )
-                                    if (cursor.moveToFirst()) cursor.getString(columnIndex) else null
-                                } ?: fileUri.path
-                            }
-
-                            if (filePath != null) {
-                                continuation.resume(ImageCaptureResult.SuccessWithFile(filePath))
-                            } else {
-                                Log.e("CameraK", "Failed to get file path from capture result")
-                                continuation.resume(ImageCaptureResult.Error(Exception("Failed to get file path")))
-                            }
-                        } else {
-                            Log.e("CameraK", "Capture result has no savedUri")
-                            continuation.resume(ImageCaptureResult.Error(Exception("No file URI returned")))
-                        }
-                        pendingCaptures.decrementAndGet()
-                    } else {
-                        // ByteArray mode: Process and return ByteArray
-                        imageProcessingExecutor.execute {
-                            try {
-                                val byteArray = processImageOutput(output, quality)
-
-                                if (byteArray != null) {
-                                    imageCaptureListeners.forEach { it(byteArray) }
-                                    continuation.resume(ImageCaptureResult.Success(byteArray))
-                                } else {
-                                    Log.e("CameraK", "Failed to convert image to ByteArray")
-                                    continuation.resume(
-                                        ImageCaptureResult.Error(Exception("Failed to convert image to ByteArray.")),
-                                    )
-                                }
-                            } finally {
-                                pendingCaptures.decrementAndGet()
-                            }
-                        }
-                    }
-                }
-
-                override fun onError(exc: ImageCaptureException) {
-                    Log.e("CameraK", "Image capture failed: ${exc.message}", exc)
-                    pendingCaptures.decrementAndGet()
-                    continuation.resume(ImageCaptureResult.Error(exc))
-                }
-            },
-        ) ?: run {
-            pendingCaptures.decrementAndGet()
-            continuation.resume(ImageCaptureResult.Error(Exception("ImageCapture use case is not initialized.")))
-        }
-    }
-
-    /**
-     * Process the saved image output with optimized approach.
-     *
-     * CameraX should apply targetRotation to the output file, but some devices (Samsung)
-     * strip EXIF data or apply rotation inconsistently. We verify EXIF orientation first.
-     *
-     * Fast path: Direct file read when EXIF orientation is correct (NORMAL)
-     * Slow path: Process when format conversion, memory pressure, or rotation needed
-     */
-    private fun processImageOutput(output: ImageCapture.OutputFileResults, quality: Int): ByteArray? = try {
-        output.savedUri?.let { uri ->
-            val tempFile = createTempFile("temp_image", ".jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                tempFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
-
-            try {
-                // Check EXIF orientation - Samsung devices may have incorrect orientation
-                val exif = ExifInterface(tempFile.absolutePath)
-                val orientation = exif.getAttributeInt(
-                    ExifInterface.TAG_ORIENTATION,
-                    ExifInterface.ORIENTATION_NORMAL,
-                )
-
-                val needsRotation = orientation != ExifInterface.ORIENTATION_NORMAL &&
-                    orientation != ExifInterface.ORIENTATION_UNDEFINED
-                val needsProcessing = imageFormat == ImageFormat.PNG ||
-                    memoryManager.isUnderMemoryPressure() ||
-                    needsRotation
-
-                if (!needsProcessing) {
-                    // Fast path: EXIF orientation is correct, read file bytes directly
-                    // This avoids decode→rotate→re-encode cycle (saves 2-3 seconds and quality loss)
-                    tempFile.readBytes().also { tempFile.delete() }
-                } else {
-                    // Slow path: Need format conversion, downsampling, or rotation fix
-                    val options = BitmapFactory.Options().apply {
-                        if (memoryManager.isUnderMemoryPressure()) {
-                            inJustDecodeBounds = true
-                            BitmapFactory.decodeFile(tempFile.absolutePath, this)
-                            inSampleSize = calculateSampleSize(outWidth, outHeight)
-                            inJustDecodeBounds = false
-                        }
-                    }
-
-                    val originalBitmap = BitmapFactory.decodeFile(tempFile.absolutePath, options)
-                    tempFile.delete()
-
-                    // Apply the full EXIF orientation transform. Decoding drops EXIF, so any
-                    // rotation (Samsung fix) AND any mirror flag (front-camera mirroring, #112)
-                    // must be baked into the pixels here or it would be silently lost.
-                    val transformedBitmap = if (originalBitmap != null && needsRotation) {
-                        val matrix = Matrix().apply {
-                            when (orientation) {
-                                ExifInterface.ORIENTATION_ROTATE_90 -> postRotate(90f)
-                                ExifInterface.ORIENTATION_ROTATE_180 -> postRotate(180f)
-                                ExifInterface.ORIENTATION_ROTATE_270 -> postRotate(270f)
-                                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> postScale(-1f, 1f)
-                                ExifInterface.ORIENTATION_FLIP_VERTICAL -> postScale(1f, -1f)
-                                ExifInterface.ORIENTATION_TRANSPOSE -> {
-                                    postRotate(90f)
-                                    postScale(-1f, 1f)
-                                }
-                                ExifInterface.ORIENTATION_TRANSVERSE -> {
-                                    postRotate(270f)
-                                    postScale(-1f, 1f)
-                                }
-                            }
-                        }
-
-                        if (!matrix.isIdentity) {
-                            Bitmap.createBitmap(
-                                originalBitmap,
-                                0,
-                                0,
-                                originalBitmap.width,
-                                originalBitmap.height,
-                                matrix,
-                                true,
-                            ).also { originalBitmap.recycle() }
-                        } else {
-                            originalBitmap
-                        }
-                    } else {
-                        originalBitmap
-                    }
-
-                    // Convert format and compress
-                    transformedBitmap?.compressToByteArray(
-                        format = when (imageFormat) {
-                            ImageFormat.JPEG -> Bitmap.CompressFormat.JPEG
-                            ImageFormat.PNG -> Bitmap.CompressFormat.PNG
-                        },
-                        quality = quality,
-                        recycleInput = true,
-                    )
-                }
-            } catch (e: Exception) {
-                tempFile.delete()
-                throw e
-            }
-        }
-    } catch (e: Exception) {
-        Log.e("CameraK", "Error processing image output: ${e.message}", e)
-        null
-    }
-
-    /**
-     * Calculate appropriate sample size for bitmap decoding based on memory conditions
-     */
-    private fun calculateSampleSize(width: Int, height: Int): Int = when {
-        memoryManager.isUnderMemoryPressure() -> {
-            // Under memory pressure: downsample to ~2MP
-            var sampleSize = 1
-            val totalPixels = width * height
-            val targetPixels = 2_000_000
-
-            while ((totalPixels / (sampleSize * sampleSize)) > targetPixels) {
-                sampleSize *= 2
-            }
-            sampleSize
-        }
-
-        pendingCaptures.value > 1 -> {
-            // Multiple captures pending: downsample 2x for faster processing
-            2
-        }
-
-        else -> {
-            // Normal capture: full resolution
-            1
         }
     }
 
@@ -686,7 +545,7 @@ actual class CameraController(
         // CameraX doesn't support AUTO torch mode, treat it as ON
         val enableTorch = torchMode == TorchMode.ON || torchMode == TorchMode.AUTO
         if (torchMode == TorchMode.AUTO) {
-            Log.w("CameraK", "TorchMode.AUTO not natively supported, using ON")
+            CameraKLogger.w("CameraK", "TorchMode.AUTO not natively supported, using ON")
         }
         camera?.cameraControl?.enableTorch(enableTorch)
     }
@@ -696,7 +555,7 @@ actual class CameraController(
         // CameraX doesn't support AUTO torch mode, treat it as ON
         val enableTorch = mode == TorchMode.ON || mode == TorchMode.AUTO
         if (mode == TorchMode.AUTO) {
-            Log.w("CameraK", "TorchMode.AUTO not natively supported, using ON")
+            CameraKLogger.w("CameraK", "TorchMode.AUTO not natively supported, using ON")
         }
         camera?.cameraControl?.enableTorch(enableTorch)
     }
@@ -725,6 +584,11 @@ actual class CameraController(
     actual fun getTorchMode(): TorchMode? = torchMode
 
     actual fun toggleCameraLens() {
+        // A lens switch rebinds (unbindAll), which would tear down a live recording session.
+        if (activeRecording != null) {
+            CameraKLogger.w("CameraController", "Ignoring lens switch while recording")
+            return
+        }
         memoryManager.updateMemoryStatus()
 
         if (memoryManager.isUnderMemoryPressure()) {
@@ -740,18 +604,28 @@ actual class CameraController(
 
     actual fun getImageFormat(): ImageFormat = imageFormat
 
+    actual fun getAspectRatio(): AspectRatio = aspectRatio
+
     actual fun getQualityPrioritization(): QualityPrioritization = qualityPriority
 
     actual fun getPreferredCameraDeviceType(): CameraDeviceType = cameraDeviceType
 
     actual fun setPreferredCameraDeviceType(deviceType: CameraDeviceType) {
+        if (cameraDeviceType == deviceType) return
+        // Same as the lens switch: this rebinds and would kill a live recording.
+        if (activeRecording != null) {
+            CameraKLogger.w("CameraController", "Ignoring device type change while recording")
+            return
+        }
         cameraDeviceType = deviceType
+        // Live switch: re-bind the use cases with a camera selector for the new device type
+        // (this rebind keeps the session/plugins; the field alone has no effect until a bind).
+        previewView?.let { bindCamera(it) }
     }
 
     actual fun startSession() {
         memoryManager.updateMemoryStatus()
         memoryManager.clearBufferPools()
-        initializeControllerPlugins()
     }
 
     actual fun stopSession() {
@@ -763,8 +637,8 @@ actual class CameraController(
         imageCaptureListeners.add(listener)
     }
 
-    actual fun initializeControllerPlugins() {
-        plugins.forEach { it.initialize(this) }
+    actual fun removeImageCaptureListener(listener: (ByteArray) -> Unit) {
+        imageCaptureListeners.remove(listener)
     }
 
     private fun createTempFile(): File {
@@ -816,9 +690,8 @@ actual class CameraController(
                 ),
                 null,
             )
-            Log.d("CameraK", "MediaStore notified: ${file.absolutePath}")
         } catch (e: Exception) {
-            Log.e("CameraK", "Failed to notify MediaStore: ${e.message}")
+            CameraKLogger.e("CameraK", "Failed to notify MediaStore: ${e.message}")
         }
     }
 
@@ -855,70 +728,134 @@ actual class CameraController(
                 .build()
             videoCapture = VideoCapture.withOutput(recorder)
         } catch (e: Exception) {
-            Log.w("CameraK", "VideoCapture use case not supported: ${e.message}")
+            CameraKLogger.w("CameraK", "VideoCapture use case not supported: ${e.message}")
             videoCapture = null
         }
     }
 
     @android.annotation.SuppressLint("MissingPermission")
-    actual suspend fun startRecording(configuration: VideoConfiguration): String = suspendCancellableCoroutine { cont ->
-        val vc = videoCapture ?: run {
-            cont.resumeWithException(IllegalStateException("VideoCapture use case not available"))
-            return@suspendCancellableCoroutine
-        }
-
-        val outputFile = createVideoOutputFile(configuration)
-        recordingOutputFile = outputFile
-        val outputOptions = FileOutputOptions.Builder(outputFile).build()
-
-        val hasAudioPermission = ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val pendingRecording = vc.output.prepareRecording(context, outputOptions).apply {
-            if (configuration.enableAudio && hasAudioPermission) {
-                withAudioEnabled()
+    actual suspend fun startRecording(configuration: VideoConfiguration): String {
+        // Reject a second start: starting again would overwrite activeRecording and orphan the
+        // first recording's session (it could never be stopped/finalized).
+        if (activeRecording != null) throw IllegalStateException("A recording is already in progress")
+        // VideoCapture is bound lazily (it isn't part of the photo session — see includeVideoUseCase).
+        // Bind it now and wait for the rebind before recording.
+        if (videoCapture == null) {
+            val pv = previewView ?: throw IllegalStateException("Camera preview not ready for recording")
+            pendingVideoQuality = configuration.quality
+            includeVideoUseCase = true
+            // Wait for the rebind, but don't hang forever if it fails (bindCamera only invokes
+            // onCameraReady on success). On timeout, startRecordingInternal reports a clean error.
+            withTimeoutOrNull(stopFinalizeTimeoutMs) {
+                suspendCancellableCoroutine<Unit> { c -> bindCamera(pv) { if (c.isActive) c.resume(Unit) } }
             }
         }
+        return try {
+            startRecordingInternal(configuration)
+        } catch (e: Exception) {
+            // Recording never started — drop the lazily-bound VideoCapture and rebind, otherwise the
+            // flag stays set and every later photo silently reverts to the cropped FOV (#136).
+            if (includeVideoUseCase) {
+                includeVideoUseCase = false
+                previewView?.let { bindCamera(it) }
+            }
+            throw e
+        }
+    }
 
-        activeRecording = pendingRecording.start(
-            ContextCompat.getMainExecutor(context),
-        ) { event ->
-            when (event) {
-                is VideoRecordEvent.Finalize -> {
-                    val file = recordingOutputFile
-                    if (event.hasError()) {
-                        recordingFinalizeChannel.trySend(
-                            VideoCaptureResult.Error(
-                                Exception("Recording error code: ${event.error}"),
-                            ),
-                        )
-                    } else {
-                        // Notify MediaStore so video appears in Gallery
-                        file?.let { notifyMediaStoreVideo(it) }
-                        recordingFinalizeChannel.trySend(
-                            VideoCaptureResult.Success(
-                                filePath = file?.absolutePath ?: "",
-                                durationMs = event.recordingStats.recordedDurationNanos / 1_000_000,
-                            ),
-                        )
-                    }
-                    recordingOutputFile = null
+    private suspend fun startRecordingInternal(configuration: VideoConfiguration): String =
+        suspendCancellableCoroutine { cont ->
+            val vc = videoCapture ?: run {
+                cont.resumeWithException(IllegalStateException("VideoCapture use case not available"))
+                return@suspendCancellableCoroutine
+            }
+
+            val outputFile = createVideoOutputFile(configuration)
+            recordingOutputFile = outputFile
+            val outputOptions = FileOutputOptions.Builder(outputFile).build()
+
+            val hasAudioPermission = ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.RECORD_AUDIO,
+            ) == PackageManager.PERMISSION_GRANTED
+
+            val pendingRecording = vc.output.prepareRecording(context, outputOptions).apply {
+                if (configuration.enableAudio && hasAudioPermission) {
+                    withAudioEnabled()
                 }
             }
-        }
 
-        cont.resume(outputFile.absolutePath)
-    }
+            activeRecording = pendingRecording.start(
+                ContextCompat.getMainExecutor(context),
+            ) { event ->
+                when (event) {
+                    is VideoRecordEvent.Finalize -> {
+                        val file = recordingOutputFile
+                        if (event.hasError()) {
+                            recordingFinalizeChannel.trySend(
+                                VideoCaptureResult.Error(
+                                    Exception("Recording error code: ${event.error}"),
+                                ),
+                            )
+                        } else {
+                            // Notify MediaStore so video appears in Gallery
+                            file?.let { notifyMediaStoreVideo(it) }
+                            recordingFinalizeChannel.trySend(
+                                VideoCaptureResult.Success(
+                                    filePath = file?.absolutePath ?: "",
+                                    durationMs = event.recordingStats.recordedDurationNanos / 1_000_000,
+                                ),
+                            )
+                        }
+                        recordingOutputFile = null
+                        // Clear here too: a recording can finalize on error without stopRecording()
+                        // being called, and a stale non-null activeRecording would permanently block
+                        // ViewPort rebinds on rotation.
+                        activeRecording = null
+                        // Apply any rotation flip that was deferred while recording was in progress.
+                        if (pendingViewPortRebind) {
+                            pendingViewPortRebind = false
+                            rebindIfViewPortOrientationChanged()
+                        }
+                    }
+                }
+            }
+
+            cont.resume(outputFile.absolutePath)
+        }
 
     actual suspend fun stopRecording(): VideoCaptureResult {
         val recording = activeRecording ?: return VideoCaptureResult.Error(
             IllegalStateException("No active recording"),
         )
+        // The channel is CONFLATED, so a late finalize from a previous recording (or a previously
+        // timed-out stop) can still be buffered. Drain it so receive() below corresponds to THIS stop.
+        while (recordingFinalizeChannel.tryReceive().isSuccess) { /* discard stale finalize */ }
+
         recording.stop()
         activeRecording = null
-        return recordingFinalizeChannel.receive()
+        // Don't wait forever: if the CameraX finalize event never arrives (already finalized,
+        // dropped, etc.) this would hang the caller and leave isRecording stuck true. Also guard
+        // against cleanup() closing the channel mid-stop (receive() would throw).
+        val result = try {
+            withTimeoutOrNull(stopFinalizeTimeoutMs) { recordingFinalizeChannel.receive() }
+                ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
+        } catch (e: Exception) {
+            VideoCaptureResult.Error(e)
+        }
+        // Drop VideoCapture and rebind back to the full-FOV photo session. Await the rebind before
+        // returning: a fire-and-forget rebind lets an immediate photo (or a quick startRecording)
+        // race the pending bind — capturing on the old UseCaseGroup, or the late rebind unbinding a
+        // freshly-started recording's use cases.
+        if (includeVideoUseCase) {
+            includeVideoUseCase = false
+            previewView?.let { pv ->
+                withTimeoutOrNull(stopFinalizeTimeoutMs) {
+                    suspendCancellableCoroutine<Unit> { c -> bindCamera(pv) { if (c.isActive) c.resume(Unit) } }
+                }
+            }
+        }
+        return result
     }
 
     actual suspend fun pauseRecording() {
@@ -953,9 +890,8 @@ actual class CameraController(
                 arrayOf("video/mp4"),
                 null,
             )
-            Log.d("CameraK", "MediaStore notified for video: ${file.absolutePath}")
         } catch (e: Exception) {
-            Log.e("CameraK", "Failed to notify MediaStore for video: ${e.message}")
+            CameraKLogger.e("CameraK", "Failed to notify MediaStore for video: ${e.message}")
         }
     }
 
@@ -991,10 +927,15 @@ actual class CameraController(
                         }
                         if (newOrientation != currentDeviceOrientation) {
                             currentDeviceOrientation = newOrientation
-                            // Update capture rotation when in auto mode
+                            // Update capture rotation from the DISPLAY rotation (not this sensor
+                            // angle) so it stays consistent with the ViewPort/preview. On an
+                            // orientation-locked screen this is a no-op; on an unlocked one it tracks
+                            // the on-screen rotation. (Auto mode only; explicit override untouched.)
                             if (targetOrientation == null) {
-                                applyTargetRotation(newOrientation)
+                                previewView?.let { applyCaptureRotation(it) }
                             }
+                            // Rebuild the ViewPort if the display flipped portrait<->landscape.
+                            rebindIfViewPortOrientationChanged()
                             orientationChangedCallback?.invoke(newOrientation)
                         }
                     }
@@ -1009,16 +950,38 @@ actual class CameraController(
 
     actual fun setTargetOrientation(orientation: DeviceOrientation?) {
         targetOrientation = orientation
-        applyTargetRotation(orientation ?: currentDeviceOrientation)
+        // applyCaptureRotation honors the override when set, and otherwise uses the DISPLAY rotation
+        // (consistent with auto mode) — so clearing the override (null) immediately reverts to the
+        // display rotation instead of a possibly-stale sensor orientation. Fall back to the sensor
+        // orientation only if there's no preview view yet.
+        previewView?.let { applyCaptureRotation(it) }
+            ?: applyTargetRotation(orientation ?: currentDeviceOrientation)
     }
 
     private fun applyTargetRotation(orientation: DeviceOrientation) {
         val rotation = when (orientation) {
-            DeviceOrientation.PORTRAIT -> android.view.Surface.ROTATION_0
-            DeviceOrientation.LANDSCAPE_LEFT -> android.view.Surface.ROTATION_90
-            DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> android.view.Surface.ROTATION_180
-            DeviceOrientation.LANDSCAPE_RIGHT -> android.view.Surface.ROTATION_270
+            DeviceOrientation.PORTRAIT -> Surface.ROTATION_0
+            DeviceOrientation.LANDSCAPE_LEFT -> Surface.ROTATION_90
+            DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> Surface.ROTATION_180
+            DeviceOrientation.LANDSCAPE_RIGHT -> Surface.ROTATION_270
         }
+        imageCapture?.targetRotation = rotation
+        videoCapture?.targetRotation = rotation
+    }
+
+    /**
+     * Sets the capture rotation from the current display rotation (auto mode) or the explicit
+     * [targetOrientation] override. Keeping capture rotation tied to the display — the same source
+     * as the ViewPort and the preview box — guarantees the saved photo's orientation matches what
+     * the user saw (#136).
+     */
+    private fun applyCaptureRotation(previewView: PreviewView) {
+        val override = targetOrientation
+        if (override != null) {
+            applyTargetRotation(override)
+            return
+        }
+        val rotation = currentDisplayRotation(previewView)
         imageCapture?.targetRotation = rotation
         videoCapture?.targetRotation = rotation
     }
@@ -1036,6 +999,7 @@ actual class CameraController(
         registeredAnalyzers.clear()
         recordingFinalizeChannel.close()
         imageProcessingExecutor.shutdown()
+        analyzerExecutor.shutdown()
         memoryManager.clearBufferPools()
     }
 }
@@ -1045,9 +1009,7 @@ actual class CameraController(
  * Uses [RefCountedImageProxy] so each analyzer can call `close()` independently;
  * the underlying buffer is released only when all analyzers have finished.
  */
-private class MultiplexingAnalyzer(
-    private val analyzers: List<ImageAnalysis.Analyzer>,
-) : ImageAnalysis.Analyzer {
+private class MultiplexingAnalyzer(private val analyzers: List<ImageAnalysis.Analyzer>) : ImageAnalysis.Analyzer {
     override fun analyze(imageProxy: ImageProxy) {
         if (analyzers.isEmpty()) {
             imageProxy.close()

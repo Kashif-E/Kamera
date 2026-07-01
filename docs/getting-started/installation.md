@@ -1,6 +1,6 @@
 # Installation
 
-Add CameraK to your Kotlin Multiplatform project in under 5 minutes.
+Add Kamera to your Kotlin Multiplatform project in under 5 minutes.
 
 ## Prerequisites
 
@@ -9,7 +9,7 @@ Add CameraK to your Kotlin Multiplatform project in under 5 minutes.
 - Target platforms:
     - **Android**: API 21+ (Android 5.0)
     - **iOS**: iOS 13.0+
-    - **Desktop**: JDK 11+
+    - **Desktop**: JDK 17+
 
 ## Step 1: Add Dependencies
 
@@ -21,7 +21,7 @@ Add to your `build.gradle.kts`:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("io.github.kashif-mehmood-km:camerak:0.3")
+            implementation("io.github.kashif-mehmood-km:camerak:1.1")
         }
     }
 }
@@ -33,7 +33,7 @@ Add to `gradle/libs.versions.toml`:
 
 ```toml
 [versions]
-camerak = "0.3"
+camerak = "1.0"
 
 [libraries]
 camerak = { module = "io.github.kashif-mehmood-km:camerak", version.ref = "camerak" }
@@ -55,7 +55,7 @@ kotlin {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:0.3")
+    implementation("io.github.kashif-mehmood-km:camerak:1.1")
 }
 ```
 
@@ -105,7 +105,7 @@ Run Gradle sync:
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.3")
+    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:1.1")
 }
 ```
 
@@ -113,7 +113,7 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.3")
+    implementation("io.github.kashif-mehmood-km:ocr_plugin:1.1")
 }
 ```
 
@@ -121,7 +121,7 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.3")
+    implementation("io.github.kashif-mehmood-km:image_saver_plugin:1.1")
 }
 ```
 
@@ -135,14 +135,14 @@ fun TestCameraScreen() {
     val cameraState by rememberCameraKState()
 
     when (val state = cameraState) {
-        is CameraKState.Ready -> Text("CameraK is ready!")
+        is CameraKState.Ready -> Text("Kamera is ready!")
         is CameraKState.Error -> Text("Error: ${state.message}")
         CameraKState.Initializing -> CircularProgressIndicator()
     }
 }
 ```
 
-If you see "CameraK is ready!" — you're all set!
+If you see "Kamera is ready!" — you're all set!
 
 ## Troubleshooting
 

@@ -1,7 +1,6 @@
 package com.kashif.qrscannerplugin
 
 import android.graphics.ImageFormat
-import android.util.Log
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -12,6 +11,7 @@ import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.utils.CameraKLogger
 import java.util.EnumMap
 
 /**
@@ -19,13 +19,16 @@ import java.util.EnumMap
  *
  * @param onQrScanner Callback invoked when a QR code is detected with the scanned text
  */
-fun CameraController.enableQrCodeScanner(onQrScanner: (String) -> Unit) {
-    Log.d("QRScanner", "Enabling QR code scanner")
-    try {
-        registerImageAnalyzer(QRCodeAnalyzer(onQrScanner))
+fun CameraController.enableQrCodeScanner(onQrScanner: (String) -> Unit): ImageAnalysis.Analyzer? {
+    CameraKLogger.d("QRScanner", "Enabling QR code scanner")
+    return try {
+        val analyzer = QRCodeAnalyzer(onQrScanner)
+        registerImageAnalyzer(analyzer)
+        analyzer
     } catch (e: Exception) {
-        Log.e("QRScanner", "Failed to enable QR scanner: ${e.message}", e)
+        CameraKLogger.e("QRScanner", "Failed to enable QR scanner: ${e.message}", e)
         // Camera might not be fully initialized yet - this is expected during startup
+        null
     }
 }
 
@@ -85,7 +88,7 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
         }
 
         if (image.format != ImageFormat.YUV_420_888) {
-            Log.e("QRScanner", "Unsupported image format: ${image.format}")
+            CameraKLogger.e("QRScanner", "Unsupported image format: ${image.format}")
             imageProxy.close()
             return
         }
@@ -134,7 +137,7 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
             if (result != null) {
                 val currentTime = System.currentTimeMillis()
                 if (result.text != lastScannedCode || (currentTime - lastScanTime) > scanDebounceMs) {
-                    Log.d("QRScanner", "QR Code detected: ${result.text}")
+                    CameraKLogger.d("QRScanner", "QR Code detected: ${result.text}")
                     lastScannedCode = result.text
                     lastScanTime = currentTime
                     onQrScanner(result.text)
@@ -149,7 +152,8 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
     }
 }
 
-actual fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit) {
-    Log.d("QRScanner", "Starting QR scanner")
-    controller.enableQrCodeScanner(onQrScanner)
+actual fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit): ScannerHandle {
+    CameraKLogger.d("QRScanner", "Starting QR scanner")
+    val analyzer = controller.enableQrCodeScanner(onQrScanner)
+    return ScannerHandle { analyzer?.let { controller.unregisterImageAnalyzer(it) } }
 }

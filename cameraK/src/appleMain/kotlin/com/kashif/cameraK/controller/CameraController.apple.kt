@@ -9,15 +9,14 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.MemoryManager
 import com.kashif.cameraK.utils.fixOrientation
 import com.kashif.cameraK.utils.toByteArray
 import com.kashif.cameraK.utils.toUIImage
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
-import com.kashif.cameraK.video.VideoQuality
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -32,10 +31,6 @@ import platform.AVFoundation.AVCaptureMetadataOutput
 import platform.AVFoundation.AVCaptureMetadataOutputObjectsDelegateProtocol
 import platform.AVFoundation.AVCaptureMovieFileOutput
 import platform.AVFoundation.AVCaptureOutput
-import platform.AVFoundation.AVCaptureSessionPreset1280x720
-import platform.AVFoundation.AVCaptureSessionPreset1920x1080
-import platform.AVFoundation.AVCaptureSessionPreset3840x2160
-import platform.AVFoundation.AVCaptureSessionPreset640x480
 import platform.AVFoundation.AVCaptureTorchMode
 import platform.AVFoundation.AVCaptureTorchModeAuto
 import platform.AVFoundation.AVCaptureTorchModeOff
@@ -49,21 +44,21 @@ import platform.AVFoundation.AVMediaTypeAudio
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSURL
 import platform.Foundation.timeIntervalSince1970
 import platform.Photos.PHAssetChangeRequest
 import platform.Photos.PHPhotoLibrary
-import platform.Foundation.NSNotificationCenter
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import platform.UIKit.UIImagePNGRepresentation
 import platform.UIKit.UIViewController
-import kotlin.concurrent.Volatile
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_HIGH
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_global_queue
 import platform.darwin.dispatch_get_main_queue
+import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.random.Random
@@ -77,8 +72,6 @@ actual class CameraController(
     internal var directory: Directory,
     internal var cameraDeviceType: CameraDeviceType,
     internal var aspectRatio: AspectRatio,
-    internal var returnFilePath: Boolean,
-    internal var plugins: MutableList<CameraPlugin>,
     internal var targetResolution: Pair<Int, Int>? = null,
     internal var mirrorFrontCamera: Boolean = false,
 ) : UIViewController(null, null) {
@@ -144,6 +137,13 @@ actual class CameraController(
         customCameraController.safeAddOutput(output)
     }
 
+    /**
+     * Safely removes an output previously added via [safeAddOutput].
+     */
+    fun safeRemoveOutput(output: AVCaptureOutput) {
+        customCameraController.safeRemoveOutput(output)
+    }
+
     @Volatile
     private var lastVideoOrientation: AVCaptureVideoOrientation = AVCaptureVideoOrientationPortrait
 
@@ -166,7 +166,7 @@ actual class CameraController(
             try {
                 customCameraController.setupPreviewLayer(view)
             } catch (e: Exception) {
-                platform.Foundation.NSLog("CameraK Error: setupPreviewLayer - ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK Error: setupPreviewLayer - ${e.message}")
             }
 
             try {
@@ -174,7 +174,7 @@ actual class CameraController(
                     customCameraController.captureSession?.addOutput(metadataOutput)
                 }
             } catch (e: Exception) {
-                platform.Foundation.NSLog("CameraK Error: metadata output - ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK Error: metadata output - ${e.message}")
             }
 
             // Add movie file output for video recording
@@ -185,7 +185,7 @@ actual class CameraController(
                     movieFileOutput = movieOutput
                 }
             } catch (e: Exception) {
-                platform.Foundation.NSLog("CameraK Error: movie output - ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK Error: movie output - ${e.message}")
             }
 
             startSession()
@@ -194,7 +194,7 @@ actual class CameraController(
         try {
             customCameraController.setupSession(cameraDeviceType)
         } catch (e: Exception) {
-            platform.Foundation.NSLog("CameraK Error: setupSession - ${e.message}")
+            CameraKLogger.e("CameraK", "CameraK Error: setupSession - ${e.message}")
             return
         }
 
@@ -205,7 +205,7 @@ actual class CameraController(
         }
 
         customCameraController.onError = { error ->
-            platform.Foundation.NSLog("CameraK Error: $error")
+            CameraKLogger.e("CameraK", "CameraK Error: $error")
         }
     }
 
@@ -235,7 +235,7 @@ actual class CameraController(
                         memoryManager.recycleBuffer(buffer)
                     }
                 } catch (e: Exception) {
-                    platform.Foundation.NSLog("CameraK: Error processing image data: ${e.message ?: "Unknown error"}")
+                    CameraKLogger.e("CameraK", "CameraK: Error processing image data: ${e.message ?: "Unknown error"}")
                 }
             }
         }
@@ -246,177 +246,33 @@ actual class CameraController(
         metadataOutput.setMetadataObjectsDelegate(delegate, dispatch_get_main_queue())
     }
 
+    /**
+     * Clears the metadata delegate so QR/barcode callbacks stop. Used by the QR plugin on detach.
+     */
+    fun clearMetadataObjectsDelegate() {
+        metadataObjectsDelegate = null
+        metadataOutput.setMetadataObjectsDelegate(null, dispatch_get_main_queue())
+    }
+
     fun updateMetadataObjectTypes(newTypes: List<String>) {
-        // Note: This is called from queueConfigurationChange, so session may be in config mode
-        // Don't check isRunning() - just set the types
-        if (metadataOutput.availableMetadataObjectTypes.isNotEmpty()) {
-            // Filter to only supported types
-            val supportedTypes = newTypes.filter { type ->
-                metadataOutput.availableMetadataObjectTypes.contains(type)
-            }
-            metadataOutput.metadataObjectTypes = supportedTypes
-        } else {
-            // Metadata output not fully ready yet, try setting all requested types
-            metadataOutput.metadataObjectTypes = newTypes
-        }
+        // Only ever assign the intersection with availableMetadataObjectTypes. Assigning a type the
+        // hardware doesn't advertise throws NSInvalidArgumentException (SIGABRT) inside
+        // _buildAndRunGraph — most visible on Mac Catalyst, where the camera advertises far fewer
+        // barcode types than an iPhone (and sometimes none). Never force-set the full list. (#70)
+        val available = metadataOutput.availableMetadataObjectTypes
+        val supportedTypes = newTypes.filter { available.contains(it) }
+        // Nothing supported yet: the output isn't connected, or the platform (some Macs) advertises
+        // no barcode metadata types at all. Leave types unset — scanning is a no-op, not a crash.
+        // (A Kotlin try/catch can't rescue this: an NSException from the setter aborts the process,
+        // so the filter — never assigning an unavailable type — IS the guard.)
+        if (supportedTypes.isEmpty()) return
+        metadataOutput.metadataObjectTypes = supportedTypes
     }
 
     @OptIn(ExperimentalForeignApi::class)
     override fun viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         customCameraController.cameraPreviewLayer?.setFrame(view.bounds)
-    }
-
-    @Deprecated(
-        message = "Use takePictureToFile() instead for better performance",
-        replaceWith = ReplaceWith("takePictureToFile()"),
-        level = DeprecationLevel.WARNING,
-    )
-    @OptIn(ExperimentalForeignApi::class)
-    actual suspend fun takePicture(): ImageCaptureResult = suspendCancellableCoroutine { continuation ->
-        // Atomic counter rejection pattern
-        if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
-            pendingCaptures.decrementAndGet()
-            platform.Foundation.NSLog(
-                "CameraK: Burst queue full, dropping frame (${pendingCaptures.value} in progress)",
-            )
-            continuation.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
-            return@suspendCancellableCoroutine
-        }
-
-        if (!isCapturing.compareAndSet(expect = false, update = true)) {
-            pendingCaptures.decrementAndGet()
-            continuation.resume(ImageCaptureResult.Error(Exception("Capture in progress")))
-            return@suspendCancellableCoroutine
-        }
-
-        // Update memory status before capture
-        memoryManager.updateMemoryStatus()
-
-        val captureHandler = object {
-            var completed = false
-
-            fun process(image: NSData?, error: String?) {
-                if (completed) return
-                completed = true
-
-                if (image != null) {
-                    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
-                        try {
-                            autoreleasepool {
-                                // Constant quality (0.95 for JPEG) - no dynamic adjustment
-                                val quality = 0.95
-
-                                val result = if (returnFilePath) {
-                                    // File path mode - behavior depends on directory setting
-                                    try {
-                                        val filePath = createTempFile()
-                                        val writeSuccess = if (imageFormat == ImageFormat.JPEG) {
-                                            // Write JPEG directly
-                                            writeDataToFile(image, filePath)
-                                        } else {
-                                            // Convert to PNG and write
-                                            val uiImage = image.toUIImage()
-                                            val orientedImage = uiImage.fixOrientation()
-                                            val pngData = UIImagePNGRepresentation(orientedImage)
-                                            if (pngData != null) writeDataToFile(pngData, filePath) else false
-                                        }
-
-                                        if (writeSuccess) {
-                                            when (directory) {
-                                                Directory.PICTURES, Directory.DCIM -> {
-                                                    // Save to Photos library and return asset identifier
-                                                    val photosPath = saveToPhotosLibrary(filePath, image)
-
-                                                    // Clean up temp file
-                                                    NSFileManager.defaultManager.removeItemAtPath(
-                                                        filePath,
-                                                        null,
-                                                    )
-
-                                                    if (photosPath != null) {
-                                                        ImageCaptureResult.SuccessWithFile(photosPath)
-                                                    } else {
-                                                        ImageCaptureResult.Error(
-                                                            Exception("Failed to save to Photos library"),
-                                                        )
-                                                    }
-                                                }
-                                                Directory.DOCUMENTS -> {
-                                                    // Return direct file path (already saved to Documents)
-                                                    ImageCaptureResult.SuccessWithFile(filePath)
-                                                }
-                                            }
-                                        } else {
-                                            ImageCaptureResult.Error(Exception("Failed to write image to file"))
-                                        }
-                                    } catch (e: Exception) {
-                                        platform.Foundation.NSLog(
-                                            "CameraK: Error in file path mode: ${e.message ?: "Unknown error"}",
-                                        )
-                                        ImageCaptureResult.Error(e)
-                                    }
-                                } else {
-
-                                    when (imageFormat) {
-                                        ImageFormat.JPEG -> {
-
-                                            image.toByteArray().let {
-                                                ImageCaptureResult.Success(it)
-                                            }
-                                        }
-                                        ImageFormat.PNG -> {
-                                            // Convert to PNG - fix orientation
-                                            val uiImage = image.toUIImage()
-                                            val orientedImage = uiImage.fixOrientation()
-                                            UIImagePNGRepresentation(orientedImage)?.toByteArray()?.let {
-                                                ImageCaptureResult.Success(it)
-                                            }
-                                        }
-                                        else -> null
-                                    }
-                                }
-
-                                dispatch_async(dispatch_get_main_queue()) {
-                                    isCapturing.value = false
-                                    pendingCaptures.decrementAndGet()
-                                    continuation.resume(
-                                        result ?: ImageCaptureResult.Error(Exception("Image processing failed")),
-                                    )
-                                }
-                            }
-                        } catch (e: Exception) {
-                            dispatch_async(dispatch_get_main_queue()) {
-                                isCapturing.value = false
-                                pendingCaptures.decrementAndGet()
-                                continuation.resume(ImageCaptureResult.Error(e))
-                            }
-                        }
-                    }
-                } else {
-                    isCapturing.value = false
-                    pendingCaptures.decrementAndGet()
-                    continuation.resume(ImageCaptureResult.Error(Exception(error ?: "Capture failed")))
-                }
-            }
-        }
-
-        customCameraController.onPhotoCapture = { image ->
-            captureHandler.process(image, null)
-        }
-
-        customCameraController.onError = { error ->
-            captureHandler.process(null, error.toString())
-        }
-
-        continuation.invokeOnCancellation {
-            isCapturing.value = false
-            pendingCaptures.decrementAndGet()
-            captureHandler.process(null, "Capture cancelled")
-        }
-
-        // Trigger capture with constant quality (95)
-        customCameraController.captureImage()
     }
 
     /**
@@ -426,7 +282,7 @@ actual class CameraController(
     actual suspend fun takePictureToFile(): ImageCaptureResult = suspendCancellableCoroutine { continuation ->
         if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
             pendingCaptures.decrementAndGet()
-            platform.Foundation.NSLog("CameraK: Burst queue full, dropping frame")
+            CameraKLogger.e("CameraK", "CameraK: Burst queue full, dropping frame")
             continuation.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
             return@suspendCancellableCoroutine
         }
@@ -484,7 +340,7 @@ actual class CameraController(
                                         ImageCaptureResult.Error(Exception("Failed to write image to file"))
                                     }
                                 } catch (e: Exception) {
-                                    platform.Foundation.NSLog("CameraK: File capture error: ${e.message ?: "Unknown"}")
+                                    CameraKLogger.e("CameraK", "CameraK: File capture error: ${e.message ?: "Unknown"}")
                                     ImageCaptureResult.Error(e)
                                 }
 
@@ -594,11 +450,14 @@ actual class CameraController(
 
     actual fun getImageFormat(): ImageFormat = imageFormat
 
+    actual fun getAspectRatio(): AspectRatio = aspectRatio
+
     actual fun getQualityPrioritization(): QualityPrioritization = qualityPriority
 
     actual fun getPreferredCameraDeviceType(): CameraDeviceType = cameraDeviceType
 
     actual fun setPreferredCameraDeviceType(deviceType: CameraDeviceType) {
+        if (cameraDeviceType == deviceType) return // avoid a redundant AVCaptureSession input swap
         cameraDeviceType = deviceType
         customCameraController.switchToDeviceType(deviceType)
     }
@@ -611,7 +470,6 @@ actual class CameraController(
         if (customCameraController.captureSession != null) {
             memoryManager.clearBufferPools()
             customCameraController.startSession()
-            initializeControllerPlugins()
         }
         // If captureSession is null, onSessionReady will call startSession() when ready
     }
@@ -624,10 +482,8 @@ actual class CameraController(
         imageCaptureListeners.add(listener)
     }
 
-    actual fun initializeControllerPlugins() {
-        plugins.forEach {
-            it.initialize(this)
-        }
+    actual fun removeImageCaptureListener(listener: (ByteArray) -> Unit) {
+        imageCaptureListeners.remove(listener)
     }
 
     actual fun cleanup() {
@@ -638,7 +494,6 @@ actual class CameraController(
         customCameraController.cleanupSession()
         memoryManager.clearBufferPools()
     }
-
 
     @OptIn(ExperimentalForeignApi::class)
     actual suspend fun startRecording(configuration: VideoConfiguration): String = suspendCancellableCoroutine { cont ->
@@ -705,6 +560,9 @@ actual class CameraController(
         }
     }
 
+    // Known limitation: AVCaptureMovieFileOutput does not support true pause/resume — these base
+    // AVCaptureFileOutput calls are effectively no-ops, so the file keeps recording continuously
+    // while the UI shows "paused". Real pause would require segmented recording + concatenation.
     actual suspend fun pauseRecording() {
         movieFileOutput?.pauseRecording()
     }
@@ -811,7 +669,7 @@ actual class CameraController(
             completionHandler = { success, error ->
                 if (!success || error != null) {
                     saveError = error?.localizedDescription ?: "Failed to save to Photos"
-                    platform.Foundation.NSLog("CameraK: Failed to save to Photos: ${saveError ?: "Unknown error"}")
+                    CameraKLogger.e("CameraK", "CameraK: Failed to save to Photos: ${saveError ?: "Unknown error"}")
                 }
                 platform.darwin.dispatch_semaphore_signal(semaphore)
             },
@@ -849,8 +707,9 @@ actual class CameraController(
             completionHandler = { success, error ->
                 if (!success || error != null) {
                     saveError = error?.localizedDescription ?: "Failed to save video to Photos"
-                    platform.Foundation.NSLog(
-                        "CameraK: Failed to save video to Photos: ${saveError}",
+                    CameraKLogger.e(
+                        "CameraK",
+                        "CameraK: Failed to save video to Photos: $saveError",
                     )
                 }
                 platform.darwin.dispatch_semaphore_signal(semaphore)

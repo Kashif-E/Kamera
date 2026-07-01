@@ -1,5 +1,6 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
@@ -17,26 +18,7 @@ import com.kashif.cameraK.video.VideoConfiguration
 expect class CameraController {
 
     /**
-     * Captures an image and returns it as a ByteArray.
-     *
-     * @return The result of the image capture operation with ByteArray.
-     * @deprecated Use takePictureToFile() for better performance. This method processes images
-     *             through decode/encode cycles which adds 2-3 seconds overhead. Will be removed in v2.0.
-     */
-    @Deprecated(
-        message = "Use takePictureToFile() instead for better performance",
-        replaceWith = ReplaceWith("takePictureToFile()"),
-        level = DeprecationLevel.WARNING,
-    )
-    suspend fun takePicture(): ImageCaptureResult
-
-    /**
      * Captures an image and saves it directly to a file.
-     *
-     * This method is significantly faster than takePicture() as it:
-     * - Saves directly to disk without ByteArray conversion
-     * - Skips decode/encode cycles (2-3 seconds faster)
-     * - Avoids memory overhead from ByteArray processing
      *
      * @return ImageCaptureResult.SuccessWithFile containing the file path, or an error result
      */
@@ -106,6 +88,16 @@ expect class CameraController {
      * @return The configured [ImageFormat] (JPEG or PNG)
      */
     fun getImageFormat(): ImageFormat
+
+    /**
+     * Gets the configured capture aspect ratio.
+     *
+     * Used by the preview to letterbox itself to match the captured field of view,
+     * so what the user sees equals what is captured.
+     *
+     * @return The configured [AspectRatio]
+     */
+    fun getAspectRatio(): AspectRatio
 
     /**
      * Gets the current quality prioritization setting.
@@ -189,9 +181,15 @@ expect class CameraController {
     fun addImageCaptureListener(listener: (ByteArray) -> Unit)
 
     /**
-     * Initializes all registered plugins.
+     * Removes a previously added image capture listener.
+     *
+     * Pass the same function reference that was given to [addImageCaptureListener]. Plugins must
+     * call this in `onDetach` to avoid leaking the listener (and saving each capture more than once
+     * after a re-attach).
+     *
+     * @param listener The listener to remove.
      */
-    fun initializeControllerPlugins()
+    fun removeImageCaptureListener(listener: (ByteArray) -> Unit)
 
     /**
      * Cleans up resources when the controller is no longer needed.

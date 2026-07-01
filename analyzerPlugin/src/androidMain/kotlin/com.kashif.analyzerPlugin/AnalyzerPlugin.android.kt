@@ -7,9 +7,11 @@ import androidx.camera.core.ImageProxy
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.utils.toByteArray
 
-actual fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit) {
-    cameraController.enableAnalyzer(onFrameAvailable)
+actual fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit): AnalyzerHandle {
+    val analyzer = cameraController.enableAnalyzer(onFrameAvailable)
+    return AnalyzerHandle { cameraController.unregisterImageAnalyzer(analyzer) }
 }
+
 internal fun CameraController.enableAnalyzer(onFrameAvailable: (ByteArray) -> Unit): CameraAnalyzer {
     val analyzer = CameraAnalyzer(onFrameAvailable = onFrameAvailable)
     registerImageAnalyzer(analyzer)

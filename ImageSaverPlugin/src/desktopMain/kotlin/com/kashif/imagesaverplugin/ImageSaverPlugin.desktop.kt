@@ -1,11 +1,12 @@
 package com.kashif.imagesaverplugin
-
 import coil3.PlatformContext
+import com.kashif.cameraK.enums.Directory
+import com.kashif.cameraK.enums.ImageFormat
+import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import javax.imageio.ImageIO
 
@@ -24,16 +25,38 @@ class JVMImageSaverPlugin(
     override suspend fun saveImage(byteArray: ByteArray, imageName: String?): String? = withContext(Dispatchers.IO) {
         try {
             val image = ImageIO.read(ByteArrayInputStream(byteArray))
-            val fileName = "${imageName ?: "image_${System.currentTimeMillis()}"}.jpg"
-            val outputDirectory = File(config.directory.name)
+                ?: throw IOException("Could not decode image bytes")
+
+            val ext = if (config.imageFormat == ImageFormat.PNG) "png" else "jpg"
+            val fileName = "${imageName ?: "image_${System.currentTimeMillis()}"}.$ext"
+
+            val outputDirectory = resolveOutputDirectory().also { it.mkdirs() }
             val outputFile = File(outputDirectory, fileName)
-            val outputStream = FileOutputStream(outputFile)
-            ImageIO.write(image, "jpg", outputStream)
-            outputStream.close()
+
+            outputFile.outputStream().use { stream ->
+                if (!ImageIO.write(image, ext, stream)) {
+                    throw IOException("No image writer available for format: $ext")
+                }
+            }
+            onImageSaved()
             outputFile.absolutePath
         } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "Failed to save image: ${e.message}", e)
+            onImageSavedFailed(e.message ?: "Unknown error")
             null
         }
+    }
+
+    // Resolve a real per-user directory (the old code wrote to a relative dir literally named
+    // "PICTURES" in the process CWD and ignored customFolderName/imageFormat).
+    private fun resolveOutputDirectory(): File {
+        // user.home can be null in sandboxed runtimes; fall back to the working dir.
+        val home = File(System.getProperty("user.home") ?: System.getProperty("user.dir") ?: ".")
+        val base = when (config.directory) {
+            Directory.PICTURES, Directory.DCIM -> File(home, "Pictures")
+            Directory.DOCUMENTS -> File(home, "Documents")
+        }
+        return config.customFolderName?.let { File(base, it) } ?: base
     }
 
     override fun getByteArrayFrom(path: String): ByteArray = try {
@@ -53,6 +76,6 @@ class JVMImageSaverPlugin(
 actual fun createPlatformImageSaverPlugin(context: PlatformContext, config: ImageSaverConfig): ImageSaverPlugin =
     JVMImageSaverPlugin(
         config = config,
-        onImageSaved = { println("Image saved successfully!") },
-        onImageSavedFailed = { errorMessage -> println("Failed to save image: $errorMessage") },
+        onImageSaved = { CameraKLogger.d("CameraK", "Image saved successfully!") },
+        onImageSavedFailed = { errorMessage -> CameraKLogger.e("CameraK", "Failed to save image: $errorMessage") },
     )

@@ -6,14 +6,16 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import coil3.PlatformContext
 import coil3.compose.LocalPlatformContext
+import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
-import com.kashif.cameraK.plugins.CameraPlugin
 import com.kashif.cameraK.state.CameraKPlugin
+import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -38,7 +40,7 @@ data class ImageSaverConfig(
 /**
  * Abstract plugin for saving captured images to device storage.
  *
- * Supports both legacy [CameraPlugin] and new [CameraKPlugin] interfaces.
+ * Implements [CameraKPlugin] for Compose-first state management.
  * Provides automatic and manual image saving with configurable naming and directory options.
  *
  * @param config Configuration settings for image saving behavior.
@@ -62,10 +64,22 @@ data class ImageSaverConfig(
  * ```
  */
 @Stable
-abstract class ImageSaverPlugin(val config: ImageSaverConfig) :
-    CameraPlugin,
-    CameraKPlugin {
+abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
     private var stateHolder: CameraKStateHolder? = null
+    private var autoSaveJob: Job? = null
+
+    // The controller the capture listener is currently registered on, so we can remove it on
+    // re-init / detach instead of stacking listeners (which would save each capture N times).
+    private var registeredController: CameraController? = null
+
+    // Stable reference so addImageCaptureListener / removeImageCaptureListener target the same lambda.
+    @OptIn(ExperimentalTime::class)
+    private val captureListener: (ByteArray) -> Unit = { byteArray ->
+        stateHolder?.pluginScope?.launch(Dispatchers.IO) {
+            val imageName = config.prefix?.let { "${it}_${Clock.System.now().toEpochMilliseconds()}" }
+            saveImage(byteArray, imageName)
+        }
+    }
 
     /**
      * Saves the captured image data to storage.
@@ -77,41 +91,24 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) :
     abstract suspend fun saveImage(byteArray: ByteArray, imageName: String? = null): String?
 
     /**
-     * Initializes the plugin with the camera controller (legacy API).
-     * If auto-save is enabled, sets up listeners to save images automatically.
-     *
-     * @param cameraController The [CameraController] instance to attach listeners to.
-     */
-    override fun initialize(cameraController: com.kashif.cameraK.controller.CameraController) {
-        if (config.isAutoSave) {
-            cameraController.addImageCaptureListener { byteArray ->
-                CoroutineScope(Dispatchers.IO).launch {
-                    val imageName = config.prefix?.let { "CameraK" }
-                    saveImage(byteArray, imageName)
-                }
-            }
-        }
-    }
-
-    /**
      * Attaches the plugin to the state holder (new API).
      * If auto-save is enabled, automatically saves images when camera becomes ready.
      *
      * @param stateHolder The [CameraKStateHolder] to attach to.
      */
-    @OptIn(ExperimentalTime::class)
     override fun onAttach(stateHolder: CameraKStateHolder) {
         this.stateHolder = stateHolder
 
-        if (config.isAutoSave) {
-            stateHolder.pluginScope.launch {
-                val controller = stateHolder.getReadyCameraController()
-                controller?.addImageCaptureListener { byteArray ->
-                    CoroutineScope(Dispatchers.IO).launch {
-                        val imageName = config.prefix?.let { "${it}_${Clock.System.now().toEpochMilliseconds()}" }
-                        saveImage(byteArray, imageName)
-                    }
-                }
+        if (!config.isAutoSave) return
+
+        // Re-register on every Ready (a lens switch / re-init produces a new controller), moving
+        // the single listener off the previous controller so it's never registered twice.
+        autoSaveJob?.cancel()
+        autoSaveJob = stateHolder.pluginScope.launch {
+            stateHolder.cameraState.filterIsInstance<CameraKState.Ready>().collect { ready ->
+                registeredController?.removeImageCaptureListener(captureListener)
+                ready.controller.addImageCaptureListener(captureListener)
+                registeredController = ready.controller
             }
         }
     }
@@ -120,6 +117,10 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) :
      * Detaches the plugin from the state holder and cleans up resources.
      */
     override fun onDetach() {
+        autoSaveJob?.cancel()
+        autoSaveJob = null
+        registeredController?.removeImageCaptureListener(captureListener)
+        registeredController = null
         stateHolder = null
     }
 

@@ -1,6 +1,6 @@
-# Contributing to CameraK
+# Contributing to Kamera
 
-Thank you for your interest in contributing to CameraK! This document provides guidelines and steps for contributing.
+Thank you for your interest in contributing to Kamera! This document provides guidelines and steps for contributing.
 
 ## Ways to Contribute
 
@@ -17,7 +17,7 @@ Before creating an issue, please:
 1. **Search existing issues** to avoid duplicates
 2. **Use the issue template** if available
 3. **Provide details**:
-   - CameraK version
+   - Kamera version
    - Platform (Android/iOS/Desktop) and OS version
    - Device/emulator details
    - Minimal reproducible example
@@ -27,7 +27,7 @@ Before creating an issue, please:
 ### Good Issue Example
 
 ```markdown
-**CameraK Version:** 0.3
+**Kamera Version:** 1.0
 **Platform:** Android 13 (Pixel 6)
 
 **Description:**
@@ -60,7 +60,7 @@ E/CameraK: Failed to bind camera...
 
 ### Prerequisites
 
-- JDK 11+
+- JDK 17+
 - Android Studio Hedgehog or later
 - Xcode 14+ (for iOS development)
 - Kotlin 1.9.0+
@@ -68,8 +68,8 @@ E/CameraK: Failed to bind camera...
 ### Clone Repository
 
 ```bash
-git clone https://github.com/Kashif-E/CameraK.git
-cd CameraK
+git clone https://github.com/Kashif-E/Kamera.git
+cd Kamera
 ```
 
 ### Build Project
@@ -132,10 +132,10 @@ Follow [Kotlin coding conventions](https://kotlinlang.org/docs/coding-convention
 /**
  * Captures an image and saves it directly to a file.
  *
- * This method is significantly faster than takePicture() as it:
- * - Saves directly to disk without ByteArray conversion
- * - Skips decode/encode cycles (2-3 seconds faster)
- * - Avoids memory overhead from ByteArray processing
+ * This method saves directly to disk, which:
+ * - Avoids ByteArray conversion
+ * - Skips decode/encode cycles
+ * - Avoids memory overhead from in-memory image processing
  *
  * @return ImageCaptureResult.SuccessWithFile containing the file path, or an error result
  *
@@ -293,11 +293,11 @@ Avoid breaking changes when possible. If necessary:
 
 ```kotlin
 @Deprecated(
-    message = "Use takePictureToFile() instead",
-    replaceWith = ReplaceWith("takePictureToFile()"),
+    message = "Use newMethod() instead",
+    replaceWith = ReplaceWith("newMethod()"),
     level = DeprecationLevel.WARNING  // v1.x
 )
-suspend fun takePicture(): ImageCaptureResult
+fun oldMethod()
 ```
 
 ## Documentation Changes
@@ -331,9 +331,9 @@ Contributors are recognized in:
 
 ## Questions?
 
-- **GitHub Discussions**: [Discussions](https://github.com/Kashif-E/CameraK/discussions)
-- **Issues**: [Issues](https://github.com/Kashif-E/CameraK/issues)
+- **GitHub Discussions**: [Discussions](https://github.com/Kashif-E/Kamera/discussions)
+- **Issues**: [Issues](https://github.com/Kashif-E/Kamera/issues)
 
 ## Thank You!
 
-Your contributions make CameraK better for everyone. We appreciate your time and effort!
+Your contributions make Kamera better for everyone. We appreciate your time and effort!

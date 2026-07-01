@@ -1,6 +1,6 @@
 # Plugins
 
-Extend CameraK with modular plugins for QR scanning, OCR, and custom processing.
+Extend Kamera with modular plugins for QR scanning, OCR, and custom processing.
 
 ## Overview
 
@@ -16,12 +16,18 @@ Plugins extend camera functionality without modifying core camera code. They aut
 Add plugins during initialization via `setupPlugins`:
 
 ```kotlin
+// Create plugins in composable scope first — the remember…Plugin(...) factories are
+// @Composable and cannot be called inside the setupPlugins lambda.
+val qrScannerPlugin = rememberQRScannerPlugin()
+val ocrPlugin = rememberOcrPlugin()
+val imageSaverPlugin = rememberImageSaverPlugin(config = ImageSaverConfig(isAutoSave = true))
+
 val cameraState by rememberCameraKState(
     config = CameraConfiguration(),
     setupPlugins = { stateHolder ->
-        stateHolder.attachPlugin(rememberQRScannerPlugin())
-        stateHolder.attachPlugin(rememberOcrPlugin())
-        stateHolder.attachPlugin(rememberImageSaverPlugin())
+        stateHolder.attachPlugin(qrScannerPlugin)
+        stateHolder.attachPlugin(ocrPlugin)
+        stateHolder.attachPlugin(imageSaverPlugin)
     }
 )
 ```
@@ -34,7 +40,7 @@ Plugins activate automatically when camera reaches `Ready` state.
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.3")
+    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:1.1")
 }
 ```
 
@@ -108,7 +114,7 @@ fun QRScannerScreen() {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.3")
+    implementation("io.github.kashif-mehmood-km:ocr_plugin:1.1")
 }
 ```
 
@@ -182,24 +188,23 @@ fun OCRScannerScreen() {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.3")
+    implementation("io.github.kashif-mehmood-km:image_saver_plugin:1.1")
 }
 ```
 
 ### Usage
 
 ```kotlin
+val imageSaverPlugin = rememberImageSaverPlugin(
+    config = ImageSaverConfig(
+        isAutoSave = true,  // Auto-save every capture
+        directory = Directory.PICTURES
+    )
+)
 val cameraState by rememberCameraKState(
     config = CameraConfiguration(),
     setupPlugins = { stateHolder ->
-        stateHolder.attachPlugin(
-            rememberImageSaverPlugin(
-                config = ImageSaverConfig(
-                    isAutoSave = true,  // Auto-save every capture
-                    directory = Directory.PICTURES
-                )
-            )
-        )
+        stateHolder.attachPlugin(imageSaverPlugin)
     }
 )
 ```

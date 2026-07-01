@@ -1,7 +1,7 @@
-# CameraK
+# Kamera
 
 <p align="center">
-  <img src="docs/assets/kamera.jpg" alt="CameraK Poster" width="800" style="border-radius: 50%;"/>
+  <img src="docs/assets/kamera.jpg" alt="Kamera Poster" width="800" style="border-radius: 50%;"/>
 </p>
 
 <p align="center">
@@ -11,7 +11,7 @@ A modern camera library for Compose Multiplatform supporting Android, iOS, and D
 <p align="center">
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.kashif-mehmood-km/camerak?label=Maven%20Central&color=blue)](https://search.maven.org/search?q=g:io.github.kashif-mehmood-km)
-[![GitHub Release](https://img.shields.io/github/v/release/kashif-e/camerak)](https://github.com/Kashif-E/CameraK/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/kashif-e/Kamera)](https://github.com/Kashif-E/Kamera/releases)
 [![Kotlin Weekly](https://img.shields.io/badge/Kotlin_Weekly-425-7F52FF)](https://mailchi.mp/kotlinweekly/kotlin-weekly-425)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 </p>
@@ -34,14 +34,14 @@ Add dependencies to your `build.gradle.kts`:
 ```kotlin
 dependencies {
     // Core library
-    implementation("io.github.kashif-mehmood-km:camerak:0.2.0")
+    implementation("io.github.kashif-mehmood-km:camerak:1.1")
 
     // Optional plugins
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.2.0")
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.2.0")
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.2.0")
-    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:0.3")
-    implementation("io.github.kashif-mehmood-km:analyzer_plugin:0.3")
+    implementation("io.github.kashif-mehmood-km:image_saver_plugin:1.1")
+    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:1.1")
+    implementation("io.github.kashif-mehmood-km:ocr_plugin:1.1")
+    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:1.1")
+    implementation("io.github.kashif-mehmood-km:analyzer_plugin:1.1")
 }
 ```
 
@@ -51,14 +51,14 @@ Add to your `libs.versions.toml`:
 
 ```toml
 [versions]
-camerak = "0.2.0"
+camerak = "1.0"
 
 [libraries]
 camerak = { module = "io.github.kashif-mehmood-km:camerak", version.ref = "camerak" }
 camerak-image-saver = { module = "io.github.kashif-mehmood-km:image_saver_plugin", version.ref = "camerak" }
 camerak-qr-scanner = { module = "io.github.kashif-mehmood-km:qr_scanner_plugin", version.ref = "camerak" }
 camerak-ocr = { module = "io.github.kashif-mehmood-km:ocr_plugin", version.ref = "camerak" }
-camerak-analyzer = { module = "io.github.kashif-mehmood-km:analzer_plugin", version.ref = "camerak" }
+camerak-analyzer = { module = "io.github.kashif-mehmood-km:analyzer_plugin", version.ref = "camerak" }
 camerak-video-recorder = { module = "io.github.kashif-mehmood-km:video_recorder_plugin", version.ref = "camerak" }
 ```
 
@@ -230,10 +230,12 @@ val cameraState by rememberCameraKState(
         // Image output
         imageFormat = ImageFormat.JPEG,          // JPEG or PNG
         directory = Directory.PICTURES,         // PICTURES, DCIM, DOCUMENTS
-        returnFilePath = true,
 
         // Quality
         qualityPrioritization = QualityPrioritization.BALANCED,
+
+        // Mirror front-camera captures to match the preview (Android/iOS)
+        mirrorFrontCamera = false,
 
         // iOS only: Advanced camera device types
         cameraDeviceType = CameraDeviceType.DEFAULT,
@@ -258,8 +260,8 @@ val cameraState by rememberCameraKState(
 | `torchMode` | `TorchMode` | `OFF` | ON, OFF, or AUTO |
 | `imageFormat` | `ImageFormat` | `JPEG` | JPEG or PNG |
 | `directory` | `Directory` | `PICTURES` | PICTURES, DCIM, or DOCUMENTS |
-| `returnFilePath` | `Boolean` | `true` | Whether to return file path in capture result |
 | `qualityPrioritization` | `QualityPrioritization` | `BALANCED` | Capture quality vs speed tradeoff |
+| `mirrorFrontCamera` | `Boolean` | `false` | Mirror front-camera captures to match preview (Android/iOS) |
 | `cameraDeviceType` | `CameraDeviceType` | `DEFAULT` | iOS: DEFAULT, WIDE_ANGLE, ULTRA_WIDE, TELEPHOTO, MACRO |
 
 ### Camera Runtime Control
@@ -383,13 +385,14 @@ when (cameraState) {
     is CameraKState.Ready -> {
         val controller = (cameraState as CameraKState.Ready).controller
         scope.launch {
-            when (val result = controller.takePicture()) {
-                is ImageCaptureResult.Success -> {
+            when (val result = controller.takePictureToFile()) {
+                is ImageCaptureResult.SuccessWithFile -> {
                     imageSaverPlugin.saveImage(
-                        byteArray = result.byteArray,
+                        byteArray = imageSaverPlugin.getByteArrayFrom(result.filePath),
                         imageName = "Photo_${System.currentTimeMillis()}"
                     )
                 }
+                is ImageCaptureResult.Error -> { /* handle error */ }
             }
         }
     }
@@ -493,24 +496,25 @@ ocrPlugin.stopRecognition()
 
 ### Analyzer Plugin
 
-Image Aalyzer - observe latest frame in a thread safe environment. Results are delivered through `CameraKEvent.LatestFrame` events via the `events` SharedFlow on `CameraKStateHolder`.
+Image Analyzer - observe the latest frame as a `ByteArray` in a thread-safe environment. Frames are delivered through the plugin's `getAnalyzerFlow()`. The byte layout is platform-dependent: JPEG-encoded on Android and iOS, raw pixel bytes (`DataBufferByte`) on Desktop — decode accordingly.
 
 #### Setup
 
 ```kotlin
-val scope = rememberCoroutineScope()
-val analyzerPlugin = remember { AnalyzerPlugin(scope) }
+val analyzerPlugin = rememberAnalyzerPlugin()
 var latestFrame by remember { mutableStateOf<ByteArray?>(null) }
 
-val cameraState by rememberCameraKState(-> stateHolder
-    analyzerPlugin.attachToStateHolder(stateHolder)
+val cameraState by rememberCameraKState(
+    setupPlugins = { stateHolder ->
+        stateHolder.attachPlugin(analyzerPlugin)
+    },
 )
 
-// Observe latest frame events
+// Observe the latest frame
 LaunchedEffect(analyzerPlugin) {
-    analyzerPlugin.getAnalyzerFlow().collect{-> frame
-	latestFrame = frame
-  }
+    analyzerPlugin.getAnalyzerFlow().collect { frame ->
+        latestFrame = frame
+    }
 }
 ```
 
@@ -744,9 +748,7 @@ Low-level camera operations returned in `CameraKState.Ready`:
 ```kotlin
 expect class CameraController {
     // Capture operations
-    suspend fun takePictureToFile(): ImageCaptureResult        // Recommended - direct file save
-    @Deprecated("Use takePictureToFile()")
-    suspend fun takePicture(): ImageCaptureResult              // Legacy - returns ByteArray
+    suspend fun takePictureToFile(): ImageCaptureResult        // Direct file save
 
     // Focus control
     fun setFocus(x: Float, y: Float, size: Float)
@@ -862,210 +864,23 @@ sealed class CameraKEvent {
 }
 ```
 
-## Migration Guide: Legacy API -> v0.2.0+
+## Removed APIs (breaking)
 
-### API Migration
+The legacy callback-based API has been removed. Use the Compose-first reactive API instead:
 
-The v0.2.0 release introduces a new Compose-first reactive API. The old callback-based API is deprecated but still supported with a one-year deprecation timeline:
+| Removed | Replacement |
+|---------|-------------|
+| `CameraPreview { onCameraControllerReady = ... }` | `rememberCameraKState(config)` + `CameraPreviewView(controller)` |
+| `CameraController.takePicture()` (ByteArray) | `CameraController.takePictureToFile()` |
+| `CameraPlugin` interface (`initialize(controller)`) | `CameraKPlugin` (`onAttach`/`onDetach`) |
+| `rememberIOSPermissions()` | `providePermissions()` |
 
-- **v0.2.0**: New reactive API available, old API functional with warnings
-- **v1.0.0**: Old API marked as error-level deprecation (IDE warnings, future removal)
-- **v2.0.0**: Old API removed completely
-
-#### Option 1: Simple Migration (Recommended)
-
-Old callback-based approach:
-
-```kotlin
-// OLD - Callback based
-CameraPreview(
-    cameraConfiguration = { /* ... */ },
-    onCameraControllerReady = { controller ->
-        // Manual controller management
-    }
-)
-```
-
-New reactive approach:
+Logging is now controlled via `CameraKLogger` (disabled by default):
 
 ```kotlin
-// NEW - Reactive StateFlow based
-@Composable
-fun CameraScreen() {
-    val cameraState by rememberCameraKState(
-        config = CameraConfiguration(
-            cameraLens = CameraLens.BACK,
-            flashMode = FlashMode.OFF,
-        ),
-    )
-
-    when (cameraState) {
-        is CameraKState.Ready -> {
-            val readyState = cameraState as CameraKState.Ready
-            val controller = readyState.controller
-            val uiState = readyState.uiState
-            // Use controller and uiState here
-        }
-    }
-}
+CameraKLogger.enabled = true                 // turn on internal logs (e.g. debug builds)
+CameraKLogger.sink = { level, tag, msg, t -> /* forward to your logger */ }
 ```
-
-#### Option 2: Using Helper Method
-
-If you need to wait for camera readiness:
-
-```kotlin
-scope.launch {
-    val controller = stateHolder.getReadyCameraController()
-    if (controller != null) {
-        // Camera is ready - safe to use
-        when (val result = controller.takePictureToFile()) {
-            is ImageCaptureResult.SuccessWithFile -> { /* ... */ }
-            is ImageCaptureResult.Error -> { /* ... */ }
-        }
-    }
-}
-```
-
-### Plugin Migration
-
-If you've created custom plugins using the old API:
-
-#### Old Pattern (v0.2.0)
-
-```kotlin
-class MyPlugin : CameraKPlugin {
-    override fun onAttach(stateHolder: CameraKStateHolder) {
-        val controller = stateHolder.getController()  // Deprecated
-        // Directly use controller - race condition risk!
-        startDetection(controller)
-    }
-}
-```
-
-#### New Pattern (v0.2.0+)
-
-Option A - Stream observation (reactive):
-
-```kotlin
-class MyPlugin : CameraKPlugin {
-    private var job: Job? = null
-
-    override fun onAttach(stateHolder: CameraKStateHolder) {
-        job = stateHolder.pluginScope.launch {
-            stateHolder.cameraState
-                .filterIsInstance<CameraKState.Ready>()
-                .collect { ready ->
-                    startDetection(ready.controller)
-                }
-        }
-    }
-
-    override fun onDetach() {
-        job?.cancel()
-    }
-}
-```
-
-Option B - Suspend until ready:
-
-```kotlin
-class MyPlugin : CameraKPlugin {
-    override fun onAttach(stateHolder: CameraKStateHolder) {
-        stateHolder.pluginScope.launch {
-            val controller = stateHolder.getReadyCameraController()
-            if (controller != null) {
-                startDetection(controller)
-            }
-        }
-    }
-
-    override fun onDetach() {
-        // Cleanup if needed
-    }
-}
-```
-
-#### Deprecation Timeline for Custom Plugins
-
-The old `getController()` method is deprecated:
-
-```kotlin
-// Warning level (v0.2.0)
-@Deprecated(
-    "Use cameraState.filterIsInstance<Ready>() instead. " +
-            "Will be removed in v2.0.0",
-    replaceWith = ReplaceWith(
-        "pluginScope.launch { cameraState.filterIsInstance<CameraKState.Ready>().collect { ... } }"
-    ),
-    level = DeprecationLevel.WARNING
-)
-fun getController(): CameraController?
-
-// Error level (v1.0.0)
-// Same method but with DeprecationLevel.ERROR
-
-// Removed (v2.0.0)
-// Method no longer exists
-```
-
-### Image Capture API
-
-The `takePicture()` method is deprecated in favor of `takePictureToFile()`:
-
-```kotlin
-// Deprecated - Manual file handling required
-@Deprecated("Use takePictureToFile() instead")
-suspend fun takePicture(): ImageCaptureResult
-
-// Recommended - Direct file save, 2-3x faster
-suspend fun takePictureToFile(): ImageCaptureResult
-```
-
-**Performance Benefit:**
-- `takePicture()`: ByteArray in memory -> manual file write (slower, ~2-3 seconds)
-- `takePictureToFile()`: Direct file save (faster, ~0.5-1 second)
-
-### Breaking Changes Summary
-
-| Feature | v0.2.0 | v0.2.0+ | Timeline |
-|---------|--------|---------|----------|
-| Callback-based API | Supported | Deprecated | v2.0.0 removal |
-| Reactive StateFlow API | N/A | Recommended | Current |
-| `getController()` | Supported | Deprecated | v2.0.0 removal |
-| `takePicture()` | Supported | Deprecated | v2.0.0 removal |
-| `takePictureToFile()` | N/A | Recommended | Current |
-| Plugin auto-activation | N/A | Built-in | Current |
-| `rememberCameraKState()` | N/A | New | Current |
-
-### Need More Help?
-
-See [PLUGIN_MIGRATION_GUIDE.md](PLUGIN_MIGRATION_GUIDE.md) for comprehensive custom plugin migration examples.
-
-## Deprecation Notices (Legacy)
-
-### v1.0 Migration
-
-#### `takePicture()` -> `takePictureToFile()`
-
-```kotlin
-// Deprecated (slower, will be removed in v2.0)
-when (val result = controller.takePicture()) {
-    is ImageCaptureResult.Success -> {
-        val byteArray = result.byteArray
-        // Manual file save required
-    }
-}
-
-// Recommended (2-3x faster)
-when (val result = controller.takePictureToFile()) {
-    is ImageCaptureResult.SuccessWithFile -> {
-        val filePath = result.filePath
-        // File already saved
-    }
-}
-```
-
 
 ## Troubleshooting
 
@@ -1103,14 +918,6 @@ override fun onAttach(stateHolder: CameraKStateHolder) {
 **Solution**: Ensure you're using `rememberCameraKState()` with `setupPlugins`:
 
 ```kotlin
-// Wrong - old callback API
-CameraPreview(
-    onCameraControllerReady = { controller ->
-        // Auto-activation not supported
-    }
-)
-
-// Correct - new reactive API
 val cameraState by rememberCameraKState(
     setupPlugins = { stateHolder ->
         stateHolder.attachPlugin(myPlugin)  // Auto-activates when Ready
@@ -1172,22 +979,15 @@ LaunchedEffect(Unit) {
 
 **Problem**: Text recognition accuracy low on camera stream.
 
-**Solution**: Use high-resolution images for recognition:
+**Solution**: Text recognition runs on the live camera stream. Recognized text is delivered through `ocrPlugin.ocrFlow` (and also emitted as a `CameraKEvent.TextRecognized` event for anyone collecting the state holder's `events`). For better accuracy, hold the camera steady and move closer so the text fills more of the frame:
 
 ```kotlin
-// Better accuracy - from captured image
-scope.launch {
-    when (val result = controller.takePictureToFile()) {
-        is ImageCaptureResult.SuccessWithFile -> {
-            val file = File(result.filePath)
-            val byteArray = file.readBytes()
-            val text = ocrPlugin.recognizeText(byteArray)
-        }
+// Recognized text is delivered on the OCR flow
+LaunchedEffect(ocrPlugin) {
+    for (text in ocrPlugin.ocrFlow) {
+        recognizedText = text
     }
 }
-
-// Lower accuracy - real-time stream
-// Text recognized events auto-delivered via stateHolder.events
 ```
 
 #### Compilation errors with plugins
@@ -1198,10 +998,10 @@ scope.launch {
 
 ```gradle
 dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:0.2.0")
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:0.2.0")
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:0.2.0")
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:0.2.0")
+    implementation("io.github.kashif-mehmood-km:camerak:1.1")
+    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:1.1")
+    implementation("io.github.kashif-mehmood-km:ocr_plugin:1.1")
+    implementation("io.github.kashif-mehmood-km:image_saver_plugin:1.1")
 }
 ```
 

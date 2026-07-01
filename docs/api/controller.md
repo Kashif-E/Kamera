@@ -45,22 +45,8 @@ scope.launch {
 ```
 
 **Benefits:**
-- 2-3 seconds faster than `takePicture()`
-- No ByteArray conversion
+- Direct file save, no ByteArray conversion
 - Lower memory usage
-
-### takePicture()
-
-**Deprecated** -- Returns image as ByteArray.
-
-```kotlin
-@Deprecated("Use takePictureToFile()")
-suspend fun takePicture(): ImageCaptureResult
-```
-
-**Returns:**
-- `ImageCaptureResult.Success(byteArray: ByteArray)`
-- `ImageCaptureResult.Error(exception: Exception)`
 
 ## Zoom Control
 
@@ -285,16 +271,6 @@ controller.addImageCaptureListener { imageData ->
     processImage(imageData)
 }
 ```
-
-## Other Methods
-
-### initializeControllerPlugins()
-
-```kotlin
-fun initializeControllerPlugins()
-```
-
-Initializes controller-level plugins. Called automatically during setup.
 
 ## Cleanup
 

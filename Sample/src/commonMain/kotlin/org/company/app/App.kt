@@ -132,6 +132,9 @@ fun App() = AppTheme {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         modifier = Modifier.windowInsetsPadding(WindowInsets.systemBars),
+        // Camera app: black background so the preview re-bind on aspect-ratio change (and any
+        // letterbox bars) never flashes the default white surface.
+        containerColor = Color.Black,
     ) {
         val cameraPermissionState = remember { mutableStateOf(permissions.hasCameraPermission()) }
         val storagePermissionState = remember { mutableStateOf(permissions.hasStoragePermission()) }
@@ -225,16 +228,28 @@ private fun CameraContent(
         }
     }
 
+    // Config-level settings with no runtime setter: changing one rebuilds the CameraConfiguration
+    // and re-initializes the camera (data-class equality keeps it stable while unchanged).
+    var aspectRatio by remember { mutableStateOf(AspectRatio.RATIO_4_3) }
+    var resolution by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var imageFormat by remember { mutableStateOf(ImageFormat.JPEG) }
+    var qualityPrioritization by remember { mutableStateOf(QualityPrioritization.BALANCED) }
+    // Device type is applied with the runtime setter (live re-bind), so it's NOT part of the
+    // re-init config; the initial value seeds the first bind and CameraScreen re-applies the
+    // current selection whenever the controller is (re)created.
+    var cameraDeviceType by remember { mutableStateOf(CameraDeviceType.WIDE_ANGLE) }
+
     val cameraState by rememberCameraKState(
         config = CameraConfiguration(
             cameraLens = CameraLens.BACK,
             flashMode = FlashMode.OFF,
-            imageFormat = ImageFormat.JPEG,
+            imageFormat = imageFormat,
             directory = Directory.PICTURES,
             torchMode = TorchMode.OFF,
-            qualityPrioritization = QualityPrioritization.BALANCED,
+            qualityPrioritization = qualityPrioritization,
             cameraDeviceType = CameraDeviceType.WIDE_ANGLE,
-            aspectRatio = AspectRatio.RATIO_4_3,
+            aspectRatio = aspectRatio,
+            targetResolution = resolution,
         ),
         setupPlugins = { stateHolder ->
             stateHolder.attachPlugin(analyzerPlugin)
@@ -295,7 +310,17 @@ private fun CameraContent(
             videoRecorderPlugin = videoRecorderPlugin,
             qrCodes = qrCodes,
             recognizedText = recognizedText,
-            latestFrame = latestFrame
+            latestFrame = latestFrame,
+            aspectRatio = aspectRatio,
+            onAspectRatioChange = { aspectRatio = it },
+            resolution = resolution,
+            onResolutionChange = { resolution = it },
+            imageFormat = imageFormat,
+            onImageFormatChange = { imageFormat = it },
+            qualityPrioritization = qualityPrioritization,
+            onQualityPrioritizationChange = { qualityPrioritization = it },
+            cameraDeviceType = cameraDeviceType,
+            onCameraDeviceTypeChange = { cameraDeviceType = it },
         )
     }
 }
@@ -313,29 +338,38 @@ private fun CameraScreen(
     videoRecorderPlugin: VideoRecorderPlugin,
     qrCodes: List<String>,
     recognizedText: String?,
-    latestFrame: ByteArray?
+    latestFrame: ByteArray?,
+    // Config-level settings hoisted to the caller (changing one re-initializes the camera).
+    aspectRatio: AspectRatio,
+    onAspectRatioChange: (AspectRatio) -> Unit,
+    resolution: Pair<Int, Int>?,
+    onResolutionChange: (Pair<Int, Int>?) -> Unit,
+    imageFormat: ImageFormat,
+    onImageFormatChange: (ImageFormat) -> Unit,
+    qualityPrioritization: QualityPrioritization,
+    onQualityPrioritizationChange: (QualityPrioritization) -> Unit,
+    cameraDeviceType: CameraDeviceType,
+    onCameraDeviceTypeChange: (CameraDeviceType) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val cameraController = cameraState.controller
     var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
 
+    // Re-apply the selected camera device type whenever the controller is (re)created — config
+    // re-inits (aspect ratio, etc.) start from the default, so this preserves the user's choice.
+    LaunchedEffect(cameraController) {
+        cameraController.setPreferredCameraDeviceType(cameraDeviceType)
+    }
 
     var cameraMode by remember { mutableStateOf(CameraMode.Photo) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingDurationMs by remember { mutableStateOf(0L) }
 
-
     var flashMode by remember { mutableStateOf(FlashMode.OFF) }
     var torchMode by remember { mutableStateOf(TorchMode.OFF) }
     var zoomLevel by remember { mutableFloatStateOf(1f) }
     var maxZoom by remember { mutableFloatStateOf(1f) }
-    var aspectRatio by remember { mutableStateOf(AspectRatio.RATIO_4_3) }
-    var resolution by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    var imageFormat by remember { mutableStateOf(ImageFormat.JPEG) }
-    var qualityPrioritization by remember { mutableStateOf(QualityPrioritization.BALANCED) }
-    var cameraDeviceType by remember { mutableStateOf(CameraDeviceType.WIDE_ANGLE) }
-
 
     var isQRScanningEnabled by remember { mutableStateOf(true) }
     var isOCREnabled by remember { mutableStateOf(true) }
@@ -363,7 +397,7 @@ private fun CameraScreen(
                 is CameraKEvent.RecordingStopped,
                 is CameraKEvent.RecordingFailed,
                 is CameraKEvent.RecordingMaxDurationReached,
-                    -> {
+                -> {
                     isRecording = false
                     recordingDurationMs = 0L
                 }
@@ -422,7 +456,7 @@ private fun CameraScreen(
 
     val runTFliteModel = remember { getTFliteRunner() }
 
-    if(runTFliteModel != null) {
+    if (runTFliteModel != null) {
         LaunchedEffect(latestFrame) {
             latestFrame?.runTFliteModel(scope)
         }
@@ -455,9 +489,11 @@ private fun CameraScreen(
                 torchMode = cameraController.getTorchMode() ?: TorchMode.OFF
             },
             onAspectRatioCycle = {
-                val entries = AspectRatio.entries
-                val next = entries[(entries.indexOf(aspectRatio) + 1) % entries.size]
-                aspectRatio = next
+                if (!isRecording) {
+                    val entries = AspectRatio.entries
+                    val next = entries[(entries.indexOf(aspectRatio) + 1) % entries.size]
+                    onAspectRatioChange(next)
+                }
             },
         )
 
@@ -564,12 +600,16 @@ private fun CameraScreen(
                 isOCREnabled = isOCREnabled,
                 lockedOrientation = lockedOrientation,
                 deviceOrientation = deviceOrientation,
-                onResolutionChange = { resolution = it },
-                onImageFormatChange = { imageFormat = it },
-                onQualityPrioritizationChange = { qualityPrioritization = it },
+                // Config-level changes re-initialize the camera, so ignore them mid-recording
+                // (tearing the controller down under an active recording would corrupt the clip).
+                onResolutionChange = { if (!isRecording) onResolutionChange(it) },
+                onImageFormatChange = { if (!isRecording) onImageFormatChange(it) },
+                onQualityPrioritizationChange = { if (!isRecording) onQualityPrioritizationChange(it) },
                 onCameraDeviceTypeChange = {
-                    cameraDeviceType = it
-                    cameraController.setPreferredCameraDeviceType(it)
+                    if (!isRecording) {
+                        onCameraDeviceTypeChange(it)
+                        cameraController.setPreferredCameraDeviceType(it) // live re-bind
+                    }
                 },
                 onQRScanningToggle = { isQRScanningEnabled = it },
                 onOCRToggle = { isOCREnabled = it },
@@ -597,8 +637,6 @@ private fun TopBar(
     onTorchToggle: () -> Unit,
     onAspectRatioCycle: () -> Unit,
 ) {
-
-
     Row(
         modifier = modifier
             .fillMaxWidth()

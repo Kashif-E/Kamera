@@ -1,13 +1,14 @@
 package com.kashif.imagesaverplugin
-
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import coil3.PlatformContext
+import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -69,23 +70,29 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                 resolver.update(imageUri, contentValues, null, null)
             }
 
-            println("Image saved successfully at URI: $imageUri")
+            CameraKLogger.d("CameraK", "Image saved successfully at URI: $imageUri")
             imageUri.toString()
         } catch (e: IOException) {
-            e.printStackTrace()
-            println("Failed to save image: ${e.message}")
+            CameraKLogger.e("CameraK", "Unhandled exception", e)
+            CameraKLogger.e("CameraK", "Failed to save image: ${e.message}")
             null
         }
     }
 
     override fun getByteArrayFrom(path: String): ByteArray {
         try {
+            // takePictureToFile() returns a raw filesystem path; the image saver may hand back a
+            // content:// URI. Support both: read a plain file directly, otherwise via the resolver.
+            val file = File(path)
+            if (file.exists()) {
+                return file.readBytes()
+            }
             val uri = Uri.parse(path)
             return context.contentResolver.openInputStream(uri)?.use { inputStream ->
                 inputStream.readBytes()
             } ?: throw IOException("Failed to open input stream")
         } catch (e: Exception) {
-            throw IOException("Failed to read image from URI: $path", e)
+            throw IOException("Failed to read image from path/URI: $path", e)
         }
     }
 
@@ -108,7 +115,7 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            CameraKLogger.e("CameraK", "Unhandled exception", e)
             null
         }
     }
