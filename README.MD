@@ -13,6 +13,7 @@ A modern camera library for Compose Multiplatform supporting Android, iOS, and D
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.kashif-mehmood-km/camerak?label=Maven%20Central&color=blue)](https://search.maven.org/search?q=g:io.github.kashif-mehmood-km)
 [![GitHub Release](https://img.shields.io/github/v/release/kashif-e/Kamera)](https://github.com/Kashif-E/Kamera/releases)
 [![Kotlin Weekly](https://img.shields.io/badge/Kotlin_Weekly-425-7F52FF)](https://mailchi.mp/kotlinweekly/kotlin-weekly-425)
+[![Kotlin Weekly](https://img.shields.io/badge/Kotlin_Weekly-425-7F52FF)](https://mailchi.mp/kotlinweekly/kotlin-weekly-517)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 </p>
 
