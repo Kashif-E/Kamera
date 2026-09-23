@@ -2,6 +2,7 @@ package com.kashif.cameraK.controller
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Environment
 import android.util.Rational
 import android.util.Size
@@ -138,9 +139,9 @@ actual class CameraController(
             if (it.isNotEmpty()) cachedLensSnapshot = it
         }
 
-    // Portrait/landscape category of the display rotation used to build the current ViewPort. The
-    // ViewPort is immutable once bound, so when the display flips category we must rebind to rebuild
-    // it — otherwise the capture crop stays at the old orientation (reintroduces #136 after rotation).
+    // Portrait/landscape orientation used to build the current ViewPort. The ViewPort is immutable
+    // once bound, so when the UI flips orientation we must rebind to rebuild it — otherwise the
+    // capture crop stays at the old orientation (reintroduces #136 after rotation).
     private var lastViewPortPortrait: Boolean? = null
 
     // Set when a portrait↔landscape flip is detected during recording (when rebinding would tear
@@ -252,16 +253,16 @@ actual class CameraController(
     /**
      * Builds a [ViewPort] matching the configured aspect ratio so every use case (preview, capture,
      * analyzer) is cropped to the same field of view. The [Rational] is expressed as width:height in
-     * the display's CURRENT orientation (the convention `PreviewView.getViewPort()` uses), so it is
+     * the UI's CURRENT orientation (the convention `PreviewView.getViewPort()` uses), so it is
      * flipped for portrait — e.g. `RATIO_4_3` is `3:4` in portrait and `4:3` in landscape.
      */
     private fun buildViewPort(previewView: PreviewView): ViewPort? {
         val rotation = currentDisplayRotation(previewView)
-        // The ViewPort Rational is width:height in the display's CURRENT orientation. In portrait a
+        // The ViewPort Rational is width:height in the UI's CURRENT orientation. In portrait a
         // "4:3" capture is taller than wide (3:4); only in landscape is it 4:3. Hard-coding the
         // landscape Rational forced a landscape crop in portrait — preview and photo came out 4:3
         // when 3:4 was expected (#136). Flip width/height for portrait.
-        val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
+        val portrait = isPortrait(previewView)
         lastViewPortPortrait = portrait
         val rational = when (aspectRatio) {
             AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 ->
@@ -276,15 +277,14 @@ actual class CameraController(
     }
 
     /**
-     * Rebinds the camera when the display rotation flips between portrait and landscape, so the
-     * (immutable) ViewPort is rebuilt with the matching Rational. Gated on the *display* rotation —
-     * an activity locked to one orientation never rotates the display, so it never needlessly
-     * rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
+     * Rebinds the camera when the UI flips between portrait and landscape, so the (immutable)
+     * ViewPort is rebuilt with the matching Rational. Gated on the UI orientation, not the sensor —
+     * an activity locked to one orientation never flips, so it never needlessly rebinds, while an
+     * unlocked one keeps capture cropped to what's actually on screen.
      */
     private fun rebindIfViewPortOrientationChanged() {
         val pv = previewView ?: return
-        val rotation = currentDisplayRotation(pv)
-        val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
+        val portrait = isPortrait(pv)
         if (lastViewPortPortrait == null || portrait == lastViewPortPortrait) return
 
         if (activeRecording != null) {
@@ -294,6 +294,28 @@ actual class CameraController(
             return
         }
         bindCamera(pv)
+    }
+
+    /**
+     * Whether the UI is portrait, read from the same source that sizes the preview box (the
+     * configuration orientation). The display rotation can't tell on its own: ROTATION_0 is
+     * landscape on landscape-natural devices (tablets, Chromebooks) and in some multi-window cases.
+     */
+    private fun isPortrait(previewView: PreviewView): Boolean = when (previewView.resources.configuration.orientation) {
+        Configuration.ORIENTATION_PORTRAIT -> true
+        Configuration.ORIENTATION_LANDSCAPE -> false
+        else -> currentDisplayRotation(previewView).let { it == Surface.ROTATION_0 || it == Surface.ROTATION_180 }
+    }
+
+    /**
+     * Called by the preview when the configuration orientation changes. The accelerometer listener
+     * can fire before the display has actually rotated, and activities that handle rotation
+     * themselves are never recreated, so capture rotation and the ViewPort are re-checked here.
+     */
+    internal fun onDisplayConfigurationChanged() {
+        val pv = previewView ?: return
+        applyCaptureRotation(pv)
+        rebindIfViewPortOrientationChanged()
     }
 
     /**
