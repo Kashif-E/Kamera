@@ -700,11 +700,24 @@ actual class CameraController(
     private fun createFinalOutputFile(): File = createTempFile()
 
     /**
+     * Whether this file lives in the app's own storage (`getExternalFilesDir` / `filesDir`), which is
+     * where [Directory.DOCUMENTS] captures go. Those files are private to the app, so they are not
+     * announced to the media scanner and can't surface in gallery apps (#158).
+     */
+    private fun File.isInAppSpecificStorage(): Boolean {
+        val path = canonicalPath
+        return listOfNotNull(context.getExternalFilesDir(null), context.filesDir)
+            .any { root -> path.startsWith(root.canonicalPath + File.separator) }
+    }
+
+    /**
      * Notifies Android's MediaStore about a new image file so it appears in Gallery.
      * Uses MediaScannerConnection for compatibility across Android versions.
+     * Files in app-specific storage are skipped, see [isInAppSpecificStorage].
      */
     private fun notifyMediaStore(file: File) {
         try {
+            if (file.isInAppSpecificStorage()) return
             android.media.MediaScannerConnection.scanFile(
                 context,
                 arrayOf(file.absolutePath),
@@ -910,6 +923,7 @@ actual class CameraController(
 
     private fun notifyMediaStoreVideo(file: File) {
         try {
+            if (file.isInAppSpecificStorage()) return
             android.media.MediaScannerConnection.scanFile(
                 context,
                 arrayOf(file.absolutePath),

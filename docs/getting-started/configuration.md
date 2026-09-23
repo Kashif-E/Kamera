@@ -164,7 +164,9 @@ config = CameraConfiguration(
 |-----------|--------------|----------|
 | `PICTURES` | `Environment.DIRECTORY_PICTURES` | Photo Library (default) |
 | `DCIM` | `Environment.DIRECTORY_DCIM` | Photo Library |
-| `DOCUMENTS` | `getExternalFilesDir(DOCUMENTS)` | Documents folder |
+| `DOCUMENTS` | `getExternalFilesDir(null)/CameraK` | `Documents/CameraK` |
+
+`DOCUMENTS` is app-private: captures are not added to Photos or announced to Android's media scanner. Both platforms back this storage up by default: iOS includes `Documents/` in iCloud backup, and Android Auto Backup includes `getExternalFilesDir()`. If captures must not leave the device, exclude the `CameraK` folder: on iOS set `NSURLIsExcludedFromBackupKey` on it, and on Android add it to your backup rules (`dataExtractionRules` / `fullBackupContent`).
 
 **Example:**
 
