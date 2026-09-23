@@ -85,7 +85,13 @@ Add usage descriptions to `Info.plist`:
 <string>This app needs camera access to capture photos</string>
 <key>NSPhotoLibraryAddUsageDescription</key>
 <string>This app needs to save photos to your library</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>This app needs to read and save photos in your library</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>This app needs the microphone to record video with sound</string>
 ```
+
+`NSPhotoLibraryUsageDescription` is required by `RequestStoragePermission()` and `ImageSaverPlugin.getByteArrayFrom()`, and `NSMicrophoneUsageDescription` by video recording with audio (`VideoConfiguration.enableAudio` is on by default). iOS terminates the app if a key is missing when that feature runs.
 
 ### Desktop (JVM)
 

@@ -269,6 +269,7 @@ fun ProfessionalCameraScreen() {
                                 is ImageCaptureResult.Error -> {
                                     println("Error: ${result.exception.message}")
                                 }
+                                is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
                             }
                         }
                     },
