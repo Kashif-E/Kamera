@@ -45,7 +45,7 @@ config = CameraConfiguration(
 ```
 
 **Options:**
-- `CameraDeviceType.DEFAULT` -- Standard wide-angle (default)
+- `CameraDeviceType.DEFAULT` -- Standard wide-angle (default). On iOS the front camera uses the ultra-wide when the device has one (the iPhone 17 family's Center Stage camera)
 - `CameraDeviceType.ULTRA_WIDE` -- Ultra-wide lens (0.5x zoom)
 - `CameraDeviceType.TELEPHOTO` -- Telephoto lens (2x-3x zoom)
 - `CameraDeviceType.WIDE_ANGLE` -- Wide-angle lens
