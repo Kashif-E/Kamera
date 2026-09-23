@@ -621,7 +621,11 @@ class CustomCameraController(
         captureSession?.beginConfiguration()
 
         try {
-            captureSession?.inputs?.firstOrNull()?.let { input ->
+            // Remove the camera input specifically; a mic input may also be attached.
+            val videoInput = captureSession?.inputs?.firstOrNull { input ->
+                (input as? AVCaptureDeviceInput)?.device?.hasMediaType(AVMediaTypeVideo) == true
+            }
+            videoInput?.let { input ->
                 captureSession?.removeInput(input as AVCaptureInput)
             }
 
