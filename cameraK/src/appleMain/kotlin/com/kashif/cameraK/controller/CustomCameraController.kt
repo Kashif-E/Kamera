@@ -18,6 +18,7 @@ import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_global_queue
 import platform.darwin.dispatch_get_main_queue
+import platform.darwin.dispatch_queue_create
 import kotlin.collections.emptyList
 import kotlin.concurrent.Volatile
 
@@ -60,6 +61,11 @@ class CustomCameraController(
 
     @Volatile
     private var isConfiguring = false
+
+    // startRunning() and stopRunning() block until the session changes state, so they must not run on
+    // the main thread. A serial queue also keeps a quick stop -> start (or start -> stop) in call order,
+    // which the concurrent global queue did not guarantee (#162).
+    private val sessionQueue = dispatch_queue_create("com.kashif.cameraK.session", null)
 
     sealed class CameraException : Exception() {
         class DeviceNotAvailable : CameraException()
@@ -339,23 +345,24 @@ class CustomCameraController(
     fun startSession() {
         processPendingConfigurations()
 
-        if (captureSession == null) return
-
-        if (captureSession?.isRunning() == false) {
-            dispatch_async(
-                dispatch_get_global_queue(
-                    DISPATCH_QUEUE_PRIORITY_HIGH.toLong(),
-                    0u,
-                ),
-            ) {
-                captureSession?.startRunning()
+        val session = captureSession ?: return
+        dispatch_async(sessionQueue) {
+            if (!session.isRunning()) {
+                session.startRunning()
             }
         }
     }
 
+    /**
+     * Stops the session without blocking the caller. The stop runs on [sessionQueue], after any start
+     * queued before it, on the session captured here, so [cleanupSession] can drop its reference at once.
+     */
     fun stopSession() {
-        if (captureSession?.isRunning() == true) {
-            captureSession?.stopRunning()
+        val session = captureSession ?: return
+        dispatch_async(sessionQueue) {
+            if (session.isRunning()) {
+                session.stopRunning()
+            }
         }
     }
 
@@ -369,6 +376,8 @@ class CustomCameraController(
     }
 
     fun cleanupSession() {
+        // Asynchronous, and bound to the current session, so clearing captureSession below can't race it.
+        // The preview layer is removed here, on the caller's (main) thread, as CALayer work must be.
         stopSession()
         cameraPreviewLayer?.removeFromSuperlayer()
         cameraPreviewLayer = null
@@ -613,11 +622,8 @@ class CustomCameraController(
     fun switchCamera() {
         guard(captureSession != null) { return@guard }
 
-        val wasRunning = captureSession?.isRunning() == true
-        if (wasRunning) {
-            captureSession?.stopRunning()
-        }
-
+        // Inputs can be swapped on a running session inside one configuration transaction, so the
+        // session is not stopped (a blocking call) on the caller's thread.
         captureSession?.beginConfiguration()
 
         try {
@@ -651,28 +657,11 @@ class CustomCameraController(
             captureSession?.commitConfiguration()
 
             processPendingConfigurations()
-
-            if (wasRunning) {
-                dispatch_async(
-                    dispatch_get_global_queue(
-                        DISPATCH_QUEUE_PRIORITY_HIGH.toLong(),
-                        0u,
-                    ),
-                ) {
-                    captureSession?.startRunning()
-                }
-            }
         } catch (e: CameraException) {
             captureSession?.commitConfiguration()
-            if (wasRunning) {
-                captureSession?.startRunning()
-            }
             onError?.invoke(e)
         } catch (e: Exception) {
             captureSession?.commitConfiguration()
-            if (wasRunning) {
-                captureSession?.startRunning()
-            }
             onError?.invoke(CameraException.ConfigurationError(e.message ?: "Unknown error"))
         }
     }
