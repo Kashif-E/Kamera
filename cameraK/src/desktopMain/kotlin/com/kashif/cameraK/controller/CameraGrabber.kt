@@ -7,53 +7,102 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.future.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
 import org.bytedeco.javacv.VideoInputFrameGrabber
 import java.awt.image.BufferedImage
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
+/**
+ * The single producer of desktop camera frames. One grab loop, on its own thread, is the only code
+ * that calls `grab()` or the frame converter. Preview frames go to `frameFlow`; capture and
+ * recording read copies of the same frames through [awaitSnapshot] and [frames], so they never
+ * grab from the camera themselves or steal frames from the preview.
+ */
 class CameraGrabber(
     private val frameFlow: MutableSharedFlow<BufferedImage>,
     private val errorHandler: (Throwable) -> Unit,
     private val targetResolution: Pair<Int, Int>? = null,
 ) {
     private val converter = FrameConverter()
-
-    @Volatile private var grabber: FrameGrabber? = null
     private val job = atomic<Job?>(null)
+    private val ownerScope = atomic<CoroutineScope?>(null)
 
-    private var isHorizontallyFlipped = false
+    @Volatile private var isHorizontallyFlipped = false
+
+    // Copies of the loop's frames, made only while someone collects. Each copy is new and never
+    // written again, so a collector may keep it. null marks the end of a run.
+    private val snapshots = MutableSharedFlow<BufferedImage?>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
 
     fun setHorizontalFlip(flip: Boolean) {
         this.isHorizontallyFlipped = flip
-        converter.setHorizontalFlip(flip)
     }
 
+    /**
+     * Returns a copy of the grab loop's next frame, waiting up to [SNAPSHOT_TIMEOUT_MS], or null if
+     * the loop is not running. This blocks the calling thread.
+     */
+    @Deprecated(
+        "This used to call grab() on the caller's thread, racing the grab loop for the same native " +
+            "handle. It now blocks until the grab loop's next frame. Use CameraController.takePictureToFile().",
+    )
     fun grabCurrentFrame(): BufferedImage? {
-        val frame = grabber?.grab()
-        return if (frame?.image != null) {
-            converter.convert(frame)
-        } else {
+        val scope = ownerScope.value ?: return null
+        return try {
+            scope
+                .future(Dispatchers.Default) { awaitSnapshot() }
+                .get(SNAPSHOT_TIMEOUT_MS + FUTURE_GRACE_MS, TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            CameraKLogger.e(TAG, "Interrupted while waiting for a camera frame", e)
+            null
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Waiting for a camera frame failed", e)
             null
         }
     }
 
+    /** A copy of the grab loop's next frame, or null if the loop is not running or none arrives in time. */
+    internal suspend fun awaitSnapshot(): BufferedImage? {
+        if (job.value?.isActive != true) return null
+        return withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) { snapshots.first() }
+    }
+
+    /** Copies of the grab loop's frames from now until the loop stops. */
+    internal fun frames(): Flow<BufferedImage> = snapshots.takeWhile { it != null }.filterNotNull()
+
     /**
-     * Starts the grab loop in [coroutineScope]. The loop owns the grabber for its whole life: it
-     * opens it, grabs from it, and stops and releases it in its own `finally`, so the native handle
-     * is never freed while a `grab()` or a conversion of the grabber's frame is still running. A
-     * start that follows [stop] waits for the previous loop to release its grabber first.
+     * Starts the grab loop in [coroutineScope], on a dedicated thread. The loop owns the grabber and
+     * the converter for its whole life: it opens the grabber, grabs and converts, and stops and
+     * releases both in its own `finally`, so the native handle is never freed while a `grab()` or a
+     * conversion of the grabber's frame is still running. A start that follows [stop] waits for the
+     * previous loop to release its grabber first.
      */
     fun start(coroutineScope: CoroutineScope, customGrabber: FrameGrabber? = null) {
         val previous = job.value
         if (previous?.isActive == true) return
 
+        val producer =
+            Executors
+                .newSingleThreadExecutor { runnable -> Thread(runnable, PRODUCER_THREAD).apply { isDaemon = true } }
+                .asCoroutineDispatcher()
         val loop =
-            coroutineScope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
+            coroutineScope.launch(producer, start = CoroutineStart.ATOMIC) {
                 var owned: FrameGrabber? = null
                 try {
                     previous?.join()
@@ -63,29 +112,31 @@ class CameraGrabber(
                         owned.format = "avfoundation"
                     }
                     owned.start()
-                    grabber = owned
-                    converter.setHorizontalFlip(isHorizontallyFlipped)
 
+                    // grab() blocks until the camera delivers the next frame, which paces the loop.
                     while (isActive) {
                         val frame = owned.grab()
-                        if (frame?.image != null) {
-                            converter.convert(frame)?.let { image ->
-                                frameFlow.tryEmit(image)
-                            }
-                        }
-
-                        delay(1)
+                        if (frame?.image == null) continue
+                        converter.setHorizontalFlip(isHorizontallyFlipped)
+                        val image = converter.convert(frame) ?: continue
+                        frameFlow.tryEmit(image)
+                        if (snapshots.subscriptionCount.value > 0) snapshots.tryEmit(image.copy())
                     }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     errorHandler(e)
                 } finally {
-                    grabber = null
                     owned?.let(::release)
+                    snapshots.tryEmit(null)
                 }
             }
-        if (!job.compareAndSet(previous, loop)) loop.cancel()
+        loop.invokeOnCompletion { producer.close() }
+        if (job.compareAndSet(previous, loop)) {
+            ownerScope.value = coroutineScope
+        } else {
+            loop.cancel()
+        }
     }
 
     /**
@@ -161,6 +212,15 @@ class CameraGrabber(
         }
     }
 }
+
+private fun BufferedImage.copy(): BufferedImage = BufferedImage(colorModel, copyData(null), isAlphaPremultiplied, null)
+
+private const val TAG = "CameraK"
+private const val PRODUCER_THREAD = "CameraK-grabber"
+
+// Long enough for a slow webcam's first frame; capture and recording fail rather than wait forever.
+private const val SNAPSHOT_TIMEOUT_MS = 5_000L
+private const val FUTURE_GRACE_MS = 1_000L
 
 enum class OperatingSystem {
     WINDOWS,

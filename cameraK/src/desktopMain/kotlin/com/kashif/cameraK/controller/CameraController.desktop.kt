@@ -23,12 +23,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bytedeco.ffmpeg.global.avcodec
@@ -91,7 +90,7 @@ actual class CameraController(
 
     actual suspend fun takePictureToFile(): ImageCaptureResult {
         return withContext(Dispatchers.IO) {
-            val currentImage = cameraGrabber?.grabCurrentFrame()
+            val currentImage = cameraGrabber?.awaitSnapshot()
 
             if (currentImage == null) {
                 return@withContext ImageCaptureResult.Error(IllegalStateException("No image available"))
@@ -305,23 +304,21 @@ actual class CameraController(
         // The recording coroutine owns the recorder: it is the only code that calls record(), and it
         // stops and releases the recorder in its finally, after its last record() has returned.
         val finalized = CompletableDeferred<Exception?>()
+        val frames = cameraGrabber?.frames()
         val job = CoroutineScope(Dispatchers.IO).launch(start = CoroutineStart.ATOMIC) {
             val converter = Java2DFrameConverter()
             try {
-                while (isActive && isCurrentlyRecording) {
-                    if (!isPausedRecording) {
-                        val frame = cameraGrabber?.grabCurrentFrame()
-                        if (frame != null) {
-                            try {
-                                val videoFrame = converter.convert(frame)
-                                recorder.record(videoFrame)
-                            } catch (e: Exception) {
-                                CameraKLogger.e("CameraK", "CameraK recording frame error: ${e.message}")
-                            }
+                // Fed by the grab loop's frames; this coroutine never grabs from the camera itself.
+                frames?.collect { image ->
+                    if (isCurrentlyRecording && !isPausedRecording) {
+                        try {
+                            recorder.record(converter.convert(image))
+                        } catch (e: Exception) {
+                            CameraKLogger.e("CameraK", "CameraK recording frame error", e)
                         }
                     }
-                    delay(33) // ~30fps
                 }
+                awaitCancellation()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
