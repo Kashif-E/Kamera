@@ -834,24 +834,12 @@ actual class CameraController internal constructor(
         imageCaptureListeners.remove(listener)
     }
 
+    /** The file a capture that does not go to the gallery is written to. */
     private fun createTempFile(): File {
-        // Use configured directory
-        val storageDir = when (directory) {
-            Directory.PICTURES -> android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_PICTURES,
-            )
-            Directory.DCIM -> android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_DCIM,
-            )
-            Directory.DOCUMENTS -> context.getExternalFilesDir(null) ?: context.filesDir
-        }
-
-        // Create CameraK subdirectory
-        val cameraKDir = File(storageDir, "CameraK")
+        val cameraKDir = appCaptureDirectory(context)
         if (!cameraKDir.exists()) {
             cameraKDir.mkdirs()
         }
-
         return newCaptureFile(cameraKDir, "IMG", outputFormat.extension)
     }
 
@@ -1036,13 +1024,13 @@ actual class CameraController internal constructor(
         val dir = if (config.outputDirectory != null) {
             File(config.outputDirectory).also { it.mkdirs() }
         } else {
-            val storageDir = when (directory) {
-                Directory.PICTURES, Directory.DCIM -> Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_MOVIES,
+            when (directory) {
+                Directory.PICTURES, Directory.DCIM -> File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+                    "CameraK",
                 )
-                Directory.DOCUMENTS -> context.getExternalFilesDir(null) ?: context.filesDir
-            }
-            File(storageDir, "CameraK").also { it.mkdirs() }
+                Directory.DOCUMENTS -> appCaptureDirectory(context)
+            }.also { it.mkdirs() }
         }
         return newCaptureFile(dir, config.filePrefix, "mp4")
     }
