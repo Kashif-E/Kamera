@@ -28,6 +28,7 @@ import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_get_specific
 import platform.darwin.dispatch_queue_create
 import platform.darwin.dispatch_queue_set_specific
+import platform.darwin.dispatch_sync
 import kotlin.collections.emptyList
 import kotlin.concurrent.Volatile
 
@@ -118,12 +119,14 @@ class CustomCameraController(
         get() = session?.avSession
 
         @Deprecated(
-            "The controller creates and owns its session on its session queue; replacing it from outside is unsupported.",
+            "No replacement: setupSession() creates and owns the session on the controller's session queue. " +
+                "Assigning one from outside blocks the caller until that queue is free.",
         )
         set(value) {
-            dispatch_async(sessionQueue) {
-                session = value?.let(::AVCaptureSessionOps)
-            }
+            val replace = { session = value?.let(::AVCaptureSessionOps) }
+            // Synchronous so the next read returns the new session; already on the queue, waiting on
+            // it would deadlock.
+            if (isOnSessionQueue) replace() else dispatch_sync(sessionQueue, replace)
         }
     private var backCamera: AVCaptureDevice? = null
     private var frontCamera: AVCaptureDevice? = null
@@ -133,6 +136,8 @@ class CustomCameraController(
 
     @Volatile
     private var photoOutput: AVCapturePhotoOutput? = null
+
+    /** A UIKit layer: read and written on main only. */
     var cameraPreviewLayer: AVCaptureVideoPreviewLayer? = null
 
     @Volatile
@@ -442,13 +447,14 @@ class CustomCameraController(
 
     /**
      * Adds the input [create] makes unless an attached input already satisfies [isPresent], as one
-     * queued configuration change (the recorder adds its microphone this way).
+     * queued configuration change (the recorder adds its microphone this way). The check, [create]
+     * and the add all run on the session queue, so no other session work can interleave with them.
      */
     internal fun addInputUnlessPresent(isPresent: (AVCaptureInput) -> Boolean, create: () -> AVCaptureInput?) {
-        val ops = session ?: return
-        if (ops.inputs.any(isPresent)) return
-        val input = create() ?: return
         queueConfigurationChange {
+            val ops = session ?: return@queueConfigurationChange
+            if (ops.inputs.any(isPresent)) return@queueConfigurationChange
+            val input = create() ?: return@queueConfigurationChange
             if (ops.canAddInput(input)) {
                 ops.addInput(input)
             }
@@ -680,11 +686,11 @@ class CustomCameraController(
                         frontCamera = newDevice
                     }
                 }
-
-                applyPreviewMirroring()
             }
             if (failure != null) {
                 CameraKLogger.e(TAG, "CameraK: switching camera device type failed", failure)
+            } else {
+                applyPreviewMirroring()
             }
         }
     }
@@ -716,8 +722,6 @@ class CustomCameraController(
                         throw CameraException.ConfigurationError("Cannot add input")
                     }
                 }
-
-                applyPreviewMirroring()
             }
             if (failure != null) {
                 CameraKLogger.e(TAG, "CameraK: switching camera failed", failure)
@@ -725,6 +729,8 @@ class CustomCameraController(
                     failure as? CameraException
                         ?: CameraException.ConfigurationError(failure.message ?: "Unknown error"),
                 )
+            } else {
+                applyPreviewMirroring()
             }
         }
     }
@@ -755,8 +761,15 @@ class CustomCameraController(
         return failure
     }
 
+    /**
+     * Mirrors the preview for the lens now in use. Called on the session queue after a swap; the
+     * preview layer belongs to UIKit, so it is read and changed on main (AVCam does the same).
+     */
     private fun applyPreviewMirroring() {
-        previewMirroring(cameraPreviewLayer, isUsingFrontCamera)
+        val mirrored = isUsingFrontCamera
+        dispatch_async(dispatch_get_main_queue()) {
+            previewMirroring(cameraPreviewLayer, mirrored)
+        }
     }
 
     private fun mirrorPreview(layer: AVCaptureVideoPreviewLayer?, mirrored: Boolean) {
