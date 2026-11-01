@@ -63,8 +63,9 @@ and `signingInMemoryKey` (the ASCII-armored export of the signing subkey), `sign
 and `signingInMemoryKeyPassword`. The publish workflow sets them from repository secrets through
 `env:`; no secret appears in a `run:` line and no key file is written to disk.
 
-Enable the pre-commit hook once per clone. It rejects a commit that adds a value for one of those
-properties, an OSSRH credential, a signing passphrase or a PGP key block:
+Enable the pre-commit hook once per clone. It rejects a commit that adds a literal value for one of
+those properties, an OSSRH credential or a signing passphrase, after `=`, `:` or whitespace, or a PGP
+private key block. References such as `${{ secrets.X }}` or `System.getenv("X")` pass:
 
 ```bash
 git config core.hooksPath scripts/git-hooks
@@ -72,10 +73,12 @@ git config core.hooksPath scripts/git-hooks
 
 `scripts/verify.sh --only lint` runs `scripts/check_credential_hygiene.py`, which fails if a
 properties file in the repository holds a credential, a doc points credentials at one, a workflow
-interpolates a secret into `run:`, or the hook stops rejecting credentials. When
-`gitleaks` is on your `PATH` it also scans the full history with `.gitleaks.toml`; otherwise the
-summary says the scan did not run. CI runs gitleaks through `.github/workflows/secret-scan.yml`, on
-new commits for every push and pull request and over full history weekly.
+interpolates a secret into `run:`, a build script loads credentials from a file in the repository,
+or the hook stops rejecting credentials. When `gitleaks` is on your `PATH` it also scans every
+branch and tag (`--log-opts=--all`) with `.gitleaks.toml`; otherwise the summary says the scan did
+not run. In CI, `.github/workflows/secret-scan.yml` runs the gitleaks action on the commits each push
+to `main` and each pull request brings, and every week (or on demand) runs the gitleaks CLI, checked
+against a pinned sha256, over every branch and tag with `--log-opts=--all` and values redacted.
 
 The Maven Central token and the signing passphrase were committed to this repository's history
 before `a626597`. Removing them from the tree did not revoke them. Until the token and signing

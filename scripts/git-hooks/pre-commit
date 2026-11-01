@@ -1,11 +1,19 @@
 #!/bin/sh
-# Rejects a commit that adds a publishing credential or a PGP key block. Enable it once per clone:
+# Rejects a commit that adds a publishing credential or a PGP private key block. Enable it once per
+# clone:
 #   git config core.hooksPath scripts/git-hooks
 # Only added lines are checked, so a commit that removes a leaked line still goes through. The
 # value is never printed: only the file and the key that matched.
 
-key_pattern='(mavenCentral(Username|Password)|ossrh(Username|Password)|signing[.]password|signingInMemoryKey(Password)?)[[:space:]]*='
-block_pattern='BEGIN[[:space:]]PGP[[:space:]]'
+key='(mavenCentral(Username|Password)|ossrh(Username|Password)|signing[.]password|signingInMemoryKey(Password)?)'
+# A literal value: not empty, and not a reference such as ${{ secrets.X }}, ${X} or $X.
+literal="[\"']?[^[:space:]\"'\$]"
+# key=value and key: value anywhere (properties, YAML, shell, -P flags); key value at the start of a
+# line, the whitespace separator java.util.Properties also accepts.
+assigned="$key[[:space:]]*[=:][[:space:]]*$literal|^[[:space:]]*$key[[:space:]]+[^[:space:]=:\"'\$]"
+# Build logic reading the value from the environment holds no secret.
+reference="$key[[:space:]]*[=:][[:space:]]*(System[.]getenv|providers[.])"
+block_pattern='BEGIN[[:space:]]PGP[[:space:]]PRIVATE[[:space:]]KEY'
 
 status=0
 files=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR) || exit 1
@@ -15,13 +23,14 @@ IFS='
 set -f
 for file in $files; do
     added=$(git diff --cached --no-color --unified=0 -- "$file" | sed -n 's/^+//p' | grep -v '^++ ')
-    keys=$(printf '%s\n' "$added" | grep -o -E "$key_pattern" | sed 's/[[:space:]]*=$//' | sort -u)
-    for key in $keys; do
-        echo "pre-commit: $file adds a value for '$key'; keep credentials in ~/.gradle/gradle.properties or ORG_GRADLE_PROJECT_* variables" >&2
+    hits=$(printf '%s\n' "$added" | grep -E "$assigned" | grep -v -E "$reference")
+    keys=$(printf '%s\n' "$hits" | grep -o -E "$key" | sort -u)
+    for found in $keys; do
+        echo "pre-commit: $file adds a value for '$found'; keep credentials in ~/.gradle/gradle.properties or ORG_GRADLE_PROJECT_* variables" >&2
         status=1
     done
     if printf '%s\n' "$added" | grep -q -E "$block_pattern"; then
-        echo "pre-commit: $file adds a PGP key block" >&2
+        echo "pre-commit: $file adds a PGP private key block" >&2
         status=1
     fi
 done

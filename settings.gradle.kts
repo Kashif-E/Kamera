@@ -29,7 +29,6 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-includeBuild("convention-plugins")
 include(":cameraK")
 include(":Sample")
 include(":ImageSaverPlugin")

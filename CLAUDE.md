@@ -34,7 +34,6 @@ Tests live in each module's `commonTest` (e.g. `cameraK/src/commonTest`). They r
 - **analyzerPlugin/** - Plugin for custom image analysis
 - **Sample/** - Multiplatform demo app (Android, iOS, Desktop)
 - **iosApp/** - iOS Xcode project for Swift integration
-- **convention-plugins/** - Shared Gradle build logic (Maven publishing)
 
 All library modules target: `androidTarget`, `jvm("desktop")`, `iosX64()`, `iosArm64()`, `iosSimulatorArm64()`.
 
