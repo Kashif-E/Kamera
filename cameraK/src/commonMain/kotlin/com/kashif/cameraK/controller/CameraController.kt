@@ -21,7 +21,8 @@ expect class CameraController {
     /**
      * Captures an image and saves it directly to a file.
      *
-     * @return ImageCaptureResult.SuccessWithFile containing the file path, or an error result
+     * @return ImageCaptureResult.SuccessWithFile containing the file path,
+     *   ImageCaptureResult.SuccessWithUri for a capture published to the gallery on Android, or an error result
      */
     suspend fun takePictureToFile(): ImageCaptureResult
 

@@ -63,6 +63,6 @@ actual fun providePermissions(): Permissions {
     }
 }
 
-internal fun storagePermissionGranted(context: Context): Boolean = Build.VERSION.SDK_INT >= 32 ||
+internal fun storagePermissionGranted(context: Context): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
     ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
     PackageManager.PERMISSION_GRANTED

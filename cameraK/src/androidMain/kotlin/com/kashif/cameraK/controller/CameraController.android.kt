@@ -1,8 +1,12 @@
 package com.kashif.cameraK.controller
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import android.util.Rational
 import android.util.Size
 import android.view.OrientationEventListener
@@ -566,53 +570,104 @@ actual class CameraController internal constructor(
      * Directly saves to final destination and returns file path.
      */
     private fun performCaptureToFile(continuation: CancellableContinuation<ImageCaptureResult>) {
-        // Create final output file directly in desired directory
-        val outputFile = createFinalOutputFile()
-
-        imageCapture?.let { capture ->
-            inFlightCaptures.add(continuation)
-            backend.takePicture(
-                capture,
-                ImageCapture.OutputFileOptions.Builder(outputFile).setMetadata(captureMetadata()).build(),
-                ContextCompat.getMainExecutor(context),
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                        pendingCaptures.decrementAndGet()
-                        if (released.value) {
-                            // cleanup() already told the caller this capture failed; don't leave an
-                            // unreported file behind or post to the shut-down executor.
-                            CameraKLogger.d(TAG, "Discarding a capture saved after the controller was released")
-                            outputFile.delete()
-                            return
-                        }
-
-                        // Notify MediaStore so image appears in Gallery
-                        notifyMediaStore(outputFile)
-
-                        // Notify capture listeners (e.g. ImageSaverPlugin auto-save) off the main
-                        // thread, reading the just-saved file only when someone is listening.
-                        if (imageCaptureListeners.isNotEmpty()) {
-                            imageProcessingExecutor.execute { deliverToCaptureListeners(outputFile) }
-                        }
-
-                        if (inFlightCaptures.remove(continuation)) {
-                            continuation.resume(ImageCaptureResult.SuccessWithFile(outputFile.absolutePath))
-                        }
-                    }
-
-                    override fun onError(exc: ImageCaptureException) {
-                        CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
-                        pendingCaptures.decrementAndGet()
-                        outputFile.delete() // Clean up failed capture file
-                        if (inFlightCaptures.remove(continuation)) {
-                            continuation.resume(ImageCaptureResult.Error(exc))
-                        }
-                    }
-                },
-            )
-        } ?: run {
+        val capture = imageCapture ?: run {
             pendingCaptures.decrementAndGet()
             continuation.resume(ImageCaptureResult.Error(Exception("ImageCapture use case is not initialized.")))
+            return
+        }
+        // Gallery destinations are written by CameraX through MediaStore; everything else is a file
+        // in app-specific storage.
+        val outputFile = if (directory.isGallery) null else createFinalOutputFile()
+        val options = if (outputFile != null) {
+            ImageCapture.OutputFileOptions.Builder(outputFile)
+        } else {
+            ImageCapture.OutputFileOptions.Builder(
+                context.contentResolver,
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                galleryImageValues(),
+            )
+        }.setMetadata(captureMetadata()).build()
+
+        inFlightCaptures.add(continuation)
+        backend.takePicture(
+            capture,
+            options,
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    pendingCaptures.decrementAndGet()
+                    val galleryUri = if (outputFile == null) output.savedUri else null
+                    if (released.value) {
+                        // cleanup() already told the caller this capture failed; don't leave an
+                        // unreported file or gallery entry behind or post to the shut-down executor.
+                        CameraKLogger.d(TAG, "Discarding a capture saved after the controller was released")
+                        outputFile?.delete()
+                        galleryUri?.let(::deleteGalleryEntry)
+                        return
+                    }
+
+                    val result = when {
+                        outputFile != null -> ImageCaptureResult.SuccessWithFile(outputFile.absolutePath)
+                        galleryUri != null -> ImageCaptureResult.SuccessWithUri(galleryUri.toString())
+                        else -> {
+                            CameraKLogger.e(TAG, "CameraX saved a gallery capture without reporting its entry")
+                            ImageCaptureResult.Error(IllegalStateException("The saved capture has no gallery entry"))
+                        }
+                    }
+
+                    // Notify capture listeners (e.g. ImageSaverPlugin auto-save) off the main
+                    // thread, reading the just-saved image only when someone is listening.
+                    if (result !is ImageCaptureResult.Error && imageCaptureListeners.isNotEmpty()) {
+                        imageProcessingExecutor.execute { deliverToCaptureListeners(outputFile, galleryUri) }
+                    }
+
+                    if (inFlightCaptures.remove(continuation)) {
+                        continuation.resume(result)
+                    }
+                }
+
+                override fun onError(exc: ImageCaptureException) {
+                    CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
+                    pendingCaptures.decrementAndGet()
+                    outputFile?.delete() // Clean up failed capture file
+                    if (inFlightCaptures.remove(continuation)) {
+                        continuation.resume(ImageCaptureResult.Error(exc))
+                    }
+                }
+            },
+        )
+    }
+
+    /**
+     * The MediaStore row CameraX inserts for a gallery capture. From API 29 the folder is a
+     * RELATIVE_PATH and needs no permission; below it the row names its file in the public folder,
+     * which needs WRITE_EXTERNAL_STORAGE (declared with maxSdkVersion 28 in the library manifest).
+     */
+    private fun galleryImageValues(): ContentValues {
+        val name = "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.${imageFormat.extension}"
+        val folder = "${directory.publicDirectoryName}/$CAMERAK_FOLDER"
+        return ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, imageFormat.mimeType)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
+            } else {
+                @Suppress("DEPRECATION") // Below API 29 this is the public folder MediaStore writes to.
+                val parent = File(
+                    Environment.getExternalStoragePublicDirectory(directory.publicDirectoryName),
+                    CAMERAK_FOLDER,
+                )
+                    .also { it.mkdirs() }
+                put(MediaStore.MediaColumns.DATA, File(parent, name).absolutePath)
+            }
+        }
+    }
+
+    private fun deleteGalleryEntry(uri: Uri) {
+        try {
+            context.contentResolver.delete(uri, null, null)
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Deleting a discarded gallery capture failed", e)
         }
     }
 
@@ -620,9 +675,14 @@ actual class CameraController internal constructor(
      * Runs on [imageProcessingExecutor]. Nothing may escape: an exception here reaches the thread's
      * uncaught handler and kills the host process. Each listener is isolated from the others.
      */
-    private fun deliverToCaptureListeners(file: File) {
+    private fun deliverToCaptureListeners(file: File?, galleryUri: Uri?) {
         val bytes = try {
-            file.readBytes()
+            file?.readBytes()
+                ?: galleryUri?.let { uri ->
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw java.io.IOException("The gallery capture could not be opened")
+                }
+                ?: return
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Reading the captured image for capture listeners failed", e)
             return
@@ -789,28 +849,6 @@ actual class CameraController internal constructor(
      * Same as createTempFile but semantically represents the final destination.
      */
     private fun createFinalOutputFile(): File = createTempFile()
-
-    /**
-     * Notifies Android's MediaStore about a new image file so it appears in Gallery.
-     * Uses MediaScannerConnection for compatibility across Android versions.
-     */
-    private fun notifyMediaStore(file: File) {
-        try {
-            android.media.MediaScannerConnection.scanFile(
-                context,
-                arrayOf(file.absolutePath),
-                arrayOf(
-                    when (imageFormat) {
-                        ImageFormat.JPEG -> "image/jpeg"
-                        ImageFormat.PNG -> "image/png"
-                    },
-                ),
-                null,
-            )
-        } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "Failed to notify MediaStore: ${e.message}")
-        }
-    }
 
     private fun FlashMode.toCameraXFlashMode(): Int = when (this) {
         FlashMode.ON -> ImageCapture.FLASH_MODE_ON
@@ -1152,6 +1190,16 @@ actual class CameraController internal constructor(
 
     private companion object {
         const val TAG = "CameraK"
+        const val CAMERAK_FOLDER = "CameraK"
+
+        val Directory.isGallery: Boolean get() = this == Directory.PICTURES || this == Directory.DCIM
+
+        val Directory.publicDirectoryName: String
+            get() = when (this) {
+                Directory.PICTURES -> Environment.DIRECTORY_PICTURES
+                Directory.DCIM -> Environment.DIRECTORY_DCIM
+                Directory.DOCUMENTS -> Environment.DIRECTORY_DOCUMENTS
+            }
 
         fun cameraKThreads(name: String): ThreadFactory {
             val count = AtomicInteger()

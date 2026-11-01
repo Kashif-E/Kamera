@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           xmlns:tools="http://schemas.android.com/tools"
           package="com.kashif.cameraK">
+    <!-- Only for gallery captures (Directory.PICTURES / DCIM) below API 29; from 29 MediaStore needs none. -->
+    <uses-permission
+            android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+            android:maxSdkVersion="28" />
     <application>
         <provider
                 android:name="androidx.startup.InitializationProvider"

@@ -5,8 +5,9 @@ package com.kashif.cameraK.enums
  * controller and for ImageSaverPlugin.
  *
  * Camera controller (`takePictureToFile()`):
- * - PICTURES: Android saves to the public `Pictures/CameraK` directory, iOS saves to the Photos library
- * - DCIM: Android saves to the public `DCIM/CameraK` directory, iOS saves to the Photos library
+ * - PICTURES: Android inserts the photo into MediaStore under `Pictures/CameraK` and returns its
+ *   `content://` URI as `ImageCaptureResult.SuccessWithUri`; iOS saves to the Photos library
+ * - DCIM: like PICTURES, under `DCIM/CameraK` on Android
  * - DOCUMENTS: Saves to the app's own storage, not shared with other apps or synced with Photos
  *   (Android: the app-specific external files directory; iOS: the app's Documents directory)
  * - Desktop: PICTURES and DCIM save to `~/Pictures/CameraK`, DOCUMENTS to `~/Documents/CameraK`,
