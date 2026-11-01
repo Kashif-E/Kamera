@@ -5,7 +5,8 @@ Reads build/verify/run.json, then only the JUnit XML, Paparazzi failure images a
 screenshot diffs written after the run started. Prints a per-module, per-target table and every
 failure, writes build/verify/summary.md and summary.json, and exits 1 (RED) when Gradle failed, a
 test failed or errored, a test let an exception escape on another thread, a requested target ran
-zero tests (skipped tests do not count), or a requested target has nothing to check.
+zero tests (skipped tests do not count), a requested target has nothing to check, or the local
+gitleaks scan found or failed. A scan that could not run (no gitleaks on PATH) is shown, not passed.
 
 Standard library only; run with `python3 -I`.
 """
@@ -31,7 +32,7 @@ TASK_TARGETS = {
 TEST_TARGETS = ("desktop", "android", "ios", "screenshots")
 # Log lines proving a non-test target executed.
 TASK_EVIDENCE = {
-    "lint": [":spotlessCheck"],
+    "lint": [":spotlessCheck", ":checkCredentialHygiene"],
     "sample": [
         ":Sample:compileKotlinDesktop",
         ":Sample:assembleDebug",
@@ -163,6 +164,42 @@ def gradle_error_excerpt(log: Path) -> list[str]:
     return excerpt[:40] or [line for line in lines[-15:] if line.strip()]
 
 
+def credential_hygiene_excerpt(log: Path) -> list[str]:
+    """The check's own report from the Gradle failure, so the summary names each violation."""
+    if not log.is_file():
+        return []
+    lines = log.read_text(errors="replace").splitlines()
+    for index, line in enumerate(lines):
+        if "Credential hygiene check failed" in line:
+            block: list[str] = []
+            for follow in lines[index + 1 : index + 200]:
+                text = follow.strip()
+                if not text:
+                    continue
+                block.append(text if text.startswith(("ok ", "FAIL", "ERROR", "credential hygiene:")) else "  " + text)
+                if text.startswith("credential hygiene:"):
+                    break
+            return block
+    return []
+
+
+def secret_scan_status(scan: dict) -> tuple[str, str | None]:
+    """(line for the summary, problem or None) for the local gitleaks run."""
+    status, detail = scan.get("status", "not requested"), scan.get("detail", "")
+    if status == "not run":
+        return f"not run ({detail})", None
+    if status == "clean":
+        return "ran over full history: no findings", None
+    if status == "leaks":
+        try:
+            count = len(json.loads(Path(detail).read_text()))
+        except (OSError, ValueError) as error:
+            return f"found leaks; report {detail} unreadable: {error}", f"gitleaks found leaks; report unreadable: {error}"
+        report = os.path.relpath(detail, ROOT)
+        return f"{count} finding(s), values redacted, in `{report}`", f"gitleaks found {count} secret(s) in history"
+    return f"failed: {detail}", f"gitleaks failed: {detail}"
+
+
 def executed_tasks(log: Path) -> set[str]:
     if not log.is_file():
         return set()
@@ -245,6 +282,16 @@ def main() -> int:
         if missing:
             problems.append(f"{key}: requested but {task_checks[key]}")
 
+    credential_excerpt = credential_hygiene_excerpt(log) if "lint" in targets else []
+    summary_line = next((line for line in credential_excerpt if line.startswith("credential hygiene:")), None)
+    if credential_excerpt:
+        problems.append(summary_line or "credential hygiene check failed")
+    if "lint" in targets:
+        scan_line, scan_problem = secret_scan_status(run.get("secret_scan") or {})
+        task_checks["secret scan (gitleaks, full history)"] = scan_line
+        if scan_problem:
+            problems.append(scan_problem)
+
     paparazzi_failures = fresh_files(ROOT / SCREENSHOT_MODULE / "build" / "paparazzi" / "failures", start)
     desktop_diffs = fresh_files(ROOT / "cameraK" / "build" / "reports" / "screenshots-desktop", start)
 
@@ -278,6 +325,8 @@ def main() -> int:
             for f in report.failures + report.uncaught
         ]
         md.append("")
+    if credential_excerpt:
+        md += ["## Credential hygiene", "", "```", *credential_excerpt, "```", ""]
     if gradle_excerpt:
         md += ["## Gradle errors", "", "```", *gradle_excerpt, "```", ""]
     if paparazzi_failures or desktop_diffs:

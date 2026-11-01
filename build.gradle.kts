@@ -159,6 +159,26 @@ subprojects {
     }
 }
 
+// The Maven Central token and signing passphrase were once committed in the tracked
+// gradle.properties. This fails if anything could put them back in a tracked file or a run: line.
+tasks.register("checkCredentialHygiene") {
+    group = "verification"
+    description = "Fails if credentials could reach a tracked file, a workflow run: line or a commit"
+    val script = layout.projectDirectory.file("scripts/check_credential_hygiene.py").asFile
+    val root = layout.projectDirectory.asFile
+    doLast {
+        val process =
+            ProcessBuilder("python3", "-I", script.path)
+                .directory(root)
+                .redirectErrorStream(true)
+                .start()
+        val output = process.inputStream.bufferedReader().readText()
+        val exit = process.waitFor()
+        if (exit != 0) throw GradleException("Credential hygiene check failed (exit $exit):\n$output")
+        logger.lifecycle(output.trimEnd())
+    }
+}
+
 // --only screenshots runs just the screenshot classes from cameraK's desktop suite.
 if ("screenshots" in verifyTargets && "desktop" !in verifyTargets) {
     project(":cameraK").tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
@@ -171,7 +191,7 @@ tasks.register("verifyAll") {
     description = "Runs spotless, every module's tests on every target, screenshot tests and the Sample build"
 
     val paths = mutableListOf<String>()
-    if ("lint" in verifyTargets) paths += ":spotlessCheck"
+    if ("lint" in verifyTargets) paths += listOf(":spotlessCheck", ":checkCredentialHygiene")
     verifyModules.forEach { module ->
         if ("desktop" in verifyTargets || "screenshots" in verifyTargets && module == "cameraK") {
             paths += ":$module:desktopTest"

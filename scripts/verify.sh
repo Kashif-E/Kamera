@@ -118,10 +118,14 @@ csv() { tr ' ' ',' <<<"$1"; }
 # Results written before this instant are stale and the report ignores them.
 start_epoch="$(python3 -I -c 'import time; print(f"{time.time():.3f}")')"
 
+# gitleaks is not a build dependency. A run without it says so rather than passing by omission.
+secret_scan_status="not requested"
+secret_scan_detail=""
+
 write_run_file() {
-    python3 -I - "$run_file" "$1" <<EOF
+    python3 -I - "$run_file" "$1" "$secret_scan_status" "$secret_scan_detail" <<EOF
 import json, sys
-path, exit_code = sys.argv[1], sys.argv[2]
+path, exit_code, scan_status, scan_detail = sys.argv[1:5]
 json.dump({
     "mode": "$mode",
     "record": $($record && echo True || echo False),
@@ -130,6 +134,7 @@ json.dump({
     "start_epoch": $start_epoch,
     "log": "$log",
     "gradle_exit": None if exit_code == "" else int(exit_code),
+    "secret_scan": {"status": scan_status, "detail": scan_detail},
 }, open(path, "w"), indent=2)
 EOF
 }
@@ -153,6 +158,28 @@ set +e
 (cd "$ROOT" && ./gradlew "${gradle_args[@]}") >"$log" 2>&1
 gradle_exit=$?
 set -e
+
+# Full history, as CI's scheduled scan does; findings land in the JSON report with values redacted.
+if [[ " $targets " == *" lint "* ]]; then
+    if command -v gitleaks >/dev/null 2>&1; then
+        scan_report="$out_dir/gitleaks-$stamp.json"
+        scan_log="$out_dir/gitleaks-$stamp.log"
+        echo "verify.sh: gitleaks over full history -> $scan_log"
+        set +e
+        (cd "$ROOT" && gitleaks git --no-banner --redact --log-opts=--all --exit-code 3 \
+            --report-format json --report-path "$scan_report" .) >"$scan_log" 2>&1
+        scan_exit=$?
+        set -e
+        case "$scan_exit" in
+            0) secret_scan_status="clean"; secret_scan_detail="$scan_report" ;;
+            3) secret_scan_status="leaks"; secret_scan_detail="$scan_report" ;;
+            *) secret_scan_status="error"; secret_scan_detail="gitleaks exited $scan_exit; see $scan_log" ;;
+        esac
+    else
+        secret_scan_status="not run"
+        secret_scan_detail="gitleaks not on PATH"
+    fi
+fi
 write_run_file "$gradle_exit"
 
 python3 -I "$ROOT/scripts/verify_report.py" --run "$run_file"
