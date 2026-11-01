@@ -63,8 +63,11 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -116,8 +119,8 @@ actual class CameraController internal constructor(
         targetResolution = targetResolution,
         mirrorFrontCamera = mirrorFrontCamera,
         backend = CameraXBackend.Default,
-        imageProcessingExecutor = Executors.newFixedThreadPool(2),
-        analyzerExecutor = Executors.newSingleThreadExecutor(),
+        imageProcessingExecutor = Executors.newFixedThreadPool(2, cameraKThreads("CameraK-image-processing")),
+        analyzerExecutor = Executors.newSingleThreadExecutor(cameraKThreads("CameraK-analyzer")),
     )
 
     private var cameraProvider: CameraBinding? = null
@@ -149,6 +152,16 @@ actual class CameraController internal constructor(
 
     private val memoryManager = MemoryManager
     private val pendingCaptures = atomic(0)
+
+    // Set once by cleanup(). Every main-executor callback (provider ready, capture saved, recording
+    // finalized) checks it first, so a callback that lands after release cannot rebind the camera,
+    // touch the shut-down executors or resume a capture twice.
+    private val released = atomic(false)
+
+    // Captures whose CameraX callback has not arrived yet. Whoever removes a continuation (the
+    // callback or cleanup()) is the one that resumes it.
+    private val inFlightCaptures: MutableSet<CancellableContinuation<ImageCaptureResult>> =
+        Collections.newSetFromMap(ConcurrentHashMap())
     private val maxConcurrentCaptures = 3
     private val stopFinalizeTimeoutMs = 5000L
 
@@ -181,11 +194,19 @@ actual class CameraController internal constructor(
 
     @OptIn(ExperimentalCamera2Interop::class)
     fun bindCamera(previewView: PreviewView, onCameraReady: () -> Unit = {}) {
+        if (released.value) {
+            CameraKLogger.w(TAG, "Ignoring bind on a released camera controller")
+            return
+        }
         this.previewView = previewView
 
         memoryManager.initialize(context)
 
         backend.requestProvider(context, ContextCompat.getMainExecutor(context)) { providerResult ->
+            if (released.value) {
+                CameraKLogger.d(TAG, "Dropping a bind that resolved after the controller was released")
+                return@requestProvider
+            }
             try {
                 cameraProvider = providerResult.getOrThrow()
                 cameraProvider?.unbindAll()
@@ -422,6 +443,7 @@ actual class CameraController internal constructor(
     }
 
     fun updateImageAnalyzer() {
+        if (released.value) return
         camera?.let {
             if (activeRecording == null) {
                 // Not recording: rebind the whole camera so the analyzer is bound INSIDE the
@@ -511,6 +533,10 @@ actual class CameraController internal constructor(
     }
 
     actual suspend fun takePictureToFile(): ImageCaptureResult = suspendCancellableCoroutine { cont ->
+        if (released.value) {
+            cont.resume(ImageCaptureResult.Error(controllerReleased()))
+            return@suspendCancellableCoroutine
+        }
         if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
             pendingCaptures.decrementAndGet()
             CameraKLogger.w("CameraK", "Burst queue full, dropping frame")
@@ -521,6 +547,7 @@ actual class CameraController internal constructor(
         performCaptureToFile(cont)
 
         cont.invokeOnCancellation {
+            inFlightCaptures.remove(cont)
             pendingCaptures.decrementAndGet()
         }
     }
@@ -542,6 +569,7 @@ actual class CameraController internal constructor(
         val outputFile = createFinalOutputFile()
 
         imageCapture?.let { capture ->
+            inFlightCaptures.add(continuation)
             backend.takePicture(
                 capture,
                 outputFile,
@@ -550,6 +578,13 @@ actual class CameraController internal constructor(
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                         pendingCaptures.decrementAndGet()
+                        if (released.value) {
+                            // cleanup() already told the caller this capture failed; don't leave an
+                            // unreported file behind or post to the shut-down executor.
+                            CameraKLogger.d(TAG, "Discarding a capture saved after the controller was released")
+                            outputFile.delete()
+                            return
+                        }
 
                         // Notify MediaStore so image appears in Gallery
                         notifyMediaStore(outputFile)
@@ -563,14 +598,18 @@ actual class CameraController internal constructor(
                             }
                         }
 
-                        continuation.resume(ImageCaptureResult.SuccessWithFile(outputFile.absolutePath))
+                        if (inFlightCaptures.remove(continuation)) {
+                            continuation.resume(ImageCaptureResult.SuccessWithFile(outputFile.absolutePath))
+                        }
                     }
 
                     override fun onError(exc: ImageCaptureException) {
                         CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
                         pendingCaptures.decrementAndGet()
                         outputFile.delete() // Clean up failed capture file
-                        continuation.resume(ImageCaptureResult.Error(exc))
+                        if (inFlightCaptures.remove(continuation)) {
+                            continuation.resume(ImageCaptureResult.Error(exc))
+                        }
                     }
                 },
             )
@@ -871,7 +910,7 @@ actual class CameraController internal constructor(
                         // ViewPort rebinds on rotation.
                         activeRecording = null
                         // Apply any rotation flip that was deferred while recording was in progress.
-                        if (pendingViewPortRebind) {
+                        if (pendingViewPortRebind && !released.value) {
                             pendingViewPortRebind = false
                             rebindIfViewPortOrientationChanged()
                         }
@@ -1045,20 +1084,61 @@ actual class CameraController internal constructor(
     }
 
     /**
-     * Clean up resources when no longer needed
-     * Should be called when the controller is being destroyed
+     * Releases the camera. Terminal and idempotent: afterwards no bind reaches CameraX, a capture
+     * still in flight returns [ImageCaptureResult.Error], and late CameraX callbacks are ignored.
+     * Call on the main thread, like every other CameraX binding call.
      */
     actual fun cleanup() {
+        if (!released.compareAndSet(false, true)) return
+
         orientationEventListener?.disable()
         orientationEventListener = null
         orientationChangedCallback = null
+
+        // Stop frame delivery before anything it uses goes away, and stop a recording while its
+        // VideoCapture is still bound so it finalizes cleanly.
+        imageAnalyzer?.clearAnalyzer()
         activeRecording?.stop()
         activeRecording = null
+
+        // Release this controller's own use cases (not unbindAll: the process-wide provider may hold
+        // another owner's use cases).
+        val ownUseCases = listOfNotNull(preview, imageCapture, videoCapture, imageAnalyzer)
+        if (ownUseCases.isNotEmpty()) {
+            try {
+                cameraProvider?.unbind(*ownUseCases.toTypedArray())
+            } catch (e: Exception) {
+                CameraKLogger.e(TAG, "Unbinding use cases on release failed", e)
+            }
+        }
+
         registeredAnalyzers.clear()
+        imageCaptureListeners.clear()
         recordingFinalizeChannel.close()
+
+        // A capture still in flight would otherwise wait for a callback that is now ignored.
+        inFlightCaptures.toList().forEach { continuation ->
+            if (inFlightCaptures.remove(continuation)) {
+                continuation.resume(ImageCaptureResult.Error(controllerReleased()))
+            }
+        }
+
         imageProcessingExecutor.shutdown()
         analyzerExecutor.shutdown()
         memoryManager.clearBufferPools()
+    }
+
+    private fun controllerReleased() = IllegalStateException("Camera controller was released")
+
+    private companion object {
+        const val TAG = "CameraK"
+
+        fun cameraKThreads(name: String): ThreadFactory {
+            val count = AtomicInteger()
+            return ThreadFactory { runnable ->
+                Thread(runnable, "$name-${count.incrementAndGet()}").apply { isDaemon = true }
+            }
+        }
     }
 }
 
