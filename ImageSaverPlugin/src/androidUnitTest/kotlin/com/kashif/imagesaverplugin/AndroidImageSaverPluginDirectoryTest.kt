@@ -7,7 +7,12 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
 import com.kashif.cameraK.enums.Directory
+import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -16,9 +21,17 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.OutputStream
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.TimeUnit
 import java.util.function.Supplier
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * Where a save lands for each [Directory].
@@ -30,12 +43,21 @@ import kotlin.test.assertEquals
  * enforces that rule.
  *
  * Below API 29 there is no RELATIVE_PATH: MediaStore names the file itself under `Pictures/` unless
- * the row carries an absolute DATA path, so without one the directory and folder are ignored.
+ * the row carries an absolute DATA path, so without one the directory and folder are ignored. With a
+ * DATA path, MediaStore opens that file for the write; [writesToItsFile] does the same.
  */
 @RunWith(RobolectricTestRunner::class)
 class AndroidImageSaverPluginDirectoryTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val mediaStore = Robolectric.setupContentProvider(FakeMediaStore::class.java, MediaStore.AUTHORITY)
+    private val loggerWasEnabled = CameraKLogger.enabled
+    private val previousSink = CameraKLogger.sink
+
+    @After
+    fun restoreLogger() {
+        CameraKLogger.enabled = loggerWasEnabled
+        CameraKLogger.sink = previousSink
+    }
 
     @Test
     fun save_toDocuments_landsInTheDocumentsFolder() = runTest {
@@ -110,6 +132,123 @@ class AndroidImageSaverPluginDirectoryTest {
         assertContentEquals(byteArrayOf(9, 9, 9), existing.readBytes())
     }
 
+    @Test
+    @Config(sdk = [28])
+    fun save_belowApi29_writesTheBytesIntoTheFileItNames() = runTest {
+        val plugin = pluginFor(Directory.DCIM, customFolderName = "Trip")
+        val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        writesToItsFile(row)
+        val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 7)
+
+        plugin.save(bytes, "shot")
+
+        val file = File(publicDirectory(Environment.DIRECTORY_DCIM), "Trip/shot.jpg")
+        assertContentEquals(bytes, file.readBytes())
+    }
+
+    /**
+     * Auto-save launches one coroutine per capture and the default name changes once a second, so
+     * two saves of the same name can run at once. Each must end up in its own file.
+     */
+    @Test
+    @Config(sdk = [28])
+    fun save_belowApi29_concurrentSavesWithTheSameName_neverShareAFile() = runTest {
+        File(publicDirectory(Environment.DIRECTORY_PICTURES), "Burst").mkdirs()
+
+        val paths = saveConcurrently(pluginFor(Directory.PICTURES, customFolderName = "Burst"))
+
+        assertEquals(2, paths.toSet().size, "both saves were given $paths")
+    }
+
+    @Test
+    @Config(sdk = [28])
+    fun save_belowApi29_concurrentSavesIntoAMissingFolder_bothSucceed() = runTest {
+        val paths = saveConcurrently(pluginFor(Directory.PICTURES, customFolderName = "NewAlbum"))
+
+        assertEquals(2, paths.toSet().size, "both saves were given $paths")
+    }
+
+    /**
+     * Runs two saves named "shot" at once, holding both inserts until each save has chosen its path,
+     * and checks that each one's bytes are in the file its row names. Returns the two paths.
+     */
+    private suspend fun CoroutineScope.saveConcurrently(plugin: AndroidImageSaverPlugin): List<String> {
+        val bothChoseAPath = CyclicBarrier(2)
+        mediaStore.beforeInsert = { bothChoseAPath.await(10, TimeUnit.SECONDS) }
+        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        listOf(1L, 2L).forEach { writesToItsFile(ContentUris.withAppendedId(collection, it)) }
+
+        val outcomes = listOf(byteArrayOf(1, 1), byteArrayOf(2, 2))
+            .map { bytes -> async { bytes to plugin.save(bytes, "shot") } }
+            .awaitAll()
+
+        return outcomes.map { (bytes, result) ->
+            val saved =
+                assertIs<ImageSaveResult.Saved>(result, "a save failed: ${(result as? ImageSaveResult.Failed)?.error}")
+            val path = mediaStore.rows.getValue(Uri.parse(saved.location)).getAsString(MediaStore.MediaColumns.DATA)
+            assertContentEquals(bytes, File(path).readBytes(), "the other save overwrote $path")
+            path
+        }
+    }
+
+    @Test
+    @Config(sdk = [28])
+    fun save_belowApi29_nameWithPathSeparators_staysInTheConfiguredFolder() = runTest {
+        val plugin = pluginFor(Directory.PICTURES, customFolderName = "Inside")
+        val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        writesToItsFile(row)
+
+        val result = plugin.save(byteArrayOf(1), "../../escape")
+
+        assertEquals(ImageSaveResult.Saved(row.toString()), result)
+        val saved = File(mediaStore.rows.getValue(row).getAsString(MediaStore.MediaColumns.DATA))
+        val folder = File(publicDirectory(Environment.DIRECTORY_PICTURES), "Inside")
+        assertEquals(folder.canonicalFile, saved.canonicalFile.parentFile)
+    }
+
+    @Test
+    @Config(sdk = [28])
+    fun save_belowApi29_whenTheFolderCannotBeCreated_failsLogsAndInsertsNothing() = runTest {
+        // A plain file where the folder should be makes mkdirs fail, as a missing permission does.
+        File(publicDirectory(Environment.DIRECTORY_PICTURES), "Blocked").apply {
+            parentFile!!.mkdirs()
+            writeBytes(byteArrayOf(0))
+        }
+        val logged = loggedErrors()
+
+        val result = pluginFor(Directory.PICTURES, customFolderName = "Blocked").save(byteArrayOf(1), "shot")
+
+        val failure = assertIs<ImageSaveResult.Failed>(result)
+        assertEquals(emptyMap(), mediaStore.rows)
+        assertTrue(logged.any { it === failure.error }, "the failure was not logged")
+    }
+
+    @Test
+    @Config(sdk = [28])
+    fun save_belowApi29_whenTheInsertIsRejected_leavesNoFileBehind() = runTest {
+        mediaStore.insertFailure = IllegalArgumentException("rejected")
+
+        val result = pluginFor(Directory.PICTURES, customFolderName = "Rejected").save(byteArrayOf(1), "shot")
+
+        assertIs<ImageSaveResult.Failed>(result)
+        val folder = File(publicDirectory(Environment.DIRECTORY_PICTURES), "Rejected")
+        assertEquals(emptyList(), folder.list().orEmpty().toList())
+    }
+
+    @Test
+    @Config(sdk = [28])
+    fun save_belowApi29_whenTheWriteFails_leavesNoFileAndNoRow() = runTest {
+        val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        writesTo(row) { throw IOException("disk full") }
+
+        val result = pluginFor(Directory.PICTURES, customFolderName = "Unwritten").save(byteArrayOf(1), "shot")
+
+        assertIs<ImageSaveResult.Failed>(result)
+        assertEquals(emptyMap(), mediaStore.rows)
+        val folder = File(publicDirectory(Environment.DIRECTORY_PICTURES), "Unwritten")
+        assertEquals(emptyList(), folder.list().orEmpty().toList())
+    }
+
     private fun pluginFor(directory: Directory, customFolderName: String?) = AndroidImageSaverPlugin(
         context,
         ImageSaverConfig(directory = directory, customFolderName = customFolderName),
@@ -122,7 +261,25 @@ class AndroidImageSaverPluginDirectoryTest {
 
     private fun writesTo(uri: Uri): ByteArrayOutputStream {
         val written = ByteArrayOutputStream()
-        shadowOf(context.contentResolver).registerOutputStreamSupplier(uri, Supplier { written })
+        writesTo(uri) { written }
         return written
+    }
+
+    private fun writesTo(uri: Uri, open: () -> OutputStream) {
+        shadowOf(context.contentResolver).registerOutputStreamSupplier(uri, Supplier { open() })
+    }
+
+    /** Opens the row's DATA file for the write, as MediaStore does below API 29. */
+    private fun writesToItsFile(uri: Uri) = writesTo(uri) {
+        FileOutputStream(mediaStore.rows.getValue(uri).getAsString(MediaStore.MediaColumns.DATA))
+    }
+
+    private fun loggedErrors(): List<Throwable?> {
+        val logged = CopyOnWriteArrayList<Throwable?>()
+        CameraKLogger.sink = { level, _, _, throwable ->
+            if (level == CameraKLogger.Level.ERROR) logged += throwable
+        }
+        CameraKLogger.enabled = true
+        return logged
     }
 }

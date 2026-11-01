@@ -99,11 +99,20 @@ class AndroidImageSaverPluginFailureTest {
 class FakeMediaStore : ContentProvider() {
     val rows = linkedMapOf<Uri, ContentValues>()
     var insertFailure: RuntimeException? = null
+
+    /** Runs on the inserting thread before the row is stored, outside the provider's lock. */
+    @Volatile
+    var beforeInsert: (() -> Unit)? = null
     private var nextId = 1L
 
     override fun onCreate() = true
 
     override fun insert(uri: Uri, values: ContentValues?): Uri {
+        beforeInsert?.invoke()
+        return synchronized(this) { store(uri, values) }
+    }
+
+    private fun store(uri: Uri, values: ContentValues?): Uri {
         insertFailure?.let { throw it }
         values?.getAsString(MediaStore.MediaColumns.RELATIVE_PATH)?.let { relativePath ->
             val primary = relativePath.substringBefore('/')
@@ -117,12 +126,14 @@ class FakeMediaStore : ContentProvider() {
         return row
     }
 
+    @Synchronized
     override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int {
         val row = rows[uri] ?: return 0
         values?.let(row::putAll)
         return 1
     }
 
+    @Synchronized
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int =
         if (rows.remove(uri) != null) 1 else 0
 
