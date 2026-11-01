@@ -1,6 +1,7 @@
 package com.kashif.qrscannerplugin
 
 import android.graphics.ImageFormat
+import android.graphics.Rect
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.google.zxing.BarcodeFormat
@@ -59,25 +60,10 @@ internal fun interface LumaDecoder {
 
 /** [LumaDecoder] over ZXing's [MultiFormatReader], for QR codes and common 1D barcodes. */
 internal class ZxingLumaDecoder : LumaDecoder {
-    private val decodeHints =
-        EnumMap<DecodeHintType, Any>(DecodeHintType::class.java).apply {
-            put(DecodeHintType.CHARACTER_SET, "UTF-8")
-            // Spend more effort per frame: rotated 1D barcodes, harder-to-read codes.
-            put(DecodeHintType.TRY_HARDER, true)
-            put(
-                DecodeHintType.POSSIBLE_FORMATS,
-                listOf(
-                    BarcodeFormat.QR_CODE,
-                    BarcodeFormat.EAN_13,
-                    BarcodeFormat.EAN_8,
-                    BarcodeFormat.CODE_128,
-                    BarcodeFormat.CODE_39,
-                    BarcodeFormat.UPC_A,
-                    BarcodeFormat.UPC_E,
-                ),
-            )
-        }
-    private val reader = MultiFormatReader().apply { setHints(decodeHints) }
+    private val fastReader = reader(tryHarder = false)
+
+    // Spends more effort per frame: rotated 1D barcodes, harder-to-read codes.
+    private val slowReader = reader(tryHarder = true)
 
     override fun decode(frame: LumaFrame, tryHarder: Boolean, inverted: Boolean): String? {
         val source =
@@ -91,6 +77,7 @@ internal class ZxingLumaDecoder : LumaDecoder {
                 frame.height,
                 false,
             )
+        val reader = if (tryHarder) slowReader else fastReader
         return try {
             reader.decodeWithState(BinaryBitmap(HybridBinarizer(if (inverted) source.invert() else source))).text
         } catch (_: NotFoundException) {
@@ -98,6 +85,27 @@ internal class ZxingLumaDecoder : LumaDecoder {
         } finally {
             reader.reset()
         }
+    }
+
+    private fun reader(tryHarder: Boolean) = MultiFormatReader().apply {
+        setHints(
+            EnumMap<DecodeHintType, Any>(DecodeHintType::class.java).apply {
+                put(DecodeHintType.CHARACTER_SET, "UTF-8")
+                if (tryHarder) put(DecodeHintType.TRY_HARDER, true)
+                put(
+                    DecodeHintType.POSSIBLE_FORMATS,
+                    listOf(
+                        BarcodeFormat.QR_CODE,
+                        BarcodeFormat.EAN_13,
+                        BarcodeFormat.EAN_8,
+                        BarcodeFormat.CODE_128,
+                        BarcodeFormat.CODE_39,
+                        BarcodeFormat.UPC_A,
+                        BarcodeFormat.UPC_E,
+                    ),
+                )
+            },
+        )
     }
 }
 
@@ -124,11 +132,18 @@ internal class QRCodeAnalyzer(
     private var frameCount = 0L
     private val invertedRetryEveryNFrames = 3
 
+    // ZXing's TRY_HARDER pass costs several fast passes; one frame in this many uses it.
+    private val slowPassEveryNFrames = 5
+
+    // The Y plane is copied here, reused while frames keep their size: analysis runs at frame rate.
+    private var luma = ByteArray(0)
+
     /**
      * Analyzes camera frames to detect QR codes and barcodes.
      *
-     * Reads the Y plane of the YUV_420_888 frame as luma and applies debouncing
-     * to prevent repeated detections of the same code.
+     * Reads the Y plane of the YUV_420_888 frame as luma into a reused buffer, decodes inside the
+     * frame's crop rect, and applies debouncing to prevent repeated detections of the same code.
+     * ZXing's TRY_HARDER pass runs on every fifth frame only.
      *
      * @param imageProxy The camera frame to analyze
      */
@@ -145,29 +160,36 @@ internal class QRCodeAnalyzer(
             // path fed the luma byte in as the blue channel, producing a dim/wrong luminance.
             // rowStride is honored so row padding doesn't skew the image.
             val plane = imageProxy.planes[0]
-            val buffer = plane.buffer
-            // Rewind so we always copy the full Y plane regardless of the buffer's position.
-            buffer.rewind()
-            val bytes = ByteArray(buffer.remaining())
-            buffer.get(bytes)
+            // Read through a duplicate from the start, so the copy is the full Y plane whatever
+            // the buffer's position, and the proxy's buffer is left as it was.
+            val buffer = plane.buffer.duplicate().apply { rewind() }
+            val size = buffer.remaining()
+            if (luma.size < size) luma = ByteArray(maxOf(size, plane.rowStride * imageProxy.height))
+            buffer.get(luma, 0, size)
 
+            // Decode only what the use case shows: the crop rect, clamped to the frame.
+            val crop = Rect(imageProxy.cropRect)
+            if (crop.isEmpty || !crop.intersect(0, 0, imageProxy.width, imageProxy.height)) {
+                crop.set(0, 0, imageProxy.width, imageProxy.height)
+            }
             val frame =
                 LumaFrame(
-                    bytes,
+                    luma,
                     plane.rowStride,
                     imageProxy.height,
-                    0,
-                    0,
-                    imageProxy.width,
-                    imageProxy.height,
+                    crop.left,
+                    crop.top,
+                    crop.width(),
+                    crop.height(),
                 )
 
             frameCount++
+            val tryHarder = frameCount % slowPassEveryNFrames == 0L
             val text =
-                decoder.decode(frame, tryHarder = true, inverted = false)
+                decoder.decode(frame, tryHarder, inverted = false)
                     // Periodic inverted pass for white-on-black / light-on-dark codes (#116).
                     ?: if (frameCount % invertedRetryEveryNFrames == 0L) {
-                        decoder.decode(frame, tryHarder = true, inverted = true)
+                        decoder.decode(frame, tryHarder, inverted = true)
                     } else {
                         null
                     }

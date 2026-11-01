@@ -13,21 +13,37 @@ import java.util.concurrent.locks.ReentrantLock
 /**
  * Desktop implementation of QR code scanning using ZXing library.
  *
- * Processes BufferedImage frames to detect QR codes with thread-safe locking
- * and frame rate throttling to optimize performance.
+ * Processes BufferedImage frames to detect QR codes with thread-safe locking and a throttle on
+ * decode attempts, so a scene with no code in it costs one decode per [scanIntervalMs].
+ *
+ * @param scanIntervalMs The shortest time between two decode attempts, found or not.
  */
-class QRScanner internal constructor(private val clock: () -> Long, private val decoder: QrFrameDecoder) {
-    constructor() : this(System::currentTimeMillis, ZxingQrFrameDecoder())
+class QRScanner internal constructor(
+    private val clock: () -> Long,
+    private val decoder: QrFrameDecoder,
+    private val scanIntervalMs: Long = DEFAULT_SCAN_INTERVAL_MS,
+) {
+    constructor(scanIntervalMs: Long = DEFAULT_SCAN_INTERVAL_MS) : this(
+        System::currentTimeMillis,
+        ZxingQrFrameDecoder(),
+        scanIntervalMs,
+    )
+
+    init {
+        require(scanIntervalMs >= 0) { "scanIntervalMs must not be negative" }
+    }
 
     private val lock = ReentrantLock()
-    private var lastProcessTime = 0L
-    private val processInterval = 200L
+
+    // Guarded by lock.
+    private var lastAttemptTime = Long.MIN_VALUE / 2
+    private var attempts = 0L
 
     /**
      * Scans a BufferedImage for QR codes.
      *
-     * Uses thread-safe locking and throttles processing to every 200ms to improve
-     * performance on resource-constrained systems.
+     * Uses thread-safe locking and decodes at most once per scan interval, whether or not the
+     * last attempt found a code. Every fifth attempt also runs ZXing's slower TRY_HARDER pass.
      *
      * @param image The BufferedImage frame to scan
      * @return The decoded QR code text if successful, null if no code is found or processing is skipped
@@ -37,14 +53,15 @@ class QRScanner internal constructor(private val clock: () -> Long, private val 
 
         return try {
             val currentTime = clock()
-            if (currentTime - lastProcessTime < processInterval) {
+            if (currentTime - lastAttemptTime < scanIntervalMs) {
                 return null
             }
+            // The throttle counts attempts, not successes, so an empty scene is gated too.
+            lastAttemptTime = currentTime
+            attempts++
 
             try {
-                val text = decoder.decode(image, tryHarder = true)
-                lastProcessTime = currentTime
-                text
+                decoder.decode(image, tryHarder = attempts % SLOW_PASS_EVERY == 0L)
             } catch (e: NotFoundException) {
                 null
             }
@@ -53,6 +70,13 @@ class QRScanner internal constructor(private val clock: () -> Long, private val 
         } finally {
             lock.unlock()
         }
+    }
+
+    private companion object {
+        const val DEFAULT_SCAN_INTERVAL_MS = 200L
+
+        // ZXing's TRY_HARDER pass costs several fast passes; one attempt in this many uses it.
+        const val SLOW_PASS_EVERY = 5L
     }
 }
 
@@ -69,20 +93,22 @@ internal fun interface QrFrameDecoder {
 
 /** [QrFrameDecoder] over ZXing's [MultiFormatReader]. */
 internal class ZxingQrFrameDecoder : QrFrameDecoder {
-    private val reader =
-        MultiFormatReader().apply {
-            val hints =
-                mapOf(
-                    DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
-                    DecodeHintType.TRY_HARDER to true,
-                )
-            setHints(hints)
-        }
+    private val fastReader = qrReader(tryHarder = false)
+    private val slowReader = qrReader(tryHarder = true)
 
     override fun decode(image: BufferedImage, tryHarder: Boolean): String {
         val pixels = image.getRGB(0, 0, image.width, image.height, null, 0, image.width)
         val source = RGBLuminanceSource(image.width, image.height, pixels)
         val bitmap = BinaryBitmap(HybridBinarizer(source))
-        return reader.decode(bitmap).text
+        return (if (tryHarder) slowReader else fastReader).decode(bitmap).text
+    }
+
+    private fun qrReader(tryHarder: Boolean) = MultiFormatReader().apply {
+        setHints(
+            buildMap {
+                put(DecodeHintType.POSSIBLE_FORMATS, listOf(BarcodeFormat.QR_CODE))
+                if (tryHarder) put(DecodeHintType.TRY_HARDER, true)
+            },
+        )
     }
 }
