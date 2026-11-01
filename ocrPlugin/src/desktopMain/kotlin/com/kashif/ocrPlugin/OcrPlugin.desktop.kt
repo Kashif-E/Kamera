@@ -7,6 +7,7 @@ import kotlinx.atomicfu.locks.ReentrantLock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bytedeco.leptonica.PIX
@@ -175,11 +176,21 @@ actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String {
  */
 actual fun startRecognition(cameraController: CameraController, onText: (text: String) -> Unit): RecognitionHandle {
     val ocrProcessor = OCRProcessor()
+    return startRecognition(cameraController.frameFlow, ocrProcessor::scanImage, ocrProcessor::close, onText)
+}
+
+/** Scans [frames] with [scan] and frees the scanner with [close] when the returned handle stops. */
+internal fun startRecognition(
+    frames: Flow<BufferedImage>,
+    scan: (BufferedImage) -> String?,
+    close: () -> Unit,
+    onText: (text: String) -> Unit,
+): RecognitionHandle {
     val scope = CoroutineScope(Dispatchers.Default)
 
     scope.launch {
-        cameraController.frameFlow.collect { image ->
-            ocrProcessor.scanImage(image)?.let { text ->
+        frames.collect { image ->
+            scan(image)?.let { text ->
                 withContext(Dispatchers.Main) {
                     onText(text)
                 }
@@ -190,6 +201,6 @@ actual fun startRecognition(cameraController: CameraController, onText: (text: S
     // Cancel the (previously immortal) collector and release the Tesseract native handle.
     return RecognitionHandle {
         scope.cancel()
-        ocrProcessor.close()
+        close()
     }
 }
