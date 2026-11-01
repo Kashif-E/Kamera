@@ -37,6 +37,9 @@ class OCRProcessor internal constructor(
     private val processInterval = 200L
     private var isInitialized = false
 
+    // Guarded by lock: set by close(), after which nothing calls into Tesseract.
+    private var isClosed = false
+
     init {
         try {
             if (tessdataDir == null) {
@@ -72,6 +75,7 @@ class OCRProcessor internal constructor(
         if (!isInitialized || !lock.tryLock()) return null
 
         return try {
+            if (isClosed) return null
             val currentTime = clock()
             if (currentTime - lastProcessTime < processInterval) {
                 return null
@@ -139,10 +143,18 @@ class OCRProcessor internal constructor(
     }
 
     /**
-     * Releases Tesseract resources.
+     * Releases Tesseract resources. Waits for a scan in progress on another thread to return first;
+     * later calls, and any scan after this one, do nothing.
      */
     fun close() {
-        api.end()
+        lock.lock()
+        try {
+            if (isClosed) return
+            isClosed = true
+            api.end()
+        } finally {
+            lock.unlock()
+        }
     }
 }
 
