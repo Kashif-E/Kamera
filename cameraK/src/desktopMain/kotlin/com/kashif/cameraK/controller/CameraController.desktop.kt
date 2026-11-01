@@ -15,6 +15,7 @@ import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,6 +29,7 @@ import kotlinx.coroutines.withContext
 import org.bytedeco.ffmpeg.global.avcodec
 import org.bytedeco.javacv.FFmpegFrameRecorder
 import org.bytedeco.javacv.FrameGrabber
+import org.bytedeco.javacv.FrameRecorder
 import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
 import java.io.File
@@ -46,6 +48,20 @@ actual class CameraController(
     private val targetResolution: Pair<Int, Int>? = null,
     private val aspectRatio: AspectRatio = AspectRatio.RATIO_16_9,
 ) {
+    private var sessionDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private var recorderFactory: (String, VideoConfiguration) -> FrameRecorder = ::createFrameRecorder
+
+    internal constructor(
+        imageFormat: ImageFormat,
+        directory: Directory,
+        customGrabber: FrameGrabber?,
+        sessionDispatcher: CoroutineDispatcher,
+        recorderFactory: (String, VideoConfiguration) -> FrameRecorder,
+    ) : this(imageFormat, directory, customGrabber = customGrabber) {
+        this.sessionDispatcher = sessionDispatcher
+        this.recorderFactory = recorderFactory
+    }
+
     private var cameraGrabber: CameraGrabber? = null
     private val _frameFlow = MutableSharedFlow<BufferedImage>(
         replay = 0,
@@ -56,7 +72,7 @@ actual class CameraController(
     private val qualityPriority: QualityPrioritization = QualityPrioritization.NONE
 
     // Video recording
-    private var frameRecorder: FFmpegFrameRecorder? = null
+    private var frameRecorder: FrameRecorder? = null
 
     @Volatile private var isCurrentlyRecording = false
 
@@ -222,7 +238,7 @@ actual class CameraController(
      * Starts the camera session.
      */
     actual fun startSession() {
-        CoroutineScope(Dispatchers.Default).launch {
+        CoroutineScope(sessionDispatcher).launch {
             // If there is a custom grabber, use it, else use the default camera grabber
             // Which attempts to use the default camera
             cameraGrabber = CameraGrabber(_frameFlow, {
@@ -277,23 +293,7 @@ actual class CameraController(
         val outputPath = createVideoOutputPath(configuration)
         recordingOutputPath = outputPath
 
-        val recorder = FFmpegFrameRecorder(
-            outputPath,
-            configuration.quality.width,
-            configuration.quality.height,
-            if (configuration.enableAudio) 1 else 0,
-        ).apply {
-            videoCodec = avcodec.AV_CODEC_ID_H264
-            format = "mp4"
-            frameRate = 30.0
-            videoBitrate = configuration.quality.bitrateBps
-            if (configuration.enableAudio) {
-                audioCodec = avcodec.AV_CODEC_ID_AAC
-                sampleRate = 44100
-                audioBitrate = 128_000
-            }
-            start()
-        }
+        val recorder = recorderFactory(outputPath, configuration).apply { start() }
         frameRecorder = recorder
         isCurrentlyRecording = true
         isPausedRecording = false
@@ -365,6 +365,24 @@ actual class CameraController(
             frameRecorder = null
         }
     }
+
+    private fun createFrameRecorder(outputPath: String, configuration: VideoConfiguration): FrameRecorder =
+        FFmpegFrameRecorder(
+            outputPath,
+            configuration.quality.width,
+            configuration.quality.height,
+            if (configuration.enableAudio) 1 else 0,
+        ).apply {
+            videoCodec = avcodec.AV_CODEC_ID_H264
+            format = "mp4"
+            frameRate = 30.0
+            videoBitrate = configuration.quality.bitrateBps
+            if (configuration.enableAudio) {
+                audioCodec = avcodec.AV_CODEC_ID_AAC
+                sampleRate = 44100
+                audioBitrate = 128_000
+            }
+        }
 
     private fun createVideoOutputPath(config: VideoConfiguration): String {
         val timestamp = LocalDateTime.now()
