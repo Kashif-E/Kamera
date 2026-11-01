@@ -9,6 +9,10 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
 
+@Deprecated(
+    "Unused by CameraK, and it writes to a captured_images folder in the working directory. Use " +
+        "CameraController.takePictureToFile(). ImageCaptureManager is removed in CameraK 2.1.",
+)
 class ImageCaptureManager {
     private val isCapturing = AtomicBoolean(false)
     private val outputDir =

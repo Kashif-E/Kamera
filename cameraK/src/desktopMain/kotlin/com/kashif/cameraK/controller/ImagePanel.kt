@@ -9,6 +9,9 @@ import java.awt.image.BufferedImage
 import java.awt.image.VolatileImage
 import javax.swing.JPanel
 
+@Deprecated(
+    "Unused by CameraK: the desktop preview is CameraPreviewView. ImagePanel is removed in CameraK 2.1.",
+)
 class ImagePanel : JPanel(true) {
     private var volatileImage: VolatileImage? = null
     var currentImage: BufferedImage? = null
