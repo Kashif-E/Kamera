@@ -573,23 +573,13 @@ actual class CameraController(
 
     @OptIn(ExperimentalForeignApi::class)
     private fun addAudioInputIfNeeded() {
-        val session = customCameraController.captureSession ?: return
-        // Check if audio input already exists
-        val hasAudioInput = session.inputs.any { input ->
-            val deviceInput = input as? AVCaptureDeviceInput
-            deviceInput?.device?.hasMediaType(AVMediaTypeAudio) == true
-        }
-        if (hasAudioInput) return
-
-        val audioDevice = platform.AVFoundation.AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeAudio)
-            ?: return
-        val audioInput = AVCaptureDeviceInput.deviceInputWithDevice(audioDevice, null) ?: return
-
-        customCameraController.queueConfigurationChange {
-            if (session.canAddInput(audioInput)) {
-                session.addInput(audioInput)
-            }
-        }
+        customCameraController.addInputUnlessPresent(
+            isPresent = { input -> (input as? AVCaptureDeviceInput)?.device?.hasMediaType(AVMediaTypeAudio) == true },
+            create = {
+                platform.AVFoundation.AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeAudio)
+                    ?.let { AVCaptureDeviceInput.deviceInputWithDevice(it, null) }
+            },
+        )
     }
 
     @OptIn(ExperimentalForeignApi::class)

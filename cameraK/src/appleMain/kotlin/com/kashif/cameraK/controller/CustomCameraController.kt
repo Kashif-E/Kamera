@@ -59,10 +59,15 @@ class CustomCameraController(
     AVCapturePhotoCaptureDelegateProtocol {
     private var sessionFactory: () -> CaptureSessionOps = { AVCaptureSessionOps() }
     private var inputConfigurator: ((CaptureSessionOps, CameraDeviceType) -> Boolean)? = null
+    private var lensSwitcher: ((CaptureSessionOps, Boolean) -> Unit)? = null
+    private var previewMirroring: (AVCaptureVideoPreviewLayer?, Boolean) -> Unit = ::mirrorPreview
 
     /**
      * Test seam: [sessionFactory] supplies the session, and [inputConfigurator], when set, adds the
      * initial video input in place of AVCaptureDevice discovery (the simulator has no camera).
+     * [lensSwitcher], when set, adds the input for the lens switchCamera moves to (true for front)
+     * in place of the device lookup, and [previewMirroring], when set, applies the preview layer's
+     * mirroring in place of setting it on the layer's connection.
      */
     internal constructor(
         qualityPrioritization: QualityPrioritization,
@@ -72,9 +77,13 @@ class CustomCameraController(
         mirrorFrontCamera: Boolean = false,
         sessionFactory: () -> CaptureSessionOps,
         inputConfigurator: ((CaptureSessionOps, CameraDeviceType) -> Boolean)? = null,
+        lensSwitcher: ((CaptureSessionOps, Boolean) -> Unit)? = null,
+        previewMirroring: ((AVCaptureVideoPreviewLayer?, Boolean) -> Unit)? = null,
     ) : this(qualityPrioritization, initialCameraLens, aspectRatio, targetResolution, mirrorFrontCamera) {
         this.sessionFactory = sessionFactory
         this.inputConfigurator = inputConfigurator
+        this.lensSwitcher = lensSwitcher
+        previewMirroring?.let { this.previewMirroring = it }
     }
 
     /**
@@ -220,28 +229,29 @@ class CustomCameraController(
         }
     }
 
-    private fun setupPhotoOutput() {
-        photoOutput = AVCapturePhotoOutput()
-        photoOutput?.setHighResolutionCaptureEnabled(false)
+    /** Whether captures request high resolution; QUALITY is the only prioritization that does. */
+    private val highResolution: Boolean
+        get() = qualityPrioritization == QualityPrioritization.QUALITY
 
-        when (qualityPrioritization) {
-            QualityPrioritization.QUALITY -> {
-                photoOutput?.setHighResolutionCaptureEnabled(true)
-                photoOutput?.setMaxPhotoQualityPrioritization(
-                    AVCapturePhotoQualityPrioritizationQuality,
-                )
-            }
-
-            QualityPrioritization.BALANCED -> photoOutput?.setMaxPhotoQualityPrioritization(
-                AVCapturePhotoQualityPrioritizationBalanced,
-            )
-
-            QualityPrioritization.SPEED -> photoOutput?.setMaxPhotoQualityPrioritization(
-                AVCapturePhotoQualityPrioritizationSpeed,
-            )
-
+    /** The AVFoundation prioritization for [qualityPrioritization]; null for NONE, which leaves the default. */
+    private val avQualityPrioritization: AVCapturePhotoQualityPrioritization?
+        get() = when (qualityPrioritization) {
+            QualityPrioritization.QUALITY -> AVCapturePhotoQualityPrioritizationQuality
+            QualityPrioritization.BALANCED -> AVCapturePhotoQualityPrioritizationBalanced
+            QualityPrioritization.SPEED -> AVCapturePhotoQualityPrioritizationSpeed
             QualityPrioritization.NONE -> null
         }
+
+    /** [mode] when the photo output supports it, otherwise off (devices without a flash, such as iPads). */
+    private fun supportedFlashMode(mode: AVCaptureFlashMode): AVCaptureFlashMode {
+        val supportedFlashModes = photoOutput?.supportedFlashModes() as? List<*>
+        return if (supportedFlashModes?.contains(mode) == true) mode else AVCaptureFlashModeOff
+    }
+
+    private fun setupPhotoOutput() {
+        photoOutput = AVCapturePhotoOutput()
+        photoOutput?.setHighResolutionCaptureEnabled(highResolution)
+        avQualityPrioritization?.let { photoOutput?.setMaxPhotoQualityPrioritization(it) }
 
         photoOutput?.setPreparedPhotoSettingsArray(emptyList<String>(), completionHandler = { settings, error ->
             if (error != null) {
@@ -430,6 +440,26 @@ class CustomCameraController(
         }
     }
 
+    /**
+     * Adds the input [create] makes unless an attached input already satisfies [isPresent], as one
+     * queued configuration change (the recorder adds its microphone this way).
+     */
+    internal fun addInputUnlessPresent(isPresent: (AVCaptureInput) -> Boolean, create: () -> AVCaptureInput?) {
+        val ops = session ?: return
+        if (ops.inputs.any(isPresent)) return
+        val input = create() ?: return
+        queueConfigurationChange {
+            if (ops.canAddInput(input)) {
+                ops.addInput(input)
+            }
+        }
+    }
+
+    /** Runs [block] on the session queue after every piece of session work already requested. */
+    internal fun afterQueuedSessionWork(block: () -> Unit) {
+        dispatch_async(sessionQueue, block)
+    }
+
     fun startSession() {
         dispatch_async(sessionQueue) {
             val ops = session ?: return@dispatch_async
@@ -514,14 +544,9 @@ class CustomCameraController(
     }
 
     fun setFlashMode(mode: AVCaptureFlashMode) {
-        // Check if device supports this flash mode before setting
-        val supportedFlashModes = photoOutput?.supportedFlashModes() as? List<*>
-        if (supportedFlashModes?.contains(mode) == true) {
-            flashMode = mode
-        } else {
-            // Device doesn't support flash (e.g., iPad) - use OFF
+        flashMode = supportedFlashMode(mode)
+        if (flashMode != mode) {
             CameraKLogger.e("CameraK", "CameraK: Flash mode not supported on this device, using OFF")
-            flashMode = AVCaptureFlashModeOff
         }
     }
 
@@ -591,33 +616,9 @@ class CustomCameraController(
             ),
         )
 
-        settings.setHighResolutionPhotoEnabled(false)
-
-        when (qualityPrioritization) {
-            QualityPrioritization.QUALITY -> {
-                settings.setHighResolutionPhotoEnabled(true)
-                settings.photoQualityPrioritization = AVCapturePhotoQualityPrioritizationQuality
-            }
-
-            QualityPrioritization.BALANCED -> {
-                settings.photoQualityPrioritization = AVCapturePhotoQualityPrioritizationBalanced
-            }
-
-            QualityPrioritization.SPEED -> {
-                settings.photoQualityPrioritization = AVCapturePhotoQualityPrioritizationSpeed
-            }
-
-            QualityPrioritization.NONE -> null
-        }
-
-        // Only set flash mode if supported by device (iPads don't have flash)
-        val supportedFlashModes = photoOutput?.supportedFlashModes() as? List<*>
-        if (supportedFlashModes?.contains(this.flashMode) == true) {
-            settings.flashMode = this.flashMode
-        } else {
-            // Device doesn't support flash (e.g., iPad) - force OFF
-            settings.flashMode = AVCaptureFlashModeOff
-        }
+        settings.setHighResolutionPhotoEnabled(highResolution)
+        avQualityPrioritization?.let { settings.photoQualityPrioritization = it }
+        settings.flashMode = supportedFlashMode(flashMode)
 
         // Don't touch autoStillImageStabilizationEnabled: it's deprecated since iOS 13 and
         // setting it together with photoQualityPrioritization (set above) raises -17281
@@ -696,19 +697,24 @@ class CustomCameraController(
                 ops.inputs.firstOrNull()?.let(ops::removeInput)
 
                 isUsingFrontCamera = !isUsingFrontCamera
-                currentCamera = if (isUsingFrontCamera) frontCamera else backCamera
-
-                val newCamera = currentCamera ?: throw CameraException.DeviceNotAvailable()
-
-                val newInput = AVCaptureDeviceInput.deviceInputWithDevice(
-                    newCamera,
-                    null,
-                ) ?: throw CameraException.ConfigurationError("Failed to create input")
-
-                if (ops.canAddInput(newInput)) {
-                    ops.addInput(newInput)
+                val switcher = lensSwitcher
+                if (switcher != null) {
+                    switcher(ops, isUsingFrontCamera)
                 } else {
-                    throw CameraException.ConfigurationError("Cannot add input")
+                    currentCamera = if (isUsingFrontCamera) frontCamera else backCamera
+
+                    val newCamera = currentCamera ?: throw CameraException.DeviceNotAvailable()
+
+                    val newInput = AVCaptureDeviceInput.deviceInputWithDevice(
+                        newCamera,
+                        null,
+                    ) ?: throw CameraException.ConfigurationError("Failed to create input")
+
+                    if (ops.canAddInput(newInput)) {
+                        ops.addInput(newInput)
+                    } else {
+                        throw CameraException.ConfigurationError("Cannot add input")
+                    }
                 }
 
                 applyPreviewMirroring()
@@ -750,10 +756,14 @@ class CustomCameraController(
     }
 
     private fun applyPreviewMirroring() {
-        cameraPreviewLayer?.connection?.let { connection ->
+        previewMirroring(cameraPreviewLayer, isUsingFrontCamera)
+    }
+
+    private fun mirrorPreview(layer: AVCaptureVideoPreviewLayer?, mirrored: Boolean) {
+        layer?.connection?.let { connection ->
             if (connection.isVideoMirroringSupported()) {
                 connection.automaticallyAdjustsVideoMirroring = false
-                connection.setVideoMirrored(isUsingFrontCamera)
+                connection.setVideoMirrored(mirrored)
             }
         }
     }
