@@ -16,9 +16,11 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.bytedeco.javacv.Frame
 import java.awt.image.BufferedImage
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
 import kotlin.concurrent.thread
@@ -143,6 +145,85 @@ class DesktopSingleFrameProducerTest {
             sut.cleanup()
         }
     }
+
+    @Test
+    fun aGrabberThatReturnsNoFrame_endsTheRunWithAnErrorInsteadOfSpinning() = assertRunEndsWithAnError { null }
+
+    @Test
+    fun aGrabberThatReturnsOnlyFramesWithoutAnImage_endsTheRunWithAnErrorInsteadOfSpinning() =
+        assertRunEndsWithAnError { Frame() }
+
+    // grab() returns at once here, as an FFmpeg grabber does at end of stream or on a lost device, so
+    // nothing paces the loop: unless it ends, it spins the grab thread at full CPU forever.
+    private fun assertRunEndsWithAnError(nextFrame: (Frame) -> Frame?) {
+        val fake = FakeFrameGrabber(nextFrame = nextFrame).apply { openGate() }
+        val errors = CopyOnWriteArrayList<Throwable>()
+        val frames = MutableSharedFlow<BufferedImage>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+        val scope = CoroutineScope(SupervisorJob())
+        val sut = CameraGrabber(frames, { errors += it })
+        try {
+            sut.start(scope, fake)
+
+            assertTrue(
+                fake.releasedLatch.await(5, TimeUnit.SECONDS),
+                "the grab loop kept polling a grabber with no frames",
+            )
+            assertEquals(1, errors.size, "errors reported for the ended run: $errors")
+            assertEquals(emptyList(), fake.violations.toList())
+        } finally {
+            sut.stop()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun recording_whenTheCameraStops_endsAndReportsAnError() = runBlocking {
+        val fake = FakeFrameGrabber().apply { openGate() }
+        val recorder = FakeFrameRecorder().apply { finishFirstRecord() }
+        val sut = controller(fake, recorder)
+        try {
+            sut.startSession()
+            sut.startRecording(recordingConfig())
+            assertTrue(recorder.fiveFramesRecorded.await(10, TimeUnit.SECONDS), "the recorder was not fed frames")
+
+            // The producer ends while the recording runs: the recording must not sit waiting for
+            // frames that will never come, and must not later be reported as a success.
+            sut.stopSession()
+            assertTrue(recorder.releasedLatch.await(5, TimeUnit.SECONDS), "the recording outlived its camera")
+
+            assertIs<VideoCaptureResult.Error>(withTimeout(10_000) { sut.stopRecording() })
+            assertEquals(emptyList(), recorder.violations.toList())
+        } finally {
+            sut.cleanup()
+        }
+    }
+
+    @Test
+    fun recording_withoutARunningSession_endsAndReportsAnError() = runBlocking {
+        val fake = FakeFrameGrabber().apply { openGate() }
+        val recorder = FakeFrameRecorder().apply { finishFirstRecord() }
+        val sut = controller(fake, recorder)
+        try {
+            sut.startRecording(recordingConfig())
+
+            assertTrue(
+                recorder.releasedLatch.await(5, TimeUnit.SECONDS),
+                "the recording waited for a camera that never ran",
+            )
+            assertIs<VideoCaptureResult.Error>(withTimeout(10_000) { sut.stopRecording() })
+            assertEquals(0, recorder.recordCount.get(), "frames recorded without a camera")
+        } finally {
+            sut.cleanup()
+        }
+    }
+
+    private fun recordingConfig() = VideoConfiguration(
+        enableAudio = false,
+        outputDirectory = Files.createTempDirectory("camerak-producer").toFile().absolutePath,
+    )
 
     private companion object {
         const val CAPTURE_THREAD = "camerak-test-capture-caller"
