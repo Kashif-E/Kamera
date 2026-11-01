@@ -256,15 +256,24 @@ val minSdkVersionAttribute = Regex("""android:minSdkVersion\s*=\s*"(\d+)"""")
 
 data class AndroidSettings(
     val minSdk: Int?,
+    val compileSdk: Int?,
     val includesAndroidResourcesInUnitTests: Boolean,
 )
 
 fun androidSettings(module: Project): AndroidSettings =
     when (val android = module.extensions.getByName("android")) {
         is com.android.build.api.dsl.LibraryExtension ->
-            AndroidSettings(android.defaultConfig.minSdk, android.testOptions.unitTests.isIncludeAndroidResources)
+            AndroidSettings(
+                android.defaultConfig.minSdk,
+                android.compileSdk,
+                android.testOptions.unitTests.isIncludeAndroidResources,
+            )
         is com.android.build.api.dsl.ApplicationExtension ->
-            AndroidSettings(android.defaultConfig.minSdk, android.testOptions.unitTests.isIncludeAndroidResources)
+            AndroidSettings(
+                android.defaultConfig.minSdk,
+                android.compileSdk,
+                android.testOptions.unitTests.isIncludeAndroidResources,
+            )
         else -> throw GradleException("${module.path}: unexpected android extension ${android::class.java.name}")
     }
 
@@ -385,6 +394,121 @@ tasks.register("checkAndroidSdkFloor") {
     }
 }
 
+// Every published module carries the same version, group, compileSdk and shared POM metadata, the Gradle
+// coordinates equal the published ones (so includeBuild substitution works), the version has a
+// CHANGELOG.md section, and the docs install that version. It reads the POM each module would
+// publish, so it checks what consumers get rather than what a build script says.
+val sharedPomFields = listOf("groupId", "version", "url", "inceptionYear", "licenses", "developers", "scm")
+val perModulePomFields = listOf("artifactId", "name", "description")
+val installSnippet = Regex("""io\.github\.kashif-mehmood-km:([A-Za-z0-9_.-]+):([0-9][A-Za-z0-9_.-]*)""")
+val catalogVersion = Regex("""^\s*camerak\s*=\s*"([^"]+)"""")
+
+fun pomField(
+    pom: org.w3c.dom.Element,
+    field: String,
+): String {
+    fun describe(node: org.w3c.dom.Node): String {
+        val children =
+            (0 until node.childNodes.length).map(node.childNodes::item).filter {
+                it.nodeType ==
+                    org.w3c.dom.Node.ELEMENT_NODE
+            }
+        return if (children.isEmpty()) {
+            node.textContent.trim()
+        } else {
+            children.joinToString(", ", "{", "}") {
+                "${it.nodeName}=${describe(it)}"
+            }
+        }
+    }
+    val nodes = (0 until pom.childNodes.length).map(pom.childNodes::item).filter { it.nodeName == field }
+    return nodes.singleOrNull()?.let(::describe) ?: "<missing>"
+}
+
+tasks.register("checkReleaseMetadata") {
+    group = "verification"
+    description = "Fails if published modules disagree on version, group or shared POM metadata, or the docs lag"
+    dependsOn(libraryModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
+    val pomFiles =
+        libraryModules.associateWith {
+            project(":$it").layout.buildDirectory.file("publications/kotlinMultiplatform/pom-default.xml")
+        }
+    val gradleCoordinates =
+        provider {
+            libraryModules.associateWith {
+                project(":$it").let { p ->
+                    "${p.group}:${p.version}"
+                }
+            }
+        }
+    val compileSdks = provider { androidModules.associateWith { androidSettings(project(":$it")).compileSdk } }
+    val root = layout.projectDirectory.asFile
+    doLast {
+        val poms =
+            pomFiles.mapValues { (_, file) ->
+                javax.xml.parsers.DocumentBuilderFactory
+                    .newInstance()
+                    .newDocumentBuilder()
+                    .parse(file.get().asFile)
+                    .documentElement
+            }
+        val problems = mutableListOf<String>()
+        sharedPomFields.forEach { field ->
+            val values = poms.mapValues { (_, pom) -> pomField(pom, field) }
+            if (values.values.toSet().size > 1) {
+                problems +=
+                    "POM <$field> differs between modules: " + values.entries.joinToString { "${it.key}=${it.value}" }
+            }
+        }
+        perModulePomFields.forEach { field ->
+            poms
+                .mapValues { (_, pom) -> pomField(pom, field) }
+                .entries
+                .groupBy({ it.value }, { it.key })
+                .filterValues { it.size > 1 }
+                .forEach { (value, modules) -> problems += "POM <$field> '$value' is shared by $modules" }
+        }
+        gradleCoordinates.get().forEach { (module, coordinates) ->
+            val published = poms.getValue(module).let { "${pomField(it, "groupId")}:${pomField(it, "version")}" }
+            if (coordinates !=
+                published
+            ) {
+                problems += "$module: Gradle group:version is $coordinates but it publishes $published"
+            }
+        }
+        compileSdks.get().let { levels ->
+            if (levels.values.toSet().size > 1) problems += "compileSdk differs between modules: $levels"
+        }
+        val version = pomField(poms.getValue("cameraK"), "version")
+        val changelog = File(root, "CHANGELOG.md").readLines()
+        if (changelog.none { it.startsWith("## [$version]") }) problems += "CHANGELOG.md has no '## [$version]' section"
+        val artifactIds = poms.values.map { pomField(it, "artifactId") }.toSet()
+        trackedTextFiles(root)
+            .filter { file ->
+                val path = file.relativeTo(root).invariantSeparatorsPath
+                path == "README.MD" ||
+                    path.startsWith("docs/") && !path.startsWith("docs/superpowers/") && file.extension == "md"
+            }.forEach { file ->
+                file.readLines().forEachIndexed { index, line ->
+                    val at = "${file.relativeTo(root)}:${index + 1}"
+                    installSnippet.findAll(line).forEach { match ->
+                        val (artifactId, documented) = match.destructured
+                        if (artifactId !in artifactIds) problems += "$at: installs unknown artifact $artifactId"
+                        if (documented != version) problems += "$at: installs $artifactId $documented, not $version"
+                    }
+                    catalogVersion.find(line)?.let { match ->
+                        if (match.groupValues[1] !=
+                            version
+                        ) {
+                            problems += "$at: catalog sets camerak = ${match.groupValues[1]}, not $version"
+                        }
+                    }
+                }
+            }
+        check(problems.isEmpty()) { "Release metadata is inconsistent:\n" + problems.joinToString("\n") }
+    }
+}
+
 // --only screenshots runs just the screenshot classes from cameraK's desktop suite.
 if ("screenshots" in verifyTargets && "desktop" !in verifyTargets) {
     project(":cameraK").tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
@@ -401,7 +525,13 @@ tasks.register("verifyAll") {
         verifyTargets
     ) {
         paths +=
-            listOf(":spotlessCheck", ":checkCredentialHygiene", ":checkNoIntelSimulatorTarget", ":checkAndroidSdkFloor")
+            listOf(
+                ":spotlessCheck",
+                ":checkCredentialHygiene",
+                ":checkNoIntelSimulatorTarget",
+                ":checkAndroidSdkFloor",
+                ":checkReleaseMetadata",
+            )
     }
     verifyModules.forEach { module ->
         if ("desktop" in verifyTargets || "screenshots" in verifyTargets && module == "cameraK") {
