@@ -89,9 +89,27 @@ actual class CameraController(
     private var metadataObjectsDelegate: AVCaptureMetadataOutputObjectsDelegateProtocol? = null
 
     // Video recording
+    // Set on the session queue when the output joins the session; read from recording calls.
+    @Volatile
     private var movieFileOutput: AVCaptureMovieFileOutput? = null
     private var videoRecordingDelegate: VideoRecordingDelegate? = null
     private var videoOutputFilePath: String? = null
+
+    init {
+        // Queued at construction, ahead of any plugin change (a plugin needs this controller to queue
+        // one), so the metadata and movie outputs join the session's single startup transaction on its
+        // session queue before a plugin configures them, instead of rebuilding the graph from main.
+        customCameraController.queueConfigurationChange {
+            customCameraController.safeAddOutput(metadataOutput)
+        }
+        val movieOutput = AVCaptureMovieFileOutput()
+        customCameraController.queueConfigurationChange {
+            customCameraController.safeAddOutput(movieOutput)
+            if (customCameraController.containsOutput(movieOutput)) {
+                movieFileOutput = movieOutput
+            }
+        }
+    }
 
     private val memoryManager = MemoryManager
     private val pendingCaptures = atomic(0)
@@ -167,26 +185,7 @@ actual class CameraController(
             try {
                 customCameraController.setupPreviewLayer(view)
             } catch (e: Exception) {
-                CameraKLogger.e("CameraK", "CameraK Error: setupPreviewLayer - ${e.message}")
-            }
-
-            try {
-                if (customCameraController.captureSession?.canAddOutput(metadataOutput) == true) {
-                    customCameraController.captureSession?.addOutput(metadataOutput)
-                }
-            } catch (e: Exception) {
-                CameraKLogger.e("CameraK", "CameraK Error: metadata output - ${e.message}")
-            }
-
-            // Add movie file output for video recording
-            try {
-                val movieOutput = AVCaptureMovieFileOutput()
-                if (customCameraController.captureSession?.canAddOutput(movieOutput) == true) {
-                    customCameraController.captureSession?.addOutput(movieOutput)
-                    movieFileOutput = movieOutput
-                }
-            } catch (e: Exception) {
-                CameraKLogger.e("CameraK", "CameraK Error: movie output - ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK Error: setupPreviewLayer", e)
             }
 
             startSession()
