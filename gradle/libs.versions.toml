@@ -1,26 +1,24 @@
 [versions]
 
-atomicfu = "0.29.0"
-camera-core = "1.5.1"
-camera-extensions = "1.5.1"
-camera-lifecycle = "1.5.1"
-camera-view = "1.5.1"
-core = "3.5.3"
-coreVersion = "3.5.3"
-javase = "3.5.3"
-kotlin = "2.2.21"
-agp = "8.9.1"
-dokka = "2.0.0"
-spotless = "7.0.2"
-kotlinx-coroutines = "1.10.2"
-kermit = "2.0.8"
+atomicfu = "0.33.0"
+camera-core = "1.5.3"
+camera-extensions = "1.5.3"
+camera-lifecycle = "1.5.3"
+camera-view = "1.5.3"
+core = "3.5.4"
+javase = "3.5.4"
+kotlin = "2.4.10"
+agp = "8.13.2"
+dokka = "2.2.0"
+spotless = "8.10.4"
+kotlinx-coroutines = "1.11.0"
+kermit = "2.2.0"
 
-compose-multiplatform = "1.9.3"
+compose-multiplatform = "1.10.3"
 activity = "1.9.2" # https://developer.android.com/jetpack/androidx/releases/activity
-coil-mp-version = "3.3.0"
+coil-mp-version = "3.4.0"
 lucide-icons = "2.2.1"
-jetbrains-kotlin-jvm = "2.2.21"
-androidx-activityCompose = "1.11.0"
+androidx-activityCompose = "1.13.0"
 startupRuntime = "1.2.0"
 javacvPlatform = "1.5.12"
 javacpp = "1.5.12"
@@ -29,6 +27,7 @@ tesseractPlatform = "5.5.1-1.5.12"
 textRecognition = "16.0.1"
 
 kflite = "1.1.40"
+vanniktech-publish = "0.37.0"
 
 [libraries]
 
@@ -41,7 +40,6 @@ camera-extensions = { module = "androidx.camera:camera-extensions", version.ref 
 camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camera-lifecycle" }
 camera-video = { module = "androidx.camera:camera-video", version.ref = "camera-core" }
 core = { module = "com.google.zxing:core", version.ref = "core" }
-core-v351 = { module = "com.google.zxing:core", version.ref = "coreVersion" }
 javase = { module = "com.google.zxing:javase", version.ref = "javase" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
@@ -69,7 +67,8 @@ kflite = {module = "io.github.shadmanadman:kflite", version.ref = "kflite"}
 multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "jetbrains-kotlin-jvm" }
+jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }

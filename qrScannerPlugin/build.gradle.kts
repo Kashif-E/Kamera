@@ -1,4 +1,3 @@
-import com.vanniktech.maven.publish.SonatypeHost
 import org.jetbrains.compose.compose
 
 plugins {
@@ -6,7 +5,7 @@ plugins {
     alias(libs.plugins.android.library)
     id("org.jetbrains.compose")
     alias(libs.plugins.compose.compiler)
-    id("com.vanniktech.maven.publish") version "0.31.0"
+    alias(libs.plugins.vanniktech.publish)
     alias(libs.plugins.dokka)
 }
 
@@ -35,7 +34,7 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation(libs.javase)
-                implementation(libs.core.v351)
+                implementation(libs.core)
             }
         }
 
@@ -60,7 +59,7 @@ kotlin {
 
 android {
     namespace = "com.kashif.qr_scanner_plugin"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 21
@@ -113,7 +112,7 @@ mavenPublishing {
     }
 
     // Configure publishing to Maven Central
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+    publishToMavenCentral()
 
     // Enable GPG signing for all publications
     signAllPublications()
