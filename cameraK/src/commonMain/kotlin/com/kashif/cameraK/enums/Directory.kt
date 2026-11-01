@@ -9,7 +9,8 @@ package com.kashif.cameraK.enums
  * - DCIM: Android saves to the public `DCIM/CameraK` directory, iOS saves to the Photos library
  * - DOCUMENTS: Saves to the app's own storage, not shared with other apps or synced with Photos
  *   (Android: the app-specific external files directory; iOS: the app's Documents directory)
- * - Desktop writes a temporary file whatever the value.
+ * - Desktop: PICTURES and DCIM save to `~/Pictures/CameraK`, DOCUMENTS to `~/Documents/CameraK`,
+ *   readable only by the user where the file system has POSIX permissions
  *
  * ImageSaverPlugin:
  * - PICTURES and DCIM: Android saves to the public `Pictures/` or `DCIM/` directory, desktop to

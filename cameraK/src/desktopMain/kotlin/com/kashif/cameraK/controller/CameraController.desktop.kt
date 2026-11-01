@@ -38,9 +38,15 @@ import org.bytedeco.javacv.FrameRecorder
 import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
 import java.io.File
+import java.io.IOException
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import javax.imageio.IIOImage
 import javax.imageio.ImageIO
+import javax.imageio.ImageWriteParam
 
 /**
  * Interface defining the core functionalities of the CameraController.
@@ -110,14 +116,16 @@ actual class CameraController(
                 return@withContext ImageCaptureResult.Error(IllegalStateException("No image available"))
             }
 
+            var outFile: File? = null
             return@withContext try {
                 val ext = if (imageFormat == ImageFormat.PNG) "png" else "jpg"
-                val outFile = File.createTempFile("CameraK_", ".$ext")
-                ImageIO.write(currentImage, ext, outFile)
-                listener(outFile.readBytes())
-                ImageCaptureResult.SuccessWithFile(outFile.absolutePath)
+                val file = createUniqueFile(File(pictureFolder(), "CameraK"), "CameraK", ext).also { outFile = it }
+                writeImage(currentImage, imageFormat, file)
+                listener(file.readBytes())
+                ImageCaptureResult.SuccessWithFile(file.absolutePath)
             } catch (e: Exception) {
-                CameraKLogger.e("CameraK", "Unhandled exception", e)
+                CameraKLogger.e("CameraK", "CameraK: Error writing the captured image", e)
+                outFile?.delete()
                 ImageCaptureResult.Error(e)
             }
         }
@@ -434,15 +442,72 @@ actual class CameraController(
     private fun createVideoOutputPath(config: VideoConfiguration): String {
         val timestamp = LocalDateTime.now()
             .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-        val dir = if (config.outputDirectory != null) {
-            File(config.outputDirectory).also { it.mkdirs() }
-        } else {
-            File("captured_videos").also { it.mkdirs() }
-        }
+        val dir = config.outputDirectory?.let(::File) ?: File(File(userHome, moviesFolderName()), "CameraK")
+        Files.createDirectories(dir.toPath())
         return File(dir, "${config.filePrefix}_$timestamp.mp4").absolutePath
+    }
+
+    private fun pictureFolder(): File = when (directory) {
+        Directory.PICTURES, Directory.DCIM -> File(userHome, "Pictures")
+        Directory.DOCUMENTS -> File(userHome, "Documents")
     }
 }
 
 // user.home can be missing in sandboxed runtimes; fall back to the working directory, as the desktop
 // image saver does.
 private fun defaultUserHome(): File = File(System.getProperty("user.home") ?: System.getProperty("user.dir") ?: ".")
+
+// macOS names the user's video folder Movies; Linux (XDG) and Windows name it Videos.
+private fun moviesFolderName(): String =
+    if (System.getProperty("os.name").lowercase().contains("mac")) "Movies" else "Videos"
+
+/**
+ * Creates a new, empty file in [folder] (creating the folder too) whose name no other file has,
+ * readable and writable only by its owner where the file system has POSIX permissions.
+ */
+internal fun createUniqueFile(folder: File, prefix: String, extension: String): File {
+    val dir = Files.createDirectories(folder.toPath())
+    val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS"))
+    val ownerOnly = if ("posix" in dir.fileSystem.supportedFileAttributeViews()) {
+        arrayOf(PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+    } else {
+        emptyArray()
+    }
+    for (attempt in 0 until MAX_NAME_ATTEMPTS) {
+        val suffix = if (attempt == 0) "" else "_$attempt"
+        try {
+            return Files.createFile(dir.resolve("${prefix}_$stamp$suffix.$extension"), *ownerOnly).toFile()
+        } catch (e: FileAlreadyExistsException) {
+            // Another capture in the same millisecond took this name; try the next suffix.
+            CameraKLogger.w("CameraK", "CameraK: Capture file name taken, trying the next one", e)
+        }
+    }
+    throw IOException("No free file name for $prefix in $MAX_NAME_ATTEMPTS attempts")
+}
+
+/** Writes [image] to [file] as [format], throwing if no writer accepts it. */
+internal fun writeImage(image: BufferedImage, format: ImageFormat, file: File) {
+    if (format == ImageFormat.PNG) {
+        if (!ImageIO.write(image, "png", file)) throw IOException("No PNG writer accepts this image")
+        return
+    }
+    val writer = ImageIO.getImageWritersByFormatName("jpeg").asSequence().firstOrNull()
+        ?: throw IOException("No JPEG writer is installed")
+    try {
+        val params = writer.defaultWriteParam.apply {
+            compressionMode = ImageWriteParam.MODE_EXPLICIT
+            compressionQuality = JPEG_QUALITY
+        }
+        val stream = ImageIO.createImageOutputStream(file) ?: throw IOException("Cannot open the capture file")
+        stream.use { out ->
+            writer.output = out
+            writer.write(null, IIOImage(image, null, null), params)
+        }
+    } finally {
+        writer.dispose()
+    }
+}
+
+// Android compresses stills at 95 too, so a desktop JPEG matches it.
+private const val JPEG_QUALITY = 0.95f
+private const val MAX_NAME_ATTEMPTS = 100

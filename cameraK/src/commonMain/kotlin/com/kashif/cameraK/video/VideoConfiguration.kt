@@ -9,7 +9,8 @@ import androidx.compose.runtime.Immutable
  * @property enableAudio Whether to record microphone audio (AAC).
  * @property maxDurationMs Maximum recording duration in milliseconds. 0 means unlimited.
  * @property outputDirectory Absolute path to directory for saving the video file.
- *                           Null uses the platform default (DCIM/CameraK on Android, temp on iOS/Desktop).
+ *                           Null uses the platform default (DCIM/CameraK on Android, temp on iOS,
+ *                           `~/Movies/CameraK` on macOS and `~/Videos/CameraK` on Linux and Windows).
  * @property filePrefix Prefix for the generated filename.
  */
 @Immutable
