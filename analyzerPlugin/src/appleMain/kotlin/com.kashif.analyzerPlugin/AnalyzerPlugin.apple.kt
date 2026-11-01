@@ -12,14 +12,26 @@ import platform.CoreImage.CIImage
 import platform.CoreImage.createCGImage
 import platform.CoreMedia.CMSampleBufferGetImageBuffer
 import platform.CoreMedia.CMSampleBufferRef
+import platform.CoreVideo.CVPixelBufferRef
 import platform.CoreVideo.kCVPixelBufferPixelFormatTypeKey
 import platform.CoreVideo.kCVPixelFormatType_32BGRA
 import platform.UIKit.UIImage
 import platform.darwin.NSObject
 import platform.darwin.dispatch_get_main_queue
 
+actual fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit): AnalyzerHandle =
+    startAnalyzer(
+        addOutput = cameraController::safeAddOutput,
+        removeOutput = cameraController::safeRemoveOutput,
+        onFrameAvailable = onFrameAvailable,
+    )
+
 @OptIn(ExperimentalForeignApi::class)
-actual fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit): AnalyzerHandle {
+internal fun startAnalyzer(
+    addOutput: (AVCaptureOutput) -> Unit,
+    removeOutput: (AVCaptureOutput) -> Unit,
+    onFrameAvailable: (ByteArray) -> Unit,
+): AnalyzerHandle {
     val analyzer = CameraAnalyzer(onFrameAvailable = onFrameAvailable)
 
     val output = AVCaptureVideoDataOutput().apply {
@@ -29,11 +41,11 @@ actual fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (
         )
     }
 
-    cameraController.safeAddOutput(output)
+    addOutput(output)
 
     return AnalyzerHandle {
         output.setSampleBufferDelegate(null, null)
-        cameraController.safeRemoveOutput(output)
+        removeOutput(output)
     }
 }
 
@@ -48,7 +60,14 @@ internal class CameraAnalyzer(private val onFrameAvailable: (ByteArray) -> Unit)
         fromConnection: AVCaptureConnection,
     ) {
         val buffer = didOutputSampleBuffer ?: return
-        val uiImage = bufferToUIImage(buffer)
+        val imageBuffer = CMSampleBufferGetImageBuffer(buffer) ?: return
+        analyze(imageBuffer)
+    }
+
+    /** Converts one camera frame and hands the encoded image to the consumer. */
+    @OptIn(ExperimentalForeignApi::class)
+    internal fun analyze(imageBuffer: CVPixelBufferRef) {
+        val uiImage = bufferToUIImage(imageBuffer)
 
         uiImage?.let {
             onFrameAvailable(it.toByteArray())
@@ -56,9 +75,7 @@ internal class CameraAnalyzer(private val onFrameAvailable: (ByteArray) -> Unit)
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    private fun bufferToUIImage(sampleBuffer: CMSampleBufferRef): UIImage? {
-        val imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) ?: return null
-
+    private fun bufferToUIImage(imageBuffer: CVPixelBufferRef): UIImage? {
         val ciImage = CIImage.imageWithCVPixelBuffer(imageBuffer)
         val context = CIContext.contextWithOptions(null)
         val cgImage = context.createCGImage(ciImage, ciImage.extent) ?: return null
