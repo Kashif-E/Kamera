@@ -61,6 +61,7 @@ class CustomCameraController(
     private var sessionFactory: () -> CaptureSessionOps = { AVCaptureSessionOps() }
     private var inputConfigurator: ((CaptureSessionOps, CameraDeviceType) -> Boolean)? = null
     private var lensSwitcher: ((CaptureSessionOps, Boolean) -> Unit)? = null
+    private var cameraDevices = CameraDeviceProvider(::discoverCamera)
     private var previewMirroring: (AVCaptureVideoPreviewLayer?, Boolean) -> Unit = ::mirrorPreview
 
     /**
@@ -68,7 +69,8 @@ class CustomCameraController(
      * initial video input in place of AVCaptureDevice discovery (the simulator has no camera).
      * [lensSwitcher], when set, adds the input for the lens switchCamera moves to (true for front)
      * in place of the device lookup, and [previewMirroring], when set, applies the preview layer's
-     * mirroring in place of setting it on the layer's connection.
+     * mirroring in place of setting it on the layer's connection. [cameraDevices], when set, finds
+     * the cameras setup and the lens switches open, in place of AVCaptureDevice discovery.
      */
     internal constructor(
         qualityPrioritization: QualityPrioritization,
@@ -80,11 +82,13 @@ class CustomCameraController(
         inputConfigurator: ((CaptureSessionOps, CameraDeviceType) -> Boolean)? = null,
         lensSwitcher: ((CaptureSessionOps, Boolean) -> Unit)? = null,
         previewMirroring: ((AVCaptureVideoPreviewLayer?, Boolean) -> Unit)? = null,
+        cameraDevices: CameraDeviceProvider? = null,
     ) : this(qualityPrioritization, initialCameraLens, aspectRatio, targetResolution, mirrorFrontCamera) {
         this.sessionFactory = sessionFactory
         this.inputConfigurator = inputConfigurator
         this.lensSwitcher = lensSwitcher
         previewMirroring?.let { this.previewMirroring = it }
+        cameraDevices?.let { this.cameraDevices = it }
     }
 
     /**
@@ -128,11 +132,11 @@ class CustomCameraController(
             // it would deadlock.
             if (isOnSessionQueue) replace() else dispatch_sync(sessionQueue, replace)
         }
-    private var backCamera: AVCaptureDevice? = null
-    private var frontCamera: AVCaptureDevice? = null
+    private var backCamera: CaptureDeviceOps? = null
+    private var frontCamera: CaptureDeviceOps? = null
 
     @Volatile
-    private var currentCamera: AVCaptureDevice? = null
+    private var currentCamera: CaptureDeviceOps? = null
 
     @Volatile
     private var photoOutput: AVCapturePhotoOutput? = null
@@ -309,58 +313,45 @@ class CustomCameraController(
             )
         }
 
-    @OptIn(ExperimentalForeignApi::class)
-    private fun setupInputs(cameraDeviceType: CameraDeviceType): Boolean {
-        val deviceTypeString = cameraDeviceType.toAVCaptureDeviceType()
-
-        val discovered = discoverDevices(
-            deviceTypeString?.let { listOf(it) } ?: allLensDeviceTypes(),
-            AVCaptureDevicePositionUnspecified,
-        )
-        val devices = discovered.ifEmpty {
-            listOfNotNull(AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeVideo) as? AVCaptureDevice)
-        }
-
-        devices.forEach { cam ->
-            when (cam.position) {
-                AVCaptureDevicePositionBack -> backCamera = cam
-                AVCaptureDevicePositionFront -> frontCamera = cam
-            }
-        }
-
-        fun findByTypeAndPosition(type: String?, position: Long?): AVCaptureDevice? = devices.firstOrNull { cam ->
-            (type == null || cam.deviceType == type) && (position == null || cam.position == position)
-        }
-
-        val requestedType = cameraDeviceType.toAVCaptureDeviceType()
-        val desiredPosition = when (initialCameraLens) {
+    /**
+     * The camera of [type] facing [lens] (either way when null), found with AVCaptureDevice
+     * discovery; with no lens given and nothing discovered, the system's default video device.
+     */
+    private fun discoverCamera(lens: CameraLens?, type: CameraDeviceType): CaptureDeviceOps? {
+        val position = when (lens) {
             CameraLens.FRONT -> AVCaptureDevicePositionFront
             CameraLens.BACK -> AVCaptureDevicePositionBack
+            null -> AVCaptureDevicePositionUnspecified
         }
-
-        currentCamera =
-            findByTypeAndPosition(requestedType, desiredPosition)
-                ?: findByTypeAndPosition(requestedType, null)
-                ?: when (initialCameraLens) {
-                    CameraLens.FRONT -> frontCamera ?: backCamera
-                    CameraLens.BACK -> backCamera ?: frontCamera
-                }
-                ?: return false
-
-        isUsingFrontCamera = (currentCamera == frontCamera)
-
-        return try {
-            val input = AVCaptureDeviceInput.deviceInputWithDevice(currentCamera!!, null)
-                ?: return false
-
-            if (session?.canAddInput(input) == true) {
-                session?.addInput(input)
-                true
-            } else {
-                false
+        val device = discoverDevices(type.toAVCaptureDeviceType()?.let { listOf(it) } ?: allLensDeviceTypes(), position)
+            .firstOrNull()
+            ?: (AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeVideo) as? AVCaptureDevice).takeIf {
+                lens == null
             }
-        } catch (e: Exception) {
-            throw CameraException.ConfigurationError(e.message ?: "Unknown error")
+        return device?.let(::AVCaptureDeviceOps)
+    }
+
+    private fun setupInputs(cameraDeviceType: CameraDeviceType): Boolean {
+        backCamera = cameraDevices.find(CameraLens.BACK, cameraDeviceType)
+        frontCamera = cameraDevices.find(CameraLens.FRONT, cameraDeviceType)
+
+        val camera = when (initialCameraLens) {
+            CameraLens.FRONT -> frontCamera ?: backCamera
+            CameraLens.BACK -> backCamera ?: frontCamera
+        } ?: cameraDevices.find(null, cameraDeviceType)?.also { found ->
+            if (found.isFront) frontCamera = found else backCamera = found
+        } ?: return false
+
+        currentCamera = camera
+        isUsingFrontCamera = camera.isFront
+
+        val input = camera.makeInput() ?: return false
+        val ops = session ?: return false
+        return if (ops.canAddInput(input)) {
+            ops.addInput(input)
+            true
+        } else {
+            false
         }
     }
 
@@ -562,8 +553,8 @@ class CustomCameraController(
         currentCamera?.let { camera ->
             if (camera.hasTorch) {
                 try {
-                    camera.lockForConfiguration(null)
-                    camera.torchMode = mode
+                    camera.lockForConfiguration()
+                    camera.setTorchMode(mode)
                     camera.unlockForConfiguration()
                 } catch (e: Exception) {
                     onError?.invoke(CameraException.ConfigurationError("Failed to set torch mode"))
@@ -581,8 +572,8 @@ class CustomCameraController(
         currentCamera?.let { camera ->
             val clampedZoom = zoomFactor.coerceIn(1.0f, getMaxZoom())
             try {
-                camera.lockForConfiguration(null)
-                camera.videoZoomFactor = clampedZoom.toDouble()
+                camera.lockForConfiguration()
+                camera.setVideoZoomFactor(clampedZoom.toDouble())
                 camera.unlockForConfiguration()
             } catch (e: Exception) {
                 onError?.invoke(CameraException.ConfigurationError("Failed to set zoom: ${e.message}"))
@@ -600,7 +591,7 @@ class CustomCameraController(
      * Gets the maximum zoom level supported by the current camera.
      * @return Maximum zoom factor
      */
-    fun getMaxZoom(): Float = currentCamera?.activeFormat?.videoMaxZoomFactor?.toFloat() ?: 1.0f
+    fun getMaxZoom(): Float = currentCamera?.maxVideoZoomFactor?.toFloat() ?: 1.0f
 
     /**
      * Capture an image. Output quality is governed by the configured [qualityPrioritization].
@@ -656,34 +647,28 @@ class CustomCameraController(
     fun switchToDeviceType(deviceType: CameraDeviceType) {
         dispatch_async(sessionQueue) {
             val ops = session ?: return@dispatch_async
-            val targetType = deviceType.toAVCaptureDeviceType() ?: return@dispatch_async
+            if (deviceType.toAVCaptureDeviceType() == null) return@dispatch_async
 
-            // Determine current position
-            val position = if (isUsingFrontCamera) {
-                AVCaptureDevicePositionFront
-            } else {
-                AVCaptureDevicePositionBack
-            }
-
-            // Discover device matching the requested type and position, falling back to any position
-            val newDevice = discoverDevices(listOf(targetType), position).firstOrNull()
-                ?: discoverDevices(listOf(targetType), AVCaptureDevicePositionUnspecified).firstOrNull()
+            // The requested type facing the current way, falling back to either way
+            val lens = if (isUsingFrontCamera) CameraLens.FRONT else CameraLens.BACK
+            val newDevice = cameraDevices.find(lens, deviceType)
+                ?: cameraDevices.find(null, deviceType)
                 ?: return@dispatch_async
 
             val failure = reconfigureVideoInput(ops) {
                 // Remove current input
                 ops.inputs.firstOrNull()?.let(ops::removeInput)
 
-                val newInput = AVCaptureDeviceInput.deviceInputWithDevice(newDevice, null)
+                val newInput = newDevice.makeInput()
                     ?: throw Exception("Failed to create input for device type")
 
                 if (ops.canAddInput(newInput)) {
                     ops.addInput(newInput)
                     currentCamera = newDevice
-                    if (newDevice.position == AVCaptureDevicePositionBack) {
-                        backCamera = newDevice
-                    } else {
+                    if (newDevice.isFront) {
                         frontCamera = newDevice
+                    } else {
+                        backCamera = newDevice
                     }
                 }
             }
@@ -711,10 +696,8 @@ class CustomCameraController(
 
                     val newCamera = currentCamera ?: throw CameraException.DeviceNotAvailable()
 
-                    val newInput = AVCaptureDeviceInput.deviceInputWithDevice(
-                        newCamera,
-                        null,
-                    ) ?: throw CameraException.ConfigurationError("Failed to create input")
+                    val newInput = newCamera.makeInput()
+                        ?: throw CameraException.ConfigurationError("Failed to create input")
 
                     if (ops.canAddInput(newInput)) {
                         ops.addInput(newInput)
