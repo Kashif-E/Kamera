@@ -91,6 +91,13 @@ actual class CameraController(
         CameraKLogger.e("CameraK", "CameraK: Camera error: ${it.message}")
         CameraKLogger.e("CameraK", "Unhandled exception", it)
     }, targetResolution).apply { setHorizontalFlip(horizontalFlip) }
+
+    /**
+     * The camera's frames, latest first, as opaque `TYPE_3BYTE_BGR` images. Each image comes from a
+     * small ring the producer reuses: it is never written while it is the latest frame or the next
+     * one is published, but it is overwritten after that. Read it before the next frame and do not
+     * keep it; copy it to keep it.
+     */
     val frameFlow: Flow<BufferedImage> get() = _frameFlow
     private val qualityPriority: QualityPrioritization = QualityPrioritization.NONE
 
