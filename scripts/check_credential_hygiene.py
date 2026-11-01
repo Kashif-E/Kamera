@@ -10,8 +10,11 @@ it next time:
 - .gitignore ignores local key files and does not pretend to ignore gradle.properties;
 - workflows pass secrets through env:, never into a run: line, a -P flag or a key file on disk;
 - the publish workflow hands Gradle its credentials as ORG_GRADLE_PROJECT_* variables;
-- CI runs gitleaks through its official action pinned to a commit SHA, over full history;
-- scripts/git-hooks/pre-commit rejects a commit that adds a credential or a PGP key block.
+- no tracked build script loads credentials from a file in the repository or a keyring file;
+- CI runs gitleaks: its official action pinned to a commit SHA on new commits, and on a schedule a
+  checksum-verified gitleaks CLI over every branch and tag (`--log-opts=--all`), values redacted;
+- scripts/git-hooks/pre-commit rejects a commit that adds a credential (any separator
+  java.util.Properties accepts) or a PGP private key block, and accepts references to secrets.
 
 Violations name the file, line and key, never a value. Standard library only; run with
 `python3 -I`. Exits 1 on any violation, 2 if the check itself cannot run.
@@ -35,16 +38,24 @@ PRUNED_DIRS = {".git", ".gradle", ".kotlin", ".idea", "build", "node_modules", "
 # identifiers, not secrets, but they only ever travel with the passphrase.
 CREDENTIAL_KEY = re.compile(
     r"^\s*(?P<key>mavenCentral(?:Username|Password)|ossrh(?:Username|Password)"
-    r"|signing\.(?:keyId|password|secretKeyRingFile)|signingInMemoryKey(?:Id|Password)?)\s*[=:]"
+    r"|signing\.(?:keyId|password|secretKeyRingFile)|signingInMemoryKey(?:Id|Password)?)(?:\s*[=:]|\s+\S)"
 )
 CREDENTIAL_WORD = re.compile(r"credential|password|passphrase|secret|token|signing", re.IGNORECASE)
 USER_HOME_PROPERTIES = re.compile(r"(?:~|\$HOME|\$\{HOME\}|GRADLE_USER_HOME)/(?:\.gradle/)?gradle\.properties")
 SECRET_EXPRESSION = re.compile(r"\$\{\{\s*secrets\.")
 CREDENTIAL_FLAG = re.compile(r"-P\s*(?:mavenCentral|signing|ossrh)")
-KEY_FILE = re.compile(r"secring\.gpg|secretKeyRingFile")
+KEY_FILE = re.compile(r"secring\.gpg|secretKeyRingFile|SECRET_KEY_RING_FILE")
+LOCAL_PROPERTIES = re.compile(r"local\.properties")
+BUILD_SCRIPT_CREDENTIAL = re.compile(r"signing\.(?:keyId|password)|ossrh(?:Username|Password)|mavenCentral(?:Username|Password)")
 RUN_KEY = re.compile(r"^\s*(?:-\s+)?run:(?P<rest>.*)$")
 PUBLISH_TASK = re.compile(r"publish\w*MavenCentral", re.IGNORECASE)
 GITLEAKS_ACTION = re.compile(r"uses:\s*gitleaks/gitleaks-action@(?P<ref>\S+)")
+# The action runs `gitleaks detect` with no --log-opts on scheduled runs, which covers only the
+# checked-out branch. Every branch and tag needs the CLI with --log-opts=--all.
+FULL_HISTORY_SCAN = re.compile(r"gitleaks\S*\s+(?:git|detect)\b.*--log-opts[= ]\s*['\"]?--all\b")
+REDACT = re.compile(r"--redact\b")
+CHECKSUM_VERIFY = re.compile(r"\b(?:sha256sum|shasum\s+-a\s*256)\b.*\s(?:-c|--check)\b")
+SHA256 = re.compile(r"\b[0-9a-f]{64}\b")
 PUBLISH_ENV = (
     "ORG_GRADLE_PROJECT_mavenCentralUsername",
     "ORG_GRADLE_PROJECT_mavenCentralPassword",
@@ -160,8 +171,8 @@ def check_gitignore() -> List[Violation]:
     return violations
 
 
-def run_blocks(lines: List[str]) -> Iterator[Tuple[int, str]]:
-    """Yields (line number, text) for every line of every `run:` value in a workflow."""
+def run_scripts(lines: List[str]) -> Iterator[List[Tuple[int, str]]]:
+    """Yields each `run:` value in a workflow as its (line number, text) lines."""
     index = 0
     while index < len(lines):
         match = RUN_KEY.match(lines[index])
@@ -169,14 +180,35 @@ def run_blocks(lines: List[str]) -> Iterator[Tuple[int, str]]:
             index += 1
             continue
         column = lines[index].index("run:")
-        yield index + 1, match.group("rest")
+        script = [(index + 1, match.group("rest"))]
         index += 1
         while index < len(lines):
             line = lines[index]
             if line.strip() and len(line) - len(line.lstrip()) <= column:
                 break
-            yield index + 1, line
+            script.append((index + 1, line))
             index += 1
+        yield script
+
+
+def run_blocks(lines: List[str]) -> Iterator[Tuple[int, str]]:
+    """Yields (line number, text) for every line of every `run:` value in a workflow."""
+    for script in run_scripts(lines):
+        yield from script
+
+
+def shell_commands(script: List[Tuple[int, str]]) -> Iterator[str]:
+    """Joins backslash-continued lines, so a flag on a continuation line counts."""
+    command = ""
+    for _, line in script:
+        stripped = line.rstrip()
+        if stripped.endswith("\\"):
+            command += stripped[:-1] + " "
+            continue
+        yield command + stripped
+        command = ""
+    if command:
+        yield command
 
 
 def check_workflows() -> List[Violation]:
@@ -215,6 +247,7 @@ def check_workflows() -> List[Violation]:
                     violations.append(f"{rel(path)}: publishes without `{name}` set from a secret in env:")
     if not gitleaks_refs:
         violations.append(".github/workflows: no job runs gitleaks/gitleaks-action")
+    violations += check_full_history_scan(workflows)
     for path, ref in gitleaks_refs:
         text = path.read_text()
         if not re.fullmatch(r"[0-9a-f]{40}", ref):
@@ -229,6 +262,47 @@ def check_workflows() -> List[Violation]:
     return violations
 
 
+def check_full_history_scan(workflows: List[Path]) -> List[Violation]:
+    """A scheduled job must run a checksum-verified gitleaks over every ref, with values redacted."""
+    scheduled = [path for path in workflows if re.search(r"^\s*schedule:\s*$", path.read_text(), re.MULTILINE)]
+    for path in scheduled:
+        text = path.read_text()
+        commands = [command for script in run_scripts(text.splitlines()) for command in shell_commands(script)]
+        scans = [command for command in commands if FULL_HISTORY_SCAN.search(command)]
+        if not scans:
+            continue
+        violations = []
+        if not all(REDACT.search(command) for command in scans):
+            violations.append(f"{rel(path)}: the full-history gitleaks scan does not pass --redact, so findings print secrets to the log")
+        if not any(CHECKSUM_VERIFY.search(command) for command in commands) or not SHA256.search(text):
+            violations.append(
+                f"{rel(path)}: runs a gitleaks binary without checking it against a pinned sha256 "
+                "(sha256sum --check)"
+            )
+        return violations
+    return [
+        ".github/workflows: no scheduled job runs `gitleaks git --log-opts=--all`; the gitleaks action "
+        "scans only the checked-out branch, so other branches and tags are never scanned"
+    ]
+
+
+def check_build_scripts() -> List[Violation]:
+    """Build logic that reads credentials from a repository file sends the next maintainer there."""
+    violations = []
+    for path in tracked_files("*.gradle.kts") + tracked_files("*.gradle"):
+        text = path.read_text(errors="replace")
+        reads_local_file = LOCAL_PROPERTIES.search(text) and BUILD_SCRIPT_CREDENTIAL.search(text)
+        for number, line in enumerate(text.splitlines(), 1):
+            if KEY_FILE.search(line):
+                violations.append(f"{rel(path)}:{number}: reads a signing keyring file; use signingInMemoryKey")
+            if reads_local_file and LOCAL_PROPERTIES.search(line):
+                violations.append(
+                    f"{rel(path)}:{number}: loads publishing credentials from local.properties in the "
+                    "repository; Gradle reads them from ~/.gradle/gradle.properties or ORG_GRADLE_PROJECT_*"
+                )
+    return violations
+
+
 def check_pre_commit_hook() -> List[Violation]:
     """Runs the hook in a scratch repository: forbidden additions fail, clean ones commit."""
     if not HOOK.is_file():
@@ -237,13 +311,28 @@ def check_pre_commit_hook() -> List[Violation]:
         return [f"{rel(HOOK)} is not executable"]
     # Assembled at runtime so this file never contains the strings the hook and gitleaks reject.
     value = "placeholder-" + "value"
+    password = "mavenCentral" + "Password"
     forbidden = {
-        "Central Portal password": "mavenCentral" + "Password=" + value,
+        "Central Portal password": password + "=" + value,
+        "Central Portal password after `:`": password + ": " + value,
+        "Central Portal password after whitespace": password + " " + value,
+        "quoted Central Portal password after `:`": "  ORG_GRADLE_PROJECT_" + password + ": '" + value + "'",
+        "Central Portal password in a shell export": "export ORG_GRADLE_PROJECT_" + password + "=" + value,
         "Central Portal username": "mavenCentral" + "Username=" + value,
         "signing passphrase": "signing." + "password=" + value,
+        "signing passphrase after `:`": "signing." + "password:" + value,
         "in-memory signing key": "signingInMemory" + "Key=" + value,
         "OSSRH password": "ossrh" + "Password=" + value,
         "PGP key block": "-----BEGIN " + "PGP PRIVATE KEY BLOCK-----",
+    }
+    # None of these holds a secret; rejecting them would push people to --no-verify.
+    allowed = {
+        "PGP public key block": "-----BEGIN " + "PGP PUBLIC KEY BLOCK-----",
+        "Gradle reference to an environment variable": "signingInMemoryKey" + 'Password=${System.getenv("X")}',
+        "Kotlin read of an environment variable": "val " + password + ' = System.getenv("X")',
+        "workflow env set from a secret": "  ORG_GRADLE_PROJECT_" + password + ": ${{ secrets.X }}",
+        "signing key id": "signingInMemory" + "KeyId=ABCDEF12",
+        "credential key with no value": password + "=",
     }
     violations = []
     with tempfile.TemporaryDirectory() as scratch:
@@ -270,6 +359,11 @@ def check_pre_commit_hook() -> List[Violation]:
                 git(["reset", "-q", "--hard", "HEAD~1"], repo, env)
             elif value in result.stdout + result.stderr:
                 violations.append(f"{rel(HOOK)}: printed the rejected value for a {label}")
+        for label, line in allowed.items():
+            result = commit(f"org.gradle.jvmargs=-Xmx4G\n{line}\n", label)
+            if result.returncode != 0:
+                violations.append(f"{rel(HOOK)}: rejected a commit that adds a {label}, which is not a secret")
+                git(["reset", "-q", "--hard", "HEAD"], repo, env)
         # Removing a leaked line must stay possible.
         leaked = commit(f"{forbidden['signing passphrase']}\n", "already leaked", verify=False)
         if leaked.returncode != 0:
@@ -284,7 +378,8 @@ CHECKS: List[Tuple[str, Callable[[], List[Violation]]]] = [
     ("gradle.properties holds no credentials", check_gradle_properties),
     ("docs keep credentials out of tracked files", check_docs),
     (".gitignore covers local key files", check_gitignore),
-    ("workflows pass secrets through env", check_workflows),
+    ("workflows pass secrets through env and scan full history", check_workflows),
+    ("build scripts read credentials only from Gradle properties", check_build_scripts),
     ("pre-commit hook rejects credentials", check_pre_commit_hook),
 ]
 
