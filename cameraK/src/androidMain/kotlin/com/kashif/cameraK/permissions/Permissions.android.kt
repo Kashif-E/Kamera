@@ -1,6 +1,7 @@
 package com.kashif.cameraK.permissions
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,9 +26,7 @@ actual fun providePermissions(): Permissions {
                 ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                     PackageManager.PERMISSION_GRANTED
 
-            override fun hasStoragePermission(): Boolean = Build.VERSION.SDK_INT >= 32 ||
-                ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
-                PackageManager.PERMISSION_GRANTED
+            override fun hasStoragePermission(): Boolean = storagePermissionGranted(context)
 
             @Composable
             override fun RequestCameraPermission(onGranted: () -> Unit, onDenied: () -> Unit) {
@@ -63,3 +62,7 @@ actual fun providePermissions(): Permissions {
         }
     }
 }
+
+internal fun storagePermissionGranted(context: Context): Boolean = Build.VERSION.SDK_INT >= 32 ||
+    ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+    PackageManager.PERMISSION_GRANTED

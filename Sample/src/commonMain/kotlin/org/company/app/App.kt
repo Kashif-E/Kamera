@@ -1238,6 +1238,10 @@ private suspend fun handleImageCapture(cameraController: CameraController, onIma
             println("Image captured: ${result.filePath}")
         }
 
+        is ImageCaptureResult.SuccessWithUri -> {
+            println("Image published to the gallery: ${result.uri}")
+        }
+
         is ImageCaptureResult.Success -> {
             println("Image captured (${result.byteArray.size} bytes)")
             onImageCaptured(result.byteArray.decodeToImageBitmap())

@@ -1,7 +1,10 @@
 package com.kashif.cameraK.controller
 
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -39,31 +42,53 @@ internal class FakeCameraXBackend : CameraXBackend {
 
     override fun takePicture(
         imageCapture: ImageCapture,
-        outputFile: File,
-        metadata: ImageCapture.Metadata,
+        options: ImageCapture.OutputFileOptions,
         executor: Executor,
         callback: ImageCapture.OnImageSavedCallback,
     ) {
-        captures += PendingCapture(outputFile, executor, callback)
+        captures += PendingCapture(options, executor, callback)
     }
 }
 
+/**
+ * A still CameraX has been asked for. Delivering it saves the bytes the way ImageCapture does: into
+ * the requested file, or, for a MediaStore request, by inserting a row into the requested collection
+ * (pending from API 29 until the bytes are written) and writing through the resolver.
+ */
 internal class PendingCapture(
-    val outputFile: File,
+    val options: ImageCapture.OutputFileOptions,
     private val executor: Executor,
     private val callback: ImageCapture.OnImageSavedCallback,
 ) {
-    /** CameraX finished writing [bytes] to the output file and reports it on the callback executor. */
+    /** The requested file; fails for a MediaStore request. */
+    val outputFile: File get() = checkNotNull(options.file) { "this capture was not requested into a file" }
+
+    /** CameraX finished writing [bytes] to the destination and reports it on the callback executor. */
     fun deliverSaved(bytes: ByteArray) {
-        outputFile.parentFile?.mkdirs()
-        outputFile.writeBytes(bytes)
-        executor.execute { callback.onImageSaved(ImageCapture.OutputFileResults(Uri.fromFile(outputFile))) }
+        val saved = options.file?.let { file ->
+            file.parentFile?.mkdirs()
+            file.writeBytes(bytes)
+            Uri.fromFile(file)
+        } ?: saveToMediaStore(bytes)
+        executor.execute { callback.onImageSaved(ImageCapture.OutputFileResults(saved)) }
     }
 
     /** CameraX reports the file saved, but it is gone by the time anyone reads it. */
     fun deliverSavedWithoutFile() {
         outputFile.delete()
         executor.execute { callback.onImageSaved(ImageCapture.OutputFileResults(Uri.fromFile(outputFile))) }
+    }
+
+    private fun saveToMediaStore(bytes: ByteArray): Uri {
+        val resolver = checkNotNull(options.contentResolver) { "neither a file nor a MediaStore request" }
+        val values = ContentValues(options.contentValues ?: ContentValues())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) values.put(MediaStore.MediaColumns.IS_PENDING, 1)
+        val row = checkNotNull(resolver.insert(checkNotNull(options.saveCollection), values))
+        checkNotNull(resolver.openOutputStream(row)).use { it.write(bytes) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            resolver.update(row, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+        }
+        return row
     }
 }
 
@@ -124,15 +149,17 @@ internal fun testController(
     lifecycleOwner: LifecycleOwner = ResumedLifecycleOwner(),
     imageProcessingExecutor: ExecutorService = Executors.newFixedThreadPool(2),
     analyzerExecutor: ExecutorService = Executors.newSingleThreadExecutor(),
+    directory: Directory = Directory.DOCUMENTS,
+    imageFormat: ImageFormat = ImageFormat.JPEG,
 ) = CameraController(
     context = context,
     lifecycleOwner = lifecycleOwner,
     flashMode = FlashMode.OFF,
     torchMode = TorchMode.OFF,
     cameraLens = CameraLens.BACK,
-    imageFormat = ImageFormat.JPEG,
+    imageFormat = imageFormat,
     qualityPriority = QualityPrioritization.BALANCED,
-    directory = Directory.DOCUMENTS,
+    directory = directory,
     cameraDeviceType = CameraDeviceType.DEFAULT,
     aspectRatio = AspectRatio.RATIO_4_3,
     targetResolution = null,

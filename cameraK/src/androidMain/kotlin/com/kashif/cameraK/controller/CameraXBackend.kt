@@ -8,7 +8,6 @@ import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.lifecycle.LifecycleOwner
-import java.io.File
 import java.util.concurrent.Executor
 
 /**
@@ -37,8 +36,7 @@ internal interface CameraXBackend {
 
     fun takePicture(
         imageCapture: ImageCapture,
-        outputFile: File,
-        metadata: ImageCapture.Metadata,
+        options: ImageCapture.OutputFileOptions,
         executor: Executor,
         callback: ImageCapture.OnImageSavedCallback,
     )
@@ -51,12 +49,10 @@ internal interface CameraXBackend {
 
         override fun takePicture(
             imageCapture: ImageCapture,
-            outputFile: File,
-            metadata: ImageCapture.Metadata,
+            options: ImageCapture.OutputFileOptions,
             executor: Executor,
             callback: ImageCapture.OnImageSavedCallback,
         ) {
-            val options = ImageCapture.OutputFileOptions.Builder(outputFile).setMetadata(metadata).build()
             imageCapture.takePicture(options, executor, callback)
         }
     }

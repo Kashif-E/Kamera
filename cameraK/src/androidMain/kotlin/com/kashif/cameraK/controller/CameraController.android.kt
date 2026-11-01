@@ -573,8 +573,7 @@ actual class CameraController internal constructor(
             inFlightCaptures.add(continuation)
             backend.takePicture(
                 capture,
-                outputFile,
-                captureMetadata(),
+                ImageCapture.OutputFileOptions.Builder(outputFile).setMetadata(captureMetadata()).build(),
                 ContextCompat.getMainExecutor(context),
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(output: ImageCapture.OutputFileResults) {

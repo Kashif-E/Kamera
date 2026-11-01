@@ -32,6 +32,20 @@ sealed class ImageCaptureResult {
     data class SuccessWithFile(val filePath: String) : ImageCaptureResult()
 
     /**
+     * Represents a successful image capture published to the shared gallery, which has no file path
+     * the app can use.
+     *
+     * @param uri The gallery entry: a `content://` MediaStore URI on Android.
+     */
+    class SuccessWithUri(val uri: String) : ImageCaptureResult() {
+        override fun equals(other: Any?): Boolean = other is SuccessWithUri && other.uri == uri
+
+        override fun hashCode(): Int = uri.hashCode()
+
+        override fun toString(): String = "SuccessWithUri(uri=$uri)"
+    }
+
+    /**
      * Represents a failed image capture.
      *
      * @param exception The exception that occurred during image capture.
