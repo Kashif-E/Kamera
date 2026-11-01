@@ -95,10 +95,8 @@ class IOSImageSaverPlugin internal constructor(
         // A synchronous request runs the handler on this thread before it returns, so the data is
         // already here when requestImageData does.
         var imageData: NSData? = null
-        val found = photoLibrary.requestImageData(assetId, options) { data -> imageData = data }
-        if (!found) {
-            throw IOException("No asset found with identifier: $path")
-        }
+        photoLibrary.requestImageData(assetId, options) { data -> imageData = data }
+            ?: throw IOException("No asset found with identifier: $path")
 
         return imageData?.toByteArray() ?: throw IOException("Failed to get image data from asset: $path")
     }

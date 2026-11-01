@@ -5,6 +5,7 @@ import platform.Foundation.NSError
 import platform.Photos.PHAsset
 import platform.Photos.PHAssetChangeRequest
 import platform.Photos.PHImageManager
+import platform.Photos.PHImageRequestID
 import platform.Photos.PHImageRequestOptions
 import platform.Photos.PHPhotoLibrary
 import platform.UIKit.UIImage
@@ -18,15 +19,20 @@ internal interface PhotoLibraryGateway {
     fun createImageAsset(image: UIImage, completion: (localIdentifier: String?, error: NSError?) -> Unit)
 
     /**
-     * Requests the image data of the asset with [localIdentifier], returning false when there is
-     * no such asset. [resultHandler] follows PHImageManager's contract for [options]: with
-     * `synchronous = true` it runs on the calling thread before this function returns.
+     * Requests the image data of the asset with [localIdentifier], returning the request's ID, or
+     * null when there is no such asset. [resultHandler] follows PHImageManager's contract for
+     * [options]: with `synchronous = true` it runs once on the calling thread before this function
+     * returns; otherwise it runs once, later, on the main thread, or not at all after
+     * [cancelImageRequest].
      */
     fun requestImageData(
         localIdentifier: String,
         options: PHImageRequestOptions,
         resultHandler: (NSData?) -> Unit,
-    ): Boolean
+    ): PHImageRequestID?
+
+    /** Cancels an asynchronous request started by [requestImageData]. Synchronous requests cannot be cancelled. */
+    fun cancelImageRequest(requestId: PHImageRequestID)
 }
 
 internal object SystemPhotoLibrary : PhotoLibraryGateway {
@@ -44,13 +50,16 @@ internal object SystemPhotoLibrary : PhotoLibraryGateway {
         localIdentifier: String,
         options: PHImageRequestOptions,
         resultHandler: (NSData?) -> Unit,
-    ): Boolean {
+    ): PHImageRequestID? {
         val fetchResult = PHAsset.fetchAssetsWithLocalIdentifiers(listOf(localIdentifier), null)
-        if (fetchResult.count.toInt() == 0) return false
+        if (fetchResult.count.toInt() == 0) return null
         val asset = fetchResult.firstObject as PHAsset
-        PHImageManager.defaultManager().requestImageDataAndOrientationForAsset(asset, options) { data, _, _, _ ->
+        return PHImageManager.defaultManager().requestImageDataAndOrientationForAsset(asset, options) { data, _, _, _ ->
             resultHandler(data)
         }
-        return true
+    }
+
+    override fun cancelImageRequest(requestId: PHImageRequestID) {
+        PHImageManager.defaultManager().cancelImageRequest(requestId)
     }
 }

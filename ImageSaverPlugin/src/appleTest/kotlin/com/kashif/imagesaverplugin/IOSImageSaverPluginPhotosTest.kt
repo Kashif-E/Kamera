@@ -19,6 +19,7 @@ import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSLocalizedDescriptionKey
 import platform.Foundation.NSThread
+import platform.Photos.PHImageRequestID
 import platform.Photos.PHImageRequestOptions
 import platform.UIKit.UIGraphicsBeginImageContextWithOptions
 import platform.UIKit.UIGraphicsEndImageContext
@@ -174,12 +175,14 @@ class IOSImageSaverPluginPhotosTest {
             localIdentifier: String,
             options: PHImageRequestOptions,
             resultHandler: (NSData?) -> Unit,
-        ): Boolean {
+        ): PHImageRequestID? {
             requestedIdentifier.value = localIdentifier
-            if (!assetExists) return false
+            if (!assetExists) return null
             resultHandler(imageData)
-            return true
+            return 1
         }
+
+        override fun cancelImageRequest(requestId: PHImageRequestID) = Unit
     }
 
     private fun photosError(description: String) = NSError.errorWithDomain(

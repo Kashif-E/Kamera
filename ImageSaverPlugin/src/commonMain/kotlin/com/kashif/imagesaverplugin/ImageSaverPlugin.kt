@@ -17,6 +17,7 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -166,6 +167,17 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
      * @return The image data as a [ByteArray].
      */
     abstract fun getByteArrayFrom(path: String): ByteArray
+
+    /**
+     * Reads the image at [path]: a file path, a `content://` URI on Android, or a `ph://` asset
+     * location on iOS. Suspends while the platform reads, so it can be called from any thread, and
+     * cancelling it stops the wait.
+     *
+     * @param path Where the image is stored, as returned by [saveImage] or a capture.
+     * @return The image data.
+     * @throws kotlinx.io.IOException when the image cannot be read.
+     */
+    open suspend fun readBytes(path: String): ByteArray = withContext(Dispatchers.IO) { getByteArrayFrom(path) }
 }
 
 /**
