@@ -3,7 +3,13 @@ package com.kashif.cameraK.controller
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import platform.AVFoundation.*
+import platform.Foundation.NSError
 
 /**
  * The camera-device operations [CustomCameraController] performs. Production wraps an
@@ -48,9 +54,15 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
 
     override fun isTorchModeSupported(mode: AVCaptureTorchMode): Boolean = device.isTorchModeSupported(mode)
 
-    override fun lockForConfiguration(): Throwable? {
-        device.lockForConfiguration(null)
-        return null
+    override fun lockForConfiguration(): Throwable? = memScoped {
+        val error = alloc<ObjCObjectVar<NSError?>>()
+        if (device.lockForConfiguration(error.ptr)) {
+            null
+        } else {
+            IllegalStateException(
+                "lockForConfiguration failed: ${error.value?.localizedDescription ?: "no error given"}",
+            )
+        }
     }
 
     override fun unlockForConfiguration() = device.unlockForConfiguration()

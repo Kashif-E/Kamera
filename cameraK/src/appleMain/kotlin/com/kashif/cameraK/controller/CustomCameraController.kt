@@ -343,6 +343,7 @@ class CustomCameraController(
         } ?: return false
 
         currentCamera = camera
+        requestedZoom = null
         isUsingFrontCamera = camera.isFront
 
         val input = camera.makeInput() ?: return false
@@ -501,6 +502,7 @@ class CustomCameraController(
             session = null
             photoOutput = null
             currentCamera = null
+            requestedZoom = null
             backCamera = null
             frontCamera = null
         }
@@ -547,37 +549,57 @@ class CustomCameraController(
         }
     }
 
-    @OptIn(ExperimentalForeignApi::class)
     fun setTorchMode(mode: AVCaptureTorchMode) {
         torchMode = mode
-        currentCamera?.let { camera ->
-            if (camera.hasTorch) {
-                try {
-                    camera.lockForConfiguration()
-                    camera.setTorchMode(mode)
-                    camera.unlockForConfiguration()
-                } catch (e: Exception) {
-                    onError?.invoke(CameraException.ConfigurationError("Failed to set torch mode"))
-                }
-            }
+        dispatch_async(sessionQueue) {
+            currentCamera?.let { applyTorchMode(it, mode) }
         }
     }
 
+    /** Sets [mode] on [camera] when it has a torch that supports it. Runs on the session queue. */
+    private fun applyTorchMode(camera: CaptureDeviceOps, mode: AVCaptureTorchMode) {
+        if (!camera.hasTorch) return
+        if (!camera.isTorchModeSupported(mode)) {
+            CameraKLogger.w(TAG, "CameraK: the camera does not support torch mode $mode; leaving the torch as it is")
+            return
+        }
+        withConfigurationLock(camera, "set the torch") { camera.setTorchMode(mode) }
+    }
+
+    /**
+     * Runs [change] holding [camera]'s configuration lock, which AVFoundation requires for every
+     * device property change; a refused lock is reported and the change skipped. Runs on the
+     * session queue.
+     */
+    private inline fun withConfigurationLock(camera: CaptureDeviceOps, operation: String, change: () -> Unit) {
+        val refused = camera.lockForConfiguration()
+        if (refused != null) {
+            CameraKLogger.e(TAG, "CameraK: could not lock the camera to $operation", refused)
+            reportError(CameraException.ConfigurationError("Could not lock the camera to $operation"))
+            return
+        }
+        try {
+            change()
+        } finally {
+            camera.unlockForConfiguration()
+        }
+    }
+
+    /** The zoom last requested, so getZoom answers at once while the change runs on the session queue. */
+    @Volatile
+    private var requestedZoom: Float? = null
+
     /**
      * Sets the zoom level smoothly.
-     * @param zoomFactor The desired zoom level (1.0 = no zoom)
+     * @param zoomFactor The desired zoom level (1.0 = no zoom), clamped to [1, getMaxZoom()]
      */
-    @OptIn(ExperimentalForeignApi::class)
     fun setZoom(zoomFactor: Float) {
-        currentCamera?.let { camera ->
-            val clampedZoom = zoomFactor.coerceIn(1.0f, getMaxZoom())
-            try {
-                camera.lockForConfiguration()
-                camera.setVideoZoomFactor(clampedZoom.toDouble())
-                camera.unlockForConfiguration()
-            } catch (e: Exception) {
-                onError?.invoke(CameraException.ConfigurationError("Failed to set zoom: ${e.message}"))
-            }
+        val camera = currentCamera ?: return
+        val clampedZoom = zoomFactor.coerceIn(1.0f, getMaxZoom())
+        requestedZoom = clampedZoom
+        dispatch_async(sessionQueue) {
+            if (currentCamera !== camera) return@dispatch_async
+            withConfigurationLock(camera, "set the zoom") { camera.setVideoZoomFactor(clampedZoom.toDouble()) }
         }
     }
 
@@ -585,7 +607,7 @@ class CustomCameraController(
      * Gets the current zoom level.
      * @return Current zoom factor (1.0 = no zoom)
      */
-    fun getZoom(): Float = currentCamera?.videoZoomFactor?.toFloat() ?: 1.0f
+    fun getZoom(): Float = requestedZoom ?: currentCamera?.videoZoomFactor?.toFloat() ?: 1.0f
 
     /**
      * Gets the maximum zoom level supported by the current camera.
@@ -665,6 +687,7 @@ class CustomCameraController(
                 if (ops.canAddInput(newInput)) {
                     ops.addInput(newInput)
                     currentCamera = newDevice
+                    requestedZoom = null
                     if (newDevice.isFront) {
                         frontCamera = newDevice
                     } else {
@@ -693,6 +716,7 @@ class CustomCameraController(
                     switcher(ops, isUsingFrontCamera)
                 } else {
                     currentCamera = if (isUsingFrontCamera) frontCamera else backCamera
+                    requestedZoom = null
 
                     val newCamera = currentCamera ?: throw CameraException.DeviceNotAvailable()
 
