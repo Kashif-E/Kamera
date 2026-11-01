@@ -368,8 +368,9 @@ class CustomCameraController(
      * Queues a configuration change to be applied atomically (Apple WWDC pattern) on the session
      * queue. Used by plugins to safely add outputs without crashing; callable from any thread.
      *
-     * A change queued before the session is set up joins the setup transaction. If the session is
-     * running, the change is applied at once; otherwise it is applied by the next startSession().
+     * A change queued before the session is set up joins the setup transaction. Once the session
+     * exists, the change is applied in its own transaction whether the session is running, stopped
+     * or interrupted, so an output a plugin removes never waits for a start that may not come.
      *
      * @param change Lambda to execute within beginConfiguration/commitConfiguration block
      */
@@ -377,9 +378,7 @@ class CustomCameraController(
         dispatch_async(sessionQueue) {
             pendingConfigurations.add(change)
             val ops = session ?: return@dispatch_async
-            if (ops.isRunning) {
-                processPendingConfigurations(ops)
-            }
+            processPendingConfigurations(ops)
         }
     }
 
@@ -421,9 +420,11 @@ class CustomCameraController(
             queueConfigurationChange { safeAddOutput(output) }
             return
         }
-        val session = session
-        if (session != null && session.canAddOutput(output)) {
+        val session = session ?: return
+        if (session.canAddOutput(output)) {
             session.addOutput(output)
+        } else {
+            CameraKLogger.w(TAG, "CameraK: the capture session refused an output; it was not added")
         }
     }
 
@@ -469,7 +470,6 @@ class CustomCameraController(
     fun startSession() {
         dispatch_async(sessionQueue) {
             val ops = session ?: return@dispatch_async
-            processPendingConfigurations(ops)
             if (!ops.isRunning) {
                 ops.startRunning()
             }
