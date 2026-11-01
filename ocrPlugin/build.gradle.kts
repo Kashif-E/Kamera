@@ -68,6 +68,19 @@ dependencies {
     }
 }
 
+// Desktop tests run in a working directory of their own, so a test can plant files there and show
+// that OCR never reads them. The real-Tesseract test finds the model through ocr.tessdataDir.
+tasks.named<Test>("desktopTest") {
+    val testWorkingDir =
+        layout.buildDirectory
+            .dir("desktopTest-cwd")
+            .get()
+            .asFile
+    workingDir = testWorkingDir
+    doFirst { testWorkingDir.mkdirs() }
+    systemProperty("ocr.tessdataDir", file("src/desktopMain/kotlin/com/kashif/ocrPlugin").absolutePath)
+}
+
 android {
     namespace = "com.kashif.ocr_plugin"
     compileSdk =

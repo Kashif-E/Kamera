@@ -121,7 +121,7 @@ class OcrProcessorNativeLeaksTest {
 
     @Test
     fun theRealTesseract_readsRenderedText() {
-        val tessdata = File("src/desktopMain/kotlin/com/kashif/ocrPlugin")
+        val tessdata = File(checkNotNull(System.getProperty("ocr.tessdataDir")) { "ocr.tessdataDir is not set" })
         assertTrue(
             File(tessdata, "eng.traineddata").exists(),
             "eng.traineddata not found under ${tessdata.absolutePath}",

@@ -9,9 +9,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * Stands in for Tesseract and Leptonica with the same ownership rules: every handle it returns must
  * be freed exactly once and never touched afterwards, and End() or delete() while a recognition is
  * inside the engine frees memory that recognition is using. It records each breach in [violations]
- * instead of crashing the JVM, and counts every crossing into "native" code in [crossings].
+ * instead of crashing the JVM, and counts every crossing into "native" code in [crossings]. Init()
+ * returns [initResult], so a test can stand in for language data Tesseract rejects.
  */
-internal class FakeTesseract(private val recognizedText: String? = "HELLO") : TesseractLibrary {
+internal class FakeTesseract(private val recognizedText: String? = "HELLO", private val initResult: Int = 0) :
+    TesseractLibrary {
     val violations: MutableList<String> = CopyOnWriteArrayList()
     val crossings = AtomicInteger()
     val engines: MutableList<FakeEngine> = CopyOnWriteArrayList()
@@ -50,7 +52,7 @@ internal class FakeTesseract(private val recognizedText: String? = "HELLO") : Te
 
         override fun init(dataPath: String, language: String): Int {
             use("Init")
-            return 0
+            return initResult
         }
 
         override fun setVariable(name: String, value: String) = use("SetVariable")
