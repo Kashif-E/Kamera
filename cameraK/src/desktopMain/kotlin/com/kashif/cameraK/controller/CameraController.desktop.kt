@@ -56,15 +56,21 @@ actual class CameraController(
     private var sessionDispatcher: CoroutineDispatcher = Dispatchers.Default
     private var recorderFactory: (String, VideoConfiguration) -> FrameRecorder = ::createFrameRecorder
 
+    // The folder that Directory and the default video folder resolve under: the user's home.
+    private var userHome: File = defaultUserHome()
+
     internal constructor(
         imageFormat: ImageFormat,
         directory: Directory,
         customGrabber: FrameGrabber?,
         sessionDispatcher: CoroutineDispatcher,
         recorderFactory: (String, VideoConfiguration) -> FrameRecorder,
-    ) : this(imageFormat, directory, customGrabber = customGrabber) {
+        horizontalFlip: Boolean = false,
+        userHome: File = defaultUserHome(),
+    ) : this(imageFormat, directory, horizontalFlip = horizontalFlip, customGrabber = customGrabber) {
         this.sessionDispatcher = sessionDispatcher
         this.recorderFactory = recorderFactory
+        this.userHome = userHome
     }
 
     private val _frameFlow = MutableSharedFlow<BufferedImage>(
@@ -436,3 +442,7 @@ actual class CameraController(
         return File(dir, "${config.filePrefix}_$timestamp.mp4").absolutePath
     }
 }
+
+// user.home can be missing in sandboxed runtimes; fall back to the working directory, as the desktop
+// image saver does.
+private fun defaultUserHome(): File = File(System.getProperty("user.home") ?: System.getProperty("user.dir") ?: ".")
