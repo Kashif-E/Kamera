@@ -26,14 +26,13 @@ jobs:
           # macos-15 is Apple silicon with ~7 GB; -Xmx5g leaves room for the Kotlin/Native linker itself.
           echo "org.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=1g" >> ~/.gradle/gradle.properties
 
-      - name: Decode GPG Key
-        run: echo "${{ secrets.SIGNING_SECRET_KEY_RING_FILE }}" | base64 --decode > $HOME/secring.gpg
-
+      # Gradle reads ORG_GRADLE_PROJECT_* as project properties. Secrets stay out of the command line
+      # and off the disk: the signing key is the ASCII-armored export, held in memory.
       - name: Publish to Maven Central
-        run: |
-          ./gradlew publishAllPublicationsToMavenCentralRepository --no-configuration-cache \
-            -PmavenCentralUsername=${{ secrets.MAVEN_CENTRAL_USERNAME }} \
-            -PmavenCentralPassword=${{ secrets.MAVEN_CENTRAL_PASSWORD }} \
-            -Psigning.keyId=${{ secrets.SIGNING_KEY_ID }} \
-            -Psigning.password=${{ secrets.SIGNING_PASSWORD }} \
-            -Psigning.secretKeyRingFile=$HOME/secring.gpg
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+        run: ./gradlew publishAllPublicationsToMavenCentralRepository --no-configuration-cache

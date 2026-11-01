@@ -1,0 +1,28 @@
+#!/bin/sh
+# Rejects a commit that adds a publishing credential or a PGP key block. Enable it once per clone:
+#   git config core.hooksPath scripts/git-hooks
+# Only added lines are checked, so a commit that removes a leaked line still goes through. The
+# value is never printed: only the file and the key that matched.
+
+key_pattern='(mavenCentral(Username|Password)|ossrh(Username|Password)|signing[.]password|signingInMemoryKey(Password)?)[[:space:]]*='
+block_pattern='BEGIN[[:space:]]PGP[[:space:]]'
+
+status=0
+files=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR) || exit 1
+# One file name per line, unglobbed, so names with spaces survive the loop.
+IFS='
+'
+set -f
+for file in $files; do
+    added=$(git diff --cached --no-color --unified=0 -- "$file" | sed -n 's/^+//p' | grep -v '^++ ')
+    keys=$(printf '%s\n' "$added" | grep -o -E "$key_pattern" | sed 's/[[:space:]]*=$//' | sort -u)
+    for key in $keys; do
+        echo "pre-commit: $file adds a value for '$key'; keep credentials in ~/.gradle/gradle.properties or ORG_GRADLE_PROJECT_* variables" >&2
+        status=1
+    done
+    if printf '%s\n' "$added" | grep -q -E "$block_pattern"; then
+        echo "pre-commit: $file adds a PGP key block" >&2
+        status=1
+    fi
+done
+exit $status

@@ -51,6 +51,38 @@ scripts/verify.sh --record-screenshots
 When a comparison fails, the actual render and a diff are written to
 `cameraK/build/reports/screenshots-desktop/` and `cameraKScreenshotTests/build/paparazzi/failures/`.
 
+## Publishing credentials
+
+Credentials live only in `~/.gradle/gradle.properties` or in `ORG_GRADLE_PROJECT_*` environment
+variables. Never put them in a file inside this repository. The root `gradle.properties` is tracked
+and holds build settings only; `.gitignore` cannot protect a tracked file, so `git commit -a` would
+pick up anything added to it.
+
+The properties are `mavenCentralUsername` and `mavenCentralPassword` (a Central Portal user token),
+and `signingInMemoryKey` (the ASCII-armored export of the signing subkey), `signingInMemoryKeyId`
+and `signingInMemoryKeyPassword`. The publish workflow sets them from repository secrets through
+`env:`; no secret appears in a `run:` line and no key file is written to disk.
+
+Enable the pre-commit hook once per clone. It rejects a commit that adds a value for one of those
+properties, an OSSRH credential, a signing passphrase or a PGP key block:
+
+```bash
+git config core.hooksPath scripts/git-hooks
+```
+
+`scripts/verify.sh --only lint` runs `scripts/check_credential_hygiene.py`, which fails if a
+properties file in the repository holds a credential, a doc points credentials at one, a workflow
+interpolates a secret into `run:`, or the hook stops rejecting credentials. When
+`gitleaks` is on your `PATH` it also scans the full history with `.gitleaks.toml`; otherwise the
+summary says the scan did not run. CI runs gitleaks through `.github/workflows/secret-scan.yml`, on
+new commits for every push and pull request and over full history weekly.
+
+The Maven Central token and the signing passphrase were committed to this repository's history
+before `a626597`. Removing them from the tree did not revoke them. Until the token and signing
+subkey are rotated, the full-history scan fails on those commits. After rotation, add their
+gitleaks fingerprints to `.gitleaksignore` with a link to the rotation PR; any other finding still
+fails the build.
+
 ## Branching and Pull Requests
 
 - Create a feature branch from the default branch.

@@ -66,4 +66,4 @@ All library modules target: `androidTarget`, `jvm("desktop")`, `iosX64()`, `iosA
 
 ## Publishing
 
-Uses vanniktech maven-publish plugin to Maven Central (Sonatype Central Portal). Coordinates: `io.github.kashif-mehmood-km:{artifactId}:{version}`. GPG-signed releases. Publishing credentials are in `gradle.properties` (do not commit secrets).
+Uses vanniktech maven-publish plugin to Maven Central (Sonatype Central Portal). Coordinates: `io.github.kashif-mehmood-km:{artifactId}:{version}`. GPG-signed releases. Publishing credentials live only in `~/.gradle/gradle.properties` or `ORG_GRADLE_PROJECT_*` environment variables, never in a file in this repository; the tracked root properties file holds build settings only. See CONTRIBUTING.md, "Publishing credentials".

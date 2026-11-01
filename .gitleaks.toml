@@ -1,0 +1,21 @@
+title = "CameraK gitleaks configuration"
+
+# The default rules plus the Gradle publishing properties this project leaked once. The default
+# generic-api-key rule needs a high-entropy value, so a short or low-entropy passphrase would pass it.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "gradle-publishing-credential"
+description = "Central Portal or OSSRH credential, or signing passphrase, given a literal value in a properties file or -P flag"
+regex = '''(?:mavenCentral(?:Username|Password)|ossrh(?:Username|Password)|signing\.password|signingInMemoryKeyPassword)\s*[=:]\s*['"]?([^\s'"$]{4,})'''
+secretGroup = 1
+keywords = ["mavencentral", "ossrh", "signing"]
+
+[[rules]]
+id = "gradle-in-memory-signing-key"
+description = "ASCII-armored signing key given a literal value as signingInMemoryKey"
+regex = '''signingInMemoryKey\s*[=:]\s*['"]?([A-Za-z0-9+/=\\]{64,})'''
+secretGroup = 1
+keywords = ["signinginmemorykey"]

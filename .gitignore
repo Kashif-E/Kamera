@@ -14,7 +14,10 @@ xcuserdata/
 Pods/
 *.jks
 *yarn.lock
-*gradle.properties
+# Signing keys and exported key files. Credentials live in ~/.gradle/gradle.properties or
+# ORG_GRADLE_PROJECT_* variables, never in this repository (see CONTRIBUTING.md).
+*.gpg
+*.asc
 # MkDocs build output
 site/
 
