@@ -4,9 +4,11 @@ import androidx.compose.runtime.Stable
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -108,13 +110,21 @@ class CameraKStateHolder(
      */
     val deviceOrientation: StateFlow<DeviceOrientation> = _deviceOrientation.asStateFlow()
 
+    // A plugin coroutine that throws must not reach the platform's uncaught-exception handler, which
+    // kills the host app on Android and iOS.
+    private val pluginFailureHandler = CoroutineExceptionHandler { _, error ->
+        CameraKLogger.e("CameraKStateHolder", "Plugin coroutine failed", error)
+        coroutineScope.launch { _events.emit(CameraKEvent.PluginFailed(error)) }
+    }
+
     /**
      * CoroutineScope for plugins to launch their operations.
      *
      * This is a child of the scope passed to the StateHolder (so it dies with the host, e.g. when
      * the composable leaves composition), but it is owned here: [shutdown] cancels every coroutine
      * launched in it. A failure in one plugin's coroutine is isolated (SupervisorJob) and does not
-     * tear down the others. Plugins should still cancel their own jobs in [CameraKPlugin.onDetach].
+     * tear down the others or the host: it is logged and reported as [CameraKEvent.PluginFailed].
+     * Plugins should still cancel their own jobs in [CameraKPlugin.onDetach].
      *
      * @example
      * ```kotlin
@@ -130,7 +140,11 @@ class CameraKStateHolder(
      * ```
      */
     val pluginScope: CoroutineScope =
-        CoroutineScope(coroutineScope.coroutineContext + SupervisorJob(coroutineScope.coroutineContext[Job]))
+        CoroutineScope(
+            coroutineScope.coroutineContext + SupervisorJob(
+                coroutineScope.coroutineContext[Job],
+            ) + pluginFailureHandler,
+        )
 
     // ═══════════════════════════════════════════════════════════════
     // Internal State

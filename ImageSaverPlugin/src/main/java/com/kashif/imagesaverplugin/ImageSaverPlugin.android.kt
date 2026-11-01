@@ -1,4 +1,5 @@
 package com.kashif.imagesaverplugin
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
@@ -21,7 +22,10 @@ import java.util.Locale
  * @param config The configuration settings for the plugin.
  */
 class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverConfig) : ImageSaverPlugin(config) {
-    override suspend fun saveImage(byteArray: ByteArray, imageName: String?): String? = withContext(Dispatchers.IO) {
+    override suspend fun saveImage(byteArray: ByteArray, imageName: String?): String? =
+        (save(byteArray, imageName) as? ImageSaveResult.Saved)?.location
+
+    override suspend fun save(byteArray: ByteArray, imageName: String?): ImageSaveResult = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val contentValues =
             ContentValues().apply {
@@ -54,10 +58,14 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             }
 
+        // Set once the row exists, so every failure after the insert deletes it again (on Q+ it is
+        // still IS_PENDING and would otherwise linger as an invisible, unfinished entry).
+        var insertedUri: Uri? = null
         try {
             val imageUri =
                 resolver.insert(collection, contentValues)
                     ?: throw IOException("Failed to create new MediaStore record.")
+            insertedUri = imageUri
 
             resolver.openOutputStream(imageUri).use { outputStream ->
                 if (outputStream == null) throw IOException("Failed to get output stream.")
@@ -70,12 +78,23 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                 resolver.update(imageUri, contentValues, null, null)
             }
 
-            CameraKLogger.d("CameraK", "Image saved successfully at URI: $imageUri")
-            imageUri.toString()
-        } catch (e: IOException) {
-            CameraKLogger.e("CameraK", "Unhandled exception", e)
-            CameraKLogger.e("CameraK", "Failed to save image: ${e.message}")
-            null
+            CameraKLogger.d("CameraK", "Image saved to MediaStore")
+            ImageSaveResult.Saved(imageUri.toString())
+        } catch (e: Exception) {
+            // SecurityException (no WRITE_EXTERNAL_STORAGE below API 29) and IllegalArgumentException
+            // from MediaStore are as likely as IOException; none of them may escape into the caller's
+            // coroutine.
+            CameraKLogger.e("CameraK", "Saving image to MediaStore failed", e)
+            insertedUri?.let { deleteUnfinishedRow(resolver, it) }
+            ImageSaveResult.Failed(e)
+        }
+    }
+
+    private fun deleteUnfinishedRow(resolver: ContentResolver, uri: Uri) {
+        try {
+            resolver.delete(uri, null, null)
+        } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "Deleting the unfinished MediaStore row failed", e)
         }
     }
 

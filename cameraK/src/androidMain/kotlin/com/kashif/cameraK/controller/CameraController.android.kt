@@ -67,6 +67,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadFactory
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -592,10 +593,7 @@ actual class CameraController internal constructor(
                         // Notify capture listeners (e.g. ImageSaverPlugin auto-save) off the main
                         // thread, reading the just-saved file only when someone is listening.
                         if (imageCaptureListeners.isNotEmpty()) {
-                            imageProcessingExecutor.execute {
-                                val bytes = outputFile.readBytes()
-                                imageCaptureListeners.forEach { it(bytes) }
-                            }
+                            imageProcessingExecutor.execute { deliverToCaptureListeners(outputFile) }
                         }
 
                         if (inFlightCaptures.remove(continuation)) {
@@ -616,6 +614,29 @@ actual class CameraController internal constructor(
         } ?: run {
             pendingCaptures.decrementAndGet()
             continuation.resume(ImageCaptureResult.Error(Exception("ImageCapture use case is not initialized.")))
+        }
+    }
+
+    /**
+     * Runs on [imageProcessingExecutor]. Nothing may escape: an exception here reaches the thread's
+     * uncaught handler and kills the host process. Each listener is isolated from the others.
+     */
+    private fun deliverToCaptureListeners(file: File) {
+        val bytes = try {
+            file.readBytes()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Reading the captured image for capture listeners failed", e)
+            return
+        } catch (e: OutOfMemoryError) {
+            CameraKLogger.e(TAG, "Reading the captured image for capture listeners ran out of memory", e)
+            return
+        }
+        for (listener in imageCaptureListeners.toList()) {
+            try {
+                listener(bytes)
+            } catch (e: Exception) {
+                CameraKLogger.e(TAG, "Image capture listener failed", e)
+            }
         }
     }
 
@@ -1153,27 +1174,31 @@ internal class MultiplexingAnalyzer(private val analyzers: List<ImageAnalysis.An
             imageProxy.close()
             return
         }
-        if (analyzers.size == 1) {
-            analyzers[0].analyze(imageProxy)
-            return
-        }
-        val refCount = java.util.concurrent.atomic.AtomicInteger(analyzers.size)
+        val refCount = AtomicInteger(analyzers.size)
         for (analyzer in analyzers) {
-            analyzer.analyze(RefCountedImageProxy(imageProxy, refCount))
+            val frame = RefCountedImageProxy(imageProxy, refCount)
+            // Runs on the analyzer executor, where an escaped exception kills the host process. A
+            // failing consumer gives up its share of the frame so the others, and the stream, go on.
+            try {
+                analyzer.analyze(frame)
+            } catch (e: Exception) {
+                CameraKLogger.e("CameraK", "Image analyzer failed", e)
+                frame.close()
+            }
         }
     }
 }
 
 /**
  * Wraps an [ImageProxy] with reference-counted close semantics.
- * The real proxy is closed only when the last holder calls [close].
+ * The real proxy is closed only when the last holder calls [close]; each holder's close counts once.
  */
-private class RefCountedImageProxy(
-    private val delegate: ImageProxy,
-    private val refCount: java.util.concurrent.atomic.AtomicInteger,
-) : ImageProxy by delegate {
+private class RefCountedImageProxy(private val delegate: ImageProxy, private val refCount: AtomicInteger) :
+    ImageProxy by delegate {
+    private val closed = AtomicBoolean(false)
+
     override fun close() {
-        if (refCount.decrementAndGet() <= 0) {
+        if (closed.compareAndSet(false, true) && refCount.decrementAndGet() == 0) {
             delegate.close()
         }
     }
