@@ -265,9 +265,10 @@ val cameraState by rememberCameraKState(
 - `Directory.DOCUMENTS` — Documents
 
 **File naming:**
-Files are automatically named with timestamp:
+Files are named with the capture time in epoch milliseconds and a random suffix, so captures in
+the same second never share a name:
 ```
-IMG_20240129_143022.jpg
+IMG_1706538622123_9f2c4a1b.jpg
 ```
 
 ## Error Handling

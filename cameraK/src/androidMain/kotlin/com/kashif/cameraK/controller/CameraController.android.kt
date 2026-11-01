@@ -586,15 +586,23 @@ actual class CameraController internal constructor(
         }
         // Gallery destinations are written by CameraX through MediaStore; everything else is a file
         // in app-specific storage.
-        val outputFile = if (directory.isGallery) null else createFinalOutputFile()
-        val options = if (outputFile != null) {
-            ImageCapture.OutputFileOptions.Builder(outputFile)
-        } else {
+        // A destination that cannot be created fails this capture instead of escaping takePictureToFile.
+        val (outputFile, galleryValues) = try {
+            if (directory.isGallery) null to galleryImageValues() else createFinalOutputFile() to null
+        } catch (e: java.io.IOException) {
+            CameraKLogger.e(TAG, "Creating the capture file failed", e)
+            pendingCaptures.decrementAndGet()
+            continuation.resume(ImageCaptureResult.Error(e))
+            return
+        }
+        val options = if (galleryValues != null) {
             ImageCapture.OutputFileOptions.Builder(
                 context.contentResolver,
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                galleryImageValues(),
+                galleryValues,
             )
+        } else {
+            ImageCapture.OutputFileOptions.Builder(checkNotNull(outputFile))
         }.setMetadata(captureMetadata()).build()
 
         inFlightCaptures.add(continuation)
@@ -639,6 +647,8 @@ actual class CameraController internal constructor(
                     CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
                     pendingCaptures.decrementAndGet()
                     outputFile?.delete() // Clean up failed capture file
+                    // Below API 29 the gallery file was claimed before CameraX inserted its row.
+                    galleryValues?.getAsString(MediaStore.MediaColumns.DATA)?.let { File(it).delete() }
                     if (inFlightCaptures.remove(continuation)) {
                         continuation.resume(ImageCaptureResult.Error(exc))
                     }

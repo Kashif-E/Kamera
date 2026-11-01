@@ -14,9 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import kotlin.random.Random
 
 /**
  * Android-specific implementation of [ImageSaverPlugin] using MediaStore.
@@ -38,7 +36,6 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
 
     override suspend fun save(byteArray: ByteArray, imageName: String?): ImageSaveResult = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val format = encodedFormatOf(byteArray) ?: config.imageFormat
         if (format != config.imageFormat) {
             CameraKLogger.w(
@@ -46,7 +43,7 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                 "Image bytes are $format, not the configured ${config.imageFormat}; saving as $format",
             )
         }
-        val fileName = "${imageName ?: "IMG_$timeStamp"}.${format.extension}"
+        val fileName = "${imageName ?: defaultImageName()}.${format.extension}"
         val directory = config.directory.publicDirectoryName
         val folder = config.customFolderName ?: DEFAULT_FOLDER
 
@@ -191,6 +188,13 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
 }
 
 private const val DEFAULT_FOLDER = "CameraK"
+
+/**
+ * `IMG_<epoch milliseconds>_<8 random hex digits>`: auto-save runs one save per capture, and up to
+ * three captures can be in flight, so a default name must not depend on the clock alone.
+ */
+private fun defaultImageName(): String =
+    "IMG_${System.currentTimeMillis()}_${Random.nextInt().toUInt().toString(16).padStart(8, '0')}"
 
 /**
  * The format [bytes] are encoded in, from their signature, or null when it is neither. Android
