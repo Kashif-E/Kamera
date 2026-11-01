@@ -23,8 +23,10 @@ import java.util.Locale
  * Images are saved under `<directory>/<customFolderName or "CameraK">/` in shared storage:
  * [Directory.PICTURES] and [Directory.DCIM] through `MediaStore.Images`, and [Directory.DOCUMENTS]
  * through `MediaStore.Files`, because from API 29 `MediaStore.Images` only accepts `DCIM/` and
- * `Pictures/`. Below API 29 the absolute path is set explicitly, which needs `WRITE_EXTERNAL_STORAGE`;
- * an existing file with the same name is kept and the new one gets a numbered suffix.
+ * `Pictures/`. Below API 29 the absolute path is set explicitly, which needs `WRITE_EXTERNAL_STORAGE`:
+ * path separators in the name are replaced with `_`, and the file is created before the row is
+ * inserted, taking the first free name (`name`, `name_1`, ...), so an existing file or a concurrent
+ * save is never overwritten.
  *
  * @param context The Android [Context] used to access ContentResolver.
  * @param config The configuration settings for the plugin.
@@ -43,6 +45,8 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
         // Set once the row exists, so every failure after the insert deletes it again (on Q+ it is
         // still IS_PENDING and would otherwise linger as an invisible, unfinished entry).
         var insertedUri: Uri? = null
+        // Below API 29, the empty file that reserves the name until the bytes are written.
+        var claimedFile: File? = null
         try {
             val contentValues = ContentValues().apply {
                 put(MediaStore.MediaColumns.MIME_TYPE, config.imageFormat.mimeType)
@@ -52,7 +56,8 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 } else {
                     // Without DATA, MediaProvider below API 29 names the file itself under Pictures/.
-                    val file = legacyDestination(directory, folder, fileName)
+                    val file = claimLegacyDestination(directory, folder, fileName)
+                    claimedFile = file
                     put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
                     put(MediaStore.MediaColumns.DATA, file.absolutePath)
                 }
@@ -88,24 +93,39 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
             // coroutine.
             CameraKLogger.e("CameraK", "Saving image to MediaStore failed", e)
             insertedUri?.let { deleteUnfinishedRow(resolver, it) }
+            claimedFile?.let(::deleteUnfinishedFile)
             ImageSaveResult.Failed(e)
         }
     }
 
     @Suppress("DEPRECATION") // Only used below API 29, where it is the shared-storage location.
-    private fun legacyDestination(directory: String, folder: String, fileName: String): File {
+    private fun claimLegacyDestination(directory: String, folder: String, fileName: String): File {
         val parent = File(Environment.getExternalStoragePublicDirectory(directory), folder)
-        if (!parent.isDirectory && !parent.mkdirs()) {
+        // mkdirs() also returns false when a concurrent save has just created the folder.
+        if (!parent.mkdirs() && !parent.isDirectory) {
             throw IOException("Failed to create the destination folder.")
         }
-        val base = fileName.substringBeforeLast('.')
-        val extension = fileName.substringAfterLast('.')
-        var candidate = File(parent, fileName)
+        val safeName = fileName.replace('/', '_').replace('\\', '_')
+        val base = safeName.substringBeforeLast('.')
+        val extension = safeName.substringAfterLast('.')
+        var candidate = File(parent, safeName)
         var suffix = 1
-        while (candidate.exists()) {
+        // createNewFile() is atomic, so two saves can never claim the same name.
+        while (!candidate.createNewFile()) {
             candidate = File(parent, "${base}_${suffix++}.$extension")
         }
         return candidate
+    }
+
+    private fun deleteUnfinishedFile(file: File) {
+        try {
+            // Deleting the row below API 29 usually deletes the file as well.
+            if (!file.delete() && file.exists()) {
+                CameraKLogger.e("CameraK", "Deleting the unfinished image file failed")
+            }
+        } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "Deleting the unfinished image file failed", e)
+        }
     }
 
     private fun deleteUnfinishedRow(resolver: ContentResolver, uri: Uri) {
