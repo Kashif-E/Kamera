@@ -13,7 +13,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.toComposeImageBitmap
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.DeviceOrientation
 import kotlinx.coroutines.Dispatchers
@@ -30,11 +29,12 @@ actual fun CameraPreviewView(
         BoxWithConstraints(modifier = modifier) {
             val scope = rememberCoroutineScope()
             var currentFrame by remember { mutableStateOf<ImageBitmap?>(null) }
+            val renderer = remember { PreviewFrameRenderer() }
 
             LaunchedEffect(controller) {
                 scope.launch(Dispatchers.Default) {
                     controller.frameFlow.collect { frame ->
-                        currentFrame = frame.toComposeImageBitmap()
+                        currentFrame = renderer.render(frame)
                     }
                 }
             }
