@@ -16,16 +16,9 @@ import java.util.concurrent.locks.ReentrantLock
  * Processes BufferedImage frames to detect QR codes with thread-safe locking
  * and frame rate throttling to optimize performance.
  */
-class QRScanner {
-    private val reader =
-        MultiFormatReader().apply {
-            val hints =
-                mapOf(
-                    DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
-                    DecodeHintType.TRY_HARDER to true,
-                )
-            setHints(hints)
-        }
+class QRScanner internal constructor(private val clock: () -> Long, private val decoder: QrFrameDecoder) {
+    constructor() : this(System::currentTimeMillis, ZxingQrFrameDecoder())
+
     private val lock = ReentrantLock()
     private var lastProcessTime = 0L
     private val processInterval = 200L
@@ -43,19 +36,15 @@ class QRScanner {
         if (!lock.tryLock()) return null
 
         return try {
-            val currentTime = System.currentTimeMillis()
+            val currentTime = clock()
             if (currentTime - lastProcessTime < processInterval) {
                 return null
             }
 
-            val pixels = image.getRGB(0, 0, image.width, image.height, null, 0, image.width)
-            val source = RGBLuminanceSource(image.width, image.height, pixels)
-            val bitmap = BinaryBitmap(HybridBinarizer(source))
-
             try {
-                val result = reader.decode(bitmap)
+                val text = decoder.decode(image, tryHarder = true)
                 lastProcessTime = currentTime
-                result.text
+                text
             } catch (e: NotFoundException) {
                 null
             }
@@ -64,5 +53,36 @@ class QRScanner {
         } finally {
             lock.unlock()
         }
+    }
+}
+
+/** One ZXing decode of a frame, so a test can count and inspect attempts. */
+internal fun interface QrFrameDecoder {
+    /**
+     * Returns the text of the QR code in [image].
+     *
+     * @param tryHarder Spend more time per frame looking for a hard-to-read code.
+     * @throws NotFoundException when the frame holds no readable code.
+     */
+    fun decode(image: BufferedImage, tryHarder: Boolean): String
+}
+
+/** [QrFrameDecoder] over ZXing's [MultiFormatReader]. */
+internal class ZxingQrFrameDecoder : QrFrameDecoder {
+    private val reader =
+        MultiFormatReader().apply {
+            val hints =
+                mapOf(
+                    DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+                    DecodeHintType.TRY_HARDER to true,
+                )
+            setHints(hints)
+        }
+
+    override fun decode(image: BufferedImage, tryHarder: Boolean): String {
+        val pixels = image.getRGB(0, 0, image.width, image.height, null, 0, image.width)
+        val source = RGBLuminanceSource(image.width, image.height, pixels)
+        val bitmap = BinaryBitmap(HybridBinarizer(source))
+        return reader.decode(bitmap).text
     }
 }

@@ -1,9 +1,9 @@
 package com.kashif.qrscannerplugin
 
 import android.graphics.ImageFormat
-import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
@@ -33,15 +33,32 @@ fun CameraController.enableQrCodeScanner(onQrScanner: (String) -> Unit): ImageAn
 }
 
 /**
- * Internal analyzer for QR codes and barcodes using ZXing library.
- *
- * Processes camera frames to detect and decode QR codes and common barcode formats
- * (EAN-13, EAN-8, CODE-128, CODE-39, UPC-A, UPC-E). Implements debouncing to prevent
- * duplicate detections within 1 second.
- *
- * @param onQrScanner Callback invoked when a QR code is successfully decoded
+ * A region of 8-bit luma for ZXing: [data] holds [dataHeight] rows of [dataWidth] bytes, and the
+ * decoder reads the [width] x [height] rectangle at ([left], [top]).
  */
-private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageAnalysis.Analyzer {
+internal class LumaFrame(
+    val data: ByteArray,
+    val dataWidth: Int,
+    val dataHeight: Int,
+    val left: Int,
+    val top: Int,
+    val width: Int,
+    val height: Int,
+)
+
+/** One ZXing decode of a luma region, so a test can count and inspect attempts. */
+internal fun interface LumaDecoder {
+    /**
+     * Returns the decoded text, or null when the region holds no readable code.
+     *
+     * @param tryHarder Spend more time looking for a hard-to-read code.
+     * @param inverted Look for a light-on-dark code.
+     */
+    fun decode(frame: LumaFrame, tryHarder: Boolean, inverted: Boolean): String?
+}
+
+/** [LumaDecoder] over ZXing's [MultiFormatReader], for QR codes and common 1D barcodes. */
+internal class ZxingLumaDecoder : LumaDecoder {
     private val decodeHints =
         EnumMap<DecodeHintType, Any>(DecodeHintType::class.java).apply {
             put(DecodeHintType.CHARACTER_SET, "UTF-8")
@@ -50,17 +67,53 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
             put(
                 DecodeHintType.POSSIBLE_FORMATS,
                 listOf(
-                    com.google.zxing.BarcodeFormat.QR_CODE,
-                    com.google.zxing.BarcodeFormat.EAN_13,
-                    com.google.zxing.BarcodeFormat.EAN_8,
-                    com.google.zxing.BarcodeFormat.CODE_128,
-                    com.google.zxing.BarcodeFormat.CODE_39,
-                    com.google.zxing.BarcodeFormat.UPC_A,
-                    com.google.zxing.BarcodeFormat.UPC_E,
+                    BarcodeFormat.QR_CODE,
+                    BarcodeFormat.EAN_13,
+                    BarcodeFormat.EAN_8,
+                    BarcodeFormat.CODE_128,
+                    BarcodeFormat.CODE_39,
+                    BarcodeFormat.UPC_A,
+                    BarcodeFormat.UPC_E,
                 ),
             )
         }
     private val reader = MultiFormatReader().apply { setHints(decodeHints) }
+
+    override fun decode(frame: LumaFrame, tryHarder: Boolean, inverted: Boolean): String? {
+        val source =
+            PlanarYUVLuminanceSource(
+                frame.data,
+                frame.dataWidth,
+                frame.dataHeight,
+                frame.left,
+                frame.top,
+                frame.width,
+                frame.height,
+                false,
+            )
+        return try {
+            reader.decodeWithState(BinaryBitmap(HybridBinarizer(if (inverted) source.invert() else source))).text
+        } catch (_: NotFoundException) {
+            null
+        } finally {
+            reader.reset()
+        }
+    }
+}
+
+/**
+ * Analyzer for QR codes and barcodes using ZXing library.
+ *
+ * Processes camera frames to detect and decode QR codes and common barcode formats
+ * (EAN-13, EAN-8, CODE-128, CODE-39, UPC-A, UPC-E). Implements debouncing to prevent
+ * duplicate detections within 1 second.
+ *
+ * @param onQrScanner Callback invoked when a QR code is successfully decoded
+ */
+internal class QRCodeAnalyzer(
+    private val onQrScanner: (String) -> Unit,
+    private val decoder: LumaDecoder = ZxingLumaDecoder(),
+) : ImageAnalysis.Analyzer {
     private var lastScannedCode: String? = null
     private var lastScanTime: Long = 0
     private val scanDebounceMs = 1000L
@@ -74,21 +127,14 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
     /**
      * Analyzes camera frames to detect QR codes and barcodes.
      *
-     * Converts YUV_420_888 frame data to RGB for ZXing processing and applies debouncing
+     * Reads the Y plane of the YUV_420_888 frame as luma and applies debouncing
      * to prevent repeated detections of the same code.
      *
      * @param imageProxy The camera frame to analyze
      */
-    @androidx.annotation.OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
-        val image = imageProxy.image
-        if (image == null) {
-            imageProxy.close()
-            return
-        }
-
-        if (image.format != ImageFormat.YUV_420_888) {
-            CameraKLogger.e("QRScanner", "Unsupported image format: ${image.format}")
+        if (imageProxy.format != ImageFormat.YUV_420_888) {
+            CameraKLogger.e("QRScanner", "Unsupported image format: ${imageProxy.format}")
             imageProxy.close()
             return
         }
@@ -98,55 +144,46 @@ private class QRCodeAnalyzer(private val onQrScanner: (String) -> Unit) : ImageA
             // PlanarYUVLuminanceSource (faster and correct). The previous RGBLuminanceSource
             // path fed the luma byte in as the blue channel, producing a dim/wrong luminance.
             // rowStride is honored so row padding doesn't skew the image.
-            val plane = image.planes[0]
+            val plane = imageProxy.planes[0]
             val buffer = plane.buffer
             // Rewind so we always copy the full Y plane regardless of the buffer's position.
             buffer.rewind()
             val bytes = ByteArray(buffer.remaining())
             buffer.get(bytes)
 
-            val source =
-                PlanarYUVLuminanceSource(
+            val frame =
+                LumaFrame(
                     bytes,
                     plane.rowStride,
-                    image.height,
+                    imageProxy.height,
                     0,
                     0,
-                    image.width,
-                    image.height,
-                    false,
+                    imageProxy.width,
+                    imageProxy.height,
                 )
 
             frameCount++
-            val result =
-                try {
-                    reader.decodeWithState(BinaryBitmap(HybridBinarizer(source)))
-                } catch (_: NotFoundException) {
-                    if (frameCount % invertedRetryEveryNFrames == 0L) {
-                        // Periodic inverted pass for white-on-black / light-on-dark codes (#116).
-                        try {
-                            reader.decodeWithState(BinaryBitmap(HybridBinarizer(source.invert())))
-                        } catch (_: NotFoundException) {
-                            null
-                        }
+            val text =
+                decoder.decode(frame, tryHarder = true, inverted = false)
+                    // Periodic inverted pass for white-on-black / light-on-dark codes (#116).
+                    ?: if (frameCount % invertedRetryEveryNFrames == 0L) {
+                        decoder.decode(frame, tryHarder = true, inverted = true)
                     } else {
                         null
                     }
-                }
 
-            if (result != null) {
+            if (text != null) {
                 val currentTime = System.currentTimeMillis()
-                if (result.text != lastScannedCode || (currentTime - lastScanTime) > scanDebounceMs) {
-                    CameraKLogger.d("QRScanner", "QR Code detected: ${result.text}")
-                    lastScannedCode = result.text
+                if (text != lastScannedCode || (currentTime - lastScanTime) > scanDebounceMs) {
+                    CameraKLogger.d("QRScanner", "QR Code detected: $text")
+                    lastScannedCode = text
                     lastScanTime = currentTime
-                    onQrScanner(result.text)
+                    onQrScanner(text)
                 }
             }
         } catch (e: Exception) {
             // QR code detection failed - no code found in frame (expected during normal scanning)
         } finally {
-            reader.reset()
             imageProxy.close()
         }
     }
