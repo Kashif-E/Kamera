@@ -7,7 +7,7 @@ Add Kamera to your Kotlin Multiplatform project in under 5 minutes.
 - Kotlin 1.9.0 or higher
 - Gradle 8.0 or higher
 - Target platforms:
-    - **Android**: API 21+ (Android 5.0)
+    - **Android**: API 23+ (Android 6.0)
     - **iOS**: iOS 13.0+ on arm64 devices and Apple-silicon simulators (there are no Intel-simulator artifacts since 2.0)
     - **Desktop**: JDK 17+
 
@@ -148,12 +148,12 @@ If you see "Kamera is ready!" — you're all set!
 
 ### Android: "CameraX not found"
 
-Ensure you're using API 21+:
+Ensure you're using API 23+:
 
 ```kotlin
 android {
     defaultConfig {
-        minSdk = 21
+        minSdk = 23
     }
 }
 ```

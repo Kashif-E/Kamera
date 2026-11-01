@@ -300,12 +300,12 @@ val cameraState by rememberCameraKState(
 
 **Issue:** "CameraX binding failed"
 
-**Solution:** Ensure minSdk is 21+:
+**Solution:** Ensure minSdk is 23+:
 
 ```kotlin
 android {
     defaultConfig {
-        minSdk = 21
+        minSdk = 23
     }
 }
 ```
