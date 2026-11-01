@@ -5,6 +5,7 @@ import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.locks.ReentrantLock
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
@@ -188,19 +189,27 @@ internal fun startRecognition(
 ): RecognitionHandle {
     val scope = CoroutineScope(Dispatchers.Default)
 
-    scope.launch {
-        frames.collect { image ->
-            scan(image)?.let { text ->
-                withContext(Dispatchers.Main) {
-                    onText(text)
+    // The collector owns the scanner: it is the only caller of scan(), and it closes the scanner in
+    // its own finally, after its last scan has returned. ATOMIC so that finally runs even when the
+    // handle stops before the collector is dispatched.
+    scope.launch(start = CoroutineStart.ATOMIC) {
+        try {
+            frames.collect { image ->
+                scan(image)?.let { text ->
+                    withContext(Dispatchers.Main) {
+                        onText(text)
+                    }
                 }
+            }
+        } finally {
+            try {
+                close()
+            } catch (e: Exception) {
+                CameraKLogger.e("CameraK", "OcrPlugin: Failed to release the text scanner", e)
             }
         }
     }
 
-    // Cancel the (previously immortal) collector and release the Tesseract native handle.
-    return RecognitionHandle {
-        scope.cancel()
-        close()
-    }
+    // Only cancels, so stop() never waits on Tesseract and a second stop() does nothing.
+    return RecognitionHandle { scope.cancel() }
 }

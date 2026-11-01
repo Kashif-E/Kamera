@@ -36,7 +36,6 @@ class CameraGrabber(
     private val errorHandler: (Throwable) -> Unit,
     private val targetResolution: Pair<Int, Int>? = null,
 ) {
-    private val converter = FrameConverter()
     private val job = atomic<Job?>(null)
     private val ownerScope = atomic<CoroutineScope?>(null)
 
@@ -104,6 +103,7 @@ class CameraGrabber(
         val loop =
             coroutineScope.launch(producer, start = CoroutineStart.ATOMIC) {
                 var owned: FrameGrabber? = null
+                val converter = FrameConverter()
                 try {
                     previous?.join()
                     owned = customGrabber ?: createGrabber()
@@ -127,7 +127,7 @@ class CameraGrabber(
                 } catch (e: Exception) {
                     errorHandler(e)
                 } finally {
-                    owned?.let(::release)
+                    owned?.let { release(it, converter) }
                     snapshots.tryEmit(null)
                 }
             }
@@ -147,7 +147,7 @@ class CameraGrabber(
         job.value?.cancel()
     }
 
-    private fun release(owned: FrameGrabber) {
+    private fun release(owned: FrameGrabber, converter: FrameConverter) {
         try {
             owned.stop()
         } catch (e: Exception) {

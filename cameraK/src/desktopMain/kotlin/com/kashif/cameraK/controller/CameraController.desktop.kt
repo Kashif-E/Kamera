@@ -29,6 +29,8 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.bytedeco.ffmpeg.global.avcodec
 import org.bytedeco.javacv.FFmpegFrameRecorder
@@ -66,12 +68,18 @@ actual class CameraController(
         this.recorderFactory = recorderFactory
     }
 
-    private var cameraGrabber: CameraGrabber? = null
     private val _frameFlow = MutableSharedFlow<BufferedImage>(
         replay = 0,
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
+
+    // One grabber for the controller's whole life, so a restart waits for the previous grab loop to
+    // release the camera before the next one opens it.
+    private val cameraGrabber = CameraGrabber(_frameFlow, {
+        CameraKLogger.e("CameraK", "CameraK: Camera error: ${it.message}")
+        CameraKLogger.e("CameraK", "Unhandled exception", it)
+    }, targetResolution).apply { setHorizontalFlip(horizontalFlip) }
     val frameFlow: Flow<BufferedImage> get() = _frameFlow
     private val qualityPriority: QualityPrioritization = QualityPrioritization.NONE
 
@@ -81,6 +89,7 @@ actual class CameraController(
 
     @Volatile private var isPausedRecording = false
     private val activeRecording = atomic<ActiveRecording?>(null)
+    private val recordingLock = Mutex()
     private var recordingOutputPath: String? = null
     private var recordingStartMs: Long = 0L
 
@@ -90,7 +99,7 @@ actual class CameraController(
 
     actual suspend fun takePictureToFile(): ImageCaptureResult {
         return withContext(Dispatchers.IO) {
-            val currentImage = cameraGrabber?.awaitSnapshot()
+            val currentImage = cameraGrabber.awaitSnapshot()
 
             if (currentImage == null) {
                 return@withContext ImageCaptureResult.Error(IllegalStateException("No image available"))
@@ -244,13 +253,7 @@ actual class CameraController(
         CoroutineScope(sessionDispatcher).launch {
             // If there is a custom grabber, use it, else use the default camera grabber
             // Which attempts to use the default camera
-            cameraGrabber = CameraGrabber(_frameFlow, {
-                CameraKLogger.e("CameraK", "CameraK: Camera error: ${it.message}")
-                CameraKLogger.e("CameraK", "Unhandled exception", it)
-            }, targetResolution).apply {
-                setHorizontalFlip(horizontalFlip)
-                start(this@launch, customGrabber)
-            }
+            cameraGrabber.start(this, customGrabber)
         }
     }
 
@@ -258,7 +261,7 @@ actual class CameraController(
      * Stops the camera session.
      */
     actual fun stopSession() {
-        cameraGrabber?.stop()
+        cameraGrabber.stop()
     }
 
     /**
@@ -289,14 +292,31 @@ actual class CameraController(
 
     actual fun cleanup() {
         stopVideoRecorderIfActive()
-        cameraGrabber?.stop()
+        cameraGrabber.stop()
     }
 
     actual suspend fun startRecording(configuration: VideoConfiguration): String = withContext(Dispatchers.IO) {
-        val outputPath = createVideoOutputPath(configuration)
-        recordingOutputPath = outputPath
+        recordingLock.withLock { startRecordingLocked(configuration) }
+    }
 
-        val recorder = recorderFactory(outputPath, configuration).apply { start() }
+    private fun startRecordingLocked(configuration: VideoConfiguration): String {
+        // Reject a second start, as Android does: replacing activeRecording would orphan the first
+        // recorder, which nothing could then stop or release.
+        check(activeRecording.value == null) { "A recording is already in progress" }
+        val outputPath = createVideoOutputPath(configuration)
+        val recorder = recorderFactory(outputPath, configuration)
+        try {
+            recorder.start()
+        } catch (e: Exception) {
+            try {
+                recorder.release()
+            } catch (releaseFailure: Exception) {
+                CameraKLogger.e("CameraK", "CameraK: Error releasing a recorder that failed to start", releaseFailure)
+                e.addSuppressed(releaseFailure)
+            }
+            throw e
+        }
+        recordingOutputPath = outputPath
         isCurrentlyRecording = true
         isPausedRecording = false
         recordingStartMs = System.currentTimeMillis()
@@ -304,12 +324,12 @@ actual class CameraController(
         // The recording coroutine owns the recorder: it is the only code that calls record(), and it
         // stops and releases the recorder in its finally, after its last record() has returned.
         val finalized = CompletableDeferred<Exception?>()
-        val frames = cameraGrabber?.frames()
+        val frames = cameraGrabber.frames()
         val job = CoroutineScope(Dispatchers.IO).launch(start = CoroutineStart.ATOMIC) {
             val converter = Java2DFrameConverter()
             try {
                 // Fed by the grab loop's frames; this coroutine never grabs from the camera itself.
-                frames?.collect { image ->
+                frames.collect { image ->
                     if (isCurrentlyRecording && !isPausedRecording) {
                         try {
                             recorder.record(converter.convert(image))
@@ -329,17 +349,19 @@ actual class CameraController(
         }
         activeRecording.value = ActiveRecording(job, finalized)
 
-        outputPath
+        return outputPath
     }
 
     actual suspend fun stopRecording(): VideoCaptureResult = withContext(Dispatchers.IO) {
-        isCurrentlyRecording = false
-        val recording = activeRecording.getAndSet(null)
-        val durationMs = System.currentTimeMillis() - recordingStartMs
-        recording?.job?.cancelAndJoin()
-        when (val failure = recording?.finalized?.await()) {
-            null -> VideoCaptureResult.Success(recordingOutputPath ?: "", durationMs)
-            else -> VideoCaptureResult.Error(failure)
+        recordingLock.withLock {
+            isCurrentlyRecording = false
+            val recording = activeRecording.getAndSet(null)
+            val durationMs = System.currentTimeMillis() - recordingStartMs
+            recording?.job?.cancelAndJoin()
+            when (val failure = recording?.finalized?.await()) {
+                null -> VideoCaptureResult.Success(recordingOutputPath ?: "", durationMs)
+                else -> VideoCaptureResult.Error(failure)
+            }
         }
     }
 
