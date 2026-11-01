@@ -70,6 +70,17 @@ if [[ -n "$module" ]]; then
     [[ " $LIBRARY_MODULES " == *" $module "* ]] || die "--module must be one of: $LIBRARY_MODULES"
     modules="$module"
     mode="$mode-$module"
+    # Screenshots exist only for cameraK and the Sample build needs every module. A full run drops
+    # them; asking for them explicitly is refused rather than reported GREEN with nothing run.
+    if [[ "$module" != cameraK && " $targets " == *" screenshots "* ]]; then
+        [[ -z "$only" && $record == false ]] || die "screenshots exist only for cameraK, not $module"
+        targets="${targets/screenshots/}"
+    fi
+    if [[ " $targets " == *" sample "* ]]; then
+        [[ -z "$only" ]] || die "--only sample builds the Sample app, which needs every module; drop --module"
+        targets="${targets/sample/}"
+    fi
+    targets="$(echo $targets)"
 fi
 
 # JDK 17: Gradle, the Kotlin toolchain and Robolectric's SDK pin all assume it.

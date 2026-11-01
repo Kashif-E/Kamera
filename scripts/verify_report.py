@@ -4,7 +4,8 @@
 Reads build/verify/run.json, then only the JUnit XML, Paparazzi failure images and desktop
 screenshot diffs written after the run started. Prints a per-module, per-target table and every
 failure, writes build/verify/summary.md and summary.json, and exits 1 (RED) when Gradle failed, a
-test failed or errored, or a requested target ran zero tests.
+test failed or errored, a test let an exception escape on another thread, a requested target ran
+zero tests (skipped tests do not count), or a requested target has nothing to check.
 
 Standard library only; run with `python3 -I`.
 """
@@ -31,8 +32,21 @@ TEST_TARGETS = ("desktop", "android", "ios", "screenshots")
 # Log lines proving a non-test target executed.
 TASK_EVIDENCE = {
     "lint": [":spotlessCheck"],
-    "sample": [":Sample:compileKotlinDesktop", ":Sample:assembleDebug", ":Sample:compileKotlinIosSimulatorArm64"],
+    "sample": [
+        ":Sample:compileKotlinDesktop",
+        ":Sample:assembleDebug",
+        ":Sample:compileKotlinIosSimulatorArm64",
+        ":Sample:compileKotlinIosArm64",
+    ],
 }
+# Per-module compile tasks for the variants that ship but have no tests.
+COMPILE_EVIDENCE = {
+    "android": ["compileReleaseKotlinAndroid"],
+    "ios": ["compileKotlinIosArm64", "compileKotlinIosX64"],
+}
+# The JVM's default uncaught-exception handler prints this when a thread other than the test's dies.
+# JUnit never sees that exception, so the test passes; the line only reaches the XML's system-err.
+UNCAUGHT = re.compile(r'^Exception in thread "[^"]*" (.*)$', re.MULTILINE)
 
 
 @dataclass
@@ -58,6 +72,7 @@ class Report:
     failures: list[Failure] = field(default_factory=list)
     stale_files: int = 0
     unreadable: list[str] = field(default_factory=list)
+    uncaught: list[Failure] = field(default_factory=list)
 
     def cell(self, module: str, target: str) -> Cell:
         return self.cells.setdefault((module, target), Cell())
@@ -96,6 +111,12 @@ def parse_results(modules: list[str], start: float, report: Report) -> None:
                 continue
             suites = [root] if root.tag == "testsuite" else root.iter("testsuite")
             for suite in suites:
+                suite_target = target_for(module, task_dir, suite.get("name", "")) or task_dir
+                for err in suite.iter("system-err"):
+                    for match in UNCAUGHT.finditer(err.text or ""):
+                        report.uncaught.append(
+                            Failure(module, suite_target, suite.get("name", "?"), "uncaught", match.group(0)[:300])
+                        )
                 for case in suite.iter("testcase"):
                     classname = case.get("classname", "")
                     target = target_for(module, task_dir, classname)
@@ -128,7 +149,9 @@ def gradle_error_excerpt(log: Path) -> list[str]:
     if not log.is_file():
         return [f"Gradle log {log} is missing"]
     lines = log.read_text(errors="replace").splitlines()
-    excerpt: list[str] = []
+    # Kotlin compiler diagnostics ("e: file:///...kt:180:32 message"); Gradle's own failure block
+    # only says "Compilation error. See log for more details".
+    excerpt: list[str] = [line for line in lines if line.startswith("e: ")][:20]
     for index, line in enumerate(lines):
         if line.startswith("* What went wrong:"):
             block = []
@@ -180,9 +203,16 @@ def main() -> int:
         problems.append("Gradle did not finish (no exit code recorded)")
     elif gradle_exit != 0:
         problems.append(f"Gradle exited with {gradle_exit}")
+    # A requested target that maps to nothing would otherwise pass with nothing run.
+    checked = {target for _, target in expected} | {t for t in TASK_EVIDENCE if t in targets}
+    for target in targets:
+        if target not in checked:
+            problems.append(f"{target}: requested but nothing to run for modules {', '.join(modules)}")
     for module, target in expected:
-        if report.cells[(module, target)].tests == 0:
-            problems.append(f"{module} / {target}: requested but ran 0 tests")
+        cell = report.cells[(module, target)]
+        if cell.tests - cell.skipped == 0:
+            skipped = f" ({cell.skipped} skipped)" if cell.skipped else ""
+            problems.append(f"{module} / {target}: requested but ran 0 tests{skipped}")
     total = Cell()
     for cell in report.cells.values():
         total.tests += cell.tests
@@ -191,18 +221,29 @@ def main() -> int:
         total.skipped += cell.skipped
     if total.failures or total.errors:
         problems.append(f"{total.failures} test failure(s), {total.errors} error(s)")
+    if report.uncaught:
+        problems.append(f"{len(report.uncaught)} exception(s) escaped on a background thread while tests passed")
     for path in report.unreadable:
         problems.append(f"unreadable result file {path}")
 
     tasks = executed_tasks(log)
     task_checks: dict[str, str] = {}
     for target, evidence in TASK_EVIDENCE.items():
-        if target not in targets or (target == "sample" and len(modules) == 1):
+        if target not in targets:
             continue
         missing = [task for task in evidence if task not in tasks]
         task_checks[target] = "ran" if not missing else "did not run: " + ", ".join(missing)
         if missing:
             problems.append(f"{target}: requested but {task_checks[target]}")
+    for target, names in COMPILE_EVIDENCE.items():
+        if target not in targets:
+            continue
+        evidence = [f":{module}:{name}" for module in modules for name in names]
+        key = f"{target} compile (release/device)"
+        missing = [task for task in evidence if task not in tasks]
+        task_checks[key] = "ran" if not missing else "did not run: " + ", ".join(missing)
+        if missing:
+            problems.append(f"{key}: requested but {task_checks[key]}")
 
     paparazzi_failures = fresh_files(ROOT / SCREENSHOT_MODULE / "build" / "paparazzi" / "failures", start)
     desktop_diffs = fresh_files(ROOT / "cameraK" / "build" / "reports" / "screenshots-desktop", start)
@@ -230,9 +271,12 @@ def main() -> int:
     md += ["", *table, ""]
     if problems:
         md += ["## Why it is RED", ""] + [f"- {p}" for p in problems] + [""]
-    if report.failures:
+    if report.failures or report.uncaught:
         md += ["## Failures", ""]
-        md += [f"- `{f.test}` ({f.module} / {f.target}, {f.kind}): {f.first_line}" for f in report.failures]
+        md += [
+            f"- `{f.test}` ({f.module} / {f.target}, {f.kind}): {f.first_line}"
+            for f in report.failures + report.uncaught
+        ]
         md.append("")
     if gradle_excerpt:
         md += ["## Gradle errors", "", "```", *gradle_excerpt, "```", ""]
@@ -254,7 +298,7 @@ def main() -> int:
         "task_checks": task_checks,
         "totals": vars(total),
         "cells": [{"module": m, "target": t, **vars(c)} for (m, t), c in rows],
-        "failures": [vars(f) for f in report.failures],
+        "failures": [vars(f) for f in report.failures + report.uncaught],
         "problems": problems,
         "gradle_errors": gradle_excerpt,
         "screenshot_diffs": paparazzi_failures + desktop_diffs,

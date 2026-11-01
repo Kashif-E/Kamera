@@ -28,6 +28,13 @@ jobs:
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: konan-${{ runner.os }}-
 
+      - name: Cache Robolectric Android SDK jars
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: robolectric-${{ runner.os }}-
+
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Set Gradle heap for the Kotlin/Native link
@@ -38,7 +45,7 @@ jobs:
           # macos-15 is Apple silicon with ~7 GB; -Xmx5g leaves room for the Kotlin/Native linker itself.
           echo "org.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=1g" >> ~/.gradle/gradle.properties
 
-      - name: Verify (spotless, tests on every target, screenshots, Sample)
+      - name: Verify (spotless, tests on every target, release and device compiles, screenshots, Sample)
         run: scripts/verify.sh --full -- --no-daemon
 
       - name: Upload verification results

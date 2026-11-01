@@ -35,3 +35,9 @@ dependencies {
 tasks.withType<Test>().configureEach {
     reports.html.required.set(false)
 }
+
+// The Android unit-test compile sees android.jar instead of the JDK, which has no java.awt or
+// javax.imageio. PixelExactSnapshotVerifier needs both and runs on the host JVM, like Paparazzi.
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().matching { "UnitTest" in it.name }.configureEach {
+    compilerOptions.noJdk.set(false)
+}

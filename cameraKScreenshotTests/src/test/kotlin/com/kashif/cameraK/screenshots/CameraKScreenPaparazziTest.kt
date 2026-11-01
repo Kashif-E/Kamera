@@ -15,10 +15,16 @@ import org.junit.Test
  * PreviewView bound to a live camera, and layoutlib has no camera.
  */
 class CameraKScreenPaparazziTest {
-    // Exact comparison instead of Paparazzi's default 0.1% tolerance. Goldens are recorded and
-    // verified on macOS (CI runs macos-15); layoutlib's native runtime differs per OS.
+    // Pixel-exact comparison; see PixelExactSnapshotVerifier for why maxPercentDifference = 0.0 alone
+    // is not. Goldens are recorded and verified on macOS (CI runs macos-15); layoutlib's native
+    // runtime differs per OS.
     @get:Rule
-    val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5, maxPercentDifference = 0.0)
+    val paparazzi =
+        Paparazzi(
+            deviceConfig = DeviceConfig.PIXEL_5,
+            maxPercentDifference = 0.0,
+            snapshotHandler = PixelExactSnapshotVerifier.forCurrentMode(),
+        )
 
     @Test
     fun initializing_showsDefaultLoadingScreen() {

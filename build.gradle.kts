@@ -64,14 +64,31 @@ fun csvProperty(name: String): List<String>? =
         ?.filter(String::isNotEmpty)
 
 val verifyModules = csvProperty("camerak.verify.modules") ?: libraryModules
-val verifyTargets = csvProperty("camerak.verify.targets") ?: allVerifyTargets
-val recordScreenshots = providers.gradleProperty("camerak.recordScreenshots").orNull.toBoolean()
-
 (verifyModules - libraryModules).let { unknown ->
     require(unknown.isEmpty()) { "Unknown module(s) $unknown; expected one of $libraryModules" }
 }
+
+// Screenshots exist only for cameraK, and the Sample build depends on every module, so those two
+// targets do not apply to a narrower module set. Asking for one anyway is an error rather than a
+// verifyAll with nothing to run.
+fun targetApplies(target: String): Boolean =
+    when (target) {
+        "screenshots" -> "cameraK" in verifyModules
+        "sample" -> verifyModules.containsAll(libraryModules)
+        else -> true
+    }
+
+val verifyTargets = csvProperty("camerak.verify.targets") ?: allVerifyTargets.filter(::targetApplies)
+val recordScreenshots = providers.gradleProperty("camerak.recordScreenshots").orNull.toBoolean()
+
 (verifyTargets - allVerifyTargets).let { unknown ->
     require(unknown.isEmpty()) { "Unknown target(s) $unknown; expected one of $allVerifyTargets" }
+}
+verifyTargets.filterNot(::targetApplies).let { inapplicable ->
+    require(inapplicable.isEmpty()) {
+        "Target(s) $inapplicable do not apply to module(s) $verifyModules: screenshots needs cameraK, " +
+            "sample needs every module"
+    }
 }
 
 // A test task that is UP-TO-DATE or FROM-CACHE leaves old result files behind, and the report
@@ -87,20 +104,39 @@ if (providers.gradleProperty("camerak.verify.rerunTests").orNull.toBoolean()) {
 }
 
 // kotlinx-coroutines-test on a consumer's runtime classpath hijacks Dispatchers.Main (#165).
-// This fails the build if it, or any other test library, reaches a published runtime classpath.
-val testOnlyGroups =
-    listOf("org.jetbrains.kotlinx:kotlinx-coroutines-test", "junit:junit", "org.robolectric:", "androidx.test:")
+// This fails the build if it, or any other test library, reaches what a published variant gives
+// consumers: the desktop and both Android runtime classpaths (cameraK publishes debug as well as
+// release) and the klibs every iOS target compiles against.
+val testOnlyModules =
+    listOf(
+        Regex("""^org\.jetbrains\.kotlinx:kotlinx-coroutines-test"""),
+        Regex("""^org\.jetbrains\.kotlin:kotlin-test"""),
+        Regex("""^junit:junit$"""),
+        Regex("""^org\.junit(\.[^:]+)?:"""),
+        Regex("""^org\.robolectric:"""),
+        Regex("""^androidx\.test(\.[^:]+)?:"""),
+        Regex("""^app\.cash\.paparazzi:"""),
+    )
+val publishedGraphs =
+    listOf(
+        "desktopRuntimeClasspath",
+        "releaseRuntimeClasspath",
+        "debugRuntimeClasspath",
+        "iosX64CompileKlibraries",
+        "iosArm64CompileKlibraries",
+        "iosSimulatorArm64CompileKlibraries",
+    )
 subprojects {
     if (name !in libraryModules) return@subprojects
     val runtimeGraphs =
-        listOf("desktopRuntimeClasspath", "releaseRuntimeClasspath").map { configurationName ->
+        publishedGraphs.map { configurationName ->
             configurationName to
                 provider { configurations.getByName(configurationName) }
                     .flatMap { it.incoming.resolutionResult.rootComponent }
         }
     tasks.register("checkTestOnlyDependencies") {
         group = "verification"
-        description = "Fails if a test library is on a published runtime classpath"
+        description = "Fails if a test library is on a classpath a published variant hands to consumers"
         doLast {
             val leaks =
                 runtimeGraphs.flatMap { (configurationName, root) ->
@@ -115,10 +151,10 @@ subprojects {
                     }
                     seen.mapNotNull { component ->
                         val id = component.moduleVersion?.let { "${it.group}:${it.name}" } ?: return@mapNotNull null
-                        if (testOnlyGroups.any { id.startsWith(it) }) "$configurationName -> $id" else null
+                        if (testOnlyModules.any { it.containsMatchIn(id) }) "$configurationName -> $id" else null
                     }
                 }
-            check(leaks.isEmpty()) { "Test-only libraries on a runtime classpath:\n" + leaks.joinToString("\n") }
+            check(leaks.isEmpty()) { "Test-only libraries on a published classpath:\n" + leaks.joinToString("\n") }
         }
     }
 }
@@ -140,16 +176,35 @@ tasks.register("verifyAll") {
         if ("desktop" in verifyTargets || "screenshots" in verifyTargets && module == "cameraK") {
             paths += ":$module:desktopTest"
         }
-        if ("android" in verifyTargets) paths += ":$module:testDebugUnitTest"
-        if ("ios" in verifyTargets) paths += ":$module:iosSimulatorArm64Test"
-        if ("desktop" in verifyTargets || "android" in verifyTargets) paths += ":$module:checkTestOnlyDependencies"
+        // Tests run on debug and the simulator; release and the device targets are what ship, so
+        // they are compiled too.
+        if ("android" in verifyTargets) {
+            paths += listOf(":$module:testDebugUnitTest", ":$module:compileReleaseKotlinAndroid")
+        }
+        if ("ios" in verifyTargets) {
+            paths +=
+                listOf(
+                    ":$module:iosSimulatorArm64Test",
+                    ":$module:compileKotlinIosArm64",
+                    ":$module:compileKotlinIosX64",
+                )
+        }
+        if (listOf("desktop", "android", "ios").any { it in verifyTargets }) {
+            paths += ":$module:checkTestOnlyDependencies"
+        }
     }
-    if ("screenshots" in verifyTargets && "cameraK" in verifyModules) {
+    if ("screenshots" in verifyTargets) {
         paths += ":$screenshotModule:" + if (recordScreenshots) "recordPaparazziDebug" else "verifyPaparazziDebug"
     }
-    if ("sample" in verifyTargets && verifyModules == libraryModules) {
+    if ("sample" in verifyTargets) {
         paths +=
-            listOf(":Sample:compileKotlinDesktop", ":Sample:assembleDebug", ":Sample:compileKotlinIosSimulatorArm64")
+            listOf(
+                ":Sample:compileKotlinDesktop",
+                ":Sample:assembleDebug",
+                ":Sample:compileKotlinIosSimulatorArm64",
+                ":Sample:compileKotlinIosArm64",
+            )
     }
+    check(paths.isNotEmpty()) { "verifyAll selected nothing for targets $verifyTargets and modules $verifyModules" }
     dependsOn(paths)
 }
