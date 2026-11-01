@@ -11,8 +11,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.bytedeco.opencv.global.opencv_text.PSM_AUTO
+import org.bytedeco.tesseract.global.tesseract.PSM_AUTO
 import java.awt.image.BufferedImage
+import java.awt.image.ComponentSampleModel
 import java.awt.image.DataBufferByte
 import java.io.File
 
@@ -57,7 +58,7 @@ class OCRProcessor internal constructor(
                 isInitialized = true
             }
         } catch (e: Exception) {
-            CameraKLogger.w("CameraK", "Warning: Failed to initialize OCR: ${e.message}")
+            CameraKLogger.w("CameraK", "Warning: Failed to initialize OCR", e)
             isInitialized = false
         }
     }
@@ -81,15 +82,23 @@ class OCRProcessor internal constructor(
                 return null
             }
 
-            val processedImage = preprocessImage(image)
-            val pix = convertImageToPix(processedImage)
-
-            api.setImage(pix)
-            val result = api.recognizedText()?.read()?.trim()
+            val grayImage = preprocessImage(image)
+            val raster = grayImage.raster
+            val pixels = (raster.dataBuffer as DataBufferByte).data
+            val bytesPerLine = (raster.sampleModel as ComponentSampleModel).scanlineStride
+            // One native call for the whole frame; Tesseract copies the rows into its own image.
+            api.setImage(pixels, grayImage.width, grayImage.height, 1, bytesPerLine)
+            val result =
+                try {
+                    recognizeText()
+                } finally {
+                    api.clear()
+                }
             lastProcessTime = currentTime
 
             result.takeIf { !it.isNullOrBlank() }
         } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "OcrPlugin: Text recognition failed for a frame", e)
             null
         } finally {
             lock.unlock()
@@ -117,29 +126,14 @@ class OCRProcessor internal constructor(
         return grayImage
     }
 
-    /**
-     * Converts a grayscale BufferedImage to Leptonica PIX format for Tesseract.
-     *
-     * @param image The grayscale image
-     * @return A PIX object suitable for Tesseract processing
-     */
-    private fun convertImageToPix(image: BufferedImage): TesseractLibrary.Pix {
-        val width = image.width
-        val height = image.height
-        val pix = library.newPix(width, height, 8)
-
-        val raster = image.raster
-        val data = raster.dataBuffer as DataBufferByte
-        val pixels = data.data
-
-        for (y in 0 until height) {
-            for (x in 0 until width) {
-                val value = pixels[y * width + x].toInt() and 0xFF
-                pix.setPixel(x, y, value)
-            }
+    /** Reads Tesseract's text for the current image and frees the buffer it came in. */
+    private fun recognizeText(): String? {
+        val text = api.recognizedText() ?: return null
+        return try {
+            text.read().trim()
+        } finally {
+            text.delete()
         }
-
-        return pix
     }
 
     /**
@@ -151,7 +145,11 @@ class OCRProcessor internal constructor(
         try {
             if (isClosed) return
             isClosed = true
-            api.end()
+            try {
+                api.end()
+            } finally {
+                api.delete()
+            }
         } finally {
             lock.unlock()
         }
@@ -181,7 +179,11 @@ actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String =
 /** Reads the text in [image] once, with a processor from [newProcessor]. */
 internal fun extractText(image: BufferedImage, newProcessor: () -> OCRProcessor): String {
     val ocrProcessor = newProcessor()
-    return ocrProcessor.scanImage(image) ?: ""
+    return try {
+        ocrProcessor.scanImage(image) ?: ""
+    } finally {
+        ocrProcessor.close()
+    }
 }
 
 /**
