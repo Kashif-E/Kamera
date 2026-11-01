@@ -38,3 +38,4 @@ include(":analyzerPlugin")
 
 include("ocrPlugin")
 include(":videoRecorderPlugin")
+include(":cameraKScreenshotTests")

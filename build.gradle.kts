@@ -3,6 +3,8 @@ plugins {
     alias(libs.plugins.android.library).apply(false)
     alias(libs.plugins.compose.compiler) apply false
     alias(libs.plugins.jetbrains.kotlin.jvm) apply false
+    alias(libs.plugins.jetbrains.kotlin.android) apply false
+    alias(libs.plugins.paparazzi) apply false
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.dokka) apply false
     alias(libs.plugins.spotless)
@@ -41,4 +43,113 @@ spotless {
         trimTrailingWhitespace()
         endWithNewline()
     }
+}
+
+// ─── Verification entry point ───────────────────────────────────────────────────────────────────
+// `./gradlew verifyAll` runs every check CI runs. scripts/verify.sh calls the same task and narrows
+// it with -Pcamerak.verify.modules=<a,b> and -Pcamerak.verify.targets=<desktop,android,ios,
+// screenshots,lint,sample>; with neither property set, everything runs.
+
+val libraryModules =
+    listOf("cameraK", "ImageSaverPlugin", "qrScannerPlugin", "ocrPlugin", "videoRecorderPlugin", "analyzerPlugin")
+val screenshotModule = "cameraKScreenshotTests"
+val allVerifyTargets = listOf("desktop", "android", "ios", "screenshots", "lint", "sample")
+
+fun csvProperty(name: String): List<String>? =
+    providers
+        .gradleProperty(name)
+        .orNull
+        ?.split(',')
+        ?.map(String::trim)
+        ?.filter(String::isNotEmpty)
+
+val verifyModules = csvProperty("camerak.verify.modules") ?: libraryModules
+val verifyTargets = csvProperty("camerak.verify.targets") ?: allVerifyTargets
+val recordScreenshots = providers.gradleProperty("camerak.recordScreenshots").orNull.toBoolean()
+
+(verifyModules - libraryModules).let { unknown ->
+    require(unknown.isEmpty()) { "Unknown module(s) $unknown; expected one of $libraryModules" }
+}
+(verifyTargets - allVerifyTargets).let { unknown ->
+    require(unknown.isEmpty()) { "Unknown target(s) $unknown; expected one of $allVerifyTargets" }
+}
+
+// A test task that is UP-TO-DATE or FROM-CACHE leaves old result files behind, and the report
+// would count tests that did not run in this invocation. verify.sh sets this so every requested
+// test task executes.
+if (providers.gradleProperty("camerak.verify.rerunTests").orNull.toBoolean()) {
+    subprojects {
+        tasks.withType<AbstractTestTask>().configureEach {
+            outputs.upToDateWhen { false }
+            outputs.cacheIf { false }
+        }
+    }
+}
+
+// kotlinx-coroutines-test on a consumer's runtime classpath hijacks Dispatchers.Main (#165).
+// This fails the build if it, or any other test library, reaches a published runtime classpath.
+val testOnlyGroups =
+    listOf("org.jetbrains.kotlinx:kotlinx-coroutines-test", "junit:junit", "org.robolectric:", "androidx.test:")
+subprojects {
+    if (name !in libraryModules) return@subprojects
+    val runtimeGraphs =
+        listOf("desktopRuntimeClasspath", "releaseRuntimeClasspath").map { configurationName ->
+            configurationName to
+                provider { configurations.getByName(configurationName) }
+                    .flatMap { it.incoming.resolutionResult.rootComponent }
+        }
+    tasks.register("checkTestOnlyDependencies") {
+        group = "verification"
+        description = "Fails if a test library is on a published runtime classpath"
+        doLast {
+            val leaks =
+                runtimeGraphs.flatMap { (configurationName, root) ->
+                    val seen = mutableSetOf<ResolvedComponentResult>()
+                    val queue = ArrayDeque(listOf(root.get()))
+                    while (queue.isNotEmpty()) {
+                        val component = queue.removeFirst()
+                        if (!seen.add(component)) continue
+                        component.dependencies
+                            .filterIsInstance<ResolvedDependencyResult>()
+                            .forEach { queue.add(it.selected) }
+                    }
+                    seen.mapNotNull { component ->
+                        val id = component.moduleVersion?.let { "${it.group}:${it.name}" } ?: return@mapNotNull null
+                        if (testOnlyGroups.any { id.startsWith(it) }) "$configurationName -> $id" else null
+                    }
+                }
+            check(leaks.isEmpty()) { "Test-only libraries on a runtime classpath:\n" + leaks.joinToString("\n") }
+        }
+    }
+}
+
+// --only screenshots runs just the screenshot classes from cameraK's desktop suite.
+if ("screenshots" in verifyTargets && "desktop" !in verifyTargets) {
+    project(":cameraK").tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
+        filter.includeTestsMatching("com.kashif.cameraK.screenshots.*")
+    }
+}
+
+tasks.register("verifyAll") {
+    group = "verification"
+    description = "Runs spotless, every module's tests on every target, screenshot tests and the Sample build"
+
+    val paths = mutableListOf<String>()
+    if ("lint" in verifyTargets) paths += ":spotlessCheck"
+    verifyModules.forEach { module ->
+        if ("desktop" in verifyTargets || "screenshots" in verifyTargets && module == "cameraK") {
+            paths += ":$module:desktopTest"
+        }
+        if ("android" in verifyTargets) paths += ":$module:testDebugUnitTest"
+        if ("ios" in verifyTargets) paths += ":$module:iosSimulatorArm64Test"
+        if ("desktop" in verifyTargets || "android" in verifyTargets) paths += ":$module:checkTestOnlyDependencies"
+    }
+    if ("screenshots" in verifyTargets && "cameraK" in verifyModules) {
+        paths += ":$screenshotModule:" + if (recordScreenshots) "recordPaparazziDebug" else "verifyPaparazziDebug"
+    }
+    if ("sample" in verifyTargets && verifyModules == libraryModules) {
+        paths +=
+            listOf(":Sample:compileKotlinDesktop", ":Sample:assembleDebug", ":Sample:compileKotlinIosSimulatorArm64")
+    }
+    dependsOn(paths)
 }

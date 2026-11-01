@@ -9,6 +9,8 @@ CameraK is a Kotlin Multiplatform (KMP) camera library for Compose Multiplatform
 ## Build Commands
 
 ```bash
+scripts/verify.sh                        # Verification harness (CI runs this); --quick, --module, --only, --record-screenshots
+./gradlew verifyAll                      # Same Gradle tasks, without the GREEN/RED summary
 ./gradlew check                          # Full build + formatting + tests
 ./gradlew spotlessApply                  # Auto-format all Kotlin code (ktlint)
 ./gradlew spotlessCheck                  # Check formatting without fixing

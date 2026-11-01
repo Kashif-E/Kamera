@@ -29,6 +29,13 @@ textRecognition = "16.0.1"
 kflite = "1.1.40"
 vanniktech-publish = "0.37.0"
 
+# Test-only
+junit = "4.13.2"
+robolectric = "4.17"
+androidx-test-core = "1.7.0"
+# 2.0.0-alpha04 and later are compiled for Java 21; this build runs on JDK 17.
+paparazzi = "2.0.0-alpha02"
+
 [libraries]
 
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camera-view" }
@@ -62,6 +69,11 @@ tesseract-platform = { module = "org.bytedeco:tesseract-platform", version.ref =
 text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "textRecognition" }
 
 kflite = {module = "io.github.shadmanadman:kflite", version.ref = "kflite"}
+
+junit = { module = "junit:junit", version.ref = "junit" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidx-test-core" }
+
 [plugins]
 
 multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
@@ -72,3 +84,5 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }
+jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+paparazzi = { id = "app.cash.paparazzi", version.ref = "paparazzi" }

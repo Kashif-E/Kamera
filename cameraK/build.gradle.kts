@@ -49,7 +49,7 @@ kotlin {
         }
 
         commonTest.dependencies {
-            api(kotlin("test"))
+            implementation(kotlin("test"))
 
             // Test-only, and it must stay that way. On the runtime classpath, coroutines-test
             // installs TestMainDispatcherFactory via ServiceLoader, which takes over
@@ -57,6 +57,19 @@ kotlin {
             // dispatcher was absent and the test dispatcher was unset" in consumer apps that never
             // call Dispatchers.setMain(). See issue #165.
             implementation(libs.kotlinx.coroutines.test)
+        }
+
+        val desktopTest by getting {
+            dependencies {
+                // Skiko natives for the host, needed to render composables in screenshot tests.
+                implementation(compose.desktop.currentOs)
+            }
+        }
+
+        androidUnitTest.dependencies {
+            implementation(libs.junit)
+            implementation(libs.robolectric)
+            implementation(libs.androidx.test.core)
         }
 
         androidMain.dependencies {
@@ -105,6 +118,27 @@ android {
             // Exclude Javadoc and sources JARs for debug variant
         }
     }
+}
+
+// Desktop screenshot tests compare against PNGs in src/desktopTest/resources/goldens.
+// -Pcamerak.recordScreenshots=true rewrites the goldens instead (scripts/verify.sh --record-screenshots).
+tasks.named<Test>("desktopTest") {
+    val record = providers.gradleProperty("camerak.recordScreenshots").orElse("false")
+    inputs.property("camerak.recordScreenshots", record)
+    systemProperty("camerak.screenshots.record", record.get())
+    systemProperty(
+        "camerak.screenshots.goldenDir",
+        layout.projectDirectory
+            .dir("src/desktopTest/resources/goldens")
+            .asFile.absolutePath,
+    )
+    systemProperty(
+        "camerak.screenshots.diffDir",
+        layout.buildDirectory
+            .dir("reports/screenshots-desktop")
+            .get()
+            .asFile.absolutePath,
+    )
 }
 
 // Google Play SDK Console ownership token: androidMain/resources puts it in the AAR's classes.jar;

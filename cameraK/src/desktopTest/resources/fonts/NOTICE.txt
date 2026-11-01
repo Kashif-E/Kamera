@@ -1,0 +1,3 @@
+DroidSans.ttf: Copyright (C) 2008 The Android Open Source Project.
+Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0
+Used only by the desktop screenshot tests, so text renders the same whatever fonts the host has.
