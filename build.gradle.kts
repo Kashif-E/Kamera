@@ -247,6 +247,144 @@ tasks.register("checkNoIntelSimulatorTarget") {
     }
 }
 
+// The declared minSdk must equal the dependency graph's true floor. AGP never compares a library's
+// minSdk with its dependencies' manifests; the merge that would only runs for apps and for unit
+// tests that include Android resources. So each module reads the manifest inside every external AAR
+// on its shipped and unit-test classpaths and fails if one needs a higher API level than it declares.
+val androidModules = libraryModules + "Sample" + screenshotModule
+val minSdkVersionAttribute = Regex("""android:minSdkVersion\s*=\s*"(\d+)"""")
+
+data class AndroidSettings(
+    val minSdk: Int?,
+    val includesAndroidResourcesInUnitTests: Boolean,
+)
+
+fun androidSettings(module: Project): AndroidSettings =
+    when (val android = module.extensions.getByName("android")) {
+        is com.android.build.api.dsl.LibraryExtension ->
+            AndroidSettings(android.defaultConfig.minSdk, android.testOptions.unitTests.isIncludeAndroidResources)
+        is com.android.build.api.dsl.ApplicationExtension ->
+            AndroidSettings(android.defaultConfig.minSdk, android.testOptions.unitTests.isIncludeAndroidResources)
+        else -> throw GradleException("${module.path}: unexpected android extension ${android::class.java.name}")
+    }
+
+fun manifestMinSdk(
+    component: String,
+    aar: File,
+): Int {
+    val manifest =
+        java.util.zip.ZipFile(aar).use { zip ->
+            val entry =
+                zip.getEntry("AndroidManifest.xml") ?: throw GradleException("$component: no manifest in ${aar.name}")
+            zip.getInputStream(entry).bufferedReader().readText()
+        }
+    return minSdkVersionAttribute
+        .find(manifest)
+        ?.groupValues
+        ?.get(1)
+        ?.toInt() ?: 1
+}
+
+subprojects {
+    if (name !in androidModules) return@subprojects
+    val externalAars =
+        listOf("releaseRuntimeClasspath", "debugUnitTestRuntimeClasspath").map { configurationName ->
+            configurationName to
+                provider {
+                    configurations
+                        .getByName(configurationName)
+                        .incoming
+                        .artifactView { componentFilter { it is ModuleComponentIdentifier } }
+                        .artifacts.artifacts
+                        .filter { it.file.extension == "aar" }
+                        .map { it.id.componentIdentifier.displayName to it.file }
+                }
+        }
+    val settings = provider { androidSettings(project) }
+    val isLibrary = name in libraryModules
+    tasks.register("checkAndroidSdkFloor") {
+        group = "verification"
+        description = "Fails if a dependency's manifest needs a higher minSdk than this module declares"
+        doLast {
+            val declared = settings.get().minSdk ?: 1
+            val tooLow =
+                externalAars
+                    .flatMap { (configurationName, aars) ->
+                        aars.get().map { (component, aar) ->
+                            Triple(component, manifestMinSdk(component, aar), configurationName)
+                        }
+                    }.filter { (_, floor, _) -> floor > declared }
+                    .groupBy(
+                        { (component, floor, _) -> component to floor },
+                        { (_, _, configurationName) -> configurationName },
+                    ).map { (dependency, configurationNames) ->
+                        "${dependency.first} needs minSdk ${dependency.second} (${configurationNames.distinct().joinToString()})"
+                    }
+            val problems = tooLow.toMutableList()
+            if (isLibrary && !settings.get().includesAndroidResourcesInUnitTests) {
+                problems += "unit tests do not include Android resources, so their manifest merge never checks minSdk"
+            }
+            check(problems.isEmpty()) { "$path declares minSdk $declared, but:\n" + problems.joinToString("\n") }
+        }
+    }
+}
+
+// Every library declares the same floor and the docs state it. Each library's unit tests merge their
+// manifest at that floor; the Sample may sit higher only for a Sample-only dependency (kflite needs 24).
+val documentedMinSdk =
+    listOf(
+        Regex("""\|\s*Android\s*\|\s*API (\d+)"""),
+        Regex("""\*\*Android\*\*: API (\d+)"""),
+        Regex("""\*\*Minimum SDK\*\*: API (\d+)"""),
+        Regex("""Ensure you're using API (\d+)"""),
+        Regex("""minSdk(?: is|\s*=)\s*(\d+)"""),
+    )
+tasks.register("checkAndroidSdkFloor") {
+    group = "verification"
+    description = "Fails if the libraries' minSdk values disagree, or the Sample or the docs use another one"
+    dependsOn(androidModules.map { ":$it:checkAndroidSdkFloor" })
+    val declared = provider { androidModules.associateWith { androidSettings(project(":$it")).minSdk } }
+    val root = layout.projectDirectory.asFile
+    doLast {
+        val levels = declared.get()
+        val libraryLevels = levels.filterKeys { it in libraryModules }.values.toSet()
+        val floor = libraryLevels.singleOrNull()
+        check(floor != null && (levels["Sample"] ?: 0) >= floor) {
+            "Every library must declare one minSdk and the Sample no lower; found $levels"
+        }
+        val docs =
+            trackedTextFiles(root).filter { file ->
+                val path = file.relativeTo(root).invariantSeparatorsPath
+                path == "README.MD" ||
+                    path.startsWith("docs/") &&
+                    !path.startsWith("docs/superpowers/") &&
+                    file.extension == "md"
+            }
+        val stale =
+            docs.flatMap { file ->
+                file.readLines().mapIndexedNotNull { index, line ->
+                    val stated =
+                        documentedMinSdk
+                            .firstNotNullOfOrNull { it.find(line) }
+                            ?.groupValues
+                            ?.get(1)
+                            ?.toInt()
+                    if (stated != null &&
+                        stated != floor
+                    ) {
+                        "${file.relativeTo(root)}:${index + 1}: ${line.trim()}"
+                    } else {
+                        null
+                    }
+                }
+            }
+        check(stale.isEmpty()) {
+            "The libraries' minSdk is $floor, but the docs say otherwise:\n" +
+                stale.joinToString("\n")
+        }
+    }
+}
+
 // --only screenshots runs just the screenshot classes from cameraK's desktop suite.
 if ("screenshots" in verifyTargets && "desktop" !in verifyTargets) {
     project(":cameraK").tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
@@ -262,7 +400,8 @@ tasks.register("verifyAll") {
     if ("lint" in
         verifyTargets
     ) {
-        paths += listOf(":spotlessCheck", ":checkCredentialHygiene", ":checkNoIntelSimulatorTarget")
+        paths +=
+            listOf(":spotlessCheck", ":checkCredentialHygiene", ":checkNoIntelSimulatorTarget", ":checkAndroidSdkFloor")
     }
     verifyModules.forEach { module ->
         if ("desktop" in verifyTargets || "screenshots" in verifyTargets && module == "cameraK") {
