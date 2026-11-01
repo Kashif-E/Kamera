@@ -43,7 +43,7 @@ TASK_EVIDENCE = {
 # Per-module compile tasks for the variants that ship but have no tests.
 COMPILE_EVIDENCE = {
     "android": ["compileReleaseKotlinAndroid"],
-    "ios": ["compileKotlinIosArm64", "compileKotlinIosX64"],
+    "ios": ["compileKotlinIosArm64"],
 }
 # The JVM's default uncaught-exception handler prints this when a thread other than the test's dies.
 # JUnit never sees that exception, so the test passes; the line only reaches the XML's system-err.

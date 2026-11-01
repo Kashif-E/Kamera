@@ -122,7 +122,6 @@ val publishedGraphs =
         "desktopRuntimeClasspath",
         "releaseRuntimeClasspath",
         "debugRuntimeClasspath",
-        "iosX64CompileKlibraries",
         "iosArm64CompileKlibraries",
         "iosSimulatorArm64CompileKlibraries",
     )
@@ -279,7 +278,6 @@ tasks.register("verifyAll") {
                 listOf(
                     ":$module:iosSimulatorArm64Test",
                     ":$module:compileKotlinIosArm64",
-                    ":$module:compileKotlinIosX64",
                 )
         }
         if (listOf("desktop", "android", "ios").any { it in verifyTargets }) {

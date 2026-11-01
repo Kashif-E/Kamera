@@ -35,7 +35,7 @@ Tests live in each module's `commonTest` (e.g. `cameraK/src/commonTest`). They r
 - **Sample/** - Multiplatform demo app (Android, iOS, Desktop)
 - **iosApp/** - iOS Xcode project for Swift integration
 
-All library modules target: `androidTarget`, `jvm("desktop")`, `iosX64()`, `iosArm64()`, `iosSimulatorArm64()`.
+All library modules target: `androidTarget`, `jvm("desktop")`, `iosArm64()`, `iosSimulatorArm64()`. There is no Intel-simulator target since 2.0.
 
 ## Architecture
 
