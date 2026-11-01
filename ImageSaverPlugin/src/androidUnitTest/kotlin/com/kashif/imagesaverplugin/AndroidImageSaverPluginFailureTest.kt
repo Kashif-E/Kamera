@@ -89,7 +89,13 @@ class AndroidImageSaverPluginFailureTest {
     }
 }
 
-/** Stores MediaStore rows in memory so a test can see what a save left behind. */
+/**
+ * Stores MediaStore rows in memory so a test can see what a save left behind.
+ *
+ * Like MediaProvider from API 29 (`ensureFileColumns`), it rejects a row whose RELATIVE_PATH starts
+ * outside the collection's primary directories: `Images` takes `DCIM/` and `Pictures/`, `Files`
+ * takes `Download/` and `Documents/`.
+ */
 class FakeMediaStore : ContentProvider() {
     val rows = linkedMapOf<Uri, ContentValues>()
     var insertFailure: RuntimeException? = null
@@ -99,6 +105,13 @@ class FakeMediaStore : ContentProvider() {
 
     override fun insert(uri: Uri, values: ContentValues?): Uri {
         insertFailure?.let { throw it }
+        values?.getAsString(MediaStore.MediaColumns.RELATIVE_PATH)?.let { relativePath ->
+            val primary = relativePath.substringBefore('/')
+            val allowed = allowedPrimaryDirectories(uri)
+            require(allowed.any { it.equals(primary, ignoreCase = true) }) {
+                "Primary directory $primary not allowed for $uri; allowed directories are $allowed"
+            }
+        }
         val row = ContentUris.withAppendedId(uri, nextId++)
         rows[row] = ContentValues(values ?: ContentValues())
         return row
@@ -122,4 +135,10 @@ class FakeMediaStore : ContentProvider() {
     ): Cursor? = null
 
     override fun getType(uri: Uri): String? = null
+
+    private fun allowedPrimaryDirectories(collection: Uri): List<String> = when (collection.pathSegments.getOrNull(1)) {
+        "images" -> listOf("DCIM", "Pictures")
+        "file" -> listOf("Download", "Documents")
+        else -> error("FakeMediaStore does not model $collection")
+    }
 }
