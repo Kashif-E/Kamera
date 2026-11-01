@@ -1,0 +1,84 @@
+package com.kashif.cameraK.controller
+
+import org.bytedeco.javacv.Frame
+import org.bytedeco.javacv.FrameGrabber
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * A camera that is not there. Like the Windows `VideoInputFrameGrabber`, it has no internal
+ * locking, so it records every access a real native grabber would not survive: two `grab()` calls
+ * at once, `stop()`/`release()` while a `grab()` is still inside the handle, and any call after
+ * `release()`.
+ *
+ * While the gate is closed, `grab()` blocks the way a real grabber blocks until the camera delivers
+ * its next frame. [openGate] lets every pending and later `grab()` return at once.
+ */
+internal class FakeFrameGrabber(width: Int = 64, height: Int = 48) : FrameGrabber() {
+    private val frame = Frame(width, height, Frame.DEPTH_UBYTE, 3)
+    private val gate = Semaphore(0)
+
+    @Volatile private var gateOpen = false
+
+    @Volatile private var released = false
+    private val inFlight = AtomicInteger(0)
+
+    val violations: MutableList<String> = CopyOnWriteArrayList()
+    val grabThreads: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    val maxConcurrentGrabs = AtomicInteger(0)
+    val grabCount = AtomicInteger(0)
+    val stopCount = AtomicInteger(0)
+    val releaseCount = AtomicInteger(0)
+
+    val firstGrabEntered = CountDownLatch(1)
+    val concurrentGrabEntered = CountDownLatch(1)
+    val releasedLatch = CountDownLatch(1)
+
+    fun openGate() {
+        gateOpen = true
+        gate.release(Int.MAX_VALUE / 2)
+    }
+
+    override fun start() {
+        if (released) violations += "start() after release()"
+    }
+
+    override fun stop() {
+        stopCount.incrementAndGet()
+        if (inFlight.get() > 0) violations += "stop() while grab() was in flight"
+    }
+
+    override fun trigger() = Unit
+
+    override fun grab(): Frame {
+        if (released) violations += "grab() after release()"
+        val concurrent = inFlight.incrementAndGet()
+        maxConcurrentGrabs.accumulateAndGet(concurrent, ::maxOf)
+        if (concurrent > 1) concurrentGrabEntered.countDown()
+        grabThreads += Thread.currentThread().name
+        firstGrabEntered.countDown()
+        try {
+            if (!gateOpen) gate.tryAcquire(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            grabCount.incrementAndGet()
+            return frame
+        } finally {
+            inFlight.decrementAndGet()
+        }
+    }
+
+    override fun release() {
+        releaseCount.incrementAndGet()
+        if (inFlight.get() > 0) violations += "release() while grab() was in flight"
+        released = true
+        releasedLatch.countDown()
+    }
+
+    private companion object {
+        // Upper bound so a broken test cannot hang the suite; tests open the gate long before this.
+        const val GATE_TIMEOUT_SECONDS = 10L
+    }
+}
