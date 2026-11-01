@@ -15,7 +15,6 @@ import org.bytedeco.tesseract.global.tesseract.PSM_AUTO
 import java.awt.image.BufferedImage
 import java.awt.image.ComponentSampleModel
 import java.awt.image.DataBufferByte
-import java.io.File
 
 /**
  * Desktop implementation of OCR text recognition using Tesseract engine.
@@ -30,7 +29,7 @@ class OCRProcessor internal constructor(
     tessdataDir: String?,
     private val clock: () -> Long,
 ) {
-    constructor() : this(JavaCppTesseract, findTessdataDirectory(), System::currentTimeMillis)
+    constructor() : this(JavaCppTesseract, findTessdataDirectory(processTessdataSources()), System::currentTimeMillis)
 
     private val api = library.newEngine()
     private val lock = ReentrantLock()
@@ -153,23 +152,6 @@ class OCRProcessor internal constructor(
         } finally {
             lock.unlock()
         }
-    }
-}
-
-private fun findTessdataDirectory(): String? {
-    val possiblePaths =
-        listOf(
-            File("ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin").absolutePath,
-            File("./ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin").absolutePath,
-            System.getenv("TESSDATA_PREFIX"),
-            File(
-                System.getProperty("user.dir"),
-                "ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin",
-            ).absolutePath,
-        )
-
-    return possiblePaths.firstOrNull { path ->
-        path != null && File(path).exists() && File("$path/eng.traineddata").exists()
     }
 }
 
