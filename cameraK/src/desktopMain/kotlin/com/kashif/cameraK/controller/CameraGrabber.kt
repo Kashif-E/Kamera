@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.isActive
@@ -58,7 +59,8 @@ class CameraGrabber(
      */
     @Deprecated(
         "This used to call grab() on the caller's thread, racing the grab loop for the same native " +
-            "handle. It now blocks until the grab loop's next frame. Use CameraController.takePictureToFile().",
+            "handle. It now blocks until the grab loop's next frame. Use CameraController.takePictureToFile(); " +
+            "this method becomes internal in CameraK 2.0.",
     )
     fun grabCurrentFrame(): BufferedImage? {
         val scope = ownerScope.value ?: return null
@@ -82,8 +84,14 @@ class CameraGrabber(
         return withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) { snapshots.first() }
     }
 
-    /** Copies of the grab loop's frames from now until the loop stops. */
-    internal fun frames(): Flow<BufferedImage> = snapshots.takeWhile { it != null }.filterNotNull()
+    /**
+     * Copies of the grab loop's frames from now until the loop stops. Completes at once if no loop
+     * is running, so a consumer never waits for frames that will not come.
+     */
+    internal fun frames(): Flow<BufferedImage> = snapshots
+        .onSubscription { if (job.value?.isActive != true) emit(null) }
+        .takeWhile { it != null }
+        .filterNotNull()
 
     /**
      * Starts the grab loop in [coroutineScope], on a dedicated thread. The loop owns the grabber and
@@ -113,10 +121,28 @@ class CameraGrabber(
                     }
                     owned.start()
 
-                    // grab() blocks until the camera delivers the next frame, which paces the loop.
+                    // grab() blocks until the camera delivers the next frame, which paces the loop. A
+                    // grabber that returns at once without an image would not pace it, so the run
+                    // ends rather than spin.
+                    var framesWithoutImage = 0
                     while (isActive) {
                         val frame = owned.grab()
-                        if (frame?.image == null) continue
+                            ?: if (isActive) {
+                                throw IllegalStateException(
+                                    "The camera stopped delivering frames",
+                                )
+                            } else {
+                                break
+                            }
+                        if (frame.image == null) {
+                            if (++framesWithoutImage >= MAX_FRAMES_WITHOUT_IMAGE) {
+                                throw IllegalStateException(
+                                    "The camera delivered no image in $MAX_FRAMES_WITHOUT_IMAGE frames",
+                                )
+                            }
+                            continue
+                        }
+                        framesWithoutImage = 0
                         converter.setHorizontalFlip(isHorizontallyFlipped)
                         val image = converter.convert(frame) ?: continue
                         frameFlow.tryEmit(image)
@@ -221,6 +247,10 @@ private const val PRODUCER_THREAD = "CameraK-grabber"
 // Long enough for a slow webcam's first frame; capture and recording fail rather than wait forever.
 private const val SNAPSHOT_TIMEOUT_MS = 5_000L
 private const val FUTURE_GRACE_MS = 1_000L
+
+// Frames without an image (audio, or a stream the demuxer is draining) are interleaved with video,
+// a few at a time. This many in a row means the camera has stopped producing pictures.
+private const val MAX_FRAMES_WITHOUT_IMAGE = 300
 
 enum class OperatingSystem {
     WINDOWS,

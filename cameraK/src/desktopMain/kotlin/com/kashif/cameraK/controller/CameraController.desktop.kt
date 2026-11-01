@@ -23,7 +23,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -327,6 +326,7 @@ actual class CameraController(
         val frames = cameraGrabber.frames()
         val job = CoroutineScope(Dispatchers.IO).launch(start = CoroutineStart.ATOMIC) {
             val converter = Java2DFrameConverter()
+            var failure: Exception? = null
             try {
                 // Fed by the grab loop's frames; this coroutine never grabs from the camera itself.
                 frames.collect { image ->
@@ -338,13 +338,17 @@ actual class CameraController(
                         }
                     }
                 }
-                awaitCancellation()
+                // The frames ended without stopRecording(): the camera stopped or never ran, so the
+                // recording ends here and stopRecording() reports it as failed.
+                failure = IllegalStateException("The camera stopped before the recording was stopped")
+                CameraKLogger.e("CameraK", "CameraK recording ended because the camera stopped", failure)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 CameraKLogger.e("CameraK", "CameraK recording loop error", e)
+                failure = e
             } finally {
-                finalized.complete(releaseRecorder(recorder))
+                finalized.complete(releaseRecorder(recorder) ?: failure)
             }
         }
         activeRecording.value = ActiveRecording(job, finalized)
