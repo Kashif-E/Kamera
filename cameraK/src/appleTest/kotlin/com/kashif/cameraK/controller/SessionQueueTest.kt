@@ -16,7 +16,9 @@ import platform.Foundation.timeIntervalSince1970
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_DEFAULT
 import platform.darwin.DISPATCH_TIME_NOW
 import platform.darwin.NSEC_PER_SEC
+import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_global_queue
+import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_group_async
 import platform.darwin.dispatch_group_create
 import platform.darwin.dispatch_group_wait
@@ -204,13 +206,25 @@ class SessionQueueTest {
         dispatch_semaphore_signal(release)
 
         val session = awaitSession()
-        awaitCondition("the in-flight setup to commit") { session.calls.any { it.op == "commitConfiguration" } }
-        // The stale setup's only remaining moves are to publish the session and start it; give it the
-        // time it needs to do so, returning early if it does.
-        spinFor(seconds = 2.0) { ready.value || session.isRunning }
+        // The first drain runs every main-queue hop the stale setup made; the second runs any session
+        // work onSessionReady would have handed back (startSession), so nothing is left to happen.
+        drainSessionQueueThenMain(controller)
+        drainSessionQueueThenMain(controller)
 
         assertFalse(ready.value, "onSessionReady fired for a setup that cleanupSession had already superseded")
         assertFalse(session.isRunning, "a session set up after cleanupSession was left running (camera stays on)")
+    }
+
+    /**
+     * Returns once everything already handed to [controller]'s session queue has run, and after it
+     * every block that work queued on main: the session queue and the main queue are both FIFO.
+     */
+    private fun drainSessionQueueThenMain(controller: CustomCameraController) {
+        val drained = atomic(false)
+        controller.afterQueuedSessionWork {
+            dispatch_async(dispatch_get_main_queue()) { drained.value = true }
+        }
+        awaitCondition("the session queue, then the main queue, to drain") { drained.value }
     }
 
     private fun awaitSession(): RecordingSession {
