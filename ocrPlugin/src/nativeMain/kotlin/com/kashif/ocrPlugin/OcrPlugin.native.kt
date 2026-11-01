@@ -4,7 +4,13 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.utils.toByteArray
 import com.kashif.cameraK.utils.toNSData
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import platform.AVFoundation.AVCaptureConnection
 import platform.AVFoundation.AVCaptureOutput
 import platform.AVFoundation.AVCaptureVideoDataOutput
@@ -13,6 +19,7 @@ import platform.AVFoundation.AVCaptureVideoOrientationPortrait
 import platform.AVFoundation.AVCaptureVideoStabilizationModeStandard
 import platform.CoreFoundation.CFRelease
 import platform.CoreFoundation.CFRetain
+import platform.CoreGraphics.CGImageRef
 import platform.CoreImage.CIImage
 import platform.CoreMedia.CMSampleBufferGetImageBuffer
 import platform.CoreMedia.CMSampleBufferRef
@@ -20,6 +27,7 @@ import platform.CoreVideo.kCVPixelBufferPixelFormatTypeKey
 import platform.CoreVideo.kCVPixelFormatType_32BGRA
 import platform.Foundation.NSArray
 import platform.Foundation.NSDate
+import platform.Foundation.NSError
 import platform.Foundation.date
 import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.valueForKey
@@ -39,6 +47,28 @@ import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalForeignApi::class)
 actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig): String =
+    recognizeText(bitmap, ::performVisionRequest)
+
+/**
+ * Runs a Vision request over an image, so a test can stand in for Vision. Returns the error Vision
+ * reported, or null when the request ran.
+ */
+internal fun interface VisionPerformer {
+    @OptIn(ExperimentalForeignApi::class)
+    fun perform(image: CGImageRef, request: VNRecognizeTextRequest): NSError?
+}
+
+/** [VisionPerformer] over VNImageRequestHandler.performRequests. */
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+internal fun performVisionRequest(image: CGImageRef, request: VNRecognizeTextRequest): NSError? = memScoped {
+    val error = alloc<ObjCObjectVar<NSError?>>()
+    val handler = VNImageRequestHandler(image, mapOf<Any?, String>())
+    if (handler.performRequests(listOf(request), error.ptr)) null else error.value
+}
+
+/** Reads the text in [bitmap] once, running Vision through [performer]. */
+@OptIn(ExperimentalForeignApi::class)
+internal suspend fun recognizeText(bitmap: ImageBitmap, performer: VisionPerformer): String =
     suspendCoroutine { continuation ->
         val imageData = bitmap.toByteArray()?.toNSData()
         if (imageData == null) {
@@ -92,8 +122,7 @@ actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrCon
         request.usesLanguageCorrection = true
 
         try {
-            val handler = VNImageRequestHandler(uiImage.CGImage!!, mapOf<Any?, String>())
-            handler.performRequests(listOf(request), null)
+            performer.perform(uiImage.CGImage!!, request)
         } catch (e: Exception) {
             continuation.resume("")
         }
