@@ -1,0 +1,125 @@
+package com.kashif.imagesaverplugin
+
+import android.content.ContentProvider
+import android.content.ContentUris
+import android.content.ContentValues
+import android.content.Context
+import android.database.Cursor
+import android.net.Uri
+import android.provider.MediaStore
+import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import java.io.ByteArrayOutputStream
+import java.io.OutputStream
+import java.util.function.Supplier
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+
+/**
+ * MediaStore can refuse a save with exceptions other than IOException: SecurityException without
+ * WRITE_EXTERNAL_STORAGE below API 29, IllegalArgumentException for a rejected insert. They must not
+ * escape the save (the auto-save coroutine would crash the host), and a row inserted as IS_PENDING
+ * must not be left behind.
+ */
+@RunWith(RobolectricTestRunner::class)
+class AndroidImageSaverPluginFailureTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
+    private val mediaStore = Robolectric.setupContentProvider(FakeMediaStore::class.java, MediaStore.AUTHORITY)
+    private val plugin = AndroidImageSaverPlugin(context, ImageSaverConfig())
+    private val firstRow = ContentUris.withAppendedId(
+        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+        1,
+    )
+
+    @Test
+    fun saveImage_whenTheWriteIsRefused_returnsNullAndLeavesNoPendingRow() = runTest {
+        val refusal = SecurityException("no write access")
+        writesTo(firstRow) { throw refusal }
+
+        val location = plugin.saveImage(byteArrayOf(1, 2, 3), "refused")
+
+        assertNull(location)
+        assertEquals(emptyMap(), mediaStore.rows, "the IS_PENDING row was left in MediaStore")
+    }
+
+    @Test
+    fun save_whenTheWriteIsRefused_reportsFailedWithTheCause() = runTest {
+        val refusal = SecurityException("no write access")
+        writesTo(firstRow) { throw refusal }
+
+        val result = plugin.save(byteArrayOf(1, 2, 3), "refused")
+
+        assertSame(refusal, assertIs<ImageSaveResult.Failed>(result).error)
+        assertEquals(emptyMap(), mediaStore.rows, "the IS_PENDING row was left in MediaStore")
+    }
+
+    @Test
+    fun save_whenTheInsertIsRejected_reportsFailedWithTheCause() = runTest {
+        val rejection = IllegalArgumentException("unknown collection")
+        mediaStore.insertFailure = rejection
+
+        val result = plugin.save(byteArrayOf(1, 2, 3), "rejected")
+
+        assertSame(rejection, assertIs<ImageSaveResult.Failed>(result).error)
+    }
+
+    @Test
+    fun save_writesTheBytesAndPublishesTheRow() = runTest {
+        val written = ByteArrayOutputStream()
+        writesTo(firstRow) { written }
+        val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 42)
+
+        val result = plugin.save(bytes, "ok")
+
+        assertEquals(ImageSaveResult.Saved(firstRow.toString()), result)
+        assertContentEquals(bytes, written.toByteArray())
+        assertEquals(0, mediaStore.rows.getValue(firstRow).getAsInteger(MediaStore.MediaColumns.IS_PENDING))
+    }
+
+    private fun writesTo(uri: Uri, open: () -> OutputStream) {
+        shadowOf(context.contentResolver).registerOutputStreamSupplier(uri, Supplier { open() })
+    }
+}
+
+/** Stores MediaStore rows in memory so a test can see what a save left behind. */
+class FakeMediaStore : ContentProvider() {
+    val rows = linkedMapOf<Uri, ContentValues>()
+    var insertFailure: RuntimeException? = null
+    private var nextId = 1L
+
+    override fun onCreate() = true
+
+    override fun insert(uri: Uri, values: ContentValues?): Uri {
+        insertFailure?.let { throw it }
+        val row = ContentUris.withAppendedId(uri, nextId++)
+        rows[row] = ContentValues(values ?: ContentValues())
+        return row
+    }
+
+    override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int {
+        val row = rows[uri] ?: return 0
+        values?.let(row::putAll)
+        return 1
+    }
+
+    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int =
+        if (rows.remove(uri) != null) 1 else 0
+
+    override fun query(
+        uri: Uri,
+        projection: Array<out String>?,
+        selection: String?,
+        selectionArgs: Array<out String>?,
+        sortOrder: String?,
+    ): Cursor? = null
+
+    override fun getType(uri: Uri): String? = null
+}
