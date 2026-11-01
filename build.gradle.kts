@@ -179,6 +179,75 @@ tasks.register("checkCredentialHygiene") {
     }
 }
 
+// ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
+// Each check below runs in the lint target and enforces one decision for the 2.0 line.
+
+fun trackedTextFiles(root: File): List<File> {
+    val process =
+        ProcessBuilder("git", "ls-files", "-z")
+            .directory(root)
+            .redirectErrorStream(false)
+            .start()
+    val listing = process.inputStream.bufferedReader().readText()
+    val exit = process.waitFor()
+    if (exit !=
+        0
+    ) {
+        throw GradleException("git ls-files exited $exit: ${process.errorStream.bufferedReader().readText()}")
+    }
+    return listing
+        .split('\u0000')
+        .filter(String::isNotEmpty)
+        .map { File(root, it) }
+        .filter { file -> file.isFile && file.inputStream().use { it.readNBytes(8192) }.none { it == 0.toByte() } }
+}
+
+// 2.0 publishes no Intel-simulator klibs: no module or Sample declares that target, and nothing in
+// the harness, CI, publishing or docs builds or advertises it. CHANGELOG.md records the removal.
+val intelSimulatorReference = Regex("ios_?x64", RegexOption.IGNORE_CASE)
+tasks.register("checkNoIntelSimulatorTarget") {
+    group = "verification"
+    description = "Fails if a module declares the Intel iOS simulator target or a tracked file still refers to it"
+    val kotlinModules = libraryModules + "Sample"
+    val intelSimulatorTargets =
+        provider {
+            kotlinModules.associateWith { name ->
+                project(":$name")
+                    .extensions
+                    .getByType<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension>()
+                    .targets
+                    .withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>()
+                    .filter {
+                        it.konanTarget.family == org.jetbrains.kotlin.konan.target.Family.IOS &&
+                            it.konanTarget.architecture == org.jetbrains.kotlin.konan.target.Architecture.X64
+                    }.map { it.name }
+            }
+        }
+    val root = layout.projectDirectory.asFile
+    doLast {
+        val declared =
+            intelSimulatorTargets
+                .get()
+                .filterValues(List<String>::isNotEmpty)
+                .map { (module, targets) -> "$module declares $targets" }
+        val references =
+            trackedTextFiles(root)
+                .filter { it.name != "CHANGELOG.md" }
+                .flatMap { file ->
+                    file.readLines().mapIndexedNotNull { index, line ->
+                        if (intelSimulatorReference.containsMatchIn(line)) {
+                            "${file.relativeTo(root)}:${index + 1}: ${line.trim()}"
+                        } else {
+                            null
+                        }
+                    }
+                }
+        check(declared.isEmpty() && references.isEmpty()) {
+            "The Intel iOS simulator target was dropped in 2.0, but:\n" + (declared + references).joinToString("\n")
+        }
+    }
+}
+
 // --only screenshots runs just the screenshot classes from cameraK's desktop suite.
 if ("screenshots" in verifyTargets && "desktop" !in verifyTargets) {
     project(":cameraK").tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
@@ -191,7 +260,11 @@ tasks.register("verifyAll") {
     description = "Runs spotless, every module's tests on every target, screenshot tests and the Sample build"
 
     val paths = mutableListOf<String>()
-    if ("lint" in verifyTargets) paths += listOf(":spotlessCheck", ":checkCredentialHygiene")
+    if ("lint" in
+        verifyTargets
+    ) {
+        paths += listOf(":spotlessCheck", ":checkCredentialHygiene", ":checkNoIntelSimulatorTarget")
+    }
     verifyModules.forEach { module ->
         if ("desktop" in verifyTargets || "screenshots" in verifyTargets && module == "cameraK") {
             paths += ":$module:desktopTest"

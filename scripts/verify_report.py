@@ -32,7 +32,7 @@ TASK_TARGETS = {
 TEST_TARGETS = ("desktop", "android", "ios", "screenshots")
 # Log lines proving a non-test target executed.
 TASK_EVIDENCE = {
-    "lint": [":spotlessCheck", ":checkCredentialHygiene"],
+    "lint": [":spotlessCheck", ":checkCredentialHygiene", ":checkNoIntelSimulatorTarget"],
     "sample": [
         ":Sample:compileKotlinDesktop",
         ":Sample:assembleDebug",
