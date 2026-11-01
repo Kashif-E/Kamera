@@ -1,7 +1,10 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -19,8 +22,9 @@ class CameraGrabber(
     private val targetResolution: Pair<Int, Int>? = null,
 ) {
     private val converter = FrameConverter()
-    private var grabber: FrameGrabber? = null
-    private var job: Job? = null
+
+    @Volatile private var grabber: FrameGrabber? = null
+    private val job = atomic<Job?>(null)
 
     private var isHorizontallyFlipped = false
 
@@ -38,30 +42,32 @@ class CameraGrabber(
         }
     }
 
+    /**
+     * Starts the grab loop in [coroutineScope]. The loop owns the grabber for its whole life: it
+     * opens it, grabs from it, and stops and releases it in its own `finally`, so the native handle
+     * is never freed while a `grab()` or a conversion of the grabber's frame is still running. A
+     * start that follows [stop] waits for the previous loop to release its grabber first.
+     */
     fun start(coroutineScope: CoroutineScope, customGrabber: FrameGrabber? = null) {
-        if (job?.isActive == true) return
+        val previous = job.value
+        if (previous?.isActive == true) return
 
-        grabber =
-            (customGrabber ?: createGrabber()).apply {
+        val loop =
+            coroutineScope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
+                var owned: FrameGrabber? = null
                 try {
+                    previous?.join()
+                    owned = customGrabber ?: createGrabber()
                     // Set format for macOS AVFoundation before starting
-                    if (this is FFmpegFrameGrabber && getOperatingSystem() == OperatingSystem.MAC) {
-                        this.format = "avfoundation"
+                    if (owned is FFmpegFrameGrabber && getOperatingSystem() == OperatingSystem.MAC) {
+                        owned.format = "avfoundation"
                     }
-                    start()
-                } catch (e: Exception) {
-                    errorHandler(e)
-                    return
-                }
-            }
+                    owned.start()
+                    grabber = owned
+                    converter.setHorizontalFlip(isHorizontallyFlipped)
 
-        converter.setHorizontalFlip(isHorizontallyFlipped)
-
-        job =
-            coroutineScope.launch(Dispatchers.IO) {
-                try {
                     while (isActive) {
-                        val frame = grabber?.grab()
+                        val frame = owned.grab()
                         if (frame?.image != null) {
                             converter.convert(frame)?.let { image ->
                                 frameFlow.tryEmit(image)
@@ -70,17 +76,38 @@ class CameraGrabber(
 
                         delay(1)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     errorHandler(e)
+                } finally {
+                    grabber = null
+                    owned?.let(::release)
                 }
             }
+        if (!job.compareAndSet(previous, loop)) loop.cancel()
     }
 
+    /**
+     * Stops the grab loop. Non-blocking and idempotent: the loop releases the grabber and converter
+     * once it leaves the native call it is in, however many times this is called.
+     */
     fun stop() {
-        job?.cancel()
+        job.value?.cancel()
+    }
+
+    private fun release(owned: FrameGrabber) {
         try {
-            grabber?.stop()
-            grabber?.release()
+            owned.stop()
+        } catch (e: Exception) {
+            errorHandler(e)
+        }
+        try {
+            owned.release()
+        } catch (e: Exception) {
+            errorHandler(e)
+        }
+        try {
             converter.release()
         } catch (e: Exception) {
             errorHandler(e)

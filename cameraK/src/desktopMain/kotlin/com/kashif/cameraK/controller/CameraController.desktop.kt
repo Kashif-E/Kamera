@@ -15,10 +15,15 @@ import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -72,12 +77,11 @@ actual class CameraController(
     private val qualityPriority: QualityPrioritization = QualityPrioritization.NONE
 
     // Video recording
-    private var frameRecorder: FrameRecorder? = null
 
     @Volatile private var isCurrentlyRecording = false
 
     @Volatile private var isPausedRecording = false
-    private var recordingJob: Job? = null
+    private val activeRecording = atomic<ActiveRecording?>(null)
     private var recordingOutputPath: String? = null
     private var recordingStartMs: Long = 0L
 
@@ -294,13 +298,14 @@ actual class CameraController(
         recordingOutputPath = outputPath
 
         val recorder = recorderFactory(outputPath, configuration).apply { start() }
-        frameRecorder = recorder
         isCurrentlyRecording = true
         isPausedRecording = false
         recordingStartMs = System.currentTimeMillis()
 
-        // Launch recording coroutine that grabs frames independently
-        recordingJob = CoroutineScope(Dispatchers.IO).launch {
+        // The recording coroutine owns the recorder: it is the only code that calls record(), and it
+        // stops and releases the recorder in its finally, after its last record() has returned.
+        val finalized = CompletableDeferred<Exception?>()
+        val job = CoroutineScope(Dispatchers.IO).launch(start = CoroutineStart.ATOMIC) {
             val converter = Java2DFrameConverter()
             try {
                 while (isActive && isCurrentlyRecording) {
@@ -317,26 +322,27 @@ actual class CameraController(
                     }
                     delay(33) // ~30fps
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                CameraKLogger.e("CameraK", "CameraK recording loop error: ${e.message}")
+                CameraKLogger.e("CameraK", "CameraK recording loop error", e)
+            } finally {
+                finalized.complete(releaseRecorder(recorder))
             }
         }
+        activeRecording.value = ActiveRecording(job, finalized)
 
         outputPath
     }
 
     actual suspend fun stopRecording(): VideoCaptureResult = withContext(Dispatchers.IO) {
         isCurrentlyRecording = false
-        recordingJob?.cancel()
-        recordingJob = null
+        val recording = activeRecording.getAndSet(null)
         val durationMs = System.currentTimeMillis() - recordingStartMs
-        return@withContext try {
-            frameRecorder?.stop()
-            frameRecorder?.release()
-            frameRecorder = null
-            VideoCaptureResult.Success(recordingOutputPath ?: "", durationMs)
-        } catch (e: Exception) {
-            VideoCaptureResult.Error(e)
+        recording?.job?.cancelAndJoin()
+        when (val failure = recording?.finalized?.await()) {
+            null -> VideoCaptureResult.Success(recordingOutputPath ?: "", durationMs)
+            else -> VideoCaptureResult.Error(failure)
         }
     }
 
@@ -351,19 +357,29 @@ actual class CameraController(
         isPausedRecording = false
     }
 
+    // Non-blocking: the recording coroutine stops and releases the recorder once its in-flight
+    // record() returns.
     private fun stopVideoRecorderIfActive() {
-        if (isCurrentlyRecording) {
-            isCurrentlyRecording = false
-            recordingJob?.cancel()
-            recordingJob = null
-            try {
-                frameRecorder?.stop()
-                frameRecorder?.release()
-            } catch (e: Exception) {
-                CameraKLogger.e("CameraK", "CameraK: Error stopping recorder: ${e.message}")
-            }
-            frameRecorder = null
+        isCurrentlyRecording = false
+        activeRecording.getAndSet(null)?.job?.cancel()
+    }
+
+    /** Stops then releases [recorder], returning the first failure (logged) or null. */
+    private fun releaseRecorder(recorder: FrameRecorder): Exception? {
+        var failure: Exception? = null
+        try {
+            recorder.stop()
+        } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "CameraK: Error stopping recorder", e)
+            failure = e
         }
+        try {
+            recorder.release()
+        } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "CameraK: Error releasing recorder", e)
+            failure = failure ?: e
+        }
+        return failure
     }
 
     private fun createFrameRecorder(outputPath: String, configuration: VideoConfiguration): FrameRecorder =
@@ -383,6 +399,8 @@ actual class CameraController(
                 audioBitrate = 128_000
             }
         }
+
+    private class ActiveRecording(val job: Job, val finalized: CompletableDeferred<Exception?>)
 
     private fun createVideoOutputPath(config: VideoConfiguration): String {
         val timestamp = LocalDateTime.now()
