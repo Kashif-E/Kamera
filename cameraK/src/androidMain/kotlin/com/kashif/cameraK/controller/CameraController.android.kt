@@ -24,7 +24,6 @@ import androidx.camera.core.ViewPort
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
-import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Quality
@@ -64,6 +63,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -71,7 +71,7 @@ import kotlin.coroutines.resumeWithException
 /**
  * Android-specific implementation of [CameraController] using CameraX.
  */
-actual class CameraController(
+actual class CameraController internal constructor(
     val context: Context,
     val lifecycleOwner: LifecycleOwner,
     internal var flashMode: FlashMode,
@@ -82,11 +82,45 @@ actual class CameraController(
     internal var directory: Directory,
     internal var cameraDeviceType: CameraDeviceType,
     internal var aspectRatio: AspectRatio,
-    internal var targetResolution: Pair<Int, Int>? = null,
-    internal var mirrorFrontCamera: Boolean = false,
+    internal var targetResolution: Pair<Int, Int>?,
+    internal var mirrorFrontCamera: Boolean,
+    private val backend: CameraXBackend,
+    private val imageProcessingExecutor: ExecutorService,
+    private val analyzerExecutor: ExecutorService,
 ) {
 
-    private var cameraProvider: ProcessCameraProvider? = null
+    constructor(
+        context: Context,
+        lifecycleOwner: LifecycleOwner,
+        flashMode: FlashMode,
+        torchMode: TorchMode,
+        cameraLens: CameraLens,
+        imageFormat: ImageFormat,
+        qualityPriority: QualityPrioritization,
+        directory: Directory,
+        cameraDeviceType: CameraDeviceType,
+        aspectRatio: AspectRatio,
+        targetResolution: Pair<Int, Int>? = null,
+        mirrorFrontCamera: Boolean = false,
+    ) : this(
+        context = context,
+        lifecycleOwner = lifecycleOwner,
+        flashMode = flashMode,
+        torchMode = torchMode,
+        cameraLens = cameraLens,
+        imageFormat = imageFormat,
+        qualityPriority = qualityPriority,
+        directory = directory,
+        cameraDeviceType = cameraDeviceType,
+        aspectRatio = aspectRatio,
+        targetResolution = targetResolution,
+        mirrorFrontCamera = mirrorFrontCamera,
+        backend = CameraXBackend.Default,
+        imageProcessingExecutor = Executors.newFixedThreadPool(2),
+        analyzerExecutor = Executors.newSingleThreadExecutor(),
+    )
+
+    private var cameraProvider: CameraBinding? = null
     private var imageCapture: ImageCapture? = null
     private var preview: Preview? = null
     private var camera: Camera? = null
@@ -117,9 +151,6 @@ actual class CameraController(
     private val pendingCaptures = atomic(0)
     private val maxConcurrentCaptures = 3
     private val stopFinalizeTimeoutMs = 5000L
-
-    private val imageProcessingExecutor = Executors.newFixedThreadPool(2)
-    private val analyzerExecutor = Executors.newSingleThreadExecutor()
 
     // Hardware doesn't change at runtime; enumerate once.
     private var cachedLensSnapshot: List<AndroidLensDescriptor>? = null
@@ -154,10 +185,9 @@ actual class CameraController(
 
         memoryManager.initialize(context)
 
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-        cameraProviderFuture.addListener({
+        backend.requestProvider(context, ContextCompat.getMainExecutor(context)) { providerResult ->
             try {
-                cameraProvider = cameraProviderFuture.get()
+                cameraProvider = providerResult.getOrThrow()
                 cameraProvider?.unbindAll()
 
                 val resolutionSelector = createResolutionSelector()
@@ -220,7 +250,7 @@ actual class CameraController(
                 CameraKLogger.e("CameraK", "==> Use case binding failed for $cameraDeviceType: ${exc.message}")
                 CameraKLogger.e("CameraK", "Unhandled exception", exc)
             }
-        }, ContextCompat.getMainExecutor(context))
+        }
     }
 
     /**
@@ -408,7 +438,7 @@ actual class CameraController(
             }
             // Recording is active: a full rebind (unbindAll) would tear down the live VideoCapture
             // session, so fall back to solo-binding just the analyzer outside the UseCaseGroup.
-            cameraProvider?.unbind(imageAnalyzer)
+            imageAnalyzer?.let { cameraProvider?.unbind(it) }
             imageAnalyzer?.let { analyzer ->
                 cameraProvider?.bindToLifecycle(
                     lifecycleOwner,
@@ -464,7 +494,7 @@ actual class CameraController(
         if (registeredAnalyzers.isEmpty()) {
             if (imageAnalyzer != null) {
                 try {
-                    cameraProvider?.unbind(imageAnalyzer)
+                    imageAnalyzer?.let { cameraProvider?.unbind(it) }
                 } catch (_: Exception) {}
                 imageAnalyzer = null
             }
@@ -510,39 +540,41 @@ actual class CameraController(
     private fun performCaptureToFile(continuation: CancellableContinuation<ImageCaptureResult>) {
         // Create final output file directly in desired directory
         val outputFile = createFinalOutputFile()
-        val outputOptions =
-            ImageCapture.OutputFileOptions.Builder(outputFile).setMetadata(captureMetadata()).build()
 
-        imageCapture?.takePicture(
-            outputOptions,
-            ContextCompat.getMainExecutor(context),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    pendingCaptures.decrementAndGet()
+        imageCapture?.let { capture ->
+            backend.takePicture(
+                capture,
+                outputFile,
+                captureMetadata(),
+                ContextCompat.getMainExecutor(context),
+                object : ImageCapture.OnImageSavedCallback {
+                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                        pendingCaptures.decrementAndGet()
 
-                    // Notify MediaStore so image appears in Gallery
-                    notifyMediaStore(outputFile)
+                        // Notify MediaStore so image appears in Gallery
+                        notifyMediaStore(outputFile)
 
-                    // Notify capture listeners (e.g. ImageSaverPlugin auto-save) off the main
-                    // thread, reading the just-saved file only when someone is listening.
-                    if (imageCaptureListeners.isNotEmpty()) {
-                        imageProcessingExecutor.execute {
-                            val bytes = outputFile.readBytes()
-                            imageCaptureListeners.forEach { it(bytes) }
+                        // Notify capture listeners (e.g. ImageSaverPlugin auto-save) off the main
+                        // thread, reading the just-saved file only when someone is listening.
+                        if (imageCaptureListeners.isNotEmpty()) {
+                            imageProcessingExecutor.execute {
+                                val bytes = outputFile.readBytes()
+                                imageCaptureListeners.forEach { it(bytes) }
+                            }
                         }
+
+                        continuation.resume(ImageCaptureResult.SuccessWithFile(outputFile.absolutePath))
                     }
 
-                    continuation.resume(ImageCaptureResult.SuccessWithFile(outputFile.absolutePath))
-                }
-
-                override fun onError(exc: ImageCaptureException) {
-                    CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
-                    pendingCaptures.decrementAndGet()
-                    outputFile.delete() // Clean up failed capture file
-                    continuation.resume(ImageCaptureResult.Error(exc))
-                }
-            },
-        ) ?: run {
+                    override fun onError(exc: ImageCaptureException) {
+                        CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
+                        pendingCaptures.decrementAndGet()
+                        outputFile.delete() // Clean up failed capture file
+                        continuation.resume(ImageCaptureResult.Error(exc))
+                    }
+                },
+            )
+        } ?: run {
             pendingCaptures.decrementAndGet()
             continuation.resume(ImageCaptureResult.Error(Exception("ImageCapture use case is not initialized.")))
         }
