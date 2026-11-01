@@ -26,6 +26,7 @@ internal class FakeFrameRecorder : FrameRecorder() {
     val releaseCount = AtomicInteger(0)
 
     val firstRecordEntered = CountDownLatch(1)
+    val fiveFramesRecorded = CountDownLatch(5)
     val stopCalled = CountDownLatch(1)
     val releasedLatch = CountDownLatch(1)
 
@@ -40,6 +41,7 @@ internal class FakeFrameRecorder : FrameRecorder() {
     override fun record(frame: Frame) {
         if (stopped) violations += "record() after stop()"
         inFlight.incrementAndGet()
+        fiveFramesRecorded.countDown()
         try {
             if (recordCount.getAndIncrement() == 0) {
                 firstRecordEntered.countDown()
