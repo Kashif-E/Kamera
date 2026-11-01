@@ -59,6 +59,10 @@ class JVMImageSaverPlugin(
         return config.customFolderName?.let { File(base, it) } ?: base
     }
 
+    @Deprecated(
+        "Blocks the calling thread while it reads. Use readBytes, which suspends.",
+        ReplaceWith("readBytes(path)"),
+    )
     override fun getByteArrayFrom(path: String): ByteArray = try {
         File(path).readBytes()
     } catch (e: Exception) {

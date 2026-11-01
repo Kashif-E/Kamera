@@ -400,7 +400,7 @@ when (cameraState) {
             when (val result = controller.takePictureToFile()) {
                 is ImageCaptureResult.SuccessWithFile -> {
                     imageSaverPlugin.saveImage(
-                        byteArray = imageSaverPlugin.getByteArrayFrom(result.filePath),
+                        byteArray = imageSaverPlugin.readBytes(result.filePath),
                         imageName = "Photo_${System.currentTimeMillis()}"
                     )
                 }

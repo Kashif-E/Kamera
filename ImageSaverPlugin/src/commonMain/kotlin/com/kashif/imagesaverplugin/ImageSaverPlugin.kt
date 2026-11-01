@@ -161,11 +161,15 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
     }
 
     /**
-     * Retrieves the image byte array from a file path.
+     * Retrieves the image byte array from a file path, blocking the calling thread while it reads.
      *
      * @param path The file path to read.
      * @return The image data as a [ByteArray].
      */
+    @Deprecated(
+        "Blocks the calling thread while it reads. Use readBytes, which suspends.",
+        ReplaceWith("readBytes(path)"),
+    )
     abstract fun getByteArrayFrom(path: String): ByteArray
 
     /**
@@ -177,6 +181,7 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
      * @return The image data.
      * @throws kotlinx.io.IOException when the image cannot be read.
      */
+    @Suppress("DEPRECATION")
     open suspend fun readBytes(path: String): ByteArray = withContext(Dispatchers.IO) { getByteArrayFrom(path) }
 }
 

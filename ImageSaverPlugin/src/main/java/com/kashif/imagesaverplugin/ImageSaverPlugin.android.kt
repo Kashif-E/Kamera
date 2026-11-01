@@ -136,6 +136,10 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
         }
     }
 
+    @Deprecated(
+        "Blocks the calling thread while it reads. Use readBytes, which suspends.",
+        ReplaceWith("readBytes(path)"),
+    )
     override fun getByteArrayFrom(path: String): ByteArray {
         try {
             // takePictureToFile() returns a raw filesystem path; the image saver may hand back a
