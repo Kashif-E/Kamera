@@ -64,7 +64,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.random.Random
 
-actual class CameraController(
+actual class CameraController internal constructor(
     internal var flashMode: FlashMode,
     internal var torchMode: TorchMode,
     internal var cameraLens: CameraLens,
@@ -73,11 +73,39 @@ actual class CameraController(
     internal var directory: Directory,
     internal var cameraDeviceType: CameraDeviceType,
     internal var aspectRatio: AspectRatio,
-    internal var targetResolution: Pair<Int, Int>? = null,
-    internal var mirrorFrontCamera: Boolean = false,
+    internal var targetResolution: Pair<Int, Int>?,
+    internal var mirrorFrontCamera: Boolean,
+    customController: CustomCameraController?,
 ) : UIViewController(null, null) {
+    constructor(
+        flashMode: FlashMode,
+        torchMode: TorchMode,
+        cameraLens: CameraLens,
+        imageFormat: ImageFormat,
+        qualityPriority: QualityPrioritization,
+        directory: Directory,
+        cameraDeviceType: CameraDeviceType,
+        aspectRatio: AspectRatio,
+        targetResolution: Pair<Int, Int>? = null,
+        mirrorFrontCamera: Boolean = false,
+    ) : this(
+        flashMode,
+        torchMode,
+        cameraLens,
+        imageFormat,
+        qualityPriority,
+        directory,
+        cameraDeviceType,
+        aspectRatio,
+        targetResolution,
+        mirrorFrontCamera,
+        customController = null,
+    )
+
     private var isCapturing = atomic(false)
-    private val customCameraController = CustomCameraController(
+
+    /** Test seam: the internal constructor can hand in a controller built on a fake session and camera. */
+    private val customCameraController = customController ?: CustomCameraController(
         qualityPrioritization = qualityPriority,
         initialCameraLens = cameraLens,
         aspectRatio = aspectRatio,
