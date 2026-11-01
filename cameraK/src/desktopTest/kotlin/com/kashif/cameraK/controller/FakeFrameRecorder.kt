@@ -4,6 +4,7 @@ import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameRecorder
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -31,11 +32,22 @@ internal class FakeFrameRecorder(private val startFailure: Exception? = null) : 
     val stopCalled = CountDownLatch(1)
     val releasedLatch = CountDownLatch(1)
 
+    /** The `timestamp` set on the recorder when each `record()` was called, in microseconds. */
+    val timestamps: MutableList<Long> = CopyOnWriteArrayList()
+
+    /** The recorder's frame size when `start()` was called. */
+    @Volatile var sizeAtStart: Pair<Int, Int>? = null
+    private val records = Semaphore(0)
+
     val isRecordInFlight: Boolean get() = inFlight.get() > 0
+
+    /** Waits up to [millis] for [count] more `record()` calls. */
+    fun awaitRecords(count: Int, millis: Long): Boolean = records.tryAcquire(count, millis, TimeUnit.MILLISECONDS)
 
     fun finishFirstRecord() = firstRecordGate.countDown()
 
     override fun start() {
+        sizeAtStart = imageWidth to imageHeight
         startFailure?.let { throw it }
     }
 
@@ -44,6 +56,7 @@ internal class FakeFrameRecorder(private val startFailure: Exception? = null) : 
     override fun record(frame: Frame) {
         if (stopped) violations += "record() after stop()"
         inFlight.incrementAndGet()
+        timestamps += timestamp
         fiveFramesRecorded.countDown()
         try {
             if (recordCount.getAndIncrement() == 0) {
@@ -52,6 +65,7 @@ internal class FakeFrameRecorder(private val startFailure: Exception? = null) : 
             }
         } finally {
             inFlight.decrementAndGet()
+            records.release()
         }
     }
 

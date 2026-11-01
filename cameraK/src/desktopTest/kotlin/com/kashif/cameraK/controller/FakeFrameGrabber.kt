@@ -50,6 +50,9 @@ internal class FakeFrameGrabber(width: Int = 64, height: Int = 48, private val n
         gate.release(Int.MAX_VALUE / 2)
     }
 
+    /** Lets the next [count] `grab()` calls return while the gate is closed, one camera frame each. */
+    fun allowGrabs(count: Int) = gate.release(count)
+
     fun awaitReleases(count: Int, seconds: Long): Boolean = releases.tryAcquire(count, seconds, TimeUnit.SECONDS)
 
     override fun start() {
