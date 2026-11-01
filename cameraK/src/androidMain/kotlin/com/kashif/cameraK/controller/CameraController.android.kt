@@ -65,7 +65,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
-import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -653,23 +652,20 @@ actual class CameraController internal constructor(
      * RELATIVE_PATH and needs no permission; below it the row names its file in the public folder,
      * which needs WRITE_EXTERNAL_STORAGE (declared with maxSdkVersion 28 in the library manifest).
      */
-    private fun galleryImageValues(): ContentValues {
-        val name = "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.${outputFormat.extension}"
-        val folder = "${directory.publicDirectoryName}/$CAMERAK_FOLDER"
-        return ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-            put(MediaStore.MediaColumns.MIME_TYPE, outputFormat.mimeType)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
-            } else {
-                @Suppress("DEPRECATION") // Below API 29 this is the public folder MediaStore writes to.
-                val parent = File(
-                    Environment.getExternalStoragePublicDirectory(directory.publicDirectoryName),
-                    CAMERAK_FOLDER,
-                )
-                    .also { it.mkdirs() }
-                put(MediaStore.MediaColumns.DATA, File(parent, name).absolutePath)
-            }
+    private fun galleryImageValues(): ContentValues = ContentValues().apply {
+        put(MediaStore.MediaColumns.MIME_TYPE, outputFormat.mimeType)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, newCaptureFileName("IMG", outputFormat.extension))
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${directory.publicDirectoryName}/$CAMERAK_FOLDER")
+        } else {
+            @Suppress("DEPRECATION") // Below API 29 this is the public folder MediaStore writes to.
+            val parent = File(
+                Environment.getExternalStoragePublicDirectory(directory.publicDirectoryName),
+                CAMERAK_FOLDER,
+            ).also { it.mkdirs() }
+            val file = newCaptureFile(parent, "IMG", outputFormat.extension)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+            put(MediaStore.MediaColumns.DATA, file.absolutePath)
         }
     }
 
@@ -829,8 +825,6 @@ actual class CameraController internal constructor(
     }
 
     private fun createTempFile(): File {
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-
         // Use configured directory
         val storageDir = when (directory) {
             Directory.PICTURES -> android.os.Environment.getExternalStoragePublicDirectory(
@@ -848,10 +842,7 @@ actual class CameraController internal constructor(
             cameraKDir.mkdirs()
         }
 
-        return File(
-            cameraKDir,
-            "IMG_$timeStamp.${outputFormat.extension}",
-        )
+        return newCaptureFile(cameraKDir, "IMG", outputFormat.extension)
     }
 
     /**
@@ -1032,7 +1023,6 @@ actual class CameraController internal constructor(
     }
 
     private fun createVideoOutputFile(config: VideoConfiguration): File {
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val dir = if (config.outputDirectory != null) {
             File(config.outputDirectory).also { it.mkdirs() }
         } else {
@@ -1044,7 +1034,7 @@ actual class CameraController internal constructor(
             }
             File(storageDir, "CameraK").also { it.mkdirs() }
         }
-        return File(dir, "${config.filePrefix}_$timeStamp.mp4")
+        return newCaptureFile(dir, config.filePrefix, "mp4")
     }
 
     private fun notifyMediaStoreVideo(file: File) {
