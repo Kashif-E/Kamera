@@ -10,13 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSCondition
 import platform.Foundation.NSData
-import platform.Photos.PHAsset
-import platform.Photos.PHAssetChangeRequest
-import platform.Photos.PHImageManager
 import platform.Photos.PHImageRequestOptions
 import platform.Photos.PHImageRequestOptionsDeliveryModeHighQualityFormat
 import platform.Photos.PHImageRequestOptionsVersionCurrent
-import platform.Photos.PHPhotoLibrary
 import platform.UIKit.UIImage
 
 /**
@@ -26,11 +22,18 @@ import platform.UIKit.UIImage
  * @param onImageSaved Callback invoked when the image is successfully saved.
  * @param onImageSavedFailed Callback invoked when the image saving fails.
  */
-class IOSImageSaverPlugin(
+class IOSImageSaverPlugin internal constructor(
     config: ImageSaverConfig,
     private val onImageSaved: () -> Unit,
     private val onImageSavedFailed: (String) -> Unit,
+    private val photoLibrary: PhotoLibraryGateway,
 ) : ImageSaverPlugin(config) {
+    constructor(
+        config: ImageSaverConfig,
+        onImageSaved: () -> Unit,
+        onImageSavedFailed: (String) -> Unit,
+    ) : this(config, onImageSaved, onImageSavedFailed, SystemPhotoLibrary)
+
     override suspend fun saveImage(byteArray: ByteArray, imageName: String?): String? {
         return withContext(Dispatchers.Main) {
             try {
@@ -56,11 +59,9 @@ class IOSImageSaverPlugin(
                 var assetId: String? = null
                 val semaphore = NSCondition()
 
-                PHPhotoLibrary.sharedPhotoLibrary().performChanges({
-                    val request = PHAssetChangeRequest.creationRequestForAssetFromImage(orientedImage)
-                    assetId = request.placeholderForCreatedAsset?.localIdentifier
-                }) { success, error ->
-                    if (success && assetId != null) {
+                photoLibrary.createImageAsset(orientedImage) { localIdentifier, error ->
+                    assetId = localIdentifier
+                    if (assetId != null) {
                         CameraKLogger.d("CameraK", "Image successfully saved to Photos album with ID: $assetId")
                         onImageSaved()
                     } else {
@@ -83,12 +84,6 @@ class IOSImageSaverPlugin(
 
     override fun getByteArrayFrom(path: String): ByteArray {
         val assetId = path.removePrefix("ph://")
-        val fetchResult = PHAsset.fetchAssetsWithLocalIdentifiers(listOf(assetId), null)
-        if (fetchResult.count.toInt() == 0) {
-            throw IOException("No asset found with identifier: $path")
-        }
-
-        val asset = fetchResult.firstObject as PHAsset
         val options =
             PHImageRequestOptions().apply {
                 synchronous = true
@@ -100,12 +95,12 @@ class IOSImageSaverPlugin(
         var imageData: NSData? = null
         val semaphore = NSCondition()
 
-        PHImageManager.defaultManager().requestImageDataAndOrientationForAsset(
-            asset,
-            options,
-        ) { data, _, _, _ ->
+        val found = photoLibrary.requestImageData(assetId, options) { data ->
             imageData = data
             semaphore.signal()
+        }
+        if (!found) {
+            throw IOException("No asset found with identifier: $path")
         }
 
         semaphore.wait()
