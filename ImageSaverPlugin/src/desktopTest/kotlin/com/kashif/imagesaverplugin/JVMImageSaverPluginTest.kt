@@ -46,5 +46,23 @@ class JVMImageSaverPluginTest {
         assertEquals("Failed to read image from path: ${missing.absolutePath}", error.message)
     }
 
+    @Test
+    fun readBytes_readsTheFile() = runTest {
+        val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 43)
+        val file = File.createTempFile("camerak", ".jpg").apply { deleteOnExit() }
+        file.writeBytes(bytes)
+
+        assertContentEquals(bytes, plugin().readBytes(file.absolutePath))
+    }
+
+    @Test
+    fun readBytes_missingFile_throwsIOExceptionNamingThePath() = runTest {
+        val missing = File(System.getProperty("java.io.tmpdir"), "camerak-missing-${System.nanoTime()}.jpg")
+
+        val error = assertFailsWith<IOException> { plugin().readBytes(missing.absolutePath) }
+
+        assertEquals("Failed to read image from path: ${missing.absolutePath}", error.message)
+    }
+
     private fun plugin() = JVMImageSaverPlugin(ImageSaverConfig(), onImageSaved = {}, onImageSavedFailed = {})
 }

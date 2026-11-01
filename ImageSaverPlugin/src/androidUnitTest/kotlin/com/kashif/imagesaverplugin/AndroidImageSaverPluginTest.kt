@@ -2,6 +2,7 @@ package com.kashif.imagesaverplugin
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -29,6 +30,23 @@ class AndroidImageSaverPluginTest {
         val uri = "content://com.kashif.missing/images/404"
 
         val error = assertFailsWith<IOException> { plugin.getByteArrayFrom(uri) }
+
+        assertEquals("Failed to read image from path/URI: $uri", error.message)
+    }
+
+    @Test
+    fun readBytes_readsAPlainFilePath() = runTest {
+        val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 8)
+        val file = File(context.cacheDir, "read.jpg").apply { writeBytes(bytes) }
+
+        assertContentEquals(bytes, plugin.readBytes(file.absolutePath))
+    }
+
+    @Test
+    fun readBytes_unreadableUri_throwsIOExceptionNamingIt() = runTest {
+        val uri = "content://com.kashif.missing/images/405"
+
+        val error = assertFailsWith<IOException> { plugin.readBytes(uri) }
 
         assertEquals("Failed to read image from path/URI: $uri", error.message)
     }

@@ -1,8 +1,10 @@
 package com.kashif.imagesaverplugin
 
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.toByteArray
 import com.kashif.cameraK.utils.toNSData
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.update
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -13,12 +15,18 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.io.IOException
 import platform.CoreGraphics.CGSizeMake
 import platform.Foundation.NSData
+import platform.Foundation.NSDate
+import platform.Foundation.NSDefaultRunLoopMode
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSLocalizedDescriptionKey
+import platform.Foundation.NSRunLoop
 import platform.Foundation.NSThread
+import platform.Foundation.dateWithTimeIntervalSinceNow
+import platform.Foundation.runMode
 import platform.Photos.PHImageRequestID
 import platform.Photos.PHImageRequestOptions
 import platform.UIKit.UIGraphicsBeginImageContextWithOptions
@@ -26,6 +34,14 @@ import platform.UIKit.UIGraphicsEndImageContext
 import platform.UIKit.UIGraphicsGetImageFromCurrentImageContext
 import platform.UIKit.UIImage
 import platform.UIKit.UIImagePNGRepresentation
+import platform.darwin.DISPATCH_TIME_NOW
+import platform.darwin.NSEC_PER_SEC
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
+import platform.darwin.dispatch_semaphore_create
+import platform.darwin.dispatch_semaphore_signal
+import platform.darwin.dispatch_semaphore_wait
+import platform.darwin.dispatch_time
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -36,26 +52,35 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 /**
  * The plugin's Photos bridge, driven through a stand-in for PhotoKit so the simulator needs no
  * photo-library permission. Each call runs on a background thread while the test holds the main
  * thread, as a busy UI would; a call that hangs, or that needs the main thread, fails the bound
- * instead of stalling the run.
+ * instead of stalling the run. The stand-in follows PHImageManager's documented contract: a
+ * synchronous request answers once on the calling thread before it returns and cannot be
+ * cancelled; an asynchronous one answers once, later, on the main thread.
  */
 @OptIn(ExperimentalForeignApi::class)
 class IOSImageSaverPluginPhotosTest {
     private val background = CoroutineScope(Dispatchers.Default + Job())
+    private val fakes = mutableListOf<FakePhotoLibrary>()
+    private val loggerWasEnabled = CameraKLogger.enabled
+    private val previousSink = CameraKLogger.sink
 
     @AfterTest
     fun tearDown() {
+        CameraKLogger.enabled = loggerWasEnabled
+        CameraKLogger.sink = previousSink
+        fakes.forEach { it.answerBlockedReads() }
         background.cancel()
     }
 
     @Test
     fun readingAnAssetReturnsTheDataPhotosDeliversDuringTheRequest() {
-        // With synchronous = true, PHImageManager runs the result handler on the calling thread
-        // before requestImageDataAndOrientation returns, which is what this stand-in does.
+        // The main thread is held, so only a synchronous request can deliver the data in time;
+        // an asynchronous one would answer on the main thread after the call gave up.
         val photos = FakePhotoLibrary(imageData = ASSET_BYTES.toNSData())
         val plugin = plugin(photos)
 
@@ -89,6 +114,69 @@ class IOSImageSaverPluginPhotosTest {
             assertContentEquals(ASSET_BYTES, written.toByteArray())
         } finally {
             NSFileManager.defaultManager.removeItemAtPath(path, null)
+        }
+    }
+
+    @Test
+    fun resolvingAMissingAssetLogsTheFailureWithItsCauseAndNoIdentifier() {
+        val logs = capturedLogs()
+        val plugin = plugin(FakePhotoLibrary(assetExists = false))
+
+        val resolved = completesWithin(BOUND) { plugin.getFilePathFromAsset("ph://$ASSET_ID") }
+
+        assertNotNull(resolved, "getFilePathFromAsset did not return within $BOUND")
+        assertNull(resolved.value, "a missing asset has no file")
+        val errors = logs.value.filter { it.level == CameraKLogger.Level.ERROR }
+        assertTrue(errors.isNotEmpty(), "the failed resolve was not logged")
+        assertTrue(errors.all { it.throwable != null }, "the failure was logged without its throwable: $errors")
+        assertNoAssetIdentifierIn(logs.value)
+    }
+
+    @Test
+    fun readBytesReturnsTheDataPhotosDeliversOnTheMainThread() {
+        val plugin = plugin(FakePhotoLibrary(imageData = ASSET_BYTES.toNSData()))
+
+        val read = completesWhileMainRuns(BOUND) { plugin.readBytes("ph://$ASSET_ID") }
+
+        assertNotNull(read, "readBytes did not return within $BOUND")
+        assertContentEquals(ASSET_BYTES, read.value)
+    }
+
+    @Test
+    fun readBytesOfAMissingAssetFails() {
+        val plugin = plugin(FakePhotoLibrary(assetExists = false))
+
+        val read = completesWhileMainRuns(BOUND) { runCatching { plugin.readBytes("ph://$ASSET_ID") } }
+
+        assertNotNull(read, "readBytes did not return within $BOUND")
+        assertFailsWith<IOException> { read.value.getOrThrow() }
+    }
+
+    @Test
+    fun readBytesFailsWhenPhotosDeliversNoData() {
+        val plugin = plugin(FakePhotoLibrary(imageData = null))
+
+        val read = completesWhileMainRuns(BOUND) { runCatching { plugin.readBytes("ph://$ASSET_ID") } }
+
+        assertNotNull(read, "readBytes did not return within $BOUND")
+        assertFailsWith<IOException> { read.value.getOrThrow() }
+    }
+
+    @Test
+    fun cancellingAReadThatPhotosHasNotAnsweredFinishesTheCallAndCancelsTheRequest() {
+        val photos = FakePhotoLibrary(imageData = ASSET_BYTES.toNSData(), answersReads = false)
+        val plugin = plugin(photos)
+
+        // A read that outlives the test may still fail once Photos answers; that must not escape.
+        val read = background.launch { runCatching { plugin.readBytes("ph://$ASSET_ID") } }
+        runBlocking {
+            val requestId = assertNotNull(
+                withTimeoutOrNull(BOUND) { photos.readStarted.await() },
+                "readBytes did not reach Photos within $BOUND",
+            )
+            read.cancel()
+            assertNotNull(withTimeoutOrNull(BOUND) { read.join() }, "the cancelled read was still running after $BOUND")
+            assertEquals(listOf(requestId), photos.cancelledRequests.value, "the Photos request was left running")
         }
     }
 
@@ -137,11 +225,52 @@ class IOSImageSaverPluginPhotosTest {
         }
     }
 
+    @Test
+    fun aSaveWhoseOnImageSavedThrowsStillReportsTheSavedLocation() {
+        val failures = atomic(emptyList<String>())
+        val plugin = plugin(
+            FakePhotoLibrary(createdIdentifier = ASSET_ID),
+            onImageSaved = { throw IllegalStateException("consumer bug") },
+            onImageSavedFailed = { message -> failures.update { it + message } },
+        )
+
+        val location = completesWithin(BOUND) { runCatching { plugin.saveImage(pngBytes()) } }
+
+        assertNotNull(location, "saveImage did not return within $BOUND")
+        assertEquals("ph://$ASSET_ID", location.value.getOrThrow(), "Photos created the asset")
+        assertEquals(emptyList(), failures.value, "a save Photos completed was reported as failed")
+    }
+
+    @Test
+    fun aFailedSaveWhoseOnImageSavedFailedThrowsStillReturnsNull() {
+        val plugin = plugin(
+            FakePhotoLibrary(createdIdentifier = null, createError = photosError("The library is full")),
+            onImageSavedFailed = { throw IllegalStateException("consumer bug") },
+        )
+
+        val location = completesWithin(BOUND) { runCatching { plugin.saveImage(pngBytes()) } }
+
+        assertNotNull(location, "saveImage did not return within $BOUND")
+        assertNull(location.value.getOrThrow(), "a failed write has no location")
+    }
+
+    @Test
+    fun aSuccessfulSaveLogsNoAssetIdentifier() {
+        val logs = capturedLogs()
+        val plugin = plugin(FakePhotoLibrary(createdIdentifier = ASSET_ID))
+
+        val location = completesWithin(BOUND) { plugin.saveImage(pngBytes()) }
+
+        assertNotNull(location, "saveImage did not return within $BOUND")
+        assertEquals("ph://$ASSET_ID", location.value)
+        assertNoAssetIdentifierIn(logs.value)
+    }
+
     private fun plugin(
-        photos: PhotoLibraryGateway,
+        photos: FakePhotoLibrary,
         onImageSaved: () -> Unit = {},
         onImageSavedFailed: (String) -> Unit = {},
-    ) = IOSImageSaverPlugin(ImageSaverConfig(), onImageSaved, onImageSavedFailed, photos)
+    ) = IOSImageSaverPlugin(ImageSaverConfig(), onImageSaved, onImageSavedFailed, photos).also { fakes += photos }
 
     /**
      * Runs [block] on a background thread and waits at most [timeout] for it. Returns null on
@@ -152,7 +281,37 @@ class IOSImageSaverPluginPhotosTest {
         withTimeoutOrNull(timeout) { result.await() }
     }
 
+    /**
+     * Like [completesWithin], but keeps the main run loop turning while it waits, so work Photos
+     * delivers on the main thread can run.
+     */
+    private fun <T> completesWhileMainRuns(timeout: Duration, block: suspend () -> T): Completed<T>? {
+        val result = background.async { Completed(block()) }
+        val deadline = TimeSource.Monotonic.markNow() + timeout
+        while (!result.isCompleted && deadline.hasNotPassedNow()) {
+            NSRunLoop.mainRunLoop.runMode(NSDefaultRunLoopMode, NSDate.dateWithTimeIntervalSinceNow(0.01))
+        }
+        return if (result.isCompleted) runBlocking { result.await() } else null
+    }
+
     private class Completed<T>(val value: T)
+
+    private class LogEntry(val level: CameraKLogger.Level, val message: String, val throwable: Throwable?) {
+        override fun toString() = "$level $message (${throwable?.let { it::class.simpleName }})"
+    }
+
+    private fun capturedLogs(): kotlinx.atomicfu.AtomicRef<List<LogEntry>> {
+        val logs = atomic(emptyList<LogEntry>())
+        CameraKLogger.enabled = true
+        CameraKLogger.sink =
+            { level, _, message, throwable -> logs.update { it + LogEntry(level, message, throwable) } }
+        return logs
+    }
+
+    private fun assertNoAssetIdentifierIn(logs: List<LogEntry>) {
+        val leaking = logs.filter { ASSET_ID in it.message }
+        assertTrue(leaking.isEmpty(), "log messages carry the asset identifier: $leaking")
+    }
 
     private class FakePhotoLibrary(
         private val assetExists: Boolean = true,
@@ -160,10 +319,22 @@ class IOSImageSaverPluginPhotosTest {
         private val createdIdentifier: String? = ASSET_ID,
         private val createError: NSError? = null,
         private val completesCreation: Boolean = true,
+        private val answersReads: Boolean = true,
     ) : PhotoLibraryGateway {
         val requestedIdentifier = atomic<String?>(null)
         val createdOnMainThread = atomic<Boolean?>(null)
         val creationStarted = CompletableDeferred<Unit>()
+        val readStarted = CompletableDeferred<PHImageRequestID>()
+        val cancelledRequests = atomic(emptyList<PHImageRequestID>())
+        private val nextRequestId = atomic(1)
+
+        // A synchronous read Photos has not answered blocks its caller, as PhotoKit does, until the
+        // test ends.
+        private val blockedReads = dispatch_semaphore_create(0)
+
+        fun answerBlockedReads() {
+            repeat(4) { dispatch_semaphore_signal(blockedReads) }
+        }
 
         override fun createImageAsset(image: UIImage, completion: (String?, NSError?) -> Unit) {
             createdOnMainThread.value = NSThread.isMainThread
@@ -178,11 +349,24 @@ class IOSImageSaverPluginPhotosTest {
         ): PHImageRequestID? {
             requestedIdentifier.value = localIdentifier
             if (!assetExists) return null
-            resultHandler(imageData)
-            return 1
+            val requestId = nextRequestId.getAndIncrement()
+            readStarted.complete(requestId)
+            if (options.synchronous) {
+                if (!answersReads) {
+                    dispatch_semaphore_wait(blockedReads, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC.toLong()))
+                }
+                resultHandler(if (answersReads) imageData else null)
+            } else if (answersReads) {
+                val data = imageData
+                dispatch_async(dispatch_get_main_queue()) { resultHandler(data) }
+            }
+            // An unanswered asynchronous read never calls back; after a cancel PhotoKit may not either.
+            return requestId
         }
 
-        override fun cancelImageRequest(requestId: PHImageRequestID) = Unit
+        override fun cancelImageRequest(requestId: PHImageRequestID) {
+            cancelledRequests.update { it + requestId }
+        }
     }
 
     private fun photosError(description: String) = NSError.errorWithDomain(
