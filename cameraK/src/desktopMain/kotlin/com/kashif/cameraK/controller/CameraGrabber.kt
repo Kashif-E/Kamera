@@ -37,6 +37,18 @@ class CameraGrabber(
     private val errorHandler: (Throwable) -> Unit,
     private val targetResolution: Pair<Int, Int>? = null,
 ) {
+    // Reads the capture time of each frame; the recording timestamps frames with it.
+    private var nanoClock: () -> Long = System::nanoTime
+
+    internal constructor(
+        frameFlow: MutableSharedFlow<BufferedImage>,
+        errorHandler: (Throwable) -> Unit,
+        targetResolution: Pair<Int, Int>?,
+        nanoClock: () -> Long,
+    ) : this(frameFlow, errorHandler, targetResolution) {
+        this.nanoClock = nanoClock
+    }
+
     private val job = atomic<Job?>(null)
     private val ownerScope = atomic<CoroutineScope?>(null)
 
@@ -44,7 +56,7 @@ class CameraGrabber(
 
     // Copies of the loop's frames, made only while someone collects. Each copy is new and never
     // written again, so a collector may keep it. null marks the end of a run.
-    private val snapshots = MutableSharedFlow<BufferedImage?>(
+    private val snapshots = MutableSharedFlow<CapturedFrame?>(
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
@@ -81,14 +93,14 @@ class CameraGrabber(
     /** A copy of the grab loop's next frame, or null if the loop is not running or none arrives in time. */
     internal suspend fun awaitSnapshot(): BufferedImage? {
         if (job.value?.isActive != true) return null
-        return withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) { snapshots.first() }
+        return withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) { snapshots.first()?.image }
     }
 
     /**
      * Copies of the grab loop's frames from now until the loop stops. Completes at once if no loop
      * is running, so a consumer never waits for frames that will not come.
      */
-    internal fun frames(): Flow<BufferedImage> = snapshots
+    internal fun frames(): Flow<CapturedFrame> = snapshots
         .onSubscription { if (job.value?.isActive != true) emit(null) }
         .takeWhile { it != null }
         .filterNotNull()
@@ -127,13 +139,16 @@ class CameraGrabber(
                     var framesWithoutImage = 0
                     while (isActive) {
                         val frame = owned.grab()
-                            ?: if (isActive) {
+                        val captureNanos = nanoClock()
+                        if (frame == null) {
+                            if (isActive) {
                                 throw IllegalStateException(
                                     "The camera stopped delivering frames",
                                 )
                             } else {
                                 break
                             }
+                        }
                         if (frame.image == null) {
                             if (++framesWithoutImage >= MAX_FRAMES_WITHOUT_IMAGE) {
                                 throw IllegalStateException(
@@ -146,7 +161,9 @@ class CameraGrabber(
                         converter.setHorizontalFlip(isHorizontallyFlipped)
                         val image = converter.convert(frame) ?: continue
                         frameFlow.tryEmit(image)
-                        if (snapshots.subscriptionCount.value > 0) snapshots.tryEmit(image.copy())
+                        if (snapshots.subscriptionCount.value > 0) {
+                            snapshots.tryEmit(CapturedFrame(image.copy(), captureNanos))
+                        }
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -256,6 +273,9 @@ class CameraGrabber(
         }
     }
 }
+
+/** A copy of one of the grab loop's frames, which its receiver may keep, and when it was grabbed. */
+internal class CapturedFrame(val image: BufferedImage, val captureNanos: Long)
 
 private fun BufferedImage.copy(): BufferedImage = BufferedImage(colorModel, copyData(null), isAlphaPremultiplied, null)
 

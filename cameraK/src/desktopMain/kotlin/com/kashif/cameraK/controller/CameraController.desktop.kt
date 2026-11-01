@@ -47,6 +47,7 @@ import java.time.format.DateTimeFormatter
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
+import org.bytedeco.javacv.FrameConverter as JavaCvFrameConverter
 
 /**
  * Interface defining the core functionalities of the CameraController.
@@ -64,6 +65,8 @@ actual class CameraController(
 
     // The folder that Directory and the default video folder resolve under: the user's home.
     private var userHome: File = defaultUserHome()
+    private var nanoClock: () -> Long = System::nanoTime
+    private var recordingConverter: () -> JavaCvFrameConverter<BufferedImage> = ::Java2DFrameConverter
 
     internal constructor(
         imageFormat: ImageFormat,
@@ -73,10 +76,14 @@ actual class CameraController(
         recorderFactory: (String, VideoConfiguration) -> FrameRecorder,
         horizontalFlip: Boolean = false,
         userHome: File = defaultUserHome(),
+        nanoClock: () -> Long = System::nanoTime,
+        recordingConverter: () -> JavaCvFrameConverter<BufferedImage> = ::Java2DFrameConverter,
     ) : this(imageFormat, directory, horizontalFlip = horizontalFlip, customGrabber = customGrabber) {
         this.sessionDispatcher = sessionDispatcher
         this.recorderFactory = recorderFactory
         this.userHome = userHome
+        this.nanoClock = nanoClock
+        this.recordingConverter = recordingConverter
     }
 
     private val _frameFlow = MutableSharedFlow<BufferedImage>(
@@ -90,7 +97,7 @@ actual class CameraController(
     private val cameraGrabber = CameraGrabber(_frameFlow, {
         CameraKLogger.e("CameraK", "CameraK: Camera error: ${it.message}")
         CameraKLogger.e("CameraK", "Unhandled exception", it)
-    }, targetResolution).apply { setHorizontalFlip(horizontalFlip) }
+    }, targetResolution, { nanoClock() }).apply { setHorizontalFlip(horizontalFlip) }
 
     /**
      * The camera's frames, latest first, as opaque `TYPE_3BYTE_BGR` images. Each image comes from a
@@ -346,14 +353,14 @@ actual class CameraController(
         val finalized = CompletableDeferred<Exception?>()
         val frames = cameraGrabber.frames()
         val job = CoroutineScope(Dispatchers.IO).launch(start = CoroutineStart.ATOMIC) {
-            val converter = Java2DFrameConverter()
+            val converter = recordingConverter()
             var failure: Exception? = null
             try {
                 // Fed by the grab loop's frames; this coroutine never grabs from the camera itself.
-                frames.collect { image ->
+                frames.collect { captured ->
                     if (isCurrentlyRecording && !isPausedRecording) {
                         try {
-                            recorder.record(converter.convert(image))
+                            recorder.record(converter.convert(captured.image))
                         } catch (e: Exception) {
                             CameraKLogger.e("CameraK", "CameraK recording frame error", e)
                         }
@@ -426,24 +433,6 @@ actual class CameraController(
         return failure
     }
 
-    private fun createFrameRecorder(outputPath: String, configuration: VideoConfiguration): FrameRecorder =
-        FFmpegFrameRecorder(
-            outputPath,
-            configuration.quality.width,
-            configuration.quality.height,
-            if (configuration.enableAudio) 1 else 0,
-        ).apply {
-            videoCodec = avcodec.AV_CODEC_ID_H264
-            format = "mp4"
-            frameRate = 30.0
-            videoBitrate = configuration.quality.bitrateBps
-            if (configuration.enableAudio) {
-                audioCodec = avcodec.AV_CODEC_ID_AAC
-                sampleRate = 44100
-                audioBitrate = 128_000
-            }
-        }
-
     private class ActiveRecording(val job: Job, val finalized: CompletableDeferred<Exception?>)
 
     private fun createVideoOutputPath(config: VideoConfiguration): String {
@@ -491,6 +480,24 @@ internal fun createUniqueFile(folder: File, prefix: String, extension: String): 
     }
     throw IOException("No free file name for $prefix in $MAX_NAME_ATTEMPTS attempts")
 }
+
+internal fun createFrameRecorder(outputPath: String, configuration: VideoConfiguration): FrameRecorder =
+    FFmpegFrameRecorder(
+        outputPath,
+        configuration.quality.width,
+        configuration.quality.height,
+        if (configuration.enableAudio) 1 else 0,
+    ).apply {
+        videoCodec = avcodec.AV_CODEC_ID_H264
+        format = "mp4"
+        frameRate = 30.0
+        videoBitrate = configuration.quality.bitrateBps
+        if (configuration.enableAudio) {
+            audioCodec = avcodec.AV_CODEC_ID_AAC
+            sampleRate = 44100
+            audioBitrate = 128_000
+        }
+    }
 
 /** Writes [image] to [file] as [format], throwing if no writer accepts it. */
 internal fun writeImage(image: BufferedImage, format: ImageFormat, file: File) {
