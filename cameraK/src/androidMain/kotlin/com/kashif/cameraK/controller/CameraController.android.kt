@@ -128,6 +128,16 @@ actual class CameraController internal constructor(
         analyzerExecutor = Executors.newSingleThreadExecutor(cameraKThreads("CameraK-analyzer")),
     )
 
+    // CameraX's file output always encodes JPEG, so that is what every capture file holds, whatever
+    // imageFormat asks for; its name and MIME type follow the bytes.
+    private val outputFormat = ImageFormat.JPEG
+
+    init {
+        if (imageFormat != outputFormat) {
+            CameraKLogger.w(TAG, "ImageFormat.$imageFormat is not supported for Android captures; saving JPEG instead")
+        }
+    }
+
     private var cameraProvider: CameraBinding? = null
     private var imageCapture: ImageCapture? = null
     private var preview: Preview? = null
@@ -644,11 +654,11 @@ actual class CameraController internal constructor(
      * which needs WRITE_EXTERNAL_STORAGE (declared with maxSdkVersion 28 in the library manifest).
      */
     private fun galleryImageValues(): ContentValues {
-        val name = "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.${imageFormat.extension}"
+        val name = "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.${outputFormat.extension}"
         val folder = "${directory.publicDirectoryName}/$CAMERAK_FOLDER"
         return ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-            put(MediaStore.MediaColumns.MIME_TYPE, imageFormat.mimeType)
+            put(MediaStore.MediaColumns.MIME_TYPE, outputFormat.mimeType)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
             } else {
@@ -840,7 +850,7 @@ actual class CameraController internal constructor(
 
         return File(
             cameraKDir,
-            "IMG_$timeStamp.${imageFormat.extension}",
+            "IMG_$timeStamp.${outputFormat.extension}",
         )
     }
 

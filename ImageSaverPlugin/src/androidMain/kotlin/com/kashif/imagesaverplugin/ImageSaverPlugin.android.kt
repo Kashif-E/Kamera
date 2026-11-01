@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import coil3.PlatformContext
 import com.kashif.cameraK.enums.Directory
+import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,7 +39,14 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
     override suspend fun save(byteArray: ByteArray, imageName: String?): ImageSaveResult = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val fileName = "${imageName ?: "IMG_$timeStamp"}.${config.imageFormat.extension}"
+        val format = encodedFormatOf(byteArray) ?: config.imageFormat
+        if (format != config.imageFormat) {
+            CameraKLogger.w(
+                "CameraK",
+                "Image bytes are $format, not the configured ${config.imageFormat}; saving as $format",
+            )
+        }
+        val fileName = "${imageName ?: "IMG_$timeStamp"}.${format.extension}"
         val directory = config.directory.publicDirectoryName
         val folder = config.customFolderName ?: DEFAULT_FOLDER
 
@@ -49,7 +57,7 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
         var claimedFile: File? = null
         try {
             val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.MIME_TYPE, config.imageFormat.mimeType)
+                put(MediaStore.MediaColumns.MIME_TYPE, format.mimeType)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                     put(MediaStore.MediaColumns.RELATIVE_PATH, "$directory/$folder")
@@ -183,6 +191,19 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
 }
 
 private const val DEFAULT_FOLDER = "CameraK"
+
+/**
+ * The format [bytes] are encoded in, from their signature, or null when it is neither. Android
+ * captures are always JPEG, so a saver configured for PNG must not label them PNG.
+ */
+private fun encodedFormatOf(bytes: ByteArray): ImageFormat? = when {
+    bytes.startsWith(0xFF, 0xD8) -> ImageFormat.JPEG
+    bytes.startsWith(0x89, 0x50, 0x4E, 0x47) -> ImageFormat.PNG
+    else -> null
+}
+
+private fun ByteArray.startsWith(vararg signature: Int): Boolean =
+    size >= signature.size && signature.indices.all { this[it] == signature[it].toByte() }
 
 private val Directory.publicDirectoryName: String
     get() = when (this) {
