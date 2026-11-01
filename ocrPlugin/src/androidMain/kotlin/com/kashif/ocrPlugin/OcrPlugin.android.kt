@@ -15,46 +15,47 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resumeWithException
 
-actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String = withContext(Dispatchers.Default) {
-    try {
-        suspendCancellableCoroutine { continuation ->
-            CameraKLogger.d("TextRecognition", "Starting text extraction from bitmap")
+actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig): String =
+    withContext(Dispatchers.Default) {
+        try {
+            suspendCancellableCoroutine { continuation ->
+                CameraKLogger.d("TextRecognition", "Starting text extraction from bitmap")
 
-            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-            if (bitmap.width <= 0 || bitmap.height <= 0) {
-                continuation.resumeWithException(IllegalArgumentException("Invalid bitmap dimensions"))
-                return@suspendCancellableCoroutine
-            }
-
-            val androidBitmap = bitmap.asAndroidBitmap()
-            val image = InputImage.fromBitmap(androidBitmap, 0)
-
-            recognizer
-                .process(image)
-                .addOnSuccessListener { result ->
-                    val extractedText = result.text
-                    CameraKLogger.d(
-                        "TextRecognition",
-                        "Text extracted successfully: ${extractedText.take(100)}...",
-                    )
-                    continuation.resume(extractedText) { cause, _, _ ->
-                        recognizer.close()
-                    }
-                }.addOnFailureListener { exception ->
-                    CameraKLogger.e("TextRecognition", "Text extraction failed", exception)
-                    continuation.resumeWithException(exception)
+                if (bitmap.width <= 0 || bitmap.height <= 0) {
+                    continuation.resumeWithException(IllegalArgumentException("Invalid bitmap dimensions"))
+                    return@suspendCancellableCoroutine
                 }
 
-            continuation.invokeOnCancellation {
-                recognizer.close()
+                val androidBitmap = bitmap.asAndroidBitmap()
+                val image = InputImage.fromBitmap(androidBitmap, 0)
+
+                recognizer
+                    .process(image)
+                    .addOnSuccessListener { result ->
+                        val extractedText = result.text
+                        CameraKLogger.d(
+                            "TextRecognition",
+                            "Text extracted successfully: ${extractedText.take(100)}...",
+                        )
+                        continuation.resume(extractedText) { cause, _, _ ->
+                            recognizer.close()
+                        }
+                    }.addOnFailureListener { exception ->
+                        CameraKLogger.e("TextRecognition", "Text extraction failed", exception)
+                        continuation.resumeWithException(exception)
+                    }
+
+                continuation.invokeOnCancellation {
+                    recognizer.close()
+                }
             }
+        } catch (e: Exception) {
+            CameraKLogger.e("TextRecognition", "Error during text extraction", e)
+            throw e
         }
-    } catch (e: Exception) {
-        CameraKLogger.e("TextRecognition", "Error during text extraction", e)
-        throw e
     }
-}
 
 internal fun CameraController.enableTextRecognition(
     onTextRecognized: (String) -> Unit,
@@ -132,7 +133,11 @@ internal class TextRecognitionAnalyzer(
     }
 }
 
-actual fun startRecognition(cameraController: CameraController, onText: (text: String) -> Unit): RecognitionHandle {
+actual fun startRecognition(
+    cameraController: CameraController,
+    config: OcrConfig,
+    onText: (text: String) -> Unit,
+): RecognitionHandle {
     val analyzer = cameraController.enableTextRecognition(onText)
     return RecognitionHandle {
         cameraController.unregisterImageAnalyzer(analyzer)

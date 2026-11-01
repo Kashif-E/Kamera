@@ -38,65 +38,66 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalForeignApi::class)
-actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String = suspendCoroutine { continuation ->
-    val imageData = bitmap.toByteArray()?.toNSData()
-    if (imageData == null) {
-        continuation.resume("")
-        return@suspendCoroutine
-    }
+actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig): String =
+    suspendCoroutine { continuation ->
+        val imageData = bitmap.toByteArray()?.toNSData()
+        if (imageData == null) {
+            continuation.resume("")
+            return@suspendCoroutine
+        }
 
-    val uiImage = UIImage.imageWithData(imageData)
-    if (uiImage == null) {
-        continuation.resume("")
-        return@suspendCoroutine
-    }
+        val uiImage = UIImage.imageWithData(imageData)
+        if (uiImage == null) {
+            continuation.resume("")
+            return@suspendCoroutine
+        }
 
-    val request =
-        VNRecognizeTextRequest { request, error ->
-            if (error != null) {
-                continuation.resume("")
-                return@VNRecognizeTextRequest
-            }
+        val request =
+            VNRecognizeTextRequest { request, error ->
+                if (error != null) {
+                    continuation.resume("")
+                    return@VNRecognizeTextRequest
+                }
 
-            val results = request?.results as? NSArray
-            if (results == null) {
-                continuation.resume("")
-                return@VNRecognizeTextRequest
-            }
+                val results = request?.results as? NSArray
+                if (results == null) {
+                    continuation.resume("")
+                    return@VNRecognizeTextRequest
+                }
 
-            val recognizedText =
-                buildString {
-                    for (i in 0 until results.count.toInt()) {
-                        val observation =
-                            results.objectAtIndex(i.toULong()) as? VNRecognizedTextObservation
-                        observation?.let { obs ->
-                            val candidatesArray = obs.topCandidates(1u)
+                val recognizedText =
+                    buildString {
+                        for (i in 0 until results.count.toInt()) {
+                            val observation =
+                                results.objectAtIndex(i.toULong()) as? VNRecognizedTextObservation
+                            observation?.let { obs ->
+                                val candidatesArray = obs.topCandidates(1u)
 
-                            if (candidatesArray.isNotEmpty()) {
-                                val text =
-                                    (candidatesArray.first() as? NSObject)?.valueForKey("string") as? String
-                                if (!text.isNullOrBlank()) {
-                                    if (isNotEmpty()) append("\n")
-                                    append(text)
+                                if (candidatesArray.isNotEmpty()) {
+                                    val text =
+                                        (candidatesArray.first() as? NSObject)?.valueForKey("string") as? String
+                                    if (!text.isNullOrBlank()) {
+                                        if (isNotEmpty()) append("\n")
+                                        append(text)
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-            continuation.resume(recognizedText.trim())
+                continuation.resume(recognizedText.trim())
+            }
+
+        request.recognitionLevel = VNRequestTextRecognitionLevelAccurate
+        request.usesLanguageCorrection = true
+
+        try {
+            val handler = VNImageRequestHandler(uiImage.CGImage!!, mapOf<Any?, String>())
+            handler.performRequests(listOf(request), null)
+        } catch (e: Exception) {
+            continuation.resume("")
         }
-
-    request.recognitionLevel = VNRequestTextRecognitionLevelAccurate
-    request.usesLanguageCorrection = true
-
-    try {
-        val handler = VNImageRequestHandler(uiImage.CGImage!!, mapOf<Any?, String>())
-        handler.performRequests(listOf(request), null)
-    } catch (e: Exception) {
-        continuation.resume("")
     }
-}
 
 /**
  * Delegate for handling video frame capture and processing.
@@ -266,7 +267,11 @@ class VideoDataDelegate(private val onText: (String) -> Unit) :
  * @param onText Callback invoked when text is detected with the extracted text
  */
 @OptIn(ExperimentalForeignApi::class)
-actual fun startRecognition(cameraController: CameraController, onText: (String) -> Unit): RecognitionHandle {
+actual fun startRecognition(
+    cameraController: CameraController,
+    config: OcrConfig,
+    onText: (String) -> Unit,
+): RecognitionHandle {
     // Idempotency/teardown is owned by the plugin (it stops the prior handle before re-starting),
     // so no module-global dedup is needed here.
     val videoDataOutput =

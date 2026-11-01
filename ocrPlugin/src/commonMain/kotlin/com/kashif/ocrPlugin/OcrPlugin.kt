@@ -18,7 +18,8 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 
 /**
- * OCR plugin for the Compose-first camera API.
+ * OCR plugin for the Compose-first camera API. On desktop, [config] says where Tesseract's language
+ * data is (see [OcrConfig]).
  *
  * ```kotlin
  * val scope = rememberCoroutineScope()
@@ -37,7 +38,7 @@ import kotlinx.coroutines.launch
  * ```
  */
 @Stable
-class OcrPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
+class OcrPlugin(val coroutineScope: CoroutineScope, val config: OcrConfig = OcrConfig()) : CameraKPlugin {
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
 
@@ -104,7 +105,7 @@ class OcrPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
      */
     fun extractTextFromBitmap(textureImage: ImageBitmap) = coroutineScope.launch {
         CameraKLogger.d("CameraK", "Starting text extraction from bitmap")
-        val extractedText = extractTextFromBitmapImpl(textureImage)
+        val extractedText = extractTextFromBitmapImpl(textureImage, config)
         CameraKLogger.d("CameraK", "Extracted text: $extractedText")
     }
 
@@ -113,7 +114,7 @@ class OcrPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
         // Tear down any previous analyzer/output so re-init doesn't stack recognizers.
         recognitionHandle?.stop()
         isRecognising.value = true
-        recognitionHandle = startRecognition(controller) { text ->
+        recognitionHandle = startRecognition(controller, config) { text ->
             if (isRecognising.value) {
                 ocrFlow.trySend(text)
                 // emitEvent is suspend → launch on the owned plugin scope (cancelled on shutdown).
@@ -139,11 +140,18 @@ fun interface RecognitionHandle {
     fun stop()
 }
 
-expect suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String
+expect suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig = OcrConfig()): String
 
-expect fun startRecognition(cameraController: CameraController, onText: (text: String) -> Unit): RecognitionHandle
+expect fun startRecognition(
+    cameraController: CameraController,
+    config: OcrConfig = OcrConfig(),
+    onText: (text: String) -> Unit,
+): RecognitionHandle
 
 @Composable
-fun rememberOcrPlugin(coroutineScope: CoroutineScope = rememberCoroutineScope()): OcrPlugin = remember {
-    OcrPlugin(coroutineScope)
+fun rememberOcrPlugin(
+    coroutineScope: CoroutineScope = rememberCoroutineScope(),
+    config: OcrConfig = OcrConfig(),
+): OcrPlugin = remember(config) {
+    OcrPlugin(coroutineScope, config)
 }

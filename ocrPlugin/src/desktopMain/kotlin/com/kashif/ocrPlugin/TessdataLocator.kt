@@ -1,7 +1,17 @@
 package com.kashif.ocrPlugin
 
+import com.kashif.cameraK.utils.CameraKLogger
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
+import java.nio.file.FileSystems
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.nio.file.attribute.PosixFilePermissions
+import java.security.DigestInputStream
+import java.security.MessageDigest
 
 /**
  * Where desktop OCR may find Tesseract's language data, passed in so a test can stand in for the
@@ -27,10 +37,21 @@ internal class TessdataSources(
  */
 internal class BundledModel(val sha256: String, val open: () -> InputStream?)
 
-/** The sources this process offers. */
-internal fun processTessdataSources(): TessdataSources = TessdataSources(
-    explicitPath = null,
-    bundledModel = null,
+/** Classpath location of the optional packaged model. */
+internal const val BUNDLED_MODEL_RESOURCE = "/com/kashif/ocrPlugin/tessdata/eng.traineddata"
+
+/** SHA-256 of `eng.traineddata` from github.com/tesseract-ocr/tessdata (git blob f4744c20, 23,466,654 bytes). */
+internal const val BUNDLED_MODEL_SHA256 = "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047"
+
+private const val MODEL_FILE = "eng.traineddata"
+private const val TAG = "CameraK"
+
+/** The sources this process offers for [config]. */
+internal fun processTessdataSources(config: OcrConfig): TessdataSources = TessdataSources(
+    explicitPath = config.tessdataPath,
+    bundledModel = BundledModel(BUNDLED_MODEL_SHA256) {
+        OCRProcessor::class.java.getResourceAsStream(BUNDLED_MODEL_RESOURCE)
+    },
     modelCacheDir = defaultModelCacheDir(),
     environment = System::getenv,
 )
@@ -49,20 +70,78 @@ internal fun defaultModelCacheDir(): File {
     return File(base, "CameraK/tessdata")
 }
 
-/** Returns the directory holding `eng.traineddata`, or null when none of [sources] has one. */
+/**
+ * Returns the directory holding `eng.traineddata`, or null when none of [sources] has one. The
+ * order is the explicit path, then the packaged model verified against its pinned SHA-256 and
+ * extracted to the cache directory, then `TESSDATA_PREFIX`. An explicit path is final: when it has
+ * no model, no other source replaces it. The working directory is never searched.
+ */
 internal fun findTessdataDirectory(sources: TessdataSources): String? {
-    val possiblePaths =
-        listOf(
-            File("ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin").absolutePath,
-            File("./ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin").absolutePath,
-            sources.environment("TESSDATA_PREFIX"),
-            File(
-                System.getProperty("user.dir"),
-                "ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin",
-            ).absolutePath,
-        )
+    sources.explicitPath?.let { path ->
+        if (hasModel(File(path))) return path
+        CameraKLogger.w(TAG, "OcrPlugin: the configured tessdata directory has no $MODEL_FILE")
+        return null
+    }
+    sources.bundledModel?.let { model ->
+        extractVerified(model, sources.modelCacheDir)?.let { return it.path }
+    }
+    return sources.environment("TESSDATA_PREFIX")?.takeIf { it.isNotBlank() && hasModel(File(it)) }
+}
 
-    return possiblePaths.firstOrNull { path ->
-        path != null && File(path).exists() && File("$path/eng.traineddata").exists()
+private fun hasModel(dir: File): Boolean = File(dir, MODEL_FILE).isFile
+
+/**
+ * Copies the packaged model into a directory of [cacheDir] named for its hash, unless a copy with
+ * the pinned hash is already there, and returns that directory. Returns null when the resource is
+ * absent or its bytes do not match the pin.
+ */
+private fun extractVerified(model: BundledModel, cacheDir: File): File? {
+    val dir = File(cacheDir, "eng-${model.sha256.take(16)}")
+    val target = File(dir, MODEL_FILE)
+    return try {
+        if (target.isFile && sha256Of(target.inputStream()) == model.sha256) return dir
+        val input = model.open() ?: return null
+        val digest = MessageDigest.getInstance("SHA-256")
+        DigestInputStream(input, digest).use { stream ->
+            createOwnerOnlyDirectories(dir.toPath())
+            // createTempFile makes the file rw------- where POSIX permissions exist.
+            val partial = Files.createTempFile(dir.toPath(), "eng", ".part")
+            try {
+                Files.copy(stream, partial, REPLACE_EXISTING)
+                if (digest.digest().toHex() != model.sha256) {
+                    CameraKLogger.e(
+                        TAG,
+                        "OcrPlugin: the packaged $MODEL_FILE does not match its pinned SHA-256; not loading it",
+                    )
+                    return null
+                }
+                Files.move(partial, target.toPath(), REPLACE_EXISTING, ATOMIC_MOVE)
+            } finally {
+                Files.deleteIfExists(partial)
+            }
+        }
+        dir
+    } catch (e: IOException) {
+        CameraKLogger.e(TAG, "OcrPlugin: Failed to extract the packaged language model", e)
+        null
     }
 }
+
+private fun createOwnerOnlyDirectories(dir: Path) {
+    if ("posix" in FileSystems.getDefault().supportedFileAttributeViews()) {
+        Files.createDirectories(dir, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")))
+    } else {
+        Files.createDirectories(dir)
+    }
+}
+
+private fun sha256Of(input: InputStream): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    DigestInputStream(input, digest).use { stream ->
+        val buffer = ByteArray(64 * 1024)
+        while (stream.read(buffer) != -1) Unit
+    }
+    return digest.digest().toHex()
+}
+
+private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }

@@ -22,43 +22,56 @@ import java.awt.image.DataBufferByte
  * Processes BufferedImage frames to extract text using Tesseract OCR with
  * thread-safe locking and frame rate throttling for performance.
  *
- * Tesseract initialization is wrapped in a try-catch to gracefully handle missing tessdata files.
+ * Creating a processor fails when Tesseract's language data is missing or unusable, so the caller
+ * can report it; a processor that exists can always scan until it is closed.
  */
 class OCRProcessor internal constructor(
     private val library: TesseractLibrary,
     tessdataDir: String?,
     private val clock: () -> Long,
 ) {
-    constructor() : this(JavaCppTesseract, findTessdataDirectory(processTessdataSources()), System::currentTimeMillis)
+    /**
+     * Loads `eng.traineddata` from the first source [config] and the process offer (see [OcrConfig]).
+     *
+     * @throws TessdataNotFoundException when no source has the language data.
+     * @throws IllegalStateException when Tesseract cannot load it.
+     */
+    constructor(config: OcrConfig = OcrConfig()) : this(
+        JavaCppTesseract,
+        findTessdataDirectory(processTessdataSources(config)),
+        System::currentTimeMillis,
+    )
 
     private val api = library.newEngine()
     private val lock = ReentrantLock()
     private var lastProcessTime = 0L
     private val processInterval = 200L
-    private var isInitialized = false
 
     // Guarded by lock: set by close(), after which nothing calls into Tesseract.
     private var isClosed = false
 
     init {
+        var initialized = false
         try {
             if (tessdataDir == null) {
-                CameraKLogger.w("CameraK", "Warning: Could not find tessdata directory. OCR will be disabled.")
-                isInitialized = false
-            } else if (api.init(tessdataDir, "eng") != 0) {
-                CameraKLogger.w("CameraK", "Warning: Could not initialize Tesseract. OCR will be disabled.")
-                isInitialized = false
-            } else {
-                api.setVariable(
-                    "tessedit_char_whitelist",
-                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?",
+                throw TessdataNotFoundException(
+                    "No Tesseract language data: set OcrConfig.tessdataPath, package eng.traineddata, or set TESSDATA_PREFIX",
                 )
-                api.setPageSegMode(PSM_AUTO)
-                isInitialized = true
             }
-        } catch (e: Exception) {
-            CameraKLogger.w("CameraK", "Warning: Failed to initialize OCR", e)
-            isInitialized = false
+            check(api.init(tessdataDir, "eng") == 0) { "Tesseract could not load eng.traineddata" }
+            initialized = true
+            api.setVariable(
+                "tessedit_char_whitelist",
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?",
+            )
+            api.setPageSegMode(PSM_AUTO)
+        } catch (e: Throwable) {
+            try {
+                if (initialized) api.end()
+            } finally {
+                api.delete()
+            }
+            throw e
         }
     }
 
@@ -66,13 +79,13 @@ class OCRProcessor internal constructor(
      * Scans a BufferedImage for text using Tesseract OCR.
      *
      * Uses thread-safe locking and throttles processing to every 200ms. Preprocesses
-     * images to grayscale for better OCR accuracy. Returns null if OCR is not initialized.
+     * images to grayscale for better OCR accuracy. Returns null after [close].
      *
      * @param image The BufferedImage frame to scan
-     * @return Extracted text if successful, null if no text found, processing is throttled, or OCR is disabled
+     * @return Extracted text if successful, null if no text found, processing is throttled, or the processor is closed
      */
     fun scanImage(image: BufferedImage): String? {
-        if (!isInitialized || !lock.tryLock()) return null
+        if (!lock.tryLock()) return null
 
         return try {
             if (isClosed) return null
@@ -155,8 +168,13 @@ class OCRProcessor internal constructor(
     }
 }
 
-actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String =
-    extractText(bitmap.toAwtImage(), ::OCRProcessor)
+actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig): String =
+    extractText(bitmap.toAwtImage()) { OCRProcessor(config) }
+
+/**
+ * Thrown when desktop OCR finds no `eng.traineddata` in any source [OcrConfig] lists.
+ */
+class TessdataNotFoundException(message: String) : IllegalStateException(message)
 
 /** Reads the text in [image] once, with a processor from [newProcessor]. */
 internal fun extractText(image: BufferedImage, newProcessor: () -> OCRProcessor): String {
@@ -174,10 +192,16 @@ internal fun extractText(image: BufferedImage, newProcessor: () -> OCRProcessor)
  * Processes camera frames asynchronously and emits detected text via callback.
  *
  * @param cameraController The camera controller providing frames
+ * @param config Where to find Tesseract's language data
  * @param onText Callback invoked when text is detected with the extracted text
+ * @throws TessdataNotFoundException when no source in [config] has the language data
  */
-actual fun startRecognition(cameraController: CameraController, onText: (text: String) -> Unit): RecognitionHandle {
-    val ocrProcessor = OCRProcessor()
+actual fun startRecognition(
+    cameraController: CameraController,
+    config: OcrConfig,
+    onText: (text: String) -> Unit,
+): RecognitionHandle {
+    val ocrProcessor = OCRProcessor(config)
     return startRecognition(cameraController.frameFlow, ocrProcessor::scanImage, ocrProcessor::close, onText)
 }
 

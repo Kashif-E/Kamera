@@ -118,6 +118,16 @@ dependencies {
 }
 ```
 
+### Desktop language data
+
+Desktop OCR runs Tesseract, which needs `eng.traineddata`. The plugin does not ship it. It uses the first of:
+
+1. `OcrConfig(tessdataPath = "/path/to/tessdata")`, passed as `rememberOcrPlugin(config = ...)`. If that directory has no `eng.traineddata`, OCR fails; no other source replaces it.
+2. The `eng.traineddata` from [tesseract-ocr/tessdata](https://github.com/tesseract-ocr/tessdata), on your classpath at `com/kashif/ocrPlugin/tessdata/eng.traineddata`. It is used only if its SHA-256 matches the one pinned in the library, after it is extracted to a per-user directory.
+3. The directory in the `TESSDATA_PREFIX` environment variable.
+
+The working directory is never searched. Tesseract parses whatever model the first and third options point at, so point them only at files you trust.
+
 ### Usage
 
 ```kotlin

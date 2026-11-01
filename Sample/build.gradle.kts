@@ -30,7 +30,10 @@ kotlin {
     applyDefaultHierarchyTemplate()
 
     sourceSets {
-        val desktopMain by getting
+        val desktopMain by getting {
+            // Packages Tesseract's eng.traineddata so desktop OCR finds it (see OcrConfig).
+            resources.srcDir(rootProject.file("ocrPlugin/model"))
+        }
 
         val mobileMain by creating
 
