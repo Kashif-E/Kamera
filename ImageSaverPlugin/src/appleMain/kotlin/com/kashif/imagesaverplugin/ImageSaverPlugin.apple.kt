@@ -6,14 +6,17 @@ import com.kashif.cameraK.utils.toByteArray
 import com.kashif.cameraK.utils.toNSData
 import io.ktor.utils.io.errors.IOException
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import platform.Foundation.NSCondition
 import platform.Foundation.NSData
 import platform.Photos.PHImageRequestOptions
 import platform.Photos.PHImageRequestOptionsDeliveryModeHighQualityFormat
 import platform.Photos.PHImageRequestOptionsVersionCurrent
 import platform.UIKit.UIImage
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * iOS-specific implementation of [ImageSaverPlugin].
@@ -34,19 +37,15 @@ class IOSImageSaverPlugin internal constructor(
         onImageSavedFailed: (String) -> Unit,
     ) : this(config, onImageSaved, onImageSavedFailed, SystemPhotoLibrary)
 
-    override suspend fun saveImage(byteArray: ByteArray, imageName: String?): String? {
-        return withContext(Dispatchers.Main) {
+    /**
+     * Decodes [byteArray] and writes it to the Photos library as a new asset, returning its
+     * `ph://` location. Runs on [Dispatchers.Default] and suspends while Photos writes, so it never
+     * occupies the main thread; cancelling it stops the wait but not a write already handed to Photos.
+     */
+    override suspend fun saveImage(byteArray: ByteArray, imageName: String?): String? =
+        withContext(Dispatchers.Default) {
             try {
-                val nsData = byteArray.toNSData()
-
-                if (nsData == null) {
-                    CameraKLogger.e("CameraK", "Failed to convert ByteArray to NSData.")
-                    onImageSavedFailed("Failed to convert ByteArray to NSData.")
-                    return@withContext null
-                }
-
-                val image = UIImage.imageWithData(nsData)
-
+                val image = UIImage.imageWithData(byteArray.toNSData())
                 if (image == null) {
                     CameraKLogger.e("CameraK", "Failed to convert NSData to UIImage.")
                     onImageSavedFailed("Failed to create UIImage from NSData.")
@@ -54,34 +53,35 @@ class IOSImageSaverPlugin internal constructor(
                 }
 
                 // Fix orientation before saving to ensure the image is displayed correctly
-                val orientedImage = image.fixOrientation()
-
-                var assetId: String? = null
-                val semaphore = NSCondition()
-
-                photoLibrary.createImageAsset(orientedImage) { localIdentifier, error ->
-                    assetId = localIdentifier
-                    if (assetId != null) {
-                        CameraKLogger.d("CameraK", "Image successfully saved to Photos album with ID: $assetId")
-                        onImageSaved()
-                    } else {
-                        CameraKLogger.e("CameraK", "Failed to save image: ${error?.localizedDescription}")
-                        onImageSavedFailed(error?.localizedDescription ?: "Unknown error")
-                        assetId = null
-                    }
-                    semaphore.signal()
-                }
-
-                semaphore.wait()
-                assetId?.let { "ph://$it" }
+                val assetId = createAsset(image.fixOrientation())
+                CameraKLogger.d("CameraK", "Image successfully saved to Photos album with ID: $assetId")
+                onImageSaved()
+                "ph://$assetId"
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                CameraKLogger.e("CameraK", "Exception while saving image: ${e.message}")
+                CameraKLogger.e("CameraK", "Failed to save image to Photos", e)
                 onImageSavedFailed(e.message ?: "Unknown exception")
                 null
             }
         }
+
+    private suspend fun createAsset(image: UIImage): String = suspendCancellableCoroutine { continuation ->
+        photoLibrary.createImageAsset(image) { localIdentifier, error ->
+            if (localIdentifier != null) {
+                continuation.resume(localIdentifier)
+            } else {
+                continuation.resumeWithException(IOException(error?.localizedDescription ?: "Unknown error"))
+            }
+        }
     }
 
+    /**
+     * Reads the image data of the Photos asset at [path] (`ph://<local identifier>`).
+     *
+     * The read is synchronous and blocks the calling thread until Photos returns the data, so call
+     * it off the main thread.
+     */
     override fun getByteArrayFrom(path: String): ByteArray {
         val assetId = path.removePrefix("ph://")
         val options =
@@ -92,24 +92,15 @@ class IOSImageSaverPlugin internal constructor(
                 version = PHImageRequestOptionsVersionCurrent
             }
 
+        // A synchronous request runs the handler on this thread before it returns, so the data is
+        // already here when requestImageData does.
         var imageData: NSData? = null
-        val semaphore = NSCondition()
-
-        val found = photoLibrary.requestImageData(assetId, options) { data ->
-            imageData = data
-            semaphore.signal()
-        }
+        val found = photoLibrary.requestImageData(assetId, options) { data -> imageData = data }
         if (!found) {
             throw IOException("No asset found with identifier: $path")
         }
 
-        semaphore.wait()
-
-        if (imageData == null) {
-            throw IOException("Failed to get image data from asset: $path")
-        }
-
-        return imageData?.toByteArray() ?: byteArrayOf()
+        return imageData?.toByteArray() ?: throw IOException("Failed to get image data from asset: $path")
     }
 
     /**
