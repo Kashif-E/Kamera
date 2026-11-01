@@ -13,12 +13,14 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.bytedeco.javacv.FrameRecorder
 import java.awt.image.BufferedImage
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -29,13 +31,15 @@ import kotlin.test.assertTrue
 class DesktopNativeTeardownTest {
 
     private fun controller(grabber: FakeFrameGrabber, recorder: FakeFrameRecorder = FakeFrameRecorder()) =
-        CameraController(
-            imageFormat = ImageFormat.JPEG,
-            directory = Directory.PICTURES,
-            customGrabber = grabber,
-            sessionDispatcher = Dispatchers.Unconfined,
-            recorderFactory = { _, _ -> recorder },
-        )
+        controller(grabber) { recorder }
+
+    private fun controller(grabber: FakeFrameGrabber, nextRecorder: () -> FakeFrameRecorder) = CameraController(
+        imageFormat = ImageFormat.JPEG,
+        directory = Directory.PICTURES,
+        customGrabber = grabber,
+        sessionDispatcher = Dispatchers.Unconfined,
+        recorderFactory = { _, _ -> nextRecorder() },
+    )
 
     private fun recordingConfig() = VideoConfiguration(
         enableAudio = false,
@@ -137,6 +141,72 @@ class DesktopNativeTeardownTest {
             assertTrue(fake.releasedLatch.await(5, TimeUnit.SECONDS), "the grabber was never released")
         } finally {
             recorder.finishFirstRecord()
+        }
+    }
+
+    @Test
+    fun stopSessionThenStartSession_runsOneGrabLoopAtATimeOnTheSameGrabber() {
+        val fake = FakeFrameGrabber()
+        val sut = controller(fake)
+        try {
+            sut.startSession()
+            assertTrue(fake.firstGrabEntered.await(5, TimeUnit.SECONDS), "the grab loop never called grab()")
+
+            // The first loop is inside grab(). A restart must wait for it to leave and release the
+            // grabber before the next loop opens it again.
+            sut.stopSession()
+            sut.startSession()
+            fake.concurrentGrabEntered.await(1, TimeUnit.SECONDS)
+            fake.openGate()
+
+            assertTrue(fake.grabbedAfterRestart.await(5, TimeUnit.SECONDS), "the restarted session never grabbed")
+            sut.cleanup()
+            assertTrue(fake.awaitReleases(2, 5), "each run should release the grabber once")
+            assertEquals(1, fake.maxConcurrentGrabs.get(), "grab() calls that overlapped")
+            assertEquals(emptyList(), fake.violations.toList())
+        } finally {
+            fake.openGate()
+            sut.cleanup()
+        }
+    }
+
+    @Test
+    fun startRecording_whenTheRecorderFailsToStart_releasesTheRecorderAndRethrows() = runBlocking {
+        val fake = FakeFrameGrabber().apply { openGate() }
+        val recorder = FakeFrameRecorder(startFailure = FrameRecorder.Exception("could not open the codec"))
+        val sut = controller(fake, recorder)
+        try {
+            sut.startSession()
+
+            assertFailsWith<FrameRecorder.Exception> { sut.startRecording(recordingConfig()) }
+            assertEquals(1, recorder.releaseCount.get(), "recorder release() count")
+            assertEquals(0, recorder.recordCount.get(), "frames recorded by a recorder that never started")
+        } finally {
+            sut.cleanup()
+        }
+    }
+
+    @Test
+    fun startRecording_whileRecording_isRejectedAndTheFirstRecordingStillStopsCleanly() = runBlocking {
+        val fake = FakeFrameGrabber().apply { openGate() }
+        val first = FakeFrameRecorder().apply { finishFirstRecord() }
+        val second = FakeFrameRecorder().apply { finishFirstRecord() }
+        val recorders = ArrayDeque(listOf(first, second))
+        val sut = controller(fake) { recorders.removeFirst() }
+        try {
+            sut.startSession()
+            sut.startRecording(recordingConfig())
+            assertTrue(first.firstRecordEntered.await(5, TimeUnit.SECONDS), "nothing was recorded")
+
+            assertFailsWith<IllegalStateException> { sut.startRecording(recordingConfig()) }
+            assertEquals(1, recorders.size, "a second recorder was opened for the rejected start")
+
+            assertIs<VideoCaptureResult.Success>(withTimeout(10_000) { sut.stopRecording() })
+            assertEquals(1, first.stopCount.get(), "first recorder stop() count")
+            assertEquals(1, first.releaseCount.get(), "first recorder release() count")
+            assertEquals(emptyList(), first.violations.toList())
+        } finally {
+            sut.cleanup()
         }
     }
 }

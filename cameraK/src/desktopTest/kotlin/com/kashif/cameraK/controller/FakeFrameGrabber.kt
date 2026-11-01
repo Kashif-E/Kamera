@@ -12,15 +12,18 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * A camera that is not there. Like the Windows `VideoInputFrameGrabber`, it has no internal
  * locking, so it records every access a real native grabber would not survive: two `grab()` calls
- * at once, `stop()`/`release()` while a `grab()` is still inside the handle, and any call after
- * `release()`.
+ * at once, `stop()`/`release()` while a `grab()` is still inside the handle, and a `grab()` after
+ * `release()` with no `start()` in between. Like JavaCV's grabbers, it may be started again after
+ * `release()`; `start()` opens a fresh handle.
  *
  * While the gate is closed, `grab()` blocks the way a real grabber blocks until the camera delivers
  * its next frame. [openGate] lets every pending and later `grab()` return at once.
  */
-internal class FakeFrameGrabber(width: Int = 64, height: Int = 48) : FrameGrabber() {
+internal class FakeFrameGrabber(width: Int = 64, height: Int = 48, private val nextFrame: (Frame) -> Frame? = { it }) :
+    FrameGrabber() {
     private val frame = Frame(width, height, Frame.DEPTH_UBYTE, 3)
     private val gate = Semaphore(0)
+    private val releases = Semaphore(0)
 
     @Volatile private var gateOpen = false
 
@@ -31,6 +34,7 @@ internal class FakeFrameGrabber(width: Int = 64, height: Int = 48) : FrameGrabbe
     val grabThreads: MutableSet<String> = ConcurrentHashMap.newKeySet()
     val maxConcurrentGrabs = AtomicInteger(0)
     val grabCount = AtomicInteger(0)
+    val startCount = AtomicInteger(0)
     val stopCount = AtomicInteger(0)
     val releaseCount = AtomicInteger(0)
 
@@ -38,13 +42,20 @@ internal class FakeFrameGrabber(width: Int = 64, height: Int = 48) : FrameGrabbe
     val concurrentGrabEntered = CountDownLatch(1)
     val releasedLatch = CountDownLatch(1)
 
+    /** Counted down by the first `grab()` that follows a second `start()`. */
+    val grabbedAfterRestart = CountDownLatch(1)
+
     fun openGate() {
         gateOpen = true
         gate.release(Int.MAX_VALUE / 2)
     }
 
+    fun awaitReleases(count: Int, seconds: Long): Boolean = releases.tryAcquire(count, seconds, TimeUnit.SECONDS)
+
     override fun start() {
-        if (released) violations += "start() after release()"
+        if (inFlight.get() > 0) violations += "start() while grab() was in flight"
+        startCount.incrementAndGet()
+        released = false
     }
 
     override fun stop() {
@@ -54,17 +65,18 @@ internal class FakeFrameGrabber(width: Int = 64, height: Int = 48) : FrameGrabbe
 
     override fun trigger() = Unit
 
-    override fun grab(): Frame {
+    override fun grab(): Frame? {
         if (released) violations += "grab() after release()"
         val concurrent = inFlight.incrementAndGet()
         maxConcurrentGrabs.accumulateAndGet(concurrent, ::maxOf)
         if (concurrent > 1) concurrentGrabEntered.countDown()
         grabThreads += Thread.currentThread().name
         firstGrabEntered.countDown()
+        if (startCount.get() > 1) grabbedAfterRestart.countDown()
         try {
             if (!gateOpen) gate.tryAcquire(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             grabCount.incrementAndGet()
-            return frame
+            return nextFrame(frame)
         } finally {
             inFlight.decrementAndGet()
         }
@@ -75,6 +87,7 @@ internal class FakeFrameGrabber(width: Int = 64, height: Int = 48) : FrameGrabbe
         if (inFlight.get() > 0) violations += "release() while grab() was in flight"
         released = true
         releasedLatch.countDown()
+        releases.release()
     }
 
     private companion object {

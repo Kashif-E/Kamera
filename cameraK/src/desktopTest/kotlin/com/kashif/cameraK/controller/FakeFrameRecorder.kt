@@ -12,9 +12,10 @@ import java.util.concurrent.atomic.AtomicInteger
  * `record()` is still encoding, and any `record()` after `stop()`.
  *
  * The first `record()` blocks until [finishFirstRecord], so a test can hold the encoder busy while
- * it stops the recording.
+ * it stops the recording. With a [startFailure], `start()` throws it, as FFmpeg does when it cannot
+ * open the output or the codec.
  */
-internal class FakeFrameRecorder : FrameRecorder() {
+internal class FakeFrameRecorder(private val startFailure: Exception? = null) : FrameRecorder() {
     private val firstRecordGate = CountDownLatch(1)
     private val inFlight = AtomicInteger(0)
 
@@ -34,7 +35,9 @@ internal class FakeFrameRecorder : FrameRecorder() {
 
     fun finishFirstRecord() = firstRecordGate.countDown()
 
-    override fun start() = Unit
+    override fun start() {
+        startFailure?.let { throw it }
+    }
 
     override fun flush() = Unit
 
