@@ -4,8 +4,10 @@ import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import coil3.PlatformContext
+import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,7 +18,13 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Android-specific implementation of [ImageSaverPlugin] using Scoped Storage.
+ * Android-specific implementation of [ImageSaverPlugin] using MediaStore.
+ *
+ * Images are saved under `<directory>/<customFolderName or "CameraK">/` in shared storage:
+ * [Directory.PICTURES] and [Directory.DCIM] through `MediaStore.Images`, and [Directory.DOCUMENTS]
+ * through `MediaStore.Files`, because from API 29 `MediaStore.Images` only accepts `DCIM/` and
+ * `Pictures/`. Below API 29 the absolute path is set explicitly, which needs `WRITE_EXTERNAL_STORAGE`;
+ * an existing file with the same name is kept and the new one gets a numbered suffix.
  *
  * @param context The Android [Context] used to access ContentResolver.
  * @param config The configuration settings for the plugin.
@@ -27,41 +35,36 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
 
     override suspend fun save(byteArray: ByteArray, imageName: String?): ImageSaveResult = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
-        val contentValues =
-            ContentValues().apply {
-                val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val fileName = imageName ?: "IMG_$timeStamp"
-                put(
-                    MediaStore.MediaColumns.DISPLAY_NAME,
-                    "$fileName.${config.imageFormat.extension}",
-                )
-                put(MediaStore.MediaColumns.MIME_TYPE, config.imageFormat.mimeType)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val basePath =
-                        when (config.directory) {
-                            com.kashif.cameraK.enums.Directory.PICTURES -> "Pictures"
-                            com.kashif.cameraK.enums.Directory.DCIM -> "DCIM"
-                            com.kashif.cameraK.enums.Directory.DOCUMENTS -> "Documents"
-                        }
-                    put(
-                        MediaStore.MediaColumns.RELATIVE_PATH,
-                        "$basePath/${config.customFolderName ?: "CameraK"}",
-                    )
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }
-            }
-
-        val collection: Uri =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            } else {
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            }
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val fileName = "${imageName ?: "IMG_$timeStamp"}.${config.imageFormat.extension}"
+        val directory = config.directory.publicDirectoryName
+        val folder = config.customFolderName ?: DEFAULT_FOLDER
 
         // Set once the row exists, so every failure after the insert deletes it again (on Q+ it is
         // still IS_PENDING and would otherwise linger as an invisible, unfinished entry).
         var insertedUri: Uri? = null
         try {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.MIME_TYPE, config.imageFormat.mimeType)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "$directory/$folder")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                } else {
+                    // Without DATA, MediaProvider below API 29 names the file itself under Pictures/.
+                    val file = legacyDestination(directory, folder, fileName)
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+                    put(MediaStore.MediaColumns.DATA, file.absolutePath)
+                }
+            }
+            val collection: Uri = when {
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.Q -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                config.directory == Directory.DOCUMENTS -> MediaStore.Files.getContentUri(
+                    MediaStore.VOLUME_EXTERNAL_PRIMARY,
+                )
+                else -> MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            }
+
             val imageUri =
                 resolver.insert(collection, contentValues)
                     ?: throw IOException("Failed to create new MediaStore record.")
@@ -73,9 +76,8 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentValues.clear()
-                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(imageUri, contentValues, null, null)
+                val published = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                resolver.update(imageUri, published, null, null)
             }
 
             CameraKLogger.d("CameraK", "Image saved to MediaStore")
@@ -88,6 +90,22 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
             insertedUri?.let { deleteUnfinishedRow(resolver, it) }
             ImageSaveResult.Failed(e)
         }
+    }
+
+    @Suppress("DEPRECATION") // Only used below API 29, where it is the shared-storage location.
+    private fun legacyDestination(directory: String, folder: String, fileName: String): File {
+        val parent = File(Environment.getExternalStoragePublicDirectory(directory), folder)
+        if (!parent.isDirectory && !parent.mkdirs()) {
+            throw IOException("Failed to create the destination folder.")
+        }
+        val base = fileName.substringBeforeLast('.')
+        val extension = fileName.substringAfterLast('.')
+        var candidate = File(parent, fileName)
+        var suffix = 1
+        while (candidate.exists()) {
+            candidate = File(parent, "${base}_${suffix++}.$extension")
+        }
+        return candidate
     }
 
     private fun deleteUnfinishedRow(resolver: ContentResolver, uri: Uri) {
@@ -139,6 +157,15 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
         }
     }
 }
+
+private const val DEFAULT_FOLDER = "CameraK"
+
+private val Directory.publicDirectoryName: String
+    get() = when (this) {
+        Directory.PICTURES -> Environment.DIRECTORY_PICTURES
+        Directory.DCIM -> Environment.DIRECTORY_DCIM
+        Directory.DOCUMENTS -> Environment.DIRECTORY_DOCUMENTS
+    }
 
 /**
  * Factory for creating Android-specific [ImageSaverPlugin] instances.
