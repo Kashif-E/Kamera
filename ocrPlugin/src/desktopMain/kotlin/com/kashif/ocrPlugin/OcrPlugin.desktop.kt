@@ -11,11 +11,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.bytedeco.leptonica.PIX
-import org.bytedeco.leptonica.global.leptonica.pixCreate
-import org.bytedeco.leptonica.global.leptonica.pixSetPixel
 import org.bytedeco.opencv.global.opencv_text.PSM_AUTO
-import org.bytedeco.tesseract.TessBaseAPI
 import java.awt.image.BufferedImage
 import java.awt.image.DataBufferByte
 import java.io.File
@@ -28,8 +24,14 @@ import java.io.File
  *
  * Tesseract initialization is wrapped in a try-catch to gracefully handle missing tessdata files.
  */
-class OCRProcessor {
-    private val api = TessBaseAPI()
+class OCRProcessor internal constructor(
+    private val library: TesseractLibrary,
+    tessdataDir: String?,
+    private val clock: () -> Long,
+) {
+    constructor() : this(JavaCppTesseract, findTessdataDirectory(), System::currentTimeMillis)
+
+    private val api = library.newEngine()
     private val lock = ReentrantLock()
     private var lastProcessTime = 0L
     private val processInterval = 200L
@@ -37,41 +39,23 @@ class OCRProcessor {
 
     init {
         try {
-            val tessdataDir = findTessdataDirectory()
             if (tessdataDir == null) {
                 CameraKLogger.w("CameraK", "Warning: Could not find tessdata directory. OCR will be disabled.")
                 isInitialized = false
-            } else if (api.Init(tessdataDir, "eng") != 0) {
+            } else if (api.init(tessdataDir, "eng") != 0) {
                 CameraKLogger.w("CameraK", "Warning: Could not initialize Tesseract. OCR will be disabled.")
                 isInitialized = false
             } else {
-                api.SetVariable(
+                api.setVariable(
                     "tessedit_char_whitelist",
                     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?",
                 )
-                api.SetPageSegMode(PSM_AUTO)
+                api.setPageSegMode(PSM_AUTO)
                 isInitialized = true
             }
         } catch (e: Exception) {
             CameraKLogger.w("CameraK", "Warning: Failed to initialize OCR: ${e.message}")
             isInitialized = false
-        }
-    }
-
-    private fun findTessdataDirectory(): String? {
-        val possiblePaths =
-            listOf(
-                File("ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin").absolutePath,
-                File("./ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin").absolutePath,
-                System.getenv("TESSDATA_PREFIX"),
-                File(
-                    System.getProperty("user.dir"),
-                    "ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin",
-                ).absolutePath,
-            )
-
-        return possiblePaths.firstOrNull { path ->
-            path != null && File(path).exists() && File("$path/eng.traineddata").exists()
         }
     }
 
@@ -88,7 +72,7 @@ class OCRProcessor {
         if (!isInitialized || !lock.tryLock()) return null
 
         return try {
-            val currentTime = System.currentTimeMillis()
+            val currentTime = clock()
             if (currentTime - lastProcessTime < processInterval) {
                 return null
             }
@@ -96,8 +80,8 @@ class OCRProcessor {
             val processedImage = preprocessImage(image)
             val pix = convertImageToPix(processedImage)
 
-            api.SetImage(pix)
-            val result = api.GetUTF8Text()?.getString()?.trim()
+            api.setImage(pix)
+            val result = api.recognizedText()?.read()?.trim()
             lastProcessTime = currentTime
 
             result.takeIf { !it.isNullOrBlank() }
@@ -135,10 +119,10 @@ class OCRProcessor {
      * @param image The grayscale image
      * @return A PIX object suitable for Tesseract processing
      */
-    private fun convertImageToPix(image: BufferedImage): PIX {
+    private fun convertImageToPix(image: BufferedImage): TesseractLibrary.Pix {
         val width = image.width
         val height = image.height
-        val pix = pixCreate(width, height, 8)
+        val pix = library.newPix(width, height, 8)
 
         val raster = image.raster
         val data = raster.dataBuffer as DataBufferByte
@@ -147,7 +131,7 @@ class OCRProcessor {
         for (y in 0 until height) {
             for (x in 0 until width) {
                 val value = pixels[y * width + x].toInt() and 0xFF
-                pixSetPixel(pix, x, y, value)
+                pix.setPixel(x, y, value)
             }
         }
 
@@ -158,13 +142,34 @@ class OCRProcessor {
      * Releases Tesseract resources.
      */
     fun close() {
-        api.End()
+        api.end()
     }
 }
 
-actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String {
-    val ocrProcessor = OCRProcessor()
-    return ocrProcessor.scanImage(bitmap.toAwtImage()) ?: ""
+private fun findTessdataDirectory(): String? {
+    val possiblePaths =
+        listOf(
+            File("ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin").absolutePath,
+            File("./ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin").absolutePath,
+            System.getenv("TESSDATA_PREFIX"),
+            File(
+                System.getProperty("user.dir"),
+                "ocrPlugin/src/desktopMain/kotlin/com/kashif/ocrPlugin",
+            ).absolutePath,
+        )
+
+    return possiblePaths.firstOrNull { path ->
+        path != null && File(path).exists() && File("$path/eng.traineddata").exists()
+    }
+}
+
+actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap): String =
+    extractText(bitmap.toAwtImage(), ::OCRProcessor)
+
+/** Reads the text in [image] once, with a processor from [newProcessor]. */
+internal fun extractText(image: BufferedImage, newProcessor: () -> OCRProcessor): String {
+    val ocrProcessor = newProcessor()
+    return ocrProcessor.scanImage(image) ?: ""
 }
 
 /**
