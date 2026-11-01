@@ -4,6 +4,7 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.QualityPrioritization
 import kotlinx.atomicfu.atomic
 import platform.AVFoundation.AVCaptureMetadataOutput
+import platform.AVFoundation.AVCaptureSession
 import platform.AVFoundation.AVCaptureSessionPresetPhoto
 import platform.AVFoundation.AVCaptureVideoDataOutput
 import platform.Foundation.NSDate
@@ -29,6 +30,7 @@ import platform.darwin.dispatch_time
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -213,6 +215,99 @@ class SessionQueueTest {
 
         assertFalse(ready.value, "onSessionReady fired for a setup that cleanupSession had already superseded")
         assertFalse(session.isRunning, "a session set up after cleanupSession was left running (camera stays on)")
+    }
+
+    @Test
+    fun aLensSwitchMirrorsThePreviewOnMainForTheLensItSwitchedTo() {
+        // (mirrored, on the main thread) for every time the controller touched the preview layer.
+        val mirrorings = mutableListOf<Pair<Boolean, Boolean>>()
+        val mirroringsLock = NSLock()
+        fun mirrorings(): List<Pair<Boolean, Boolean>> {
+            mirroringsLock.lock()
+            try {
+                return mirrorings.toList()
+            } finally {
+                mirroringsLock.unlock()
+            }
+        }
+        val controller = CustomCameraController(
+            qualityPrioritization = QualityPrioritization.NONE,
+            sessionFactory = ::newSession,
+            inputConfigurator = { _, _ -> true },
+            lensSwitcher = { _, _ -> },
+            previewMirroring = { _, mirrored ->
+                val onMain = NSThread.isMainThread
+                mirroringsLock.lock()
+                try {
+                    mirrorings += mirrored to onMain
+                } finally {
+                    mirroringsLock.unlock()
+                }
+            },
+        )
+        controller.onSessionReady = { controller.startSession() }
+        controller.setupSession()
+        val session = awaitSession()
+        awaitCondition("startRunning") { session.isRunning }
+
+        controller.switchCamera()
+        awaitCondition("the switch to the front lens to reach the preview") { mirrorings().size == 1 }
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.toLong(), 0u)) {
+            controller.switchCamera()
+        }
+        awaitCondition("the switch back to the back lens to reach the preview") { mirrorings().size == 2 }
+
+        // The preview layer is a UIKit layer: its connection's mirroring is set on main, never on the
+        // session queue, whichever thread asked for the switch.
+        assertEquals(
+            listOf(true to true, false to true),
+            mirrorings(),
+            "preview mirroring as (mirrored, on main) after switching to front and then back",
+        )
+        assertAllOnOneSessionQueue(session.calls)
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun aSessionAssignedThroughTheDeprecatedSetterIsWhatTheNextReadReturns() {
+        val controller = controller()
+        val fromMain = AVCaptureSession()
+        controller.captureSession = fromMain
+        assertSame(fromMain, controller.captureSession, "a session set from main was not returned by the next read")
+
+        // A queued change runs on the session queue; assigning there must neither wait on that queue
+        // (a deadlock) nor defer the write.
+        val fromQueue = AVCaptureSession()
+        val readBack = atomic<AVCaptureSession?>(null)
+        val done = atomic(false)
+        controller.queueConfigurationChange {
+            controller.captureSession = fromQueue
+            readBack.value = controller.captureSession
+            done.value = true
+        }
+        controller.setupSession()
+        awaitCondition("the change that assigns the session on the session queue") { done.value }
+        assertSame(fromQueue, readBack.value, "a session set on the session queue was not returned by the next read")
+    }
+
+    @Test
+    fun theMicrophoneCheckReadsTheSessionsInputsOnTheSessionQueue() {
+        val controller = controller()
+        controller.onSessionReady = { controller.startSession() }
+        controller.setupSession()
+        val session = awaitSession()
+        awaitCondition("startRunning") { session.isRunning }
+
+        val inputsMade = atomic(0)
+        controller.addInputUnlessPresent(isPresent = { false }, create = {
+            inputsMade.incrementAndGet()
+            null
+        })
+        drainSessionQueueThenMain(controller)
+
+        assertTrue(session.calls.any { it.op == "inputs" }, "the attached inputs were never checked")
+        assertAllOnOneSessionQueue(session.calls)
+        assertEquals(1, inputsMade.value, "with no matching input attached, the input is made once")
     }
 
     /**

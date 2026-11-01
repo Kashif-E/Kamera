@@ -46,7 +46,11 @@ internal class RecordingSession : CaptureSessionOps {
 
     override val avSession: AVCaptureSession? = null
     override val isRunning: Boolean get() = locked { running }
-    override val inputs: List<AVCaptureInput> get() = locked { inputList.toList() }
+    override val inputs: List<AVCaptureInput>
+        get() {
+            record("inputs") {}
+            return locked { inputList.toList() }
+        }
     override val outputs: List<AVCaptureOutput> get() = locked { outputList.toList() }
 
     override fun beginConfiguration() = record("beginConfiguration") { depth++ }
