@@ -219,6 +219,15 @@ sealed class CameraKEvent {
      */
     @Immutable
     data class RecordingMaxDurationReached(val filePath: String, val durationMs: Long) : CameraKEvent()
+
+    /**
+     * A coroutine a plugin launched in [CameraKStateHolder.pluginScope] failed. The failure is
+     * contained: the camera and the other plugins keep running.
+     *
+     * @property error What the plugin's coroutine threw. Its message may contain paths or URIs.
+     */
+    @Immutable
+    data class PluginFailed(val error: Throwable) : CameraKEvent()
 }
 
 /**

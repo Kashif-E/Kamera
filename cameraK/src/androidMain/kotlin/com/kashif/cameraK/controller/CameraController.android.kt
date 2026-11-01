@@ -1147,7 +1147,7 @@ actual class CameraController internal constructor(
  * Uses [RefCountedImageProxy] so each analyzer can call `close()` independently;
  * the underlying buffer is released only when all analyzers have finished.
  */
-private class MultiplexingAnalyzer(private val analyzers: List<ImageAnalysis.Analyzer>) : ImageAnalysis.Analyzer {
+internal class MultiplexingAnalyzer(private val analyzers: List<ImageAnalysis.Analyzer>) : ImageAnalysis.Analyzer {
     override fun analyze(imageProxy: ImageProxy) {
         if (analyzers.isEmpty()) {
             imageProxy.close()

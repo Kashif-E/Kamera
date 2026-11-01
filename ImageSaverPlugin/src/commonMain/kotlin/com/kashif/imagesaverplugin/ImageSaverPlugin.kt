@@ -38,6 +38,25 @@ data class ImageSaverConfig(
 )
 
 /**
+ * Outcome of [ImageSaverPlugin.save].
+ */
+@Immutable
+sealed class ImageSaveResult {
+    /**
+     * @property location Where the image was stored: a `content://` URI on Android, a file path on
+     *   desktop, an asset identifier on iOS.
+     */
+    @Immutable
+    data class Saved(val location: String) : ImageSaveResult()
+
+    /**
+     * @property error Why the image was not stored. Its message may contain paths or URIs.
+     */
+    @Immutable
+    data class Failed(val error: Throwable) : ImageSaveResult()
+}
+
+/**
  * Abstract plugin for saving captured images to device storage.
  *
  * Implements [CameraKPlugin] for Compose-first state management.
@@ -89,6 +108,22 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
      * @return The file path where the image was saved, or null if saving failed.
      */
     abstract suspend fun saveImage(byteArray: ByteArray, imageName: String? = null): String?
+
+    /**
+     * Saves the captured image data to storage and reports why it failed when it does.
+     *
+     * @param byteArray The encoded image.
+     * @param imageName Optional file name without extension. If not provided, a default name is generated.
+     * @return [ImageSaveResult.Saved] with the stored location, or [ImageSaveResult.Failed] with the cause.
+     */
+    open suspend fun save(byteArray: ByteArray, imageName: String? = null): ImageSaveResult {
+        val location = saveImage(byteArray, imageName)
+        return if (location != null) {
+            ImageSaveResult.Saved(location)
+        } else {
+            ImageSaveResult.Failed(IllegalStateException("Image could not be saved"))
+        }
+    }
 
     /**
      * Attaches the plugin to the state holder (new API).
