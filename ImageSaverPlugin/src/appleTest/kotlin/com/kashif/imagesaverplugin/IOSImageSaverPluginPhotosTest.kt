@@ -33,6 +33,7 @@ import platform.UIKit.UIGraphicsBeginImageContextWithOptions
 import platform.UIKit.UIGraphicsEndImageContext
 import platform.UIKit.UIGraphicsGetImageFromCurrentImageContext
 import platform.UIKit.UIImage
+import platform.UIKit.UIImageJPEGRepresentation
 import platform.UIKit.UIImagePNGRepresentation
 import platform.darwin.DISPATCH_TIME_NOW
 import platform.darwin.NSEC_PER_SEC
@@ -266,6 +267,51 @@ class IOSImageSaverPluginPhotosTest {
         assertNoAssetIdentifierIn(logs.value)
     }
 
+    @Test
+    fun savingAJpegStoresItsBytesInPhotosUnchanged() {
+        val jpeg = jpegBytes()
+        val photos = FakePhotoLibrary(createdIdentifier = ASSET_ID)
+
+        val location = completesWithin(BOUND) { plugin(photos).saveImage(jpeg) }
+
+        assertNotNull(location, "saveImage did not return within $BOUND")
+        assertEquals("ph://$ASSET_ID", location.value)
+        assertStoredUnchanged(photos, jpeg, "public.jpeg")
+    }
+
+    @Test
+    fun savingAPngStoresItsBytesInPhotosUnchanged() {
+        val png = pngBytes()
+        val photos = FakePhotoLibrary(createdIdentifier = ASSET_ID)
+
+        val location = completesWithin(BOUND) { plugin(photos).saveImage(png) }
+
+        assertNotNull(location, "saveImage did not return within $BOUND")
+        assertStoredUnchanged(photos, png, "public.png")
+    }
+
+    /** Guard: bytes that are not an image are a reported failure that never reaches Photos (green before the fix). */
+    @Test
+    fun savingBytesThatAreNotAnImageFailsWithoutReachingPhotos() {
+        val photos = FakePhotoLibrary(createdIdentifier = ASSET_ID)
+        val failures = atomic(emptyList<String>())
+        val plugin = plugin(photos, onImageSavedFailed = { message -> failures.update { it + message } })
+
+        val location = completesWithin(BOUND) { plugin.saveImage(byteArrayOf(1, 2, 3, 4)) }
+
+        assertNotNull(location, "saveImage did not return within $BOUND")
+        assertNull(location.value, "bytes that are not an image have no location")
+        assertEquals(1, failures.value.size, "the failure was not reported once")
+        assertEquals(false, photos.creationStarted.isCompleted, "bytes that are not an image reached Photos")
+    }
+
+    private fun assertStoredUnchanged(photos: FakePhotoLibrary, bytes: ByteArray, type: String) {
+        assertEquals(false, photos.decodedImageCreated.value, "Photos was given a decoded image to re-encode")
+        val (stored, storedType) = assertNotNull(photos.storedPhoto.value, "Photos was not given the image's bytes")
+        assertContentEquals(bytes, stored, "Photos was not given the bytes saveImage received")
+        assertEquals(type, storedType)
+    }
+
     private fun plugin(
         photos: FakePhotoLibrary,
         onImageSaved: () -> Unit = {},
@@ -394,6 +440,13 @@ class IOSImageSaverPluginPhotosTest {
         3305,
         mapOf<Any?, Any?>(NSLocalizedDescriptionKey to description),
     )
+
+    private fun jpegBytes(): ByteArray {
+        UIGraphicsBeginImageContextWithOptions(CGSizeMake(4.0, 4.0), true, 1.0)
+        val image = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return assertNotNull(UIImageJPEGRepresentation(assertNotNull(image), 0.9)).toByteArray()
+    }
 
     private fun pngBytes(): ByteArray {
         UIGraphicsBeginImageContextWithOptions(CGSizeMake(4.0, 4.0), true, 1.0)
