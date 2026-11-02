@@ -381,6 +381,11 @@ registerRepoPolicyCheck(
     "security-policy",
     "Fails if SECURITY.md misses the current release line or routes reports anywhere but private reporting",
 )
+registerRepoPolicyCheck(
+    "checkDocsWorkflow",
+    "docs-workflow",
+    "Fails if pull requests skip the strict docs build or link check, or the site deploys from anything but a tag",
+)
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
@@ -1050,6 +1055,7 @@ fun verifyTaskPaths(
                 ":checkVerifyCoverage",
                 ":checkAgentPermissions",
                 ":checkSecurityPolicy",
+                ":checkDocsWorkflow",
             )
     }
     modules.forEach { module ->

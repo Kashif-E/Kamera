@@ -10,6 +10,9 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
   security-policy    .github/SECURITY.md supports the release line gradle.properties publishes and
                      routes reports through GitHub private vulnerability reporting on the repository
                      the POMs name, with no email address nobody has verified.
+  docs-workflow      Pull requests build the docs with mkdocs --strict and check their links; the
+                     site is deployed with actions/deploy-pages only for a v* tag, after that
+                     strict build, and never force-pushed with mkdocs gh-deploy.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -170,9 +173,82 @@ def check_security_policy() -> List[str]:
     return [f"{SECURITY_POLICY}: {problem}" for problem in security_policy_problems(path.read_text(), version, repository)]
 
 
+# ─── docs-workflow ──────────────────────────────────────────────────────────────────────────────
+
+WORKFLOWS = ".github/workflows"
+STRICT_DOCS_BUILD = re.compile(r"\bmkdocs\s+build\b[^\n]*--strict")
+GH_DEPLOY = re.compile(r"\bmkdocs\s+gh-deploy\b")
+TAG_CONDITION = re.compile(r"startsWith\(\s*github\.ref\s*,\s*'refs/tags/v'\s*\)")
+
+
+def workflow_yaml():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import check_release_workflow  # noqa: E402  (shares its YAML subset reader)
+
+    return check_release_workflow
+
+
+def docs_workflow_problems(workflows: Dict[str, dict]) -> List[str]:
+    reader = workflow_yaml()
+    strict_on_pr, links_on_pr, problems = False, False, []
+    for name, workflow in workflows.items():
+        on = reader.triggers(workflow)
+        push = on.get("push") if isinstance(on.get("push"), dict) else {}
+        tag_only = set(on) == {"push"} and "branches" not in push and all(
+            str(tag).startswith("v") for tag in reader.as_list(push.get("tags"))
+        ) and bool(push.get("tags"))
+        jobs = workflow.get("jobs") if isinstance(workflow.get("jobs"), dict) else {}
+        strict_jobs = set()
+        for job_id, job in jobs.items():
+            steps = [step for step in reader.as_list(job.get("steps")) if isinstance(step, dict)]
+            runs = reader.run_text(job)
+            uses = [str(step.get("uses", "")) for step in steps]
+            if STRICT_DOCS_BUILD.search(runs):
+                strict_jobs.add(job_id)
+                strict_on_pr = strict_on_pr or "pull_request" in on
+            if any(use.startswith("lycheeverse/lychee-action@") for use in uses) or re.search(r"\blychee\b", runs):
+                links_on_pr = links_on_pr or "pull_request" in on
+            if GH_DEPLOY.search(runs):
+                problems.append(f"{name}: job {job_id} force-pushes the site with mkdocs gh-deploy")
+            if any(use.startswith("actions/deploy-pages@") for use in uses):
+                if not tag_only and not TAG_CONDITION.search(str(job.get("if", ""))):
+                    problems.append(
+                        f"{name}: job {job_id} deploys the site on {sorted(on)}; deploy only for a v* tag"
+                    )
+                needs = set(reader.as_list(job.get("needs")))
+                if not needs & strict_jobs and not any(
+                    STRICT_DOCS_BUILD.search(reader.run_text(jobs.get(need, {}))) for need in needs
+                ):
+                    problems.append(f"{name}: job {job_id} deploys without needing the mkdocs --strict build")
+    if not strict_on_pr:
+        problems.append("no pull_request workflow builds the docs with mkdocs build --strict")
+    if not links_on_pr:
+        problems.append("no pull_request workflow checks the docs' links")
+    return problems
+
+
+def check_docs_workflow() -> List[str]:
+    reader = workflow_yaml()
+    stale = reader.parse_yaml(
+        "on:\n  push:\n    branches:\n      - main\njobs:\n  deploy:\n    steps:\n"
+        "      - run: mkdocs gh-deploy --force\n"
+    )
+    if len(docs_workflow_problems({"fixture.yml": stale})) < 3:
+        raise CheckError("the docs-workflow rule accepts a force-deploying fixture it must reject")
+    try:
+        workflows = {
+            path.relative_to(ROOT).as_posix(): reader.load(path)
+            for path in sorted((ROOT / WORKFLOWS).glob("*.y*ml"))
+        }
+    except reader.CheckError as error:
+        raise CheckError(str(error)) from error
+    return docs_workflow_problems(workflows)
+
+
 POLICIES: Dict[str, Callable[[], List[str]]] = {
     "agent-permissions": check_agent_permissions,
     "security-policy": check_security_policy,
+    "docs-workflow": check_docs_workflow,
 }
 
 
