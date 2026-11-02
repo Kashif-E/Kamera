@@ -3,12 +3,14 @@
 
 Usage: check_repo_policy.py <policy> [<policy> ...]
 
-  agent-permissions  Committed agent configuration (.claude/) approves only shell commands on a
-                     read-only allowlist (git status and pwd with any arguments; git status, diff,
-                     log, show, rev-parse and ls-files exactly and without options that write files
-                     or run programs; ./gradlew with only verification tasks), no file-writing tool,
-                     and no path outside the repository; personal approvals stay in
-                     the gitignored .claude/settings.local.json.
+  agent-permissions  Committed agent configuration (.claude/, .mcp.json) approves only allowlisted
+                     tools: Bash on a read-only allowlist (git status and pwd with any arguments; git
+                     status, diff, log, show, rev-parse and ls-files with allowlisted options and no
+                     path outside the repository; ./gradlew with allowlisted options and verification
+                     tasks named in full), tokenised as the shell would, and Read, Glob and Grep on
+                     repository paths. It sets no hook that runs a command, no helper, env, status
+                     line, MCP switch or additional directory, and declares no MCP server; personal
+                     approvals stay in the gitignored .claude/settings.local.json.
   security-policy    .github/SECURITY.md supports the release line gradle.properties publishes and
                      routes reports through GitHub private vulnerability reporting on the repository
                      the POMs name, with no email address nobody has verified.
@@ -41,6 +43,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -68,25 +71,135 @@ def tracked(pattern: str) -> List[Path]:
 
 SHARED_AGENT_SETTINGS = ".claude/settings.json"
 LOCAL_AGENT_SETTINGS = ".claude/settings.local.json"
+# The project MCP configuration Claude Code reads from the repository root.
+MCP_CONFIG = ".mcp.json"
 
-# A rule is Tool or Tool(specifier). Shell approvals are an allowlist of commands that only read:
-# anything not listed, including every bare-prefix wildcard on git, gh, Gradle, an interpreter or a
-# file-writing utility, needs a personal approval in the gitignored local settings.
+# A rule is Tool or Tool(specifier), and every part of it is allowlisted: the tool, and for the shell
+# the command, each option and each Gradle task. Anything not listed, including every bare-prefix
+# wildcard on git, gh, Gradle, an interpreter or a file-writing utility, needs a personal approval in
+# the gitignored local settings.
 PERSONAL_PATH = re.compile(r"(^|[(\s:=])(//|~|/Users/|/home/|[A-Za-z]:\\)")
-RULE = re.compile(r"^(?P<tool>[A-Za-z]+)(\((?P<specifier>.*)\))?$")
+RULE = re.compile(r"^(?P<tool>[A-Za-z][A-Za-z0-9_]*)(\((?P<specifier>.*)\))?$")
 FILE_WRITING_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+# Read rules also govern Glob and Grep. A path tool needs a specifier, since a bare one approves every
+# file on the machine.
+PATH_TOOLS = {"Read", "Glob", "Grep"}
+APPROVABLE_TOOLS = {"Bash"} | PATH_TOOLS
 # A trailing ":*" or " *" approves the command with any further arguments.
 WILDCARD = re.compile(r"(:\*|\s\*)$")
-SHELL_METACHARACTERS = re.compile(r"[;&|<>`$(){}\\\n*]")
+# Operators, expansions and globs: the shell would turn the approved text into some other command.
+SHELL_METACHARACTERS = re.compile(r"[;&|<>`$(){}\\\n*?\[\]]")
 # Commands that read and write nothing whatever arguments follow, so a wildcard may approve them.
 READ_ONLY_ANY_ARGUMENTS = {("git", "status"), ("pwd",)}
-# git subcommands that only read when none of GIT_WRITING_OPTIONS is given; approvable exactly.
-GIT_READ_SUBCOMMANDS = {"status", "diff", "log", "show", "rev-parse", "ls-files"}
-GIT_WRITING_OPTIONS = re.compile(r"^(--output|-o|--ext-diff|--textconv|--open-files-in-pager|-O)")
-# Gradle tasks that only verify: a task whose last camel-case word is Test or Check, or check and
-# verifyAll themselves. No option is approved, since --init-script, -I or -D can run any code.
-GRADLE_VERIFICATION_TASK = re.compile(r"^(:?[A-Za-z0-9_-]+:)*:?(check|verifyAll|[a-z][A-Za-z0-9]*(Test|Check))$")
+# git options before the subcommand that only stop the pager.
+GIT_GLOBAL_OPTIONS = {"--no-pager", "-P"}
+# Options of the read-only git subcommands, matched whole, so neither quoting nor an abbreviation
+# (parse-options accepts any unambiguous prefix of a long option) can pass a denied one. Options that write a file
+# (--output), run a program (--ext-diff, --textconv), read outside the repository (--no-index, -O,
+# --exclude-from) or change the repository are not here.
+_DIFF_OPTIONS = (
+    "-p --patch -s --no-patch --stat --shortstat --numstat --name-only --name-status --summary --raw "
+    "--no-color --color=never -w --ignore-all-space -b --ignore-space-change --ignore-blank-lines "
+    "--word-diff --color-words -M -C --find-renames --no-renames --minimal --patience --histogram "
+    "--full-index --abbrev --exit-code --quiet --check -R --relative --no-ext-diff --no-textconv -z"
+).split()
+_LOG_OPTIONS = (
+    "--oneline --graph --decorate --no-decorate --all --branches --tags --remotes --reverse "
+    "--first-parent --merges --no-merges --abbrev-commit --follow --date-order --topo-order "
+    "--left-right --boundary --source -n"
+).split()
+GIT_READ_OPTIONS = {
+    "status": set(
+        "-s --short -b --branch --porcelain --porcelain=v1 --porcelain=v2 --long -v --verbose -u -uno "
+        "-unormal -uall --untracked-files --untracked-files=no --untracked-files=normal "
+        "--untracked-files=all --ignored --ignore-submodules -z --show-stash --ahead-behind "
+        "--no-ahead-behind --renames --no-renames".split()
+    ),
+    "diff": set(_DIFF_OPTIONS + ["--cached", "--staged", "--merge-base"]),
+    "log": set(_DIFF_OPTIONS + _LOG_OPTIONS),
+    "show": set(_DIFF_OPTIONS + ["--oneline", "--abbrev-commit", "--decorate", "--no-decorate"]),
+    "rev-parse": set(
+        "--show-toplevel --show-prefix --show-cdup --git-dir --absolute-git-dir --git-common-dir "
+        "--is-inside-work-tree --is-inside-git-dir --abbrev-ref --symbolic-full-name --verify -q "
+        "--quiet --short --all --branches --tags".split()
+    ),
+    "ls-files": set(
+        "-c --cached -d --deleted -m --modified -o --others -i --ignored -s --stage -u --unmerged -k "
+        "--killed --directory --no-empty-directory --exclude-standard --error-unmatch -z -t -v -f "
+        "--full-name --eol --deduplicate".split()
+    ),
+}
+# Options that take a value in the same word; the value is text, not a path.
+GIT_READ_VALUE_OPTIONS = {
+    "diff": re.compile(r"^(-U\d+|--unified=\d+|--stat=\d+(,\d+)*|--diff-filter=[ACDMRTUXB]+)$"),
+    "log": re.compile(
+        r"^(-\d+|-n\d+|--max-count=\d+|--skip=\d+|-U\d+|--unified=\d+|--stat=\d+(,\d+)*"
+        r"|--(since|until|after|before|author|committer|grep|format|pretty|date)=.*)$"
+    ),
+    "show": re.compile(r"^(-U\d+|--unified=\d+|--stat=\d+(,\d+)*|--(format|pretty)=.*)$"),
+    "rev-parse": re.compile(r"^--short=\d+$"),
+}
 GRADLE_WRAPPERS = {"./gradlew", "gradlew"}
+# Gradle options that change only what is printed or whether the build stops at the first failure.
+# --init-script, -I, -D, -P and the rest can run any code or change what a task does.
+GRADLE_OPTIONS = {"-q", "--quiet", "-w", "--warn", "-i", "--info", "--continue", "--offline", "--stacktrace", "-s", "--console=plain"}
+# Tasks that only verify or describe the build, named in full. A suffix rule cannot work: device tasks
+# (connectedCheck, installDebugAndroidTest) end in Check or Test too, and Gradle runs the task an
+# abbreviation such as cCheck expands to.
+GRADLE_READ_ONLY_TASKS = {
+    "check",
+    "verifyAll",
+    "help",
+    "tasks",
+    "test",
+    "allTests",
+    "spotlessCheck",
+    "apiCheck",
+    "desktopTest",
+    "testDebugUnitTest",
+    "testReleaseUnitTest",
+    "iosSimulatorArm64Test",
+}
+# check, :check, cameraK:check or :cameraK:desktopTest; a project name starts with a letter.
+GRADLE_TASK_PATH = re.compile(r"^:?([A-Za-z][A-Za-z0-9_-]*:)*(?P<task>[A-Za-z][A-Za-z0-9]*)$")
+
+
+def outside_repository(word: str) -> bool:
+    """Whether a path argument is absolute, in a home directory or climbs out with `..`."""
+    return word.startswith(("/", "~")) or ".." in word.split("/")
+
+
+def git_rule_problem(words: List[str]) -> str | None:
+    while words and words[0] in GIT_GLOBAL_OPTIONS:
+        words = words[1:]
+    if not words or words[0] not in GIT_READ_OPTIONS:
+        return f"approves '{' '.join(['git', *words])}', which is not on the read-only allowlist"
+    subcommand, arguments = words[0], words[1:]
+    value_options = GIT_READ_VALUE_OPTIONS.get(subcommand)
+    paths_only = False
+    for word in arguments:
+        if not paths_only and word == "--":
+            paths_only = True
+        elif not paths_only and word.startswith("-"):
+            if word not in GIT_READ_OPTIONS[subcommand] and not (value_options and value_options.match(word)):
+                return f"approves git {subcommand} with '{word}', which is not on its read-only option allowlist"
+        elif outside_repository(word):
+            return f"approves git {subcommand} reading '{word}', outside the repository"
+    return None
+
+
+def gradle_rule_problem(words: List[str]) -> str | None:
+    for word in words:
+        if word.startswith("-"):
+            if word not in GRADLE_OPTIONS:
+                return f"approves Gradle with the option '{word}', which is not on the allowlist"
+            continue
+        match = GRADLE_TASK_PATH.match(word)
+        if not match or match.group("task") not in GRADLE_READ_ONLY_TASKS:
+            return f"approves the Gradle task '{word}', which is not on the read-only task allowlist"
+    if all(word.startswith("-") for word in words):
+        return "approves a Gradle invocation with no task"
+    return None
 
 
 def shell_rule_problem(specifier: str) -> str | None:
@@ -96,28 +209,41 @@ def shell_rule_problem(specifier: str) -> str | None:
     if command.strip() in ("", "*"):
         return "approves every shell command"
     if SHELL_METACHARACTERS.search(command):
-        return "approves a command with shell operators or a wildcard inside it"
-    words = command.split()
+        return "approves a command with shell operators, a glob or a wildcard inside it"
+    # Split as the shell would, so quoting cannot hide an option from the allowlist.
+    try:
+        words = shlex.split(command)
+    except ValueError as error:
+        return f"does not tokenise as a shell command ({error})"
+    if not words or "" in words:
+        return "approves a command with an empty word"
     if wildcard:
         if tuple(words) in READ_ONLY_ANY_ARGUMENTS:
             return None
-        return f"approves '{command.strip()}' with any arguments; only {sorted(' '.join(w) for w in READ_ONLY_ANY_ARGUMENTS)} may take a wildcard"
-    if words[0] == "git" and len(words) > 1 and words[1] in GIT_READ_SUBCOMMANDS:
-        if any(GIT_WRITING_OPTIONS.match(word) for word in words[2:]):
-            return "approves a git command that writes files or runs a program through its options"
-        return None
-    if words[0] in GRADLE_WRAPPERS and len(words) > 1:
-        if all(GRADLE_VERIFICATION_TASK.match(word) and "publish" not in word.lower() for word in words[1:]):
-            return None
-        return "approves a Gradle invocation that is not only verification tasks"
+        return f"approves '{' '.join(words)}' with any arguments; only {sorted(' '.join(w) for w in READ_ONLY_ANY_ARGUMENTS)} may take a wildcard"
+    if words[0] == "git":
+        return git_rule_problem(words[1:])
+    if words[0] in GRADLE_WRAPPERS:
+        return gradle_rule_problem(words[1:])
     if tuple(words) in READ_ONLY_ANY_ARGUMENTS:
         return None
-    return f"approves '{command.strip()}', which is not on the read-only allowlist"
+    return f"approves '{' '.join(words)}', which is not on the read-only allowlist"
+
+
+def path_rule_problem(specifier: str | None) -> str | None:
+    if not specifier:
+        return "approves every file on the machine"
+    if specifier.startswith("/") or ".." in specifier.split("/"):
+        return "names a path that is absolute, relative to the settings file, or outside the repository; use a path relative to the repository"
+    return None
 
 
 def agent_rule_problems(rules: List[str]) -> List[str]:
     problems = []
     for rule in rules:
+        if rule.strip().startswith("mcp__"):
+            problems.append(f"'{rule}' approves an MCP tool; MCP servers and their approvals are personal")
+            continue
         match = RULE.match(rule.strip())
         if not match:
             problems.append(f"'{rule}' is not a Tool(specifier) rule")
@@ -125,27 +251,88 @@ def agent_rule_problems(rules: List[str]) -> List[str]:
         tool, specifier = match.group("tool"), match.group("specifier")
         if tool in FILE_WRITING_TOOLS:
             problems.append(f"'{rule}' approves writing files")
+            continue
+        if tool not in APPROVABLE_TOOLS:
+            problems.append(f"'{rule}' approves {tool}, which is not on the tool allowlist {sorted(APPROVABLE_TOOLS)}")
+            continue
         if specifier and PERSONAL_PATH.search(specifier):
             problems.append(f"'{rule}' names a path outside the repository")
-        if tool == "Bash":
-            problem = shell_rule_problem(specifier or "")
-            if problem:
-                problems.append(f"'{rule}' {problem}")
+        problem = shell_rule_problem(specifier or "") if tool == "Bash" else path_rule_problem(specifier)
+        if problem:
+            problems.append(f"'{rule}' {problem}")
+    return problems
+
+
+# Committed settings may set only these. Hooks, apiKeyHelper and the other helpers, statusLine, env (which
+# can point GIT_EXTERNAL_DIFF or a pager at a program the approved git commands then run), MCP switches
+# and additionalDirectories run programs or widen access for every contributor with no prompt, so they
+# belong in personal settings.
+SETTINGS_KEYS = {"$schema", "permissions", "hooks"}
+PERMISSIONS_KEYS = {"allow", "ask", "deny", "defaultMode", "disableBypassPermissionsMode"}
+# A prompt hook asks the model a question; every other hook type runs a command, calls a URL or starts
+# an agent.
+HOOK_TYPES = {"prompt"}
+
+
+def hook_problems(hooks: object, name: str) -> List[str]:
+    if not isinstance(hooks, dict):
+        return [f"{name}: hooks is not an object"]
+    problems = []
+    for event, groups in hooks.items():
+        if not isinstance(groups, list) or not all(isinstance(group, dict) for group in groups):
+            problems.append(f"{name}: hooks.{event} is not a list of matcher objects")
+            continue
+        for group in groups:
+            entries = group.get("hooks", [])
+            if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
+                problems.append(f"{name}: hooks.{event} has a hooks entry that is not a list of objects")
+                continue
+            for entry in entries:
+                if entry.get("type") not in HOOK_TYPES:
+                    problems.append(
+                        f"{name}: the {event} hook of type {entry.get('type')!r} runs with no prompt; only {sorted(HOOK_TYPES)} hooks may be committed"
+                    )
     return problems
 
 
 def agent_settings_problems(settings: object, name: str) -> List[str]:
     if not isinstance(settings, dict):
         return [f"{name} is not a JSON object"]
+    problems = [
+        f"{name}: '{key}' is not a key committed settings may set ({sorted(SETTINGS_KEYS)}); it belongs in personal settings"
+        for key in settings
+        if key not in SETTINGS_KEYS
+    ]
+    if "hooks" in settings:
+        problems += hook_problems(settings["hooks"], name)
     permissions = settings.get("permissions", {})
     if not isinstance(permissions, dict):
-        return [f"{name}: permissions is not an object"]
+        return problems + [f"{name}: permissions is not an object"]
+    problems += [
+        f"{name}: permissions.{key} is not a permission committed settings may set ({sorted(PERMISSIONS_KEYS)})"
+        for key in permissions
+        if key not in PERMISSIONS_KEYS
+    ]
     if permissions.get("defaultMode") not in (None, "default", "plan"):
-        return [f"{name}: defaultMode {permissions.get('defaultMode')} skips prompts for every contributor"]
+        problems.append(f"{name}: defaultMode {permissions.get('defaultMode')} skips prompts for every contributor")
+    for key in ("ask", "deny"):
+        rules = permissions.get(key, [])
+        if not isinstance(rules, list) or not all(isinstance(rule, str) for rule in rules):
+            problems.append(f"{name}: permissions.{key} is not a list of strings")
     rules = permissions.get("allow", [])
     if not isinstance(rules, list) or not all(isinstance(rule, str) for rule in rules):
-        return [f"{name}: permissions.allow is not a list of strings"]
-    return [f"{name}: {problem}" for problem in agent_rule_problems(rules)]
+        return problems + [f"{name}: permissions.allow is not a list of strings"]
+    return problems + [f"{name}: {problem}" for problem in agent_rule_problems(rules)]
+
+
+def mcp_config_problems(config: object, name: str) -> List[str]:
+    """A committed .mcp.json may declare no server: each one runs a program, and MCP rules are personal."""
+    if not isinstance(config, dict):
+        return [f"{name} is not a JSON object"]
+    servers = config.get("mcpServers", {})
+    if not isinstance(servers, dict):
+        return [f"{name}: mcpServers is not an object"]
+    return [f"{name} declares the MCP server '{server}'; MCP servers belong in personal configuration" for server in servers]
 
 
 # Each rule here must be rejected on its own, so a rule that catches only some of them still fails.
@@ -251,8 +438,8 @@ AGENT_CONFIGS_TO_ACCEPT = [
 
 
 def agent_config_problems(name: str, config: object) -> List[str]:
-    if Path(name).name == ".mcp.json":
-        return []
+    if Path(name).name == MCP_CONFIG:
+        return mcp_config_problems(config, name)
     return agent_settings_problems(config, name)
 
 
@@ -276,7 +463,7 @@ def check_agent_permissions() -> List[str]:
         raise CheckError("; ".join(fixture_errors))
 
     problems = []
-    for path in tracked(".claude/*"):
+    for path in tracked(".claude/*") + tracked(MCP_CONFIG):
         name = path.relative_to(ROOT).as_posix()
         if name == LOCAL_AGENT_SETTINGS:
             problems.append(f"{name} is tracked; personal approvals belong in the gitignored local file")
@@ -284,11 +471,11 @@ def check_agent_permissions() -> List[str]:
         if path.suffix != ".json":
             continue
         try:
-            settings = json.loads(path.read_text())
+            config = json.loads(path.read_text())
         except ValueError as error:
             problems.append(f"{name} is not valid JSON: {error}")
             continue
-        problems += agent_settings_problems(settings, name)
+        problems += agent_config_problems(name, config)
     # Only the repository's own .gitignore counts; a contributor's global excludes file does not.
     if git("-c", "core.excludesFile=/dev/null", "check-ignore", "-q", "--no-index", LOCAL_AGENT_SETTINGS).returncode != 0:
         problems.append(f"{LOCAL_AGENT_SETTINGS} is not gitignored, so personal approvals can be committed")
