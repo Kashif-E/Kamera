@@ -141,7 +141,7 @@ class VideoFileOutcomeTest {
     @Test
     fun aFailedPhotosImportIsAnErrorAndKeepsTheFile() {
         use(Directory.PICTURES)
-        rig.controller.videoLibraryImport = { null }
+        rig.controller.photosLibrary = FakePhotosLibrary(FakePhotosLibrary.Answer.Failed(photosError()))
         val started = startedRecording()
 
         val result = stop(started, error = null)

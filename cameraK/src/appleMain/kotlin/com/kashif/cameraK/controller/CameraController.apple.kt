@@ -58,8 +58,6 @@ import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.Foundation.timeIntervalSince1970
-import platform.Photos.PHAssetChangeRequest
-import platform.Photos.PHPhotoLibrary
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import platform.UIKit.UIImagePNGRepresentation
@@ -850,36 +848,10 @@ actual class CameraController internal constructor(
 
     @OptIn(ExperimentalForeignApi::class)
     private fun saveToPhotosLibrary(filePath: String, imageData: NSData): String? {
-        var savedAssetId: String? = null
-        var saveError: String? = null
-
-        // Save to Photos library synchronously (blocking the capture flow)
-        val semaphore = platform.darwin.dispatch_semaphore_create(0)
-
-        PHPhotoLibrary.sharedPhotoLibrary().performChanges(
-            changeBlock = {
-                val creationRequest = PHAssetChangeRequest.creationRequestForAssetFromImageAtFileURL(
-                    NSURL.fileURLWithPath(filePath),
-                )
-                savedAssetId = creationRequest?.placeholderForCreatedAsset?.localIdentifier
-            },
-            completionHandler = { success, error ->
-                if (!success || error != null) {
-                    saveError = error?.localizedDescription ?: "Failed to save to Photos"
-                    CameraKLogger.e("CameraK", "CameraK: Failed to save to Photos: ${saveError ?: "Unknown error"}")
-                }
-                platform.darwin.dispatch_semaphore_signal(semaphore)
-            },
-        )
-
-        platform.darwin.dispatch_semaphore_wait(semaphore, platform.darwin.DISPATCH_TIME_FOREVER)
-
-        // Return the asset identifier or error
-        return if (saveError == null && savedAssetId != null) {
-            "ph://$savedAssetId" // Use custom scheme to indicate Photos library asset
-        } else {
-            null
+        val savedAssetId = awaitPhotosImport { completion ->
+            photosLibrary.importImage(NSURL.fileURLWithPath(filePath), completion)
         }
+        return savedAssetId?.let { "ph://$it" } // Use custom scheme to indicate Photos library asset
     }
 
     @OptIn(ExperimentalForeignApi::class)
@@ -889,51 +861,39 @@ actual class CameraController internal constructor(
         if (directory == Directory.DOCUMENTS) return result
 
         val filePath = result.filePath
-        val savedAssetId = videoLibraryImport(filePath)
-            // The video stays at its temporary path, so nothing recorded is lost.
-            ?: return VideoCaptureResult.Error(Exception("Saving the video to the Photos library failed"))
+        val savedAssetId = awaitPhotosImport { completion ->
+            photosLibrary.importVideo(NSURL.fileURLWithPath(filePath), completion)
+        }
+        // The video stays at its temporary path, so nothing recorded is lost.
+        savedAssetId ?: return VideoCaptureResult.Error(Exception("Saving the video to the Photos library failed"))
 
         // Clean up temp file after saving to Photos
         NSFileManager.defaultManager.removeItemAtPath(filePath, null)
         return VideoCaptureResult.Success("ph://$savedAssetId", result.durationMs)
     }
 
-    /**
-     * Imports the video at a path into Photos and returns the new asset's local identifier, or null
-     * when the import failed. Test seam: tests replace it, since the simulator's Photos library asks
-     * for permission no test can grant.
-     */
-    internal var videoLibraryImport: (String) -> String? = ::importVideoToPhotos
+    /** Test seam: the Photos library photos and recordings are imported into. */
+    internal var photosLibrary: PhotosLibrary = SystemPhotosLibrary
 
-    @OptIn(ExperimentalForeignApi::class)
-    private fun importVideoToPhotos(filePath: String): String? {
+    /** How long a capture or a recording's stop waits for a Photos import before reporting it failed. */
+    internal var photosImportTimeoutMs: Long = 60_000
+
+    /** Starts an import with [start] and waits for its completion; the asset's identifier, or null. */
+    private fun awaitPhotosImport(start: (completion: (String?, NSError?) -> Unit) -> Unit): String? {
         var savedAssetId: String? = null
-        var saveError: String? = null
-
         val semaphore = platform.darwin.dispatch_semaphore_create(0)
-
-        PHPhotoLibrary.sharedPhotoLibrary().performChanges(
-            changeBlock = {
-                val creationRequest = PHAssetChangeRequest.creationRequestForAssetFromVideoAtFileURL(
-                    NSURL.fileURLWithPath(filePath),
+        start { localIdentifier, error ->
+            if (localIdentifier == null) {
+                CameraKLogger.e(
+                    "CameraK",
+                    "CameraK: Failed to save to Photos: ${error?.localizedDescription ?: "Unknown error"}",
                 )
-                savedAssetId = creationRequest?.placeholderForCreatedAsset?.localIdentifier
-            },
-            completionHandler = { success, error ->
-                if (!success || error != null) {
-                    saveError = error?.localizedDescription ?: "Failed to save video to Photos"
-                    CameraKLogger.e(
-                        "CameraK",
-                        "CameraK: Failed to save video to Photos: $saveError",
-                    )
-                }
-                platform.darwin.dispatch_semaphore_signal(semaphore)
-            },
-        )
-
+            }
+            savedAssetId = localIdentifier
+            platform.darwin.dispatch_semaphore_signal(semaphore)
+        }
         platform.darwin.dispatch_semaphore_wait(semaphore, platform.darwin.DISPATCH_TIME_FOREVER)
-
-        return savedAssetId.takeIf { saveError == null }
+        return savedAssetId
     }
 
     private fun FlashMode.toAVCaptureFlashMode(): AVCaptureFlashMode = when (this) {
