@@ -20,6 +20,18 @@ import com.kashif.cameraK.utils.CameraKLogger
 internal class AndroidLensDescriptor(val info: LensInfo, val isPhysicalChild: Boolean, val parentLogicalId: String?)
 
 /**
+ * The built-in lens a switch to [deviceType] on [lens] binds, or null when [lens] has no lens of that
+ * type. External cameras are never a target: the selector requires a lens facing, and CameraX never
+ * offers an external camera for one.
+ */
+internal fun List<AndroidLensDescriptor>.deviceTypeTarget(
+    lens: CameraLens,
+    deviceType: CameraDeviceType,
+): AndroidLensDescriptor? = firstOrNull {
+    it.info.lens == lens && !it.info.isExternal && it.info.deviceType == deviceType
+}
+
+/**
  * Camera2 snapshot of every lens on the device. Top-level ids come from
  * [CameraManager.cameraIdList]; a logical multi-camera's physical sub-lenses (which are
  * NOT in that list) are expanded via physicalCameraIds and read directly with

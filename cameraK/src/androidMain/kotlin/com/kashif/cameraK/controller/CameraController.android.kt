@@ -48,6 +48,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.kashif.cameraK.capabilities.AndroidLensDescriptor
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensEnumerator
+import com.kashif.cameraK.capabilities.deviceTypeTarget
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -458,9 +459,7 @@ actual class CameraController internal constructor(
             return builder.build()
         }
 
-        val target = lensSnapshot().firstOrNull {
-            it.info.lens == cameraLens && !it.info.isExternal && it.info.deviceType == cameraDeviceType
-        }
+        val target = lensSnapshot().deviceTypeTarget(cameraLens, cameraDeviceType)
         if (target == null) {
             CameraKLogger.w("CameraK", "$cameraDeviceType not available for $cameraLens, using default camera")
             return builder.build()
