@@ -70,7 +70,6 @@ kotlin {
             api(libs.camera.lifecycle)
             api(libs.camera.video)
             implementation(libs.androidx.activityCompose)
-            implementation(libs.androidx.startup.runtime)
         }
     }
 

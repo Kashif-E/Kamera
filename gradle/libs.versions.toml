@@ -21,7 +21,6 @@ compose-material3 = "1.9.0"
 coil-mp-version = "3.5.0"
 lucide-icons = "2.2.1"
 androidx-activityCompose = "1.13.0"
-startupRuntime = "1.2.0"
 # The JavaCPP release train: javacv and javacpp carry its number, each preset binding its native
 # library's version before it. These are the Java bindings only; apps add the natives they ship.
 javacpp = "1.5.12"
@@ -44,7 +43,6 @@ paparazzi = "2.0.0-alpha02"
 [libraries]
 
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
-androidx-startup-runtime = { module = "androidx.startup:startup-runtime", version.ref = "startupRuntime" }
 atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
 camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
 camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }

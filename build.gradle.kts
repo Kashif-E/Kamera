@@ -266,7 +266,7 @@ val forbiddenApiExports =
         ApiExportRule(
             "cameraK",
             Regex("""^androidx\.startup:startup-runtime$"""),
-            "only core's internal AppContextInitializer uses androidx.startup",
+            "CameraK uses no androidx.startup; apps that need it declare it",
         ),
         ApiExportRule(
             null,

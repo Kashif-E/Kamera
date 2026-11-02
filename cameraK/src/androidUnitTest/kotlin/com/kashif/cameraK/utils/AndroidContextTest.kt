@@ -1,7 +1,6 @@
 package com.kashif.cameraK.utils
 
 import android.app.Activity
-import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.test.core.app.ApplicationProvider
@@ -27,14 +26,5 @@ class AndroidContextTest {
     @Test
     fun getActivityOrNull_returnsNullForTheApplicationContext() {
         assertNull(ApplicationProvider.getApplicationContext<Context>().getActivityOrNull())
-    }
-
-    @Test
-    fun appContextInitializer_makesTheApplicationContextAvailable() {
-        val application = ApplicationProvider.getApplicationContext<Application>()
-
-        AppContextInitializer().create(application)
-
-        assertSame(application, AppContext.get())
     }
 }
