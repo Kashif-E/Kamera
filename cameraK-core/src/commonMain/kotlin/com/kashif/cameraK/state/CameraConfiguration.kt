@@ -33,6 +33,16 @@ import com.kashif.cameraK.frames.FrameFormat
  *   Representation note: iOS and the Android byte-array path bake the flip into the pixels; the
  *   Android file path (`takePictureToFile`, the fast path) records it as an EXIF orientation tag,
  *   which EXIF-aware viewers honor but raw-pixel consumers may ignore.
+ * @property cameraId A `LensInfo.id` from the capabilities. When set it wins over [cameraLens] and
+ *   [cameraDeviceType]. Null selects by lens and device type, as 1.x does.
+ * @property outputDirectory An app-owned directory for stills and, by default, recordings. Null is
+ *   the platform's app-owned default.
+ * @property frameAnalysis Bind the frame-analysis output at start. Set automatically when a plugin
+ *   that needs frames is attached at creation; a later registration binds it once.
+ * @property analysisResolution The size of analysis frames. Null follows the preview's aspect ratio.
+ * @property analysisFormat The pixel format analysis frames arrive in, applied at bind.
+ *
+ * The 2.0 engines read the last five fields; the 1.x controllers do not.
  *
  * @example
  * ```kotlin
@@ -57,10 +67,9 @@ data class CameraConfiguration(
     val targetResolution: Pair<Int, Int>? = null,
     val directory: Directory = Directory.DOCUMENTS,
     val mirrorFrontCamera: Boolean = false,
-    // S1' stubs: placeholder defaults until the fields get theirs.
-    val cameraId: String? = "",
-    val outputDirectory: String? = "",
-    val frameAnalysis: Boolean = true,
+    val cameraId: String? = null,
+    val outputDirectory: String? = null,
+    val frameAnalysis: Boolean = false,
     val analysisResolution: Resolution? = null,
-    val analysisFormat: FrameFormat = FrameFormat.RGBA_8888,
+    val analysisFormat: FrameFormat = FrameFormat.YUV_420,
 )
