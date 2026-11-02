@@ -17,6 +17,9 @@ import kotlin.test.fail
  *   the default, and DCIM), and the image saver plugin.
  * - NSPhotoLibraryUsageDescription: RequestStoragePermission, which asks for read-write access, and
  *   reading a saved ph:// photo back.
+ *
+ * Saving only to Directory.DOCUMENTS removes the need for the add-only key, not for the read-write
+ * one: an app that calls RequestStoragePermission still needs NSPhotoLibraryUsageDescription.
  */
 class IosInstallDocsTest {
     private val repoRoot: File = generateSequence(File("").absoluteFile) { it.parentFile }
@@ -46,15 +49,40 @@ class IosInstallDocsTest {
         assertTrue(missing.isEmpty(), "$doc's iOS setup lacks a usage description for $missing")
     }
 
-    @Test
-    fun theReadmesIosSetupDeclaresEveryUsageDescription() {
-        val doc = "README.MD"
-        assertDeclaresEveryKey(doc, section(doc, Regex("\\*\\*iOS\\*\\*.*"), Regex("(#+ |\\*\\*[A-Z]).*")))
+    /**
+     * Every sentence that lets a DOCUMENTS-only app drop a Photos key keeps NSPhotoLibraryUsageDescription
+     * for an app that calls RequestStoragePermission.
+     */
+    private fun assertDocumentsOnlyKeepsTheReadWriteKey(doc: String, section: String) {
+        val claims = section.lines()
+            .flatMap { it.split(Regex("(?<=\\.)\\s+")) }
+            .filter { "Directory.DOCUMENTS" in it && "need" in it }
+        assertTrue(claims.isNotEmpty(), "$doc's iOS setup no longer says which keys a DOCUMENTS-only app needs")
+        claims.forEach { claim ->
+            assertTrue(
+                "RequestStoragePermission" in claim && "NSPhotoLibraryUsageDescription" in claim && "neither" !in claim,
+                "$doc tells a DOCUMENTS-only app it can drop a Photos key without keeping " +
+                    "NSPhotoLibraryUsageDescription for RequestStoragePermission: '$claim'",
+            )
+        }
     }
 
+    private val readme = "README.MD"
+    private val readmeIosSetup get() = section(readme, Regex("\\*\\*iOS\\*\\*.*"), Regex("(#+ |\\*\\*[A-Z]).*"))
+    private val guide = "docs/getting-started/installation.md"
+    private val guideIosSetup get() = section(guide, Regex("### iOS"), Regex("#{1,3} .*"))
+
     @Test
-    fun theInstallationGuidesIosSetupDeclaresEveryUsageDescription() {
-        val doc = "docs/getting-started/installation.md"
-        assertDeclaresEveryKey(doc, section(doc, Regex("### iOS"), Regex("#{1,3} .*")))
-    }
+    fun theReadmesIosSetupDeclaresEveryUsageDescription() = assertDeclaresEveryKey(readme, readmeIosSetup)
+
+    @Test
+    fun theInstallationGuidesIosSetupDeclaresEveryUsageDescription() = assertDeclaresEveryKey(guide, guideIosSetup)
+
+    @Test
+    fun theReadmeKeepsTheReadWriteKeyForADocumentsOnlyAppThatRequestsStoragePermission() =
+        assertDocumentsOnlyKeepsTheReadWriteKey(readme, readmeIosSetup)
+
+    @Test
+    fun theInstallationGuideKeepsTheReadWriteKeyForADocumentsOnlyAppThatRequestsStoragePermission() =
+        assertDocumentsOnlyKeepsTheReadWriteKey(guide, guideIosSetup)
 }
