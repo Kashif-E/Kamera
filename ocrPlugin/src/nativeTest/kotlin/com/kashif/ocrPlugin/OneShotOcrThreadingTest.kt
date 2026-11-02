@@ -59,6 +59,22 @@ class OneShotOcrThreadingTest {
         }
     }
 
+    @Test
+    fun visionReturningWithoutCallingBack_stillCompletes() = runBlocking<Unit> {
+        // performRequests can return false with no NSError, or return without running the handler.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val extraction = scope.async { recognizeText(ImageBitmap(8, 8)) { _, _ -> null } }
+
+            val outcome = withTimeoutOrNull(TIMEOUT_MS) { runCatching { extraction.await() } }
+
+            assertNotNull(outcome, "one-shot OCR never completed after Vision returned without calling back")
+            assertEquals("", outcome.getOrNull())
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private companion object {
         const val TIMEOUT_MS = 10_000L
     }
