@@ -143,6 +143,9 @@ class CustomCameraController(
     @Volatile
     private var currentCamera: CaptureDeviceOps? = null
 
+    /** The camera's input in the session, so a switch removes it and nothing else. Session queue only. */
+    private var videoInput: AVCaptureInput? = null
+
     @Volatile
     private var photoOutput: AVCapturePhotoOutput? = null
 
@@ -364,6 +367,7 @@ class CustomCameraController(
         val ops = session ?: return false
         return if (ops.canAddInput(input)) {
             ops.addInput(input)
+            videoInput = input
             true
         } else {
             false
@@ -518,6 +522,7 @@ class CustomCameraController(
             session = null
             photoOutput = null
             currentCamera = null
+            videoInput = null
             requestedZoom = null
             backCamera = null
             frontCamera = null
@@ -692,11 +697,11 @@ class CustomCameraController(
      * Switches to a specific camera device type (e.g. wide-angle, telephoto, ultra-wide)
      * while keeping the same camera position (front/back).
      */
-    @OptIn(ExperimentalForeignApi::class)
     fun switchToDeviceType(deviceType: CameraDeviceType) {
         dispatch_async(sessionQueue) {
             val ops = session ?: return@dispatch_async
             if (deviceType.toAVCaptureDeviceType() == null) return@dispatch_async
+            if (refusedWhileRecording("change the camera device type")) return@dispatch_async
 
             // The requested type facing the current way, falling back to either way
             val lens = if (isUsingFrontCamera) CameraLens.FRONT else CameraLens.BACK
@@ -704,97 +709,94 @@ class CustomCameraController(
                 ?: cameraDevices.find(null, deviceType)
                 ?: return@dispatch_async
 
-            val failure = reconfigureVideoInput(ops) {
-                // Remove current input
-                ops.inputs.firstOrNull()?.let(ops::removeInput)
-
-                val newInput = newDevice.makeInput()
-                    ?: throw Exception("Failed to create input for device type")
-
-                if (ops.canAddInput(newInput)) {
-                    ops.addInput(newInput)
-                    currentCamera = newDevice
-                    requestedZoom = null
-                    if (newDevice.isFront) {
-                        frontCamera = newDevice
-                    } else {
-                        backCamera = newDevice
-                    }
-                }
-            }
+            val failure = swapVideoInput(ops, newDevice)
             if (failure != null) {
                 CameraKLogger.e(TAG, "CameraK: switching camera device type failed", failure)
-            } else {
-                applyPreviewMirroring()
+                reportError(failure)
+                return@dispatch_async
             }
+            if (newDevice.isFront) frontCamera = newDevice else backCamera = newDevice
+            useCamera(newDevice)
             if (ops.isRunning) applyConfiguredTorch()
         }
     }
 
-    @OptIn(ExperimentalForeignApi::class)
     fun switchCamera() {
         dispatch_async(sessionQueue) {
             val ops = session ?: return@dispatch_async
-            val failure = reconfigureVideoInput(ops) {
-                ops.inputs.firstOrNull()?.let(ops::removeInput)
+            if (refusedWhileRecording("switch the lens")) return@dispatch_async
+            val toFront = !isUsingFrontCamera
 
-                isUsingFrontCamera = !isUsingFrontCamera
-                val switcher = lensSwitcher
-                if (switcher != null) {
-                    switcher(ops, isUsingFrontCamera)
-                } else {
-                    currentCamera = if (isUsingFrontCamera) frontCamera else backCamera
-                    requestedZoom = null
-
-                    val newCamera = currentCamera ?: throw CameraException.DeviceNotAvailable()
-
-                    val newInput = newCamera.makeInput()
-                        ?: throw CameraException.ConfigurationError("Failed to create input")
-
-                    if (ops.canAddInput(newInput)) {
-                        ops.addInput(newInput)
-                    } else {
-                        throw CameraException.ConfigurationError("Cannot add input")
-                    }
+            val switcher = lensSwitcher
+            if (switcher != null) {
+                ops.beginConfiguration()
+                try {
+                    videoInput?.let(ops::removeInput)
+                    switcher(ops, toFront)
+                } finally {
+                    ops.commitConfiguration()
                 }
+                isUsingFrontCamera = toFront
+                applyPreviewMirroring()
+                return@dispatch_async
             }
+
+            val camera = if (toFront) frontCamera else backCamera
+            val failure = if (camera == null) CameraException.DeviceNotAvailable() else swapVideoInput(ops, camera)
             if (failure != null) {
                 CameraKLogger.e(TAG, "CameraK: switching camera failed", failure)
-                reportError(
-                    failure as? CameraException
-                        ?: CameraException.ConfigurationError(failure.message ?: "Unknown error"),
-                )
-            } else {
-                applyPreviewMirroring()
+                reportError(failure)
+                return@dispatch_async
             }
+            useCamera(camera!!)
             if (ops.isRunning) applyConfiguredTorch()
         }
     }
 
     /**
-     * Runs [swap] in one configuration transaction on the session queue, stopping a running session
-     * around it, then applies queued changes and restarts. Returns what [swap] threw, if anything,
-     * after the transaction is committed and the session restarted.
+     * Refuses a lens change while a recording runs: replacing the camera input cuts the movie file
+     * output's video connection and ends the recording. Runs on the session queue.
      */
-    private fun reconfigureVideoInput(ops: CaptureSessionOps, swap: () -> Unit): Exception? {
-        val wasRunning = ops.isRunning
-        if (wasRunning) {
-            ops.stopRunning()
-        }
+    private fun refusedWhileRecording(operation: String): Boolean {
+        if (!recordingInProgress()) return false
+        CameraKLogger.w(TAG, "CameraK: cannot $operation while recording; stop the recording first")
+        reportError(CameraException.ConfigurationError("Cannot $operation while recording"))
+        return true
+    }
+
+    /**
+     * Replaces the camera input with [camera]'s in one configuration transaction. AVFoundation swaps
+     * inputs on a running session, so the session keeps running and only the camera input is
+     * touched (a microphone stays). A refused input puts the previous one back. Runs on the session
+     * queue; returns why the swap failed, or null.
+     */
+    private fun swapVideoInput(ops: CaptureSessionOps, camera: CaptureDeviceOps): CameraException? {
+        val newInput = camera.makeInput()
+            ?: return CameraException.ConfigurationError("Failed to create input")
+        val previous = videoInput
         ops.beginConfiguration()
-        val failure = try {
-            swap()
-            null
-        } catch (e: Exception) {
-            e
+        try {
+            previous?.let(ops::removeInput)
+            if (ops.canAddInput(newInput)) {
+                ops.addInput(newInput)
+                videoInput = newInput
+                return null
+            }
+            if (previous != null && ops.canAddInput(previous)) {
+                ops.addInput(previous)
+            }
+            return CameraException.ConfigurationError("Cannot add input")
         } finally {
             ops.commitConfiguration()
         }
-        processPendingConfigurations(ops)
-        if (wasRunning) {
-            ops.startRunning()
-        }
-        return failure
+    }
+
+    /** Records [camera] as the one in use after a successful swap. Runs on the session queue. */
+    private fun useCamera(camera: CaptureDeviceOps) {
+        currentCamera = camera
+        requestedZoom = null
+        isUsingFrontCamera = camera.isFront
+        applyPreviewMirroring()
     }
 
     /**

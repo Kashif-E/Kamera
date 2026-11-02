@@ -467,6 +467,10 @@ actual class CameraController internal constructor(
     actual fun getMaxZoom(): Float = customCameraController.getMaxZoom()
 
     actual fun toggleCameraLens() {
+        if (customCameraController.recordingInProgress()) {
+            CameraKLogger.w("CameraK", "CameraK: cannot switch the lens while recording; stop the recording first")
+            return
+        }
         memoryManager.updateMemoryStatus()
 
         if (memoryManager.isUnderMemoryPressure()) {
@@ -489,6 +493,10 @@ actual class CameraController internal constructor(
 
     actual fun setPreferredCameraDeviceType(deviceType: CameraDeviceType) {
         if (cameraDeviceType == deviceType) return // avoid a redundant AVCaptureSession input swap
+        if (customCameraController.recordingInProgress()) {
+            CameraKLogger.w("CameraK", "CameraK: cannot change the camera device type while recording")
+            return
+        }
         cameraDeviceType = deviceType
         customCameraController.switchToDeviceType(deviceType)
     }
