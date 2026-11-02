@@ -116,6 +116,18 @@ actual class CameraController internal constructor(
     @Volatile
     private var movieFileOutput: AVCaptureMovieFileOutput? = null
     private var videoRecordingDelegate: VideoRecordingDelegate? = null
+
+    /** Test seam: the movie-file-output calls a recording makes. */
+    internal var movieRecorder: MovieRecorder = AVMovieRecorder
+
+    /** How long startRecording waits for AVFoundation to report the recording started. */
+    internal var recordingStartTimeoutMs: Long = 10_000
+
+    /** How long stopRecording waits for AVFoundation to finish the file. */
+    internal var recordingFinishTimeoutMs: Long = 10_000
+
+    /** Whether the movie output can pause; AVCaptureFileOutput's pause exists from iOS 18. */
+    internal var pauseSupported: () -> Boolean = { isOsAtLeast(18) }
     private var videoOutputFilePath: String? = null
 
     init {
@@ -123,7 +135,7 @@ actual class CameraController internal constructor(
         // torch use; the torch is applied once the session runs and again after each lens switch.
         customCameraController.setFlashMode(flashMode.toAVCaptureFlashMode())
         customCameraController.setTorchMode(torchMode.toAVCaptureTorchMode())
-        customCameraController.recordingInProgress = { movieFileOutput?.isRecording() == true }
+        customCameraController.recordingInProgress = { movieFileOutput?.let(movieRecorder::isRecording) == true }
         customCameraController.captureOrientation = ::effectiveVideoOrientation
         // The metadata output joins the session only while a scanner is set, and the movie output only
         // for a recording: each costs memory and power and limits the formats the session can use.
@@ -572,7 +584,7 @@ actual class CameraController internal constructor(
     private suspend fun startRecordingOn(output: AVCaptureMovieFileOutput, configuration: VideoConfiguration): String =
         suspendCancellableCoroutine { cont ->
 
-            if (output.isRecording()) {
+            if (movieRecorder.isRecording(output)) {
                 cont.resume(videoOutputFilePath ?: "")
                 return@suspendCancellableCoroutine
             }
@@ -592,16 +604,10 @@ actual class CameraController internal constructor(
             delegate.onRecordingEnded = { releaseRecordingResources(output) }
             videoRecordingDelegate = delegate
 
-            // Set video orientation on the movie file output connection. Use the effective
-            // orientation so a locked orientation (setTargetOrientation) is honored for recording.
-            output.connectionWithMediaType(platform.AVFoundation.AVMediaTypeVideo)?.let { connection ->
-                if (connection.isVideoOrientationSupported()) {
-                    connection.videoOrientation = effectiveVideoOrientation()
-                }
-            }
-
+            // The effective orientation, so a locked orientation (setTargetOrientation) is honored.
+            val orientation = effectiveVideoOrientation()
             dispatch_async(dispatch_get_main_queue()) {
-                output.startRecordingToOutputFileURL(fileURL, recordingDelegate = delegate)
+                movieRecorder.start(output, fileURL, orientation, delegate)
             }
 
             cont.resume(filePath)
@@ -611,7 +617,7 @@ actual class CameraController internal constructor(
         val output = movieFileOutput
         val delegate = videoRecordingDelegate
 
-        if (output == null || delegate == null || !output.isRecording()) {
+        if (output == null || delegate == null || !movieRecorder.isRecording(output)) {
             cont.resume(VideoCaptureResult.Error(Exception("No active recording")))
             return@suspendCancellableCoroutine
         }
@@ -627,7 +633,7 @@ actual class CameraController internal constructor(
         }
 
         dispatch_async(dispatch_get_main_queue()) {
-            output.stopRecording()
+            movieRecorder.stop(output)
         }
     }
 
@@ -635,11 +641,11 @@ actual class CameraController internal constructor(
     // AVCaptureFileOutput calls are effectively no-ops, so the file keeps recording continuously
     // while the UI shows "paused". Real pause would require segmented recording + concatenation.
     actual suspend fun pauseRecording() {
-        movieFileOutput?.pauseRecording()
+        movieFileOutput?.let(movieRecorder::pause)
     }
 
     actual suspend fun resumeRecording() {
-        movieFileOutput?.resumeRecording()
+        movieFileOutput?.let(movieRecorder::resume)
     }
 
     @OptIn(ExperimentalForeignApi::class)
