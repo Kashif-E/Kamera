@@ -65,6 +65,7 @@ import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -172,7 +173,6 @@ actual class CameraController internal constructor(
     private val imageCaptureListeners = mutableListOf<(ByteArray) -> Unit>()
 
     private val memoryManager = MemoryManager
-    private val pendingCaptures = atomic(0)
 
     // Set once by cleanup(). Every main-executor callback (provider ready, capture saved, recording
     // finalized) checks it first, so a callback that lands after release cannot rebind the camera,
@@ -184,6 +184,10 @@ actual class CameraController internal constructor(
     private val inFlightCaptures: MutableSet<CancellableContinuation<ImageCaptureResult>> =
         Collections.newSetFromMap(ConcurrentHashMap())
     private val maxConcurrentCaptures = 3
+
+    // One permit per capture in flight. Each capture gives its permit back exactly once, through
+    // its CaptureSlot, whichever of success, error or cancellation settles it first.
+    private val captureSlots = Semaphore(maxConcurrentCaptures)
     private val stopFinalizeTimeoutMs = 5000L
 
     // Hardware doesn't change at runtime; enumerate once.
@@ -560,18 +564,27 @@ actual class CameraController internal constructor(
             cont.resume(ImageCaptureResult.Error(controllerReleased()))
             return@suspendCancellableCoroutine
         }
-        if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
-            pendingCaptures.decrementAndGet()
+        if (!captureSlots.tryAcquire()) {
             CameraKLogger.w("CameraK", "Burst queue full, dropping frame")
             cont.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
             return@suspendCancellableCoroutine
         }
-
-        performCaptureToFile(cont)
-
+        val slot = CaptureSlot()
+        // Registered before the capture starts, so a cancellation at any point releases the slot.
         cont.invokeOnCancellation {
             inFlightCaptures.remove(cont)
-            pendingCaptures.decrementAndGet()
+            slot.release()
+        }
+
+        performCaptureToFile(cont, slot)
+    }
+
+    /** A capture's hold on one of [captureSlots]; the first [release] gives it back, later ones do nothing. */
+    private inner class CaptureSlot {
+        private val settled = atomic(false)
+
+        fun release() {
+            if (settled.compareAndSet(false, true)) captureSlots.release()
         }
     }
 
@@ -587,9 +600,9 @@ actual class CameraController internal constructor(
      * Perform fast file-based capture without ByteArray processing.
      * Directly saves to final destination and returns file path.
      */
-    private fun performCaptureToFile(continuation: CancellableContinuation<ImageCaptureResult>) {
+    private fun performCaptureToFile(continuation: CancellableContinuation<ImageCaptureResult>, slot: CaptureSlot) {
         val capture = imageCapture ?: run {
-            pendingCaptures.decrementAndGet()
+            slot.release()
             continuation.resume(ImageCaptureResult.Error(Exception("ImageCapture use case is not initialized.")))
             return
         }
@@ -600,7 +613,7 @@ actual class CameraController internal constructor(
             if (directory.isGallery) null to galleryImageValues() else createFinalOutputFile() to null
         } catch (e: java.io.IOException) {
             CameraKLogger.e(TAG, "Creating the capture file failed", e)
-            pendingCaptures.decrementAndGet()
+            slot.release()
             continuation.resume(ImageCaptureResult.Error(e))
             return
         }
@@ -621,7 +634,7 @@ actual class CameraController internal constructor(
             ContextCompat.getMainExecutor(context),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    pendingCaptures.decrementAndGet()
+                    slot.release()
                     val galleryUri = if (outputFile == null) output.savedUri else null
                     if (released.value) {
                         // cleanup() already told the caller this capture failed; don't leave an
@@ -654,7 +667,7 @@ actual class CameraController internal constructor(
 
                 override fun onError(exc: ImageCaptureException) {
                     CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
-                    pendingCaptures.decrementAndGet()
+                    slot.release()
                     outputFile?.delete() // Clean up failed capture file
                     val reportError = {
                         if (inFlightCaptures.remove(continuation)) {
