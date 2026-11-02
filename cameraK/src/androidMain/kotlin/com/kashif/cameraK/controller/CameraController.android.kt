@@ -639,6 +639,8 @@ actual class CameraController internal constructor(
             inFlightCaptures.remove(cont)
             slot.release()
         }
+        // A caller that had already left was cancelled on entry, and the handler above released its slot.
+        if (!cont.isActive) return@suspendCancellableCoroutine
 
         performCaptureToFile(cont, slot)
     }
