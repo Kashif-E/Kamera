@@ -6,12 +6,22 @@ package com.kashif.cameraK.enums
  * - RATIO_4_3: Standard 4:3 aspect ratio (default on most devices)
  * - RATIO_16_9: Widescreen 16:9 aspect ratio
  * - RATIO_9_16: Portrait 9:16 aspect ratio (useful for stories, full-screen vertical content)
- * - RATIO_1_1: Square 1:1 aspect ratio
+ * - RATIO_1_1: Square 1:1 aspect ratio. Costly on Android, see [RATIO_1_1].
  */
 enum class AspectRatio {
     RATIO_4_3,
     RATIO_16_9,
     RATIO_9_16,
+
+    /**
+     * Square 1:1 aspect ratio.
+     *
+     * On Android, CameraX has no 1:1 output size strategy, so CameraK binds 4:3 outputs and a 1:1
+     * ViewPort crops them. For every photo, CameraX then decodes the full-resolution JPEG, crops it
+     * and encodes it again before writing the file, which costs CPU time and memory between shutter
+     * and file and re-compresses the image. The cost has not been measured yet. To avoid it, capture
+     * [RATIO_4_3] and crop for display.
+     */
     RATIO_1_1,
 }
 
