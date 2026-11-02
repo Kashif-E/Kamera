@@ -6,7 +6,6 @@ android-minSdk = "23"
 
 atomicfu = "0.33.0"
 camera-core = "1.5.3"
-camera-extensions = "1.5.3"
 camera-lifecycle = "1.5.3"
 camera-view = "1.5.3"
 zxing = "3.5.4"
@@ -50,7 +49,6 @@ androidx-startup-runtime = { module = "androidx.startup:startup-runtime", versio
 atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
 camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camera-core" }
 camera-core = { module = "androidx.camera:camera-core", version.ref = "camera-core" }
-camera-extensions = { module = "androidx.camera:camera-extensions", version.ref = "camera-extensions" }
 camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camera-lifecycle" }
 camera-video = { module = "androidx.camera:camera-video", version.ref = "camera-core" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
