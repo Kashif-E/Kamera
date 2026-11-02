@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # A lint check moved out of the "camerak lint" group must fail the lint target, not silently stop
-# running. Moves every lint check that existed when the group became the only list out of it, keeps
-# the group non-empty with a probe, and requires a lint-target build to fail naming each one.
+# running. Moves every lint check in the root build's requiredLintChecks out of it, keeps the group
+# non-empty with a probe, and requires a lint-target build to fail naming each one.
 #
 # Plans the build with --dry-run, so it executes no task; takes one Gradle configuration.
 set -euo pipefail
@@ -12,9 +12,11 @@ trap 'rm -rf "$work"' EXIT
 
 checks=(
     :Sample:checkMacOsCameraPackaging
+    :cameraK:checkComposableStability
     :checkAgentPermissions
     :checkAndroidSdkFloor
     :checkAndroidSdkFloorRules
+    :checkBuildGateRules
     :checkBuildIntegrity
     :checkCatalogHygiene
     :checkComposeBaseline

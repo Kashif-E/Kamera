@@ -105,6 +105,94 @@ android {
     }
 }
 
+// The Compose compiler's stability reports, which checkComposableStability reads. The compiler writes
+// them only when it runs, and a compile restored from the build cache restores no report, so the desktop
+// compile is never taken from the cache and is out of date while its report is missing.
+val composeReports = layout.buildDirectory.dir("compose-reports")
+composeCompiler {
+    reportsDestination = composeReports
+}
+
+fun composablesReports(): List<File> =
+    composeReports
+        .get()
+        .asFile
+        .listFiles { file -> file.name.endsWith("-composables.txt") }
+        .orEmpty()
+        .toList()
+
+tasks.named("compileKotlinDesktop") {
+    outputs.cacheIf("checkComposableStability reads the Compose compiler report this compile writes") { false }
+    outputs.upToDateWhen { composablesReports().isNotEmpty() }
+}
+
+// Core's value types, by the simple name the Compose report prints, including the nested subtypes of
+// the sealed ones. A composable here that takes one must still see it as stable after the split strips
+// its Compose annotation in camerak-core; compose-stability.conf is what keeps it stable.
+val coreValueTypes =
+    setOf(
+        "LensInfo",
+        "CameraCapabilities",
+        "DeviceOrientation",
+        "CameraKState",
+        "Initializing",
+        "Ready",
+        "Error",
+        "CameraUIState",
+        "CameraKEvent",
+        "None",
+        "ImageCaptured",
+        "CaptureFailed",
+        "QRCodeScanned",
+        "TextRecognized",
+        "PermissionDenied",
+        "RecordingStarted",
+        "RecordingStopped",
+        "RecordingFailed",
+        "RecordingMaxDurationReached",
+        "PluginFailed",
+        "CameraConfiguration",
+        "CameraKStateHolder",
+        "VideoCaptureResult",
+        "Success",
+        "VideoConfiguration",
+    )
+
+tasks.register("checkComposableStability") {
+    group = rootProject.extra["lintGroup"] as String
+    description = "Fails if a composable parameter of a core value type is not reported stable"
+    dependsOn("compileKotlinDesktop")
+    // Every Kotlin compilation of this module writes the same report file; read it after the last one.
+    mustRunAfter(tasks.matching { it.name.startsWith("compile") && "Kotlin" in it.name })
+    doLast {
+        val reports = composablesReports()
+        check(reports.isNotEmpty()) { "The Compose compiler wrote no *-composables.txt under ${composeReports.get()}" }
+        val function = Regex("""\bfun ([^(]+)\(""")
+        val parameter = Regex("""^\s+((?:[a-z]+ )*)([^:]+): (.+?)(?: = .*)?$""")
+        val checked = mutableListOf<String>()
+        val problems = mutableListOf<String>()
+        reports.forEach { report ->
+            var composable = "?"
+            report.readLines().forEach { line ->
+                if (!line.startsWith(" ")) {
+                    function.find(line)?.let { composable = it.groupValues[1] }
+                    return@forEach
+                }
+                val (modifiers, name, type) = parameter.find(line)?.destructured ?: return@forEach
+                if (type.removeSuffix("?") !in coreValueTypes) return@forEach
+                checked += "$composable($name: $type)"
+                if ("stable" !in modifiers.split(' ')) problems += "$composable: $name: $type is not stable"
+            }
+        }
+        check(checked.isNotEmpty()) { "No composable parameter of a core value type in ${reports.map { it.name }}" }
+        check(problems.isEmpty()) {
+            "Composable parameters of core value types the Compose compiler does not report stable:\n" +
+                problems.distinct().joinToString("\n")
+        }
+        logger.lifecycle("${checked.distinct().size} composable parameters of core value types are stable")
+    }
+}
+
 // The desktop tests allocate real JavaCV frames and recorders, so they need this machine's natives.
 dependencies {
     val javacppPlatform = rootProject.extra["javacppPlatform"] as String

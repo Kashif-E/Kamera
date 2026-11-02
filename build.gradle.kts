@@ -41,6 +41,10 @@ spotless {
 
 val libraryModules =
     listOf("cameraK", "ImageSaverPlugin", "qrScannerPlugin", "ocrPlugin", "videoRecorderPlugin", "analyzerPlugin")
+// Published modules that are not libraries: test fixtures, which apps add to test source sets only.
+// Every gate that holds a published module reads publishedModules. S0' green fills this list.
+val testFixtureModules = emptyList<String>()
+val publishedModules = libraryModules + testFixtureModules
 val screenshotModule = "cameraKScreenshotTests"
 
 // Every check the lint target runs is a task in this group, in any project: verifyAll runs them all,
@@ -368,6 +372,264 @@ subprojects {
                 "$path hands consumers what it does not need:\n" + problems.distinct().joinToString("\n")
             }
         }
+    }
+}
+
+// ─── Build-gate rules ───────────────────────────────────────────────────────────────────────────
+// checkTestOnlyDependencies and checkPublishedClasspath decide through these two pure functions, so
+// checkBuildGateRules can run the same decisions against fixture classpaths in the lint target.
+
+// The test-only libraries on a module's published classpaths (configuration name to "group:name"),
+// as "configuration -> group:name".
+fun testOnlyLeaks(
+    module: String,
+    componentsByConfiguration: Map<String, List<String>>,
+): List<String> = TODO("S0' green: extracted from checkTestOnlyDependencies")
+
+// What a published module hands consumers that it should not: its published classpaths (configuration
+// name to "group:name"), what its JVM and Android *ApiElements declare (configuration name to
+// "group:name"), the bytedeco artifacts its desktopApiElements declares, and the file names of the
+// external jars on its desktopRuntimeClasspath.
+fun publishedClasspathProblems(
+    module: String,
+    componentsByConfiguration: Map<String, List<String>>,
+    apiExports: Map<String, List<String>>,
+    desktopApiBytedeco: List<String>,
+    desktopJarNames: List<String>,
+): List<String> = TODO("S0' green: extracted from checkPublishedClasspath")
+
+// The artifacts camerak-core may not hand consumers: Compose, and the AndroidX libraries that exist
+// for it. Compose UI lives in camerak.
+val composeArtifacts =
+    listOf(
+        Regex("""^androidx\.compose\."""),
+        Regex("""^org\.jetbrains\.compose\."""),
+        Regex("""^org\.jetbrains\.skiko:"""),
+        Regex("""^androidx\.activity:activity-compose$"""),
+        Regex("""^(org\.jetbrains\.)?androidx\.lifecycle:lifecycle-[a-z-]*compose"""),
+    )
+
+// The types camerak-core no longer annotates for Compose; cameraK/compose-stability.conf lists them.
+val strippedStableTypes =
+    listOf(
+        "com.kashif.cameraK.capabilities.LensInfo",
+        "com.kashif.cameraK.capabilities.CameraCapabilities",
+        "com.kashif.cameraK.state.CameraKState",
+        "com.kashif.cameraK.state.CameraKState.*",
+        "com.kashif.cameraK.state.CameraUIState",
+        "com.kashif.cameraK.state.CameraKEvent",
+        "com.kashif.cameraK.state.CameraKEvent.*",
+        "com.kashif.cameraK.state.CameraConfiguration",
+        "com.kashif.cameraK.state.CameraKStateHolder",
+        "com.kashif.cameraK.video.VideoCaptureResult",
+        "com.kashif.cameraK.video.VideoCaptureResult.*",
+        "com.kashif.cameraK.video.VideoConfiguration",
+    )
+
+// The gate rules run against fixtures, and the gates checked to cover the modules the 2.0 split adds.
+tasks.register("checkBuildGateRules") {
+    group = lintGroup
+    description =
+        "Runs the published-classpath and test-only rules against fixtures and checks the gates cover every module"
+    val splitModules = listOf("cameraK-core", "cameraK-testing")
+    val moduleTasks =
+        provider {
+            splitModules.associateWith { name ->
+                findProject(":$name")
+                    ?.tasks
+                    ?.names
+                    ?.toSet()
+                    .orEmpty()
+            }
+        }
+    val bomConstraints =
+        provider {
+            findProject(":$bomModule")
+                ?.configurations
+                ?.findByName("api")
+                ?.dependencyConstraints
+                ?.map { it.name }
+                .orEmpty()
+        }
+    val registeredStabilityFiles =
+        provider {
+            findProject(":cameraK")
+                ?.extensions
+                ?.findByType<org.jetbrains.kotlin.compose.compiler.gradle.ComposeCompilerGradlePluginExtension>()
+                ?.stabilityConfigurationFiles
+                ?.get()
+                ?.map { it.asFile.canonicalFile }
+                .orEmpty()
+        }
+    val stabilityConfig = layout.projectDirectory.file("cameraK/compose-stability.conf").asFile
+    doLast {
+        fun graphs(vararg entries: Pair<String, List<String>>) =
+            publishedGraphs.associateWith { emptyList<String>() } + entries
+
+        val coroutinesTest = "org.jetbrains.kotlinx:kotlinx-coroutines-test"
+
+        // Each case returns what is wrong with the rule, or nothing.
+        val cases: List<Pair<String, () -> List<String>>> =
+            listOf(
+                "core_graph_with_compose_fails" to {
+                    listOf(
+                        "org.jetbrains.compose.ui:ui",
+                        "androidx.activity:activity-compose",
+                        "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose",
+                    ).filter { component ->
+                        publishedClasspathProblems(
+                            "cameraK-core",
+                            graphs("releaseRuntimeClasspath" to listOf(component)),
+                            emptyMap(),
+                            emptyList(),
+                            emptyList(),
+                        ).isEmpty()
+                    }.map { "cameraK-core with $it on releaseRuntimeClasspath is accepted" }
+                },
+                "coroutines_test_on_core_graph_fails" to {
+                    if (testOnlyLeaks(
+                            "cameraK-core",
+                            graphs("desktopRuntimeClasspath" to listOf(coroutinesTest)),
+                        ).isEmpty()
+                    ) {
+                        listOf("cameraK-core with kotlinx-coroutines-test on desktopRuntimeClasspath has no leak")
+                    } else {
+                        emptyList()
+                    }
+                },
+                "camerak_testing_on_plugin_runtime_graph_fails" to {
+                    val testing = "io.github.kashif-mehmood-km:cameraK-testing"
+                    if (publishedClasspathProblems(
+                            "qrScannerPlugin",
+                            graphs("desktopRuntimeClasspath" to listOf(testing)),
+                            emptyMap(),
+                            emptyList(),
+                            emptyList(),
+                        ).isEmpty()
+                    ) {
+                        listOf("qrScannerPlugin with $testing on desktopRuntimeClasspath is accepted")
+                    } else {
+                        emptyList()
+                    }
+                },
+                "camerak_testing_may_export_coroutines_test" to {
+                    testOnlyLeaks(
+                        "cameraK-testing",
+                        publishedGraphs.associateWith { listOf(coroutinesTest, "$coroutinesTest-jvm") },
+                    ).map { "cameraK-testing leaks $it" }
+                },
+                "camerak_testing_with_kotlin_test_fails" to {
+                    if (testOnlyLeaks(
+                            "cameraK-testing",
+                            graphs("desktopRuntimeClasspath" to listOf("org.jetbrains.kotlin:kotlin-test")),
+                        ).isEmpty()
+                    ) {
+                        listOf("cameraK-testing with kotlin-test on desktopRuntimeClasspath has no leak")
+                    } else {
+                        emptyList()
+                    }
+                },
+                "bytedeco_export_rule_guards_camerak_core" to {
+                    fun exporting(
+                        module: String,
+                        bindings: List<String>,
+                    ) = publishedClasspathProblems(module, graphs(), emptyMap(), bindings, emptyList())
+                    listOfNotNull(
+                        "cameraK-core exporting ffmpeg is accepted".takeIf {
+                            exporting(
+                                "cameraK-core",
+                                listOf("ffmpeg"),
+                            ).isEmpty()
+                        },
+                        exporting("cameraK-core", listOf("javacv", "javacpp"))
+                            .takeIf { it.isNotEmpty() }
+                            ?.let { "cameraK-core exporting javacv and javacpp is rejected: $it" },
+                        "cameraK exporting javacv is accepted".takeIf {
+                            exporting(
+                                "cameraK",
+                                listOf("javacv"),
+                            ).isEmpty()
+                        },
+                    )
+                },
+                "activity_compose_export_rule_guards_camerak" to {
+                    if (publishedClasspathProblems(
+                            "cameraK",
+                            graphs(),
+                            mapOf("releaseApiElements" to listOf("androidx.activity:activity-compose")),
+                            emptyList(),
+                            emptyList(),
+                        ).isEmpty()
+                    ) {
+                        listOf("cameraK exporting activity-compose on releaseApiElements is accepted")
+                    } else {
+                        emptyList()
+                    }
+                },
+                "core_graph_is_compose_free" to {
+                    composeArtifacts
+                        .filterNot { artifact ->
+                            forbiddenOnPublishedClasspath.any {
+                                it.module == "cameraK-core" &&
+                                    it.forbidden.pattern == artifact.pattern &&
+                                    it.configurations == publishedGraphs
+                            }
+                        }.map { "no cameraK-core ClasspathRule on every published graph forbids ${it.pattern}" } +
+                        listOfNotNull(
+                            "cameraK-core is not in publishedModules".takeIf { "cameraK-core" !in publishedModules },
+                            ":cameraK-core:checkPublishedClasspath does not exist"
+                                .takeIf { "checkPublishedClasspath" !in moduleTasks.get().getValue("cameraK-core") },
+                        )
+                },
+                "published_gates_cover_camerak_core_and_camerak_testing" to {
+                    val full = verifyTaskPaths(allVerifyTargets, publishedModules, false)
+                    val constraints = bomConstraints.get()
+                    listOfNotNull(
+                        "cameraK-core is not in libraryModules".takeIf { "cameraK-core" !in libraryModules },
+                    ) +
+                        splitModules.flatMap { module ->
+                            val tasks = moduleTasks.get().getValue(module)
+                            listOfNotNull(
+                                "$module is not in publishedModules".takeIf { module !in publishedModules },
+                                "the BOM does not constrain $module".takeIf { module !in constraints },
+                            ) +
+                                listOf("checkTestOnlyDependencies", "checkPublishedClasspath", "checkAndroidSdkFloor")
+                                    .filterNot(tasks::contains)
+                                    .map { ":$module:$it does not exist" } +
+                                listOf("testDebugUnitTest", "desktopTest", "iosSimulatorArm64Test", "lintRelease")
+                                    .map { ":$module:$it" }
+                                    .filterNot(full::contains)
+                                    .map { "scripts/verify.sh --full does not run $it" }
+                        }
+                },
+                "stability_config_lists_every_stripped_type" to {
+                    if (!stabilityConfig.isFile) {
+                        listOf("${stabilityConfig.relativeTo(rootDir)} does not exist")
+                    } else {
+                        val entries =
+                            stabilityConfig
+                                .readLines()
+                                .map { it.substringBefore("//").trim() }
+                                .filter(String::isNotEmpty)
+                        listOfNotNull(
+                            "${stabilityConfig.relativeTo(rootDir)} is not registered in cameraK/build.gradle.kts"
+                                .takeIf { stabilityConfig.canonicalFile !in registeredStabilityFiles.get() },
+                            "it lists $entries, not $strippedStableTypes"
+                                .takeIf {
+                                    entries.sorted() != strippedStableTypes.sorted() ||
+                                        entries.size != entries.toSet().size
+                                },
+                        )
+                    }
+                },
+            )
+        val wrong =
+            cases.flatMap { (name, case) ->
+                runCatching(case)
+                    .getOrElse { listOf("threw $it") }
+                    .map { "$name: $it" }
+            }
+        check(wrong.isEmpty()) { "The build-gate rules are wrong:\n" + wrong.joinToString("\n") }
     }
 }
 
@@ -1262,15 +1524,18 @@ fun lintTaskPaths(): List<String> =
 
 val lintChecksFile = layout.buildDirectory.file("verify/lint-checks.txt")
 
-// The lint checks that existed when lintGroup became the only list of them. Moving one out of the group
-// would silently stop it running, so the lint target fails instead. A new check needs no entry here;
-// removing a check on purpose means removing it here too. scripts/test_lint_minimum_set.sh covers this.
+// The lint checks that existed when lintGroup became the only list of them, and the build-gate checks
+// added since. Moving one out of the group would silently stop it running, so the lint target fails
+// instead. A check runs without an entry here; listing it keeps it running, and removing a check on
+// purpose means removing it here and in scripts/test_lint_minimum_set.sh too, which covers this list.
 val requiredLintChecks =
     listOf(
         ":Sample:checkMacOsCameraPackaging",
+        ":cameraK:checkComposableStability",
         ":checkAgentPermissions",
         ":checkAndroidSdkFloor",
         ":checkAndroidSdkFloorRules",
+        ":checkBuildGateRules",
         ":checkBuildIntegrity",
         ":checkCatalogHygiene",
         ":checkComposeBaseline",

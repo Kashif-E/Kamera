@@ -699,6 +699,15 @@ COMPOSE_ACCESSOR = re.compile(
 
 
 COMPOSE_FUNCTION_IMPORT = re.compile(r"^import\s+org\.jetbrains\.compose\.compose\s*$", re.MULTILINE)
+SETTINGS_INCLUDE = re.compile(r'\binclude\(\s*"(:?[A-Za-z0-9_-]+)"\s*\)')
+PUBLISH_PLUGIN = re.compile(r"\balias\(libs\.plugins\.vanniktech\.publish\)")
+MULTIPLATFORM_PLUGIN = re.compile(r"\balias\(libs\.plugins\.multiplatform\)")
+
+
+def unlisted_library_modules(settings_text: str, scripts: Dict[str, str], listed: List[str] = LIBRARY_MODULES) -> List[str]:
+    """The modules settings.gradle.kts includes that publish a multiplatform library but `listed` lacks,
+    so the compose.* accessor rule never reads their build files."""
+    return []
 
 
 def parse_catalog(text: str) -> Dict[str, Dict[str, Dict[str, str]]]:
@@ -796,6 +805,22 @@ def check_catalog() -> List[str]:
     }
     if len(catalog_problems(fixture_catalog, fixture_scripts)) < 7:
         raise CheckError("the catalog rule accepts a fixture it must reject")
+    # catalog_policy_scans_every_library_build_file: a published multiplatform module missing from
+    # LIBRARY_MODULES would have its compose.* accessors go unchecked.
+    library_plugins = "plugins {\n    alias(libs.plugins.multiplatform)\n    alias(libs.plugins.vanniktech.publish)\n}\n"
+    fixture_settings = 'include(":cameraK")\ninclude(":cameraK-core")\ninclude("cameraK-testing")\ninclude(":Sample")\n'
+    fixture_modules = {
+        "cameraK/build.gradle.kts": library_plugins,
+        "cameraK-core/build.gradle.kts": library_plugins,
+        "cameraK-testing/build.gradle.kts": library_plugins,
+        "Sample/build.gradle.kts": "plugins {\n    alias(libs.plugins.multiplatform)\n}\n",
+    }
+    unlisted = sorted(unlisted_library_modules(fixture_settings, fixture_modules, ["cameraK"]))
+    if unlisted != ["cameraK-core", "cameraK-testing"]:
+        raise CheckError(
+            "catalog_policy_scans_every_library_build_file: the unlisted-module rule finds "
+            f"{unlisted} in a fixture that includes cameraK-core and cameraK-testing unlisted"
+        )
     scripts = {
         path.relative_to(ROOT).as_posix(): path.read_text()
         for path in tracked("*.gradle.kts")
