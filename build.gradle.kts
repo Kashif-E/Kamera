@@ -959,13 +959,16 @@ if ("screenshots" in verifyTargets && "desktop" !in verifyTargets) {
     }
 }
 
-tasks.register("verifyAll") {
-    group = "verification"
-    description = "Runs spotless, every module's tests on every target, screenshot tests and the Sample build"
-
+// The tasks verifyAll runs for a selection of targets and modules. scripts/verify.sh --full, which CI
+// runs, selects every target and every library module.
+fun verifyTaskPaths(
+    targets: List<String>,
+    modules: List<String>,
+    record: Boolean,
+): List<String> {
     val paths = mutableListOf<String>()
     if ("lint" in
-        verifyTargets
+        targets
     ) {
         paths +=
             listOf(
@@ -979,30 +982,30 @@ tasks.register("verifyAll") {
                 ":checkComposeBaseline",
             )
     }
-    verifyModules.forEach { module ->
-        if ("desktop" in verifyTargets || "screenshots" in verifyTargets && module == "cameraK") {
+    modules.forEach { module ->
+        if ("desktop" in targets || "screenshots" in targets && module == "cameraK") {
             paths += ":$module:desktopTest"
         }
         // Tests run on debug and the simulator; release and the device targets are what ship, so
         // they are compiled too.
-        if ("android" in verifyTargets) {
+        if ("android" in targets) {
             paths += listOf(":$module:testDebugUnitTest", ":$module:compileReleaseKotlinAndroid")
         }
-        if ("ios" in verifyTargets) {
+        if ("ios" in targets) {
             paths +=
                 listOf(
                     ":$module:iosSimulatorArm64Test",
                     ":$module:compileKotlinIosArm64",
                 )
         }
-        if (listOf("desktop", "android", "ios").any { it in verifyTargets }) {
+        if (listOf("desktop", "android", "ios").any { it in targets }) {
             paths += listOf(":$module:checkTestOnlyDependencies", ":$module:checkPublishedClasspath")
         }
     }
-    if ("screenshots" in verifyTargets) {
-        paths += ":$screenshotModule:" + if (recordScreenshots) "recordPaparazziDebug" else "verifyPaparazziDebug"
+    if ("screenshots" in targets) {
+        paths += ":$screenshotModule:" + if (record) "recordPaparazziDebug" else "verifyPaparazziDebug"
     }
-    if ("sample" in verifyTargets) {
+    if ("sample" in targets) {
         paths +=
             listOf(
                 ":Sample:compileKotlinDesktop",
@@ -1011,6 +1014,14 @@ tasks.register("verifyAll") {
                 ":Sample:compileKotlinIosArm64",
             )
     }
+    return paths
+}
+
+tasks.register("verifyAll") {
+    group = "verification"
+    description = "Runs spotless, every module's tests on every target, screenshot tests and the Sample build"
+
+    val paths = verifyTaskPaths(verifyTargets, verifyModules, recordScreenshots)
     check(paths.isNotEmpty()) { "verifyAll selected nothing for targets $verifyTargets and modules $verifyModules" }
     dependsOn(paths)
 }
