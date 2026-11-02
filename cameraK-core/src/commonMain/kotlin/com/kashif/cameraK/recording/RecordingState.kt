@@ -3,6 +3,7 @@ package com.kashif.cameraK.recording
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.video.VideoConfiguration
+import dev.drewhamilton.poko.Poko
 import kotlin.time.ComparableTimeMark
 import kotlin.time.Duration
 
@@ -13,6 +14,7 @@ import kotlin.time.Duration
 public sealed interface RecordingState {
     public data object Idle : RecordingState
 
+    @Poko
     public class Starting(public val config: VideoConfiguration) : RecordingState
 
     /**
@@ -21,6 +23,7 @@ public sealed interface RecordingState {
      * @property activeSince When recording last started or resumed, from the holder's time source.
      * @property accumulated Recorded time before [activeSince].
      */
+    @Poko
     public class Recording(
         public val recordingId: Long,
         public val filePath: String,
@@ -29,9 +32,11 @@ public sealed interface RecordingState {
         public val hasAudio: Boolean,
     ) : RecordingState
 
+    @Poko
     public class Paused(public val recordingId: Long, public val filePath: String, public val accumulated: Duration) :
         RecordingState
 
+    @Poko
     public class Stopping(
         public val recordingId: Long,
         public val filePath: String,
@@ -39,6 +44,7 @@ public sealed interface RecordingState {
     ) : RecordingState
 
     /** Resting state after any end, for display. startRecording is legal from here as from [Idle]. */
+    @Poko
     public class Finished(
         public val recordingId: Long,
         public val result: CameraKResult<RecordedVideo>,
@@ -47,4 +53,8 @@ public sealed interface RecordingState {
 }
 
 /** Recorded time so far: live while [RecordingState.Recording], frozen while paused, zero otherwise. */
-public fun RecordingState.elapsed(): Duration = TODO("S1' stub")
+public fun RecordingState.elapsed(): Duration = when (this) {
+    is RecordingState.Recording -> accumulated + activeSince.elapsedNow()
+    is RecordingState.Paused -> accumulated
+    else -> Duration.ZERO
+}

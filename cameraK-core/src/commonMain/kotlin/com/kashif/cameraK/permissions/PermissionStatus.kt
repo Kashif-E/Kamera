@@ -1,5 +1,7 @@
 package com.kashif.cameraK.permissions
 
+import dev.drewhamilton.poko.Poko
+
 /** Closed hierarchy: what the platform says about one [CameraKPermission]. Subtypes compare by value. */
 public sealed interface PermissionStatus {
     public data object Granted : PermissionStatus
@@ -8,6 +10,7 @@ public sealed interface PermissionStatus {
     public data object Limited : PermissionStatus
 
     /** Denied, and the app may ask again. [shouldShowRationale] is Android's hint to explain first. */
+    @Poko
     public class Denied(public val shouldShowRationale: Boolean) : PermissionStatus
 
     /** Denied, and only the system settings can grant it now. */

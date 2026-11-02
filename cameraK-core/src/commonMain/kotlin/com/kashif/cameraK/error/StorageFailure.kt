@@ -8,7 +8,7 @@ import kotlin.jvm.JvmInline
  */
 @JvmInline
 public value class StorageFailure private constructor(public val name: String) {
-    override fun toString(): String = TODO("S1' stub")
+    override fun toString(): String = name
 
     public companion object {
         public val FULL: StorageFailure = StorageFailure("FULL")

@@ -2,12 +2,14 @@ package com.kashif.cameraK.capture
 
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.utils.CameraKEngineApi
+import dev.drewhamilton.poko.Poko
 
 /**
  * A captured still: a real file in app-owned storage, never a gallery entry. Compares by value.
  *
  * Publishing it to the photo gallery is the media saver plugin's job.
  */
+@Poko
 public class CapturedImage @CameraKEngineApi constructor(
     public val path: String,
     public val format: ImageFormat,

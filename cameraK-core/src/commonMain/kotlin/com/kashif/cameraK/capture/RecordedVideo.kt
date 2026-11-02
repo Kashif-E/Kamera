@@ -1,6 +1,7 @@
 package com.kashif.cameraK.capture
 
 import com.kashif.cameraK.utils.CameraKEngineApi
+import dev.drewhamilton.poko.Poko
 import kotlin.time.Duration
 
 /**
@@ -11,6 +12,7 @@ import kotlin.time.Duration
  * @property bitrateBps The actual bitrate, where the platform reports it.
  * @property hasAudio Whether the file has an audio track, from the audio connection that was active.
  */
+@Poko
 public class RecordedVideo @CameraKEngineApi constructor(
     public val path: String,
     public val duration: Duration,

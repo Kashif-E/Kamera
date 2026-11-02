@@ -6,8 +6,8 @@ import com.kashif.cameraK.utils.InternalCameraKApi
 
 /** The MediaStore entry, a `content://` URI. */
 @CameraKPlatformApi
-public val GalleryAsset.uri: Uri get() = TODO("S1' stub")
+public val GalleryAsset.uri: Uri get() = payload as Uri
 
 /** Builds the handle for a MediaStore entry. Only the media saver plugin produces gallery assets. */
 @InternalCameraKApi
-public fun GalleryAsset(displayName: String, uri: Uri): GalleryAsset = TODO("S1' stub")
+public fun GalleryAsset(displayName: String, uri: Uri): GalleryAsset = GalleryAsset(displayName, payload = uri)

@@ -8,7 +8,7 @@ import kotlin.jvm.JvmInline
  */
 @JvmInline
 public value class CameraOperation private constructor(public val name: String) {
-    override fun toString(): String = TODO("S1' stub")
+    override fun toString(): String = name
 
     public companion object {
         public val START: CameraOperation = CameraOperation("START")

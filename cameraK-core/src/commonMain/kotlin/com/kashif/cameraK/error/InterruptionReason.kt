@@ -8,7 +8,7 @@ import kotlin.jvm.JvmInline
  */
 @JvmInline
 public value class InterruptionReason private constructor(public val name: String) {
-    override fun toString(): String = TODO("S1' stub")
+    override fun toString(): String = name
 
     public companion object {
         public val APP_IN_BACKGROUND: InterruptionReason = InterruptionReason("APP_IN_BACKGROUND")

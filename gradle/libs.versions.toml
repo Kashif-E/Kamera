@@ -35,6 +35,9 @@ textRecognition = "16.0.1"
 
 kflite = "1.1.40"
 vanniktech-publish = "0.37.0"
+# equals, hashCode and toString for camerak-core's public value classes, which are not data classes.
+# Poko is tied to a Kotlin compiler version: 0.23.2 is the release for Kotlin 2.4.0 and later.
+poko = "0.23.2"
 
 # Test-only
 junit = "4.13.2"
@@ -96,3 +99,4 @@ spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }
 jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 paparazzi = { id = "app.cash.paparazzi", version.ref = "paparazzi" }
+poko = { id = "dev.drewhamilton.poko", version.ref = "poko" }

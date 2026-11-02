@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.paparazzi) apply false
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.dokka) apply false
+    alias(libs.plugins.poko) apply false
     alias(libs.plugins.spotless)
 }
 
