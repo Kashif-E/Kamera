@@ -119,21 +119,55 @@ def agent_settings_problems(settings: object, name: str) -> List[str]:
     return [f"{name}: {problem}" for problem in agent_rule_problems(rules)]
 
 
+# Each rule here must be rejected on its own, so a rule that catches only some of them still fails.
+AGENT_RULES_TO_REJECT = [
+    "Read(//Users/someone/**)",
+    "Bash(gh secret:*)",
+    "Bash(git commit:*)",
+    "Bash(sed -i '' s/a/b/ x)",
+    "Bash(git diff:*)",
+    # Bare-prefix wildcards that approve committing, publishing, running any code or writing files.
+    "Bash(git:*)",
+    "Bash(./gradlew:*)",
+    "Bash(python3:*)",
+    "Bash(curl:*)",
+    "Bash(cp:*)",
+    "Bash(tee:*)",
+    "Bash(git checkout:*)",
+    "Bash(git clean:*)",
+    "Bash(git apply:*)",
+    "Bash(git stash:*)",
+    "Bash(gh:*)",
+    "Bash(git branch:*)",
+    "Bash(git log:*)",
+    "Bash(cat:*)",
+    "Bash(bash:*)",
+    "Bash(npx:*)",
+    "Bash(git -c core.pager=sh status)",
+    "Bash(git status && git push)",
+    "Bash(./gradlew publishAllPublicationsToMavenCentralRepository)",
+    "Bash(./gradlew --init-script x.gradle check)",
+    "Bash(git diff --output=x)",
+    "Write(docs/**)",
+]
+# Read-only approvals the rule must keep accepting.
+AGENT_RULES_TO_ACCEPT = [
+    "Bash(git status:*)",
+    "Bash(./gradlew spotlessCheck)",
+    "Bash(./gradlew :cameraK:desktopTest)",
+    "Bash(git diff --stat)",
+    "Read(docs/**)",
+]
+
+
 def check_agent_permissions() -> List[str]:
-    fixture = {
-        "permissions": {
-            "allow": [
-                "Read(//Users/someone/**)",
-                "Bash(gh secret:*)",
-                "Bash(git commit:*)",
-                "Bash(sed -i '' s/a/b/ x)",
-                "Bash(git diff:*)",
-            ]
-        }
-    }
-    rejected = agent_settings_problems(fixture, "fixture")
-    if len(rejected) < 5 or agent_settings_problems({"permissions": {"allow": ["Bash(git status:*)"]}}, "fixture"):
-        raise CheckError(f"the agent-permissions rule accepts a fixture it must reject: {rejected}")
+    accepted = [rule for rule in AGENT_RULES_TO_REJECT if not agent_rule_problems([rule])]
+    if accepted:
+        raise CheckError(f"the agent-permissions rule accepts fixture rules it must reject: {accepted}")
+    rejected = {rule: agent_rule_problems([rule]) for rule in AGENT_RULES_TO_ACCEPT}
+    rejected = {rule: problems for rule, problems in rejected.items() if problems}
+    if rejected:
+        raise CheckError(f"the agent-permissions rule rejects read-only fixture rules: {rejected}")
 
     problems = []
     for path in tracked(".claude/*"):
