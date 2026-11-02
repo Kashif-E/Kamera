@@ -28,6 +28,10 @@ import javax.imageio.ImageWriteParam
  * format. Each save creates a new file and never overwrites one: a name that is taken gets a
  * numeric suffix.
  *
+ * `imageName`, [ImageSaverConfig.customFolderName] and the auto-save prefix must each be 1 to 64
+ * characters from `A-Z a-z 0-9 . _ -` and not `.` or `..`; any other name fails the save with an
+ * [IllegalArgumentException], so a forwarded name can never place a file outside the folder.
+ *
  * @param config The configuration settings for the plugin.
  * @param onImageSaved Callback invoked when the image is successfully saved.
  * @param onImageSavedFailed Callback invoked when the image saving fails.
@@ -54,9 +58,11 @@ class JVMImageSaverPlugin(
 
     override suspend fun save(byteArray: ByteArray, imageName: String?): ImageSaveResult = withContext(Dispatchers.IO) {
         try {
+            val name = imageName?.let { requireSafeFileName(it, "imageName") } ?: defaultImageName()
+            val folder = resolveOutputDirectory()
             val format = config.imageFormat
             val bytes = if (sniffFormat(byteArray) == format) byteArray else transcode(byteArray, format)
-            val file = createUniqueFile(resolveOutputDirectory(), imageName ?: defaultImageName(), format.extension)
+            val file = createUniqueFile(folder, name, format.extension)
             try {
                 Files.write(file, bytes)
             } catch (e: IOException) {
@@ -76,12 +82,20 @@ class JVMImageSaverPlugin(
 
     // Resolve a real per-user directory (the old code wrote to a relative dir literally named
     // "PICTURES" in the process CWD and ignored customFolderName/imageFormat).
+    // customFolderName is one validated name, and the folder it names must still resolve inside the
+    // configured directory once symbolic links are followed.
     private fun resolveOutputDirectory(): File {
         val base = when (config.directory) {
             Directory.PICTURES, Directory.DCIM -> File(userHome, "Pictures")
             Directory.DOCUMENTS -> File(userHome, "Documents")
         }
-        return config.customFolderName?.let { File(base, it) } ?: base
+        val folder = config.customFolderName
+            ?.let { File(base, requireSafeFileName(it, "customFolderName")) }
+            ?: return base
+        if (!folder.canonicalFile.toPath().startsWith(base.canonicalFile.toPath())) {
+            throw IOException("customFolderName resolves outside the configured directory")
+        }
+        return folder
     }
 
     @Deprecated(
