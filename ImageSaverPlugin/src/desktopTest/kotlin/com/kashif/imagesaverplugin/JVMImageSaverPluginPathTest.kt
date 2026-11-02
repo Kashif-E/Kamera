@@ -129,6 +129,21 @@ class JVMImageSaverPluginPathTest {
         assertEquals(emptyList(), outside.list()?.toList(), "files written through the link")
     }
 
+    // The saver writes only where it may read back: a CameraK folder that is a link, even to a
+    // folder inside Pictures, is not the saver's folder.
+    @Test
+    fun aCameraKFolderThatLinksToASiblingFolder_failsAndWritesNothingThere() = runTest {
+        val pictures = File(home, "Pictures").apply { mkdirs() }
+        val family = File(pictures, "Family").apply { mkdirs() }
+        Files.createSymbolicLink(File(pictures, "CameraK").toPath(), family.toPath())
+
+        val result = plugin().save(jpeg(), "shot")
+
+        val failed = assertIs<ImageSaveResult.Failed>(result, "save result for a folder that links to a sibling")
+        assertIs<IOException>(failed.error, "the error for a folder that links to a sibling")
+        assertEquals(emptyList(), family.list()?.toList(), "files written through the link")
+    }
+
     @Test
     fun aCustomFolderThatLinksOutOfTheFolder_failsAndWritesNothingOutside() = runTest {
         val outside = File(sandbox, "outside").apply { mkdirs() }

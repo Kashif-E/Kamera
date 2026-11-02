@@ -107,6 +107,47 @@ class JVMImageSaverPluginReadTest {
         assertRefused(File(pictures, "CameraK/secret.jpg").path)
     }
 
+    // A link that stays inside Pictures still makes the CameraK folder some other folder, so it is not
+    // a read root: otherwise `ln -s ~/Pictures ~/Pictures/CameraK` opens the whole of Pictures.
+    @Test
+    fun aCameraKFolderThatLinksToItsOwnDirectory_isRefused() {
+        val pictures = File(home, "Pictures").apply { mkdirs() }
+        val holiday = file(pictures, "holiday.jpg")
+        Files.createSymbolicLink(File(pictures, "CameraK").toPath(), pictures.toPath())
+
+        assertRefused(holiday.path)
+        assertRefused(File(pictures, "CameraK/holiday.jpg").path)
+    }
+
+    @Test
+    fun aCameraKFolderThatLinksToASiblingFolder_isRefused() {
+        val pictures = File(home, "Pictures").apply { mkdirs() }
+        val birthday = file(File(pictures, "Family"), "birthday.jpg")
+        Files.createSymbolicLink(File(pictures, "CameraK").toPath(), File(pictures, "Family").toPath())
+
+        assertRefused(birthday.path)
+        assertRefused(File(pictures, "CameraK/birthday.jpg").path)
+    }
+
+    @Test
+    fun aCustomFolderThatLinksToASiblingFolder_isRefused() {
+        val documents = File(home, "Documents").apply { mkdirs() }
+        val taxes = file(File(documents, "taxes"), "return.pdf")
+        Files.createSymbolicLink(File(documents, "Receipts").toPath(), File(documents, "taxes").toPath())
+        val reader = plugin(ImageSaverConfig(directory = Directory.DOCUMENTS, customFolderName = "Receipts"))
+
+        assertRefused(taxes.path, reader)
+        assertRefused(File(documents, "Receipts/return.pdf").path, reader)
+    }
+
+    // A folder whose name only starts with CameraK is a different folder; a string-prefix check would
+    // accept it.
+    @Test
+    fun aFolderWhoseNameStartsWithCameraK_isRefused() {
+        assertRefused(file(File(home, "Pictures/CameraKevil"), "x.jpg").path)
+        assertRefused(file(File(home, "Documents/CameraK-old"), "x.jpg").path)
+    }
+
     @Test
     fun aFileOutsideTheOutputFolders_isRefused() {
         assertRefused(file(File(sandbox, "elsewhere"), "secret.jpg").path)
