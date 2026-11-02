@@ -33,8 +33,11 @@ import javax.imageio.ImageWriteParam
  * [IllegalArgumentException], so a forwarded name can never place a file outside the folder.
  *
  * @param config The configuration settings for the plugin.
- * @param onImageSaved Callback invoked when the image is successfully saved.
- * @param onImageSavedFailed Callback invoked when the image saving fails.
+ * @param onImageSaved Callback invoked when the image is successfully saved, on a `Dispatchers.IO`
+ *   thread. If it throws, the throwable is logged and the save is still reported as saved.
+ * @param onImageSavedFailed Callback invoked when the image saving fails, on a `Dispatchers.IO`
+ *   thread, with a reason that names the operation but no path. If it throws, the throwable is
+ *   logged and save() still returns [ImageSaveResult.Failed].
  */
 class JVMImageSaverPlugin(
     config: ImageSaverConfig,
@@ -57,27 +60,35 @@ class JVMImageSaverPlugin(
         (save(byteArray, imageName) as? ImageSaveResult.Saved)?.location
 
     override suspend fun save(byteArray: ByteArray, imageName: String?): ImageSaveResult = withContext(Dispatchers.IO) {
-        try {
-            val name = imageName?.let { requireSafeFileName(it, "imageName") } ?: defaultImageName()
-            val folder = resolveOutputDirectory()
-            val format = config.imageFormat
-            val bytes = if (sniffFormat(byteArray) == format) byteArray else transcode(byteArray, format)
-            val file = createUniqueFile(folder, name, format.extension)
-            try {
-                Files.write(file, bytes)
-            } catch (e: IOException) {
-                deleteUnfinished(file, e)
-                throw e
+        val result = write(byteArray, imageName)
+        // The consumer's callbacks run after the outcome is fixed, so one that throws cannot change it.
+        when (result) {
+            is ImageSaveResult.Saved -> notifyConsumer("onImageSaved") { onImageSaved() }
+            is ImageSaveResult.Failed -> notifyConsumer("onImageSavedFailed") {
+                onImageSavedFailed(failureReason(result.error))
             }
-            onImageSaved()
-            ImageSaveResult.Saved(file.toAbsolutePath().toString())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "Failed to save image", e)
-            onImageSavedFailed(e.message ?: "Unknown error")
-            ImageSaveResult.Failed(e)
         }
+        result
+    }
+
+    private fun write(byteArray: ByteArray, imageName: String?): ImageSaveResult = try {
+        val name = imageName?.let { requireSafeFileName(it, "imageName") } ?: defaultImageName()
+        val folder = resolveOutputDirectory()
+        val format = config.imageFormat
+        val bytes = if (sniffFormat(byteArray) == format) byteArray else transcode(byteArray, format)
+        val file = createUniqueFile(folder, name, format.extension)
+        try {
+            Files.write(file, bytes)
+        } catch (e: IOException) {
+            deleteUnfinished(file, e)
+            throw e
+        }
+        ImageSaveResult.Saved(file.toAbsolutePath().toString())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        CameraKLogger.e("CameraK", "Failed to save image", e)
+        ImageSaveResult.Failed(e)
     }
 
     // Resolve a real per-user directory (the old code wrote to a relative dir literally named
@@ -93,7 +104,7 @@ class JVMImageSaverPlugin(
             ?.let { File(base, requireSafeFileName(it, "customFolderName")) }
             ?: return base
         if (!folder.canonicalFile.toPath().startsWith(base.canonicalFile.toPath())) {
-            throw IOException("customFolderName resolves outside the configured directory")
+            throw SaveFailure("customFolderName resolves outside the configured directory")
         }
         return folder
     }
@@ -109,6 +120,28 @@ class JVMImageSaverPlugin(
     }
 }
 
+// A failure the saver describes itself, in a message with no path or user data.
+private class SaveFailure(message: String) : IOException(message)
+
+/**
+ * What onImageSavedFailed is told: the saver's own message, which has no path or user data, or for
+ * a platform exception, whose message may hold a path, only its type.
+ */
+private fun failureReason(error: Throwable): String = when (error) {
+    is SaveFailure, is IllegalArgumentException -> error.message ?: "Image could not be saved"
+    else -> "Image could not be saved (${error::class.simpleName})"
+}
+
+private inline fun notifyConsumer(callback: String, block: () -> Unit) {
+    try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        CameraKLogger.e("CameraK", "The image saver's $callback callback failed", e)
+    }
+}
+
 /** The format [bytes] are encoded in, from their magic bytes, or null if neither JPEG nor PNG. */
 private fun sniffFormat(bytes: ByteArray): ImageFormat? = when {
     bytes.startsWith(JPEG_MAGIC) -> ImageFormat.JPEG
@@ -121,7 +154,7 @@ private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
 
 /** Decodes [bytes] and encodes them once as [format], at an explicit quality for JPEG. */
 private fun transcode(bytes: ByteArray, format: ImageFormat): ByteArray {
-    val decoded = ImageIO.read(ByteArrayInputStream(bytes)) ?: throw IOException("Could not decode image bytes")
+    val decoded = ImageIO.read(ByteArrayInputStream(bytes)) ?: throw SaveFailure("Could not decode image bytes")
     val out = ByteArrayOutputStream()
     when (format) {
         ImageFormat.PNG -> if (!ImageIO.write(
@@ -130,7 +163,7 @@ private fun transcode(bytes: ByteArray, format: ImageFormat): ByteArray {
                 out,
             )
         ) {
-            throw IOException("No PNG writer accepts this image")
+            throw SaveFailure("No PNG writer accepts this image")
         }
         ImageFormat.JPEG -> writeJpeg(withoutAlpha(decoded), out)
     }
@@ -152,7 +185,7 @@ private fun withoutAlpha(image: BufferedImage): BufferedImage {
 
 private fun writeJpeg(image: BufferedImage, out: ByteArrayOutputStream) {
     val writer = ImageIO.getImageWritersByFormatName("jpeg").asSequence().firstOrNull()
-        ?: throw IOException("No JPEG writer is installed")
+        ?: throw SaveFailure("No JPEG writer is installed")
     try {
         val params = writer.defaultWriteParam.apply {
             compressionMode = ImageWriteParam.MODE_EXPLICIT
@@ -182,7 +215,7 @@ private fun createUniqueFile(folder: File, name: String, extension: String): Pat
             CameraKLogger.w("CameraK", "Image file name taken, trying the next one", e)
         }
     }
-    throw IOException("No free file name in $MAX_NAME_ATTEMPTS attempts")
+    throw SaveFailure("No free file name in $MAX_NAME_ATTEMPTS attempts")
 }
 
 private fun deleteUnfinished(file: Path, cause: Exception) {
