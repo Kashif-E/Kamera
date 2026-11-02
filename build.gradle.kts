@@ -250,12 +250,16 @@ val forbiddenOnPublishedClasspath =
 
 // Consumers compile against every dependency a library declares api, so api is only for libraries
 // whose types its public signatures expose. A rule names a library (null for every library) and a
-// dependency that must not be on any of its *ApiElements configurations.
+// dependency that must not be on its JVM or Android *ApiElements configurations. Only there does the
+// scope matter: the Kotlin Gradle plugin puts implementation dependencies on the Kotlin/Native and
+// metadata ApiElements too, because a klib's dependencies are needed to compile against it.
 data class ApiExportRule(
     val module: String?,
     val forbidden: Regex,
     val reason: String,
 )
+
+val jvmApiElements = setOf("desktopApiElements", "releaseApiElements", "debugApiElements")
 
 val forbiddenApiExports =
     listOf(
@@ -268,6 +272,11 @@ val forbiddenApiExports =
             "cameraK",
             Regex("""^androidx\.startup:startup-runtime$"""),
             "only core's internal AppContextInitializer uses androidx.startup",
+        ),
+        ApiExportRule(
+            null,
+            Regex("""^org\.jetbrains\.kotlinx:atomicfu$"""),
+            "concurrency utilities are never api and no public signature exposes an atomicfu type",
         ),
     )
 
@@ -304,7 +313,7 @@ subprojects {
     val apiExports =
         provider {
             configurations
-                .filter { it.isCanBeConsumed && it.name.endsWith("ApiElements") }
+                .filter { it.isCanBeConsumed && it.name in jvmApiElements }
                 .associate { configuration ->
                     configuration.name to configuration.allDependencies.map { "${it.group}:${it.name}" }
                 }
