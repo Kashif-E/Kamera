@@ -66,6 +66,10 @@ class QRScannerPlugin internal constructor(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     private var isScanning = atomic(false)
+
+    // What the app asked for: scanning, unless it paused. A new Ready starts a scanner only while this
+    // is true, so a pause holds across camera re-initialisation until the app resumes.
+    private val scanningWanted = atomic(true)
     private var collectorJob: Job? = null
     private var scannerHandle: ScannerHandle? = null
 
@@ -85,7 +89,7 @@ class QRScannerPlugin internal constructor(
                     .filterIsInstance<CameraKState.Ready>()
                     .collect { readyState ->
                         this@QRScannerPlugin.cameraController = readyState.controller
-                        startScanning()
+                        if (scanningWanted.value) registerScanner()
                     }
             }
     }
@@ -95,7 +99,7 @@ class QRScannerPlugin internal constructor(
      */
     override fun onDetach() {
         CameraKLogger.d("CameraK", "QRScannerPlugin detached")
-        pauseScanning()
+        isScanning.value = false
         scannerHandle?.stop()
         scannerHandle = null
         collectorJob?.cancel()
@@ -115,11 +119,15 @@ class QRScannerPlugin internal constructor(
     }
 
     /**
-     * Starts the QR code scanning process.
-     *
-     * @throws IllegalStateException If the CameraController is not initialized.
+     * Starts scanning, now if the camera is ready and otherwise when it becomes ready. Same as
+     * [resumeScanning].
      */
     fun startScanning() {
+        scanningWanted.value = true
+        registerScanner()
+    }
+
+    private fun registerScanner() {
         val controller = cameraController ?: run {
             CameraKLogger.d("CameraK", "QRScannerPlugin: CameraController is not initialized")
             isScanning.value = false
@@ -148,17 +156,21 @@ class QRScannerPlugin internal constructor(
     }
 
     /**
-     * Pauses the QR code scanning process.
+     * Pauses scanning: the platform scanner is removed, so no frame is decoded until [resumeScanning].
+     * The pause holds when the camera re-initialises.
      */
     fun pauseScanning() {
+        scanningWanted.value = false
         isScanning.value = false
+        scannerHandle?.stop()
+        scannerHandle = null
     }
 
     /**
-     * Resumes the QR code scanning process.
+     * Resumes scanning after [pauseScanning], now if the camera is ready and otherwise when it
+     * becomes ready.
      */
     fun resumeScanning() {
-        isScanning.value = true
         startScanning()
     }
 
