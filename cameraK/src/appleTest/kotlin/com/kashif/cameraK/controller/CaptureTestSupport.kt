@@ -15,6 +15,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.dataWithContentsOfFile
@@ -31,11 +32,15 @@ internal class CaptureRig(
 ) {
     val session = RecordingSession()
     val capturer = FakePhotoCapturer()
+
+    /** Every orientation the preview was given, in order; the preview is oriented on main only. */
+    val previewOrientations = mutableListOf<AVCaptureVideoOrientation>()
     val custom = CustomCameraController(
         qualityPrioritization = qualityPrioritization,
         sessionFactory = { session },
         cameraDevices = { _, _ -> device },
         photoCapturer = capturer,
+        previewOrienting = { _, orientation -> previewOrientations += orientation },
     )
     val controller = CameraController(
         flashMode = FlashMode.OFF,
