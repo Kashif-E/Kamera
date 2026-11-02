@@ -12,15 +12,20 @@ import platform.AVFoundation.AVErrorMaximumDurationReached
 import platform.AVFoundation.AVErrorRecordingSuccessfullyFinishedKey
 import platform.AVFoundation.AVFoundationErrorDomain
 import platform.CoreMedia.CMTimeGetSeconds
+import platform.Foundation.NSCocoaErrorDomain
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSUUID
 import platform.Foundation.timeIntervalSince1970
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -164,6 +169,57 @@ class VideoFileOutcomeTest {
             "PHPhotosErrorDomain" in message && "3311" in message,
             "the error does not say what Photos reported: $message",
         )
+    }
+
+    @Test
+    fun aFailedRecordingKeepsAVFoundationsErrorAsItsCause() {
+        use(Directory.DOCUMENTS)
+        val started = startedRecording()
+        val failure = avError(AVErrorDiskFull, successfullyFinished = false)
+
+        val result = stop(started, failure)
+
+        val error =
+            assertIs<VideoCaptureResult.Error>(result, "a recording AVFoundation failed was reported as $result")
+        assertSame(failure, error.exception.platformError(), "the error does not carry AVFoundation's NSError")
+    }
+
+    @Test
+    fun aVideoPhotosRefusesKeepsPhotosErrorAsItsCause() {
+        use(Directory.PICTURES)
+        val refusal = photosError(3311)
+        rig.controller.photosLibrary = FakePhotosLibrary(FakePhotosLibrary.Answer.Failed(refusal))
+        val started = startedRecording()
+
+        val result = stop(started, error = null)
+
+        val error = assertIs<VideoCaptureResult.Error>(result, "a video Photos refused was reported as $result")
+        assertSame(refusal, error.exception.platformError(), "the error does not carry Photos' NSError")
+    }
+
+    @Test
+    fun anOutputDirectoryThatCannotBeCreatedFailsTheStartWithTheFileSystemsError() {
+        use(Directory.DOCUMENTS)
+        rig.controller.movieRecorder = recorder
+        rig.controller.recordingStartTimeoutMs = 300
+        rig.start()
+        // A directory cannot be made inside a regular file.
+        val blocker = "${NSTemporaryDirectory()}cameraK-not-a-directory-${NSUUID().UUIDString}"
+        NSFileManager.defaultManager.createFileAtPath(blocker, NSData(), null)
+        written += blocker
+
+        val failure = runCatching {
+            run("startRecording to return") {
+                rig.controller.startRecording(
+                    VideoConfiguration(enableAudio = false, outputDirectory = "$blocker/videos"),
+                )
+            }
+        }.exceptionOrNull()
+
+        assertEquals(emptyList(), recorder.starts.map { it.url.path }, "recorded into a directory that does not exist")
+        val error = assertNotNull(failure, "startRecording succeeded without its output directory")
+        val cause = assertNotNull(error.platformError(), "the error does not carry the file system's NSError: $error")
+        assertEquals(NSCocoaErrorDomain, cause.domain)
     }
 
     @Test

@@ -7,6 +7,7 @@ import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
 import platform.Foundation.NSThread
+import kotlin.concurrent.Volatile
 
 /**
  * A [PhotoCapturer] that records each capture request instead of capturing, so a test can finish the
@@ -27,6 +28,10 @@ internal class FakePhotoCapturer : PhotoCapturer {
     private val recorded = mutableListOf<Request>()
     private val maxDimensions = mutableListOf<PhotoDimensions>()
     private val prepared = mutableListOf<List<AVCapturePhotoSettings>>()
+
+    /** When set, every prepare fails with this error, as AVFoundation reports one it could not do. */
+    @Volatile
+    var prepareError: NSError? = null
 
     /** The settings of every prepare call, in order. */
     val prepareCalls: List<List<AVCapturePhotoSettings>>
@@ -104,5 +109,6 @@ internal class FakePhotoCapturer : PhotoCapturer {
         } finally {
             lock.unlock()
         }
+        prepareError?.let { completion(false, it) }
     }
 }

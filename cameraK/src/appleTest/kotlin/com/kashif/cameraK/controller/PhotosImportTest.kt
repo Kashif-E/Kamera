@@ -12,6 +12,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -72,6 +73,17 @@ class PhotosImportTest {
             "the error does not say what Photos reported: $message",
         )
         assertPhotoKept()
+    }
+
+    @Test
+    fun aCaptureThatPhotosRefusesKeepsPhotosErrorAsItsCause() {
+        val refusal = photosError(3311)
+        usePhotos(FakePhotosLibrary.Answer.Failed(refusal))
+
+        val result = takePicture()
+
+        val error = assertIs<ImageCaptureResult.Error>(result, "a capture Photos refused was reported as $result")
+        assertSame(refusal, error.exception.platformError(), "the error does not carry Photos' NSError")
     }
 
     @Test
