@@ -23,7 +23,7 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      version), and every plugin it declares is applied somewhere; build scripts
                      apply third-party plugins only through [plugins] aliases (no buildscript
                      classpath, no versionless id("...")), and libraries declare Compose by explicit
-                     coordinates rather than the compose.* accessors.
+                     coordinates rather than the compose.* accessors or the compose() function.
   native-settings    A module with no native code (no cpp/jni sources, CMake or ndk-build file, or
                      .so) sets no NDK version and no jniLibs packaging option, which would have no
                      effect on its artifact and would make contributors install an NDK.
@@ -371,6 +371,9 @@ COMPOSE_ACCESSOR = re.compile(
 )
 
 
+COMPOSE_FUNCTION_IMPORT = re.compile(r"^import\s+org\.jetbrains\.compose\.compose\s*$", re.MULTILINE)
+
+
 def parse_catalog(text: str) -> Dict[str, Dict[str, Dict[str, str]]]:
     sections: Dict[str, Dict[str, Dict[str, str]]] = {"versions": {}, "libraries": {}, "plugins": {}}
     section = None
@@ -428,6 +431,8 @@ def catalog_problems(catalog_text: str, scripts: Dict[str, str]) -> List[str]:
         if module in LIBRARY_MODULES:
             for coordinate in COMPOSE_ACCESSOR.findall(text):
                 problems.append(f"{name} declares compose.{coordinate}; use explicit org.jetbrains.compose coordinates")
+            if COMPOSE_FUNCTION_IMPORT.search(text):
+                problems.append(f"{name} imports org.jetbrains.compose.compose; use explicit org.jetbrains.compose coordinates")
     for entries in (catalog["libraries"], catalog["plugins"]):
         for fields in entries.values():
             if "version.ref" in fields:
@@ -457,9 +462,12 @@ def check_catalog() -> List[str]:
     )
     fixture_scripts = {
         "build.gradle.kts": "plugins { alias(libs.plugins.p) apply false }\nbuildscript { dependencies { classpath(libs.z) } }",
-        "cameraK/build.gradle.kts": 'plugins { id("org.example.plugin") }\napi(libs.x)\napi(libs.y.get())\napi(compose.ui)',
+        "cameraK/build.gradle.kts": (
+            'import org.jetbrains.compose.compose\nplugins { id("org.example.plugin") }\n'
+            "api(libs.x)\napi(libs.y.get())\napi(compose.ui)"
+        ),
     }
-    if len(catalog_problems(fixture_catalog, fixture_scripts)) < 6:
+    if len(catalog_problems(fixture_catalog, fixture_scripts)) < 7:
         raise CheckError("the catalog rule accepts a fixture it must reject")
     scripts = {
         path.relative_to(ROOT).as_posix(): path.read_text()
