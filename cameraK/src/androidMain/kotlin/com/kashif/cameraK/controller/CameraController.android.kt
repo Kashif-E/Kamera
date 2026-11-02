@@ -20,6 +20,7 @@ import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraControl
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalZeroShutterLag
 import androidx.camera.core.ImageAnalysis
@@ -897,18 +898,28 @@ actual class CameraController internal constructor(
      * CameraX opens every bound camera with the torch off and no zoom.
      */
     private fun applyDesiredHardwareState(camera: Camera) {
-        if (torchMode != TorchMode.OFF) {
-            if (camera.cameraInfo.hasFlashUnit()) {
-                logIfFailed("Turning the torch on after binding") { camera.cameraControl.enableTorch(true) }
-            } else {
-                CameraKLogger.w(TAG, "TorchMode.$torchMode requested, but this camera has no flash unit")
-            }
+        if (torchMode != TorchMode.OFF) applyTorch(camera)
+        desiredZoom?.let { applyZoom(camera, it) }
+    }
+
+    /** Asks [camera] for [torchMode], if it has a flash unit; CameraX has no AUTO torch, so AUTO is on. */
+    private fun applyTorch(camera: Camera) {
+        val mode = torchMode
+        val on = mode != TorchMode.OFF
+        if (!camera.cameraInfo.hasFlashUnit()) {
+            if (on) CameraKLogger.w(TAG, "TorchMode.$mode requested, but this camera has no flash unit")
+            return
         }
-        desiredZoom?.let { zoom ->
-            val state = camera.cameraInfo.zoomState.value
-            val ratio = state?.let { zoom.coerceIn(it.minZoomRatio, it.maxZoomRatio) } ?: zoom
-            logIfFailed("Restoring the zoom after binding") { camera.cameraControl.setZoomRatio(ratio) }
+        logIfFailed(if (on) "Turning the torch on" else "Turning the torch off") {
+            camera.cameraControl.enableTorch(on)
         }
+    }
+
+    /** Asks [camera] for [zoom], clamped to the range it reports, which can start below 1x. */
+    private fun applyZoom(camera: Camera, zoom: Float) {
+        val state = camera.cameraInfo.zoomState.value
+        val ratio = state?.let { zoom.coerceIn(it.minZoomRatio, it.maxZoomRatio) } ?: zoom
+        logIfFailed("Setting the zoom") { camera.cameraControl.setZoomRatio(ratio) }
     }
 
     /** Logs the failure of a CameraX control call instead of dropping its future. */
@@ -923,7 +934,13 @@ actual class CameraController internal constructor(
             try {
                 future.get()
             } catch (e: java.util.concurrent.ExecutionException) {
-                CameraKLogger.w(TAG, "$operation failed", e.cause ?: e)
+                val cause = e.cause ?: e
+                // CameraX cancels a pending request when a newer one replaces it, as in a pinch.
+                if (cause is CameraControl.OperationCanceledException) {
+                    CameraKLogger.d(TAG, "$operation was superseded")
+                } else {
+                    CameraKLogger.w(TAG, "$operation failed", cause)
+                }
             } catch (e: java.util.concurrent.CancellationException) {
                 CameraKLogger.d(TAG, "$operation was cancelled")
             }
@@ -931,32 +948,26 @@ actual class CameraController internal constructor(
     }
 
     actual fun toggleTorchMode() {
-        torchMode = when (torchMode) {
-            TorchMode.OFF -> TorchMode.ON
-            TorchMode.ON -> TorchMode.AUTO
-            TorchMode.AUTO -> TorchMode.OFF
-        }
-        // CameraX doesn't support AUTO torch mode, treat it as ON
-        val enableTorch = torchMode == TorchMode.ON || torchMode == TorchMode.AUTO
-        if (torchMode == TorchMode.AUTO) {
-            CameraKLogger.w("CameraK", "TorchMode.AUTO not natively supported, using ON")
-        }
-        camera?.cameraControl?.enableTorch(enableTorch)
+        setTorchMode(
+            when (torchMode) {
+                TorchMode.OFF -> TorchMode.ON
+                TorchMode.ON -> TorchMode.AUTO
+                TorchMode.AUTO -> TorchMode.OFF
+            },
+        )
     }
 
     actual fun setTorchMode(mode: TorchMode) {
         torchMode = mode
-        // CameraX doesn't support AUTO torch mode, treat it as ON
-        val enableTorch = mode == TorchMode.ON || mode == TorchMode.AUTO
         if (mode == TorchMode.AUTO) {
-            CameraKLogger.w("CameraK", "TorchMode.AUTO not natively supported, using ON")
+            CameraKLogger.w(TAG, "TorchMode.AUTO not natively supported, using ON")
         }
-        camera?.cameraControl?.enableTorch(enableTorch)
+        camera?.let { applyTorch(it) }
     }
 
     actual fun setZoom(zoomRatio: Float) {
         desiredZoom = zoomRatio
-        camera?.cameraControl?.setZoomRatio(zoomRatio.coerceIn(1f, getMaxZoom()))
+        camera?.let { applyZoom(it, zoomRatio) }
     }
 
     actual fun getZoom(): Float = camera?.cameraInfo?.zoomState?.value?.zoomRatio ?: 1f
