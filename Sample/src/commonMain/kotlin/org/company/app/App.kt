@@ -244,7 +244,8 @@ private fun CameraContent(
             cameraLens = CameraLens.BACK,
             flashMode = FlashMode.OFF,
             imageFormat = imageFormat,
-            directory = Directory.PICTURES,
+            // The image saver puts each photo in the gallery; a gallery directory here would store it twice.
+            directory = Directory.DOCUMENTS,
             torchMode = TorchMode.OFF,
             qualityPrioritization = qualityPrioritization,
             cameraDeviceType = CameraDeviceType.WIDE_ANGLE,
