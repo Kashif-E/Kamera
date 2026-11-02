@@ -35,6 +35,13 @@ The Gradle log goes to `build/verify/<mode>-<timestamp>.log`, and the summary go
 if a requested target ran zero tests. Results left over from earlier runs are ignored.
 `./gradlew verifyAll` runs the same tasks without the summary.
 
+**Adding a lint check.** Register the task with `group = lintGroup` in the root build (in a
+module, `rootProject.extra["lintGroup"]`, which is `"camerak lint"`). `verifyAll` runs every task
+in that group when the lint target is selected, and writes their paths to
+`build/verify/lint-checks.txt`, which `verify_report.py` requires to have run; no list names them.
+`scripts/test_lint_self_registration.sh` registers a probe check that way and fails unless
+`verify.sh --only lint` runs it.
+
 **Test first.** A bug fix or behaviour change starts with a test that fails without the change.
 Run the harness and see it go RED for that test, then make the change and see it go GREEN.
 Do not loosen an assertion, widen a tolerance, delete a case or add an ignore to get a pass. If a

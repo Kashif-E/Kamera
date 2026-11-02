@@ -188,7 +188,7 @@ val macOsEntitlementFiles =
         )
     }
 tasks.register("checkMacOsCameraPackaging") {
-    group = "verification"
+    group = rootProject.extra["lintGroup"] as String
     description = "Fails if the packaged macOS app lacks a camera usage description or the camera entitlement"
     inputs.property("extraKeysRawXml", macOsExtraPlistKeys)
     inputs.files(macOsEntitlementFiles)

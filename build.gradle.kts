@@ -43,6 +43,14 @@ val libraryModules =
     listOf("cameraK", "ImageSaverPlugin", "qrScannerPlugin", "ocrPlugin", "videoRecorderPlugin", "analyzerPlugin")
 val screenshotModule = "cameraKScreenshotTests"
 
+// Every check the lint target runs is a task in this group, in any project: verifyAll runs them all,
+// and writes their paths for scripts/verify_report.py to require. Adding a check means registering
+// it in this group and nothing else. Modules read it as rootProject.extra["lintGroup"].
+val lintGroup = "camerak lint"
+extra["lintGroup"] = lintGroup
+
+tasks.named("spotlessCheck") { group = lintGroup }
+
 val bomModule = "camerak-bom"
 
 // The libraries ship only bytedeco's Java bindings. Whatever runs them here (desktop tests, the
@@ -366,7 +374,7 @@ subprojects {
 // The Maven Central token and signing passphrase were once committed in the tracked
 // gradle.properties. This fails if anything could put them back in a tracked file or a run: line.
 tasks.register("checkCredentialHygiene") {
-    group = "verification"
+    group = lintGroup
     description = "Fails if credentials could reach a tracked file, a workflow run: line or a commit"
     val script = layout.projectDirectory.file("scripts/check_credential_hygiene.py").asFile
     val root = layout.projectDirectory.asFile
@@ -386,7 +394,7 @@ tasks.register("checkCredentialHygiene") {
 // Dead text the compiler cannot see in the plugin modules: commented-out code, orphaned KDoc, and
 // KDoc code samples, which belong in compiled functions referenced with @sample.
 tasks.register("checkPluginSources") {
-    group = "verification"
+    group = lintGroup
     description = "Fails on commented-out code, orphaned KDoc or uncompiled KDoc samples in the plugin modules"
     val script = layout.projectDirectory.file("scripts/check_plugin_sources.py").asFile
     val root = layout.projectDirectory.asFile
@@ -406,7 +414,7 @@ tasks.register("checkPluginSources") {
 // A Maven Central upload is irreversible. This fails unless the publish workflow runs only for a v*
 // tag matching VERSION_NAME, after the full harness, from the protected maven-central environment.
 tasks.register("checkReleaseWorkflow") {
-    group = "verification"
+    group = lintGroup
     description = "Fails if the publish workflow could upload an untested, untagged or unapproved commit"
     val script = layout.projectDirectory.file("scripts/check_release_workflow.py").asFile
     val root = layout.projectDirectory.asFile
@@ -429,7 +437,7 @@ fun registerRepoPolicyCheck(
     policy: String,
     taskDescription: String,
 ) = tasks.register(taskName) {
-    group = "verification"
+    group = lintGroup
     description = taskDescription
     val script = layout.projectDirectory.file("scripts/check_repo_policy.py").asFile
     val root = layout.projectDirectory.asFile
@@ -509,7 +517,7 @@ fun trackedTextFiles(root: File): List<File> {
 // the harness, CI, publishing or docs builds or advertises it. CHANGELOG.md records the removal.
 val intelSimulatorReference = Regex("ios_?x64", RegexOption.IGNORE_CASE)
 tasks.register("checkNoIntelSimulatorTarget") {
-    group = "verification"
+    group = lintGroup
     description = "Fails if a module declares the Intel iOS simulator target or a tracked file still refers to it"
     val kotlinModules = libraryModules + "Sample"
     val intelSimulatorTargets =
@@ -706,7 +714,7 @@ val documentedMinSdk =
 // and also if it is above the highest minSdk the module ships with: the floor is what the graph
 // needs, not a number that merely clears it.
 tasks.register("checkAndroidSdkFloorRules") {
-    group = "verification"
+    group = lintGroup
     description = "Runs the minSdk floor rule against fixture AARs"
     val fixtures = layout.buildDirectory.dir("sdk-floor-fixtures")
     doLast {
@@ -771,7 +779,7 @@ tasks.register("checkAndroidSdkFloorRules") {
 }
 
 tasks.register("checkAndroidSdkFloor") {
-    group = "verification"
+    group = lintGroup
     description = "Fails if the libraries' minSdk values disagree, or the Sample or the docs use another one"
     dependsOn("checkAndroidSdkFloorRules")
     dependsOn(androidModules.map { ":$it:checkAndroidSdkFloor" })
@@ -856,7 +864,7 @@ fun pomField(
 }
 
 tasks.register("checkReleaseMetadata") {
-    group = "verification"
+    group = lintGroup
     description = "Fails if published modules disagree on version, group or shared POM metadata, or the docs lag"
     dependsOn(libraryModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
     val pomFiles =
@@ -1004,7 +1012,7 @@ fun licenseGrantedBy(text: String): PomLicense? =
     }
 
 tasks.register("checkLicenseMetadata") {
-    group = "verification"
+    group = lintGroup
     description = "Fails if a published POM declares a licence other than the one LICENSE grants"
     dependsOn(libraryModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
     dependsOn(":$bomModule:generatePomFileForMavenPublication")
@@ -1114,7 +1122,7 @@ subprojects {
 }
 
 tasks.register("checkComposeBaseline") {
-    group = "verification"
+    group = lintGroup
     description = "Fails if a library ships Compose or Coil off the 2.0 baseline"
     dependsOn(libraryModules.map { ":$it:checkComposeBaseline" })
 }
@@ -1122,7 +1130,7 @@ tasks.register("checkComposeBaseline") {
 // Each library publishes exactly one Android variant, the tested release. A debug publication would
 // hand consumers' debug builds an AAR no test ran against.
 tasks.register("checkPublishedVariants") {
-    group = "verification"
+    group = lintGroup
     description = "Fails if a library publishes an Android variant other than release"
     val publications =
         provider {
@@ -1151,7 +1159,7 @@ tasks.register("checkPublishedVariants") {
 // Libraries publish klibs. A framework binary in a library is never published and only adds link
 // tasks to every build; the framework an app embeds comes from the Sample (or an umbrella module).
 tasks.register("checkNoLibraryFrameworks") {
-    group = "verification"
+    group = lintGroup
     description = "Fails if a library module declares an iOS framework binary"
     val frameworks =
         provider {
@@ -1184,41 +1192,14 @@ if ("screenshots" in verifyTargets && "desktop" !in verifyTargets) {
     }
 }
 
-// The tasks verifyAll runs for a selection of targets and modules. scripts/verify.sh --full, which CI
-// runs, selects every target and every library module.
+// The tasks verifyAll runs for a selection of targets and modules, besides the lint checks (see
+// lintTaskPaths). scripts/verify.sh --full, which CI runs, selects every target and every library module.
 fun verifyTaskPaths(
     targets: List<String>,
     modules: List<String>,
     record: Boolean,
 ): List<String> {
     val paths = mutableListOf<String>()
-    if ("lint" in
-        targets
-    ) {
-        paths +=
-            listOf(
-                ":spotlessCheck",
-                ":checkCredentialHygiene",
-                ":checkReleaseWorkflow",
-                ":checkNoIntelSimulatorTarget",
-                ":checkAndroidSdkFloor",
-                ":checkReleaseMetadata",
-                ":checkLicenseMetadata",
-                ":checkComposeBaseline",
-                ":checkVerifyCoverage",
-                ":checkAgentPermissions",
-                ":checkSecurityPolicy",
-                ":checkDocsWorkflow",
-                ":checkBuildIntegrity",
-                ":checkPublishedVariants",
-                ":checkNoLibraryFrameworks",
-                ":checkCatalogHygiene",
-                ":checkNativeSettings",
-                ":checkRepositoryLinks",
-                ":Sample:checkMacOsCameraPackaging",
-                ":checkPluginSources",
-            )
-    }
     modules.forEach { module ->
         if ("desktop" in targets || "screenshots" in targets && module == "cameraK") {
             paths += ":$module:desktopTest"
@@ -1262,7 +1243,7 @@ fun verifyTaskPaths(
 // what fails only at the Kotlin/Native link of the framework an app embeds, so the full selection
 // must lint every Android module and link the Sample's iOS framework.
 tasks.register("checkVerifyCoverage") {
-    group = "verification"
+    group = lintGroup
     description = "Fails if scripts/verify.sh --full skips Android lint or the iOS framework link"
     val full = verifyTaskPaths(allVerifyTargets, libraryModules, record = false).toSet()
     doLast {
@@ -1274,11 +1255,32 @@ tasks.register("checkVerifyCoverage") {
     }
 }
 
+// Every task in lintGroup, in every project. A task's group is known only once the task is realised,
+// and realising every task costs about two seconds, so this runs only when verifyAll runs lint.
+fun lintTaskPaths(): List<String> =
+    allprojects.flatMap { p -> p.tasks.matching { it.group == lintGroup }.map { it.path } }.sorted()
+
+val lintChecksFile = layout.buildDirectory.file("verify/lint-checks.txt")
+
 tasks.register("verifyAll") {
     group = "verification"
     description = "Runs spotless, every module's tests on every target, screenshot tests and the Sample build"
 
     val paths = verifyTaskPaths(verifyTargets, verifyModules, recordScreenshots)
-    check(paths.isNotEmpty()) { "verifyAll selected nothing for targets $verifyTargets and modules $verifyModules" }
+    val lint = "lint" in verifyTargets
+    check(paths.isNotEmpty() || lint) { "verifyAll selected nothing for $verifyTargets and $verifyModules" }
     dependsOn(paths)
+    if (lint) dependsOn(provider { lintTaskPaths() })
+}
+
+// scripts/verify_report.py requires every lint check to have run. It reads them from this file,
+// written once the task graph is known, so a run whose lint checks fail still says which they were.
+gradle.taskGraph.whenReady {
+    if ("lint" !in verifyTargets || !hasTask(":verifyAll")) return@whenReady
+    val checks = lintTaskPaths()
+    check(checks.isNotEmpty()) { "No task is in the '$lintGroup' group" }
+    lintChecksFile.get().asFile.apply {
+        parentFile.mkdirs()
+        writeText(checks.joinToString("\n", postfix = "\n"))
+    }
 }

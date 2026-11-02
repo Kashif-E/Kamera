@@ -30,31 +30,11 @@ TASK_TARGETS = {
     "iosSimulatorArm64Test": "ios",
 }
 TEST_TARGETS = ("desktop", "android", "ios", "screenshots")
-# Log lines proving a non-test target executed.
+# The lint checks are every task in the build's "camerak lint" group. verifyAll writes their paths
+# here once its task graph is known, so neither this script nor the build lists them by name.
+LINT_CHECKS_FILE = ROOT / "build" / "verify" / "lint-checks.txt"
+# Log lines proving a non-test target executed; lint's come from LINT_CHECKS_FILE.
 TASK_EVIDENCE = {
-    "lint": [
-        ":spotlessCheck",
-        ":checkCredentialHygiene",
-        ":checkReleaseWorkflow",
-        ":checkNoIntelSimulatorTarget",
-        ":checkAndroidSdkFloorRules",
-        ":checkAndroidSdkFloor",
-        ":checkReleaseMetadata",
-        ":checkLicenseMetadata",
-        ":checkComposeBaseline",
-        ":checkVerifyCoverage",
-        ":checkAgentPermissions",
-        ":checkSecurityPolicy",
-        ":checkDocsWorkflow",
-        ":checkBuildIntegrity",
-        ":checkPublishedVariants",
-        ":checkNoLibraryFrameworks",
-        ":checkCatalogHygiene",
-        ":checkNativeSettings",
-        ":checkRepositoryLinks",
-        ":Sample:checkMacOsCameraPackaging",
-        ":checkPluginSources",
-    ],
     "sample": [
         ":Sample:compileKotlinDesktop",
         ":Sample:assembleDebug",
@@ -222,6 +202,19 @@ def secret_scan_status(scan: dict) -> tuple[str, str | None]:
     return f"failed: {detail}", f"gitleaks failed: {detail}"
 
 
+def lint_check_list(start: float) -> tuple[list[str], str | None]:
+    """The lint checks this run's build listed, or why there is no usable list."""
+    try:
+        if LINT_CHECKS_FILE.stat().st_mtime < start:
+            return [], f"the build did not write {LINT_CHECKS_FILE.relative_to(ROOT)} in this run"
+        checks = [line.strip() for line in LINT_CHECKS_FILE.read_text().splitlines() if line.strip()]
+    except OSError as error:
+        return [], f"cannot read the build's lint check list: {error.strerror}"
+    if not checks:
+        return [], f"{LINT_CHECKS_FILE.relative_to(ROOT)} lists no lint check"
+    return checks, None
+
+
 def executed_tasks(log: Path) -> set[str]:
     if not log.is_file():
         return set()
@@ -263,7 +256,7 @@ def main() -> int:
     elif gradle_exit != 0:
         problems.append(f"Gradle exited with {gradle_exit}")
     # A requested target that maps to nothing would otherwise pass with nothing run.
-    checked = {target for _, target in expected} | {t for t in TASK_EVIDENCE if t in targets}
+    checked = {target for _, target in expected} | {t for t in [*TASK_EVIDENCE, "lint"] if t in targets}
     for target in targets:
         if target not in checked:
             problems.append(f"{target}: requested but nothing to run for modules {', '.join(modules)}")
@@ -287,11 +280,19 @@ def main() -> int:
 
     tasks = executed_tasks(log)
     task_checks: dict[str, str] = {}
-    for target, evidence in TASK_EVIDENCE.items():
+    evidence_by_target = dict(TASK_EVIDENCE)
+    if "lint" in targets:
+        lint_checks, lint_problem = lint_check_list(start)
+        if lint_problem:
+            task_checks["lint"] = lint_problem
+            problems.append(f"lint: {lint_problem}")
+        else:
+            evidence_by_target["lint"] = lint_checks
+    for target, evidence in evidence_by_target.items():
         if target not in targets:
             continue
         missing = [task for task in evidence if task not in tasks]
-        task_checks[target] = "ran" if not missing else "did not run: " + ", ".join(missing)
+        task_checks[target] = f"ran ({len(evidence)} tasks)" if not missing else "did not run: " + ", ".join(missing)
         if missing:
             problems.append(f"{target}: requested but {task_checks[target]}")
     for target, names in COMPILE_EVIDENCE.items():
