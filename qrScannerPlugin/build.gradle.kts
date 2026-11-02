@@ -60,6 +60,14 @@ kotlin {
     }
 }
 
+// The desktop tests drive a real CameraController with a fake grabber whose frames are JavaCV
+// Frames, which allocate through JavaCPP, so they need this machine's JavaCPP natives.
+dependencies {
+    val javacppPlatform = rootProject.extra["javacppPlatform"] as String
+    val desktopTestRuntimeOnly = kotlin.sourceSets.getByName("desktopTest").runtimeOnlyConfigurationName
+    add(desktopTestRuntimeOnly, variantOf(libs.javacpp) { classifier(javacppPlatform) })
+}
+
 android {
     namespace = "com.kashif.qr_scanner_plugin"
     compileSdk =
