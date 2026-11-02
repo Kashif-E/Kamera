@@ -28,6 +28,7 @@ import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCaptureFlashModeAuto
 import platform.AVFoundation.AVCaptureFlashModeOff
 import platform.AVFoundation.AVCaptureFlashModeOn
+import platform.AVFoundation.AVCaptureInput
 import platform.AVFoundation.AVCaptureMetadataOutput
 import platform.AVFoundation.AVCaptureMetadataOutputObjectsDelegateProtocol
 import platform.AVFoundation.AVCaptureMovieFileOutput
@@ -61,7 +62,6 @@ import platform.darwin.dispatch_get_global_queue
 import platform.darwin.dispatch_get_main_queue
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlin.random.Random
 
 actual class CameraController internal constructor(
@@ -537,46 +537,69 @@ actual class CameraController internal constructor(
         memoryManager.clearBufferPools()
     }
 
-    @OptIn(ExperimentalForeignApi::class)
-    actual suspend fun startRecording(configuration: VideoConfiguration): String = suspendCancellableCoroutine { cont ->
-        val output = movieFileOutput ?: run {
-            cont.resumeWithException(IllegalStateException("Movie file output not available"))
-            return@suspendCancellableCoroutine
-        }
-
-        if (output.isRecording()) {
-            cont.resume(videoOutputFilePath ?: "")
-            return@suspendCancellableCoroutine
-        }
-
-        if (configuration.enableAudio) {
-            addAudioInputIfNeeded()
-        }
-
-        val filePath = createVideoTempFile(configuration)
-        videoOutputFilePath = filePath
-        val fileURL = NSURL.fileURLWithPath(filePath)
-
-        // Delete existing file at path if any
-        NSFileManager.defaultManager.removeItemAtPath(filePath, null)
-
-        val delegate = VideoRecordingDelegate()
-        videoRecordingDelegate = delegate
-
-        // Set video orientation on the movie file output connection. Use the effective
-        // orientation so a locked orientation (setTargetOrientation) is honored for recording.
-        output.connectionWithMediaType(platform.AVFoundation.AVMediaTypeVideo)?.let { connection ->
-            if (connection.isVideoOrientationSupported()) {
-                connection.videoOrientation = effectiveVideoOrientation()
-            }
-        }
-
-        dispatch_async(dispatch_get_main_queue()) {
-            output.startRecordingToOutputFileURL(fileURL, recordingDelegate = delegate)
-        }
-
-        cont.resume(filePath)
+    /**
+     * The movie file output a recording writes to, once every session change already queued has
+     * run; null when the session has none.
+     */
+    internal suspend fun attachMovieOutput(): AVCaptureMovieFileOutput? = suspendCancellableCoroutine { cont ->
+        customCameraController.afterQueuedSessionWork { cont.resume(movieFileOutput) }
     }
+
+    /**
+     * Gives back what a recording on [output] held once it has ended. The movie output and the
+     * inputs [isAudioInput] matches stay attached for now.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    internal fun releaseRecordingResources(
+        output: AVCaptureMovieFileOutput,
+        isAudioInput: (AVCaptureInput) -> Boolean = ::isAudioDeviceInput,
+    ) {
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual suspend fun startRecording(configuration: VideoConfiguration): String {
+        val output = attachMovieOutput() ?: throw IllegalStateException("Movie file output not available")
+        return startRecordingOn(output, configuration)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private suspend fun startRecordingOn(output: AVCaptureMovieFileOutput, configuration: VideoConfiguration): String =
+        suspendCancellableCoroutine { cont ->
+
+            if (output.isRecording()) {
+                cont.resume(videoOutputFilePath ?: "")
+                return@suspendCancellableCoroutine
+            }
+
+            if (configuration.enableAudio) {
+                addAudioInputIfNeeded()
+            }
+
+            val filePath = createVideoTempFile(configuration)
+            videoOutputFilePath = filePath
+            val fileURL = NSURL.fileURLWithPath(filePath)
+
+            // Delete existing file at path if any
+            NSFileManager.defaultManager.removeItemAtPath(filePath, null)
+
+            val delegate = VideoRecordingDelegate()
+            delegate.onRecordingEnded = { releaseRecordingResources(output) }
+            videoRecordingDelegate = delegate
+
+            // Set video orientation on the movie file output connection. Use the effective
+            // orientation so a locked orientation (setTargetOrientation) is honored for recording.
+            output.connectionWithMediaType(platform.AVFoundation.AVMediaTypeVideo)?.let { connection ->
+                if (connection.isVideoOrientationSupported()) {
+                    connection.videoOrientation = effectiveVideoOrientation()
+                }
+            }
+
+            dispatch_async(dispatch_get_main_queue()) {
+                output.startRecordingToOutputFileURL(fileURL, recordingDelegate = delegate)
+            }
+
+            cont.resume(filePath)
+        }
 
     actual suspend fun stopRecording(): VideoCaptureResult = suspendCancellableCoroutine { cont ->
         val output = movieFileOutput
@@ -616,13 +639,17 @@ actual class CameraController internal constructor(
     @OptIn(ExperimentalForeignApi::class)
     private fun addAudioInputIfNeeded() {
         customCameraController.addInputUnlessPresent(
-            isPresent = { input -> (input as? AVCaptureDeviceInput)?.device?.hasMediaType(AVMediaTypeAudio) == true },
+            isPresent = ::isAudioDeviceInput,
             create = {
                 platform.AVFoundation.AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeAudio)
                     ?.let { AVCaptureDeviceInput.deviceInputWithDevice(it, null) }
             },
         )
     }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun isAudioDeviceInput(input: AVCaptureInput): Boolean =
+        (input as? AVCaptureDeviceInput)?.device?.hasMediaType(AVMediaTypeAudio) == true
 
     @OptIn(ExperimentalForeignApi::class)
     private fun createVideoTempFile(config: VideoConfiguration): String {
