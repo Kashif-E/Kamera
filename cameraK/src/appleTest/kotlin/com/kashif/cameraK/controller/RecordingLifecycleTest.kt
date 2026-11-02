@@ -146,4 +146,27 @@ class RecordingLifecycleTest {
 
         assertTrue(pause.isFailure, "pauseRecording reported a pause the movie output did not apply")
     }
+
+    @Test
+    fun pauseAndResumeWithoutARecordingDoNothing() {
+        rig.start()
+
+        val pause = Call { rig.controller.pauseRecording() }.await("pauseRecording to return")
+        val resume = Call { rig.controller.resumeRecording() }.await("resumeRecording to return")
+
+        assertTrue(pause.isSuccess, "pause without a recording was not a no-op: $pause")
+        assertTrue(resume.isSuccess, "resume without a recording was not a no-op: $resume")
+        assertEquals(0, recorder.pauses)
+    }
+
+    @Test
+    fun resumeIsANoOpWhereTheMovieOutputCannotPause() {
+        rig.controller.pauseSupported = { false }
+        rig.start()
+        startedRecording()
+
+        val resume = Call { rig.controller.resumeRecording() }.await("resumeRecording to return")
+
+        assertTrue(resume.isSuccess, "resuming a recording that cannot have been paused was not a no-op: $resume")
+    }
 }
