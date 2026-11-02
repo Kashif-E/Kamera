@@ -5,7 +5,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
 
   agent-permissions  Committed agent configuration (.claude/) pre-approves nothing that reads or
                      changes secrets, signs, publishes, commits or rewrites history, nothing that
-                     edits files, and no path outside the repository; personal approvals stay in
+                     edits files (including git commands whose --output or -o writes one), and no
+                     path outside the repository; personal approvals stay in
                      the gitignored .claude/settings.local.json.
   security-policy    .github/SECURITY.md supports the release line gradle.properties publishes and
                      routes reports through GitHub private vulnerability reporting on the repository
@@ -73,6 +74,9 @@ FORBIDDEN_COMMANDS = [
     (re.compile(r"\b(gpg|signing)\b", re.IGNORECASE), "signing"),
     (re.compile(r"publish", re.IGNORECASE), "publishing"),
     (re.compile(r"\bsed\s+(-\S*\s+)*-i\b|\brm\b|\bmv\b|\bchmod\b|>"), "file-mutating commands"),
+    # These write to a file named by --output or -o, so a wildcard approval of them approves that.
+    (re.compile(r"\bgit\s+(diff|log|show|whatchanged|format-patch|archive|bundle)\b.*(\*|--output|\s-o\b)"),
+     "a git command that writes files through --output or -o"),
 ]
 PERSONAL_PATH = re.compile(r"(^|[(\s:=])(//|~|/Users/|/home/|[A-Za-z]:\\)")
 RULE = re.compile(r"^(?P<tool>[A-Za-z]+)(\((?P<specifier>.*)\))?$")
@@ -115,11 +119,17 @@ def agent_settings_problems(settings: object, name: str) -> List[str]:
 def check_agent_permissions() -> List[str]:
     fixture = {
         "permissions": {
-            "allow": ["Read(//Users/someone/**)", "Bash(gh secret:*)", "Bash(git commit:*)", "Bash(sed -i '' s/a/b/ x)"]
+            "allow": [
+                "Read(//Users/someone/**)",
+                "Bash(gh secret:*)",
+                "Bash(git commit:*)",
+                "Bash(sed -i '' s/a/b/ x)",
+                "Bash(git diff:*)",
+            ]
         }
     }
     rejected = agent_settings_problems(fixture, "fixture")
-    if len(rejected) < 4:
+    if len(rejected) < 5 or agent_settings_problems({"permissions": {"allow": ["Bash(git status:*)"]}}, "fixture"):
         raise CheckError(f"the agent-permissions rule accepts a fixture it must reject: {rejected}")
 
     problems = []
