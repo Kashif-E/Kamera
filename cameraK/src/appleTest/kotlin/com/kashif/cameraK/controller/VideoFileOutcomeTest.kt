@@ -149,4 +149,17 @@ class VideoFileOutcomeTest {
         assertIs<VideoCaptureResult.Error>(result, "a video Photos refused was reported as $result")
         assertTrue(NSFileManager.defaultManager.fileExistsAtPath(started.url.path!!), "the video was deleted")
     }
+
+    @Test
+    fun aPhotosImportThatNeverFinishesEndsTheStopWithAnErrorOnceItTimesOutAndKeepsTheFile() {
+        use(Directory.PICTURES)
+        rig.controller.photosLibrary = FakePhotosLibrary(FakePhotosLibrary.Answer.Never)
+        rig.controller.photosImportTimeoutMs = 200
+        val started = startedRecording()
+
+        val result = stop(started, error = null)
+
+        assertIs<VideoCaptureResult.Error>(result, "a video Photos never imported was reported as $result")
+        assertTrue(NSFileManager.defaultManager.fileExistsAtPath(started.url.path!!), "the video was deleted")
+    }
 }
