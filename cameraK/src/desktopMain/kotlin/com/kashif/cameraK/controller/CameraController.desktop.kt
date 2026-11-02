@@ -343,6 +343,11 @@ actual class CameraController(
         scope.cancel()
     }
 
+    /** Ends the controller as [cleanup] does. */
+    suspend fun closeAndJoin() {
+        cleanup()
+    }
+
     actual suspend fun startRecording(configuration: VideoConfiguration): String = withContext(Dispatchers.IO) {
         recordingLock.withLock { startRecordingLocked(configuration) }
     }
