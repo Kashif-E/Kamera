@@ -1,8 +1,11 @@
 package com.kashif.cameraK.state
 
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.controller.FakeFrameGrabber
+import com.kashif.cameraK.controller.defaultCameraOverride
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -10,7 +13,13 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -24,6 +33,24 @@ import kotlin.test.assertTrue
  * and we can exercise attach/detach/shutdown/scope-cancellation deterministically.
  */
 class PluginLifecycleTest {
+
+    // The camera the lifecycle controllers must run on: one that is not there.
+    private val fakeCamera = FakeFrameGrabber().apply { openGate() }
+    private val hostCameraOpened = CompletableDeferred<Unit>()
+
+    // Any grab loop that reaches the host's default camera fails to open it and reports it here.
+    @BeforeTest
+    fun forbidTheHostCamera() {
+        defaultCameraOverride = {
+            hostCameraOpened.complete(Unit)
+            throw IllegalStateException("A plugin lifecycle test tried to open the host's camera")
+        }
+    }
+
+    @AfterTest
+    fun restoreTheDefaultCamera() {
+        defaultCameraOverride = null
+    }
 
     private fun newController(): CameraController = CameraController(ImageFormat.JPEG, Directory.PICTURES)
 
@@ -163,6 +190,30 @@ class PluginLifecycleTest {
         assertEquals(NULL_RETURNED, result, "should return null on Error, not hang forever")
 
         scope.cancel()
+    }
+
+    @Test
+    fun lifecycleControllers_runOnTheFakeCamera_notTheHostCamera() = runBlocking {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val sut = holder(scope)
+        val fakeCameraOpened = CompletableDeferred<Unit>()
+        thread(isDaemon = true) {
+            if (fakeCamera.firstGrabEntered.await(10, TimeUnit.SECONDS)) fakeCameraOpened.complete(Unit)
+        }
+        try {
+            sut.initialize()
+
+            val opened = withTimeout(10_000) {
+                select {
+                    hostCameraOpened.onAwait { "the host camera" }
+                    fakeCameraOpened.onAwait { "the fake camera" }
+                }
+            }
+            assertEquals("the fake camera", opened, "the camera the lifecycle test's controller opened")
+        } finally {
+            sut.shutdown()
+            scope.cancel()
+        }
     }
 
     private companion object {
