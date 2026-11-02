@@ -88,8 +88,9 @@ class LensClassificationTest {
 
     @Test
     fun telephotoAtRatioOnePointSixOfMainLens() {
-        // Galaxy S23 Ultra back: 6.3 mm on a 9.86 mm sensor (23.0 mm equiv, main) and the 3x, 10.0 mm on a
-        // 5.22 mm sensor (69.0 mm equiv). 69 < 70 kept the 3x out of TELEPHOTO in 1.x; it is 3.0x the main.
+        // Galaxy S23 Ultra back, by its published 23 mm and 69 mm equivalents. The focal lengths and sensor widths
+        // are chosen to give those equivalents, not read from a characteristics dump. 69 < 70 kept the 3x out of
+        // TELEPHOTO in 1.x; it is 3.0x the main.
         val s23 = deriveLensDeviceTypes(
             listOf(
                 raw("main", listOf(6.3f), 9.86f),
@@ -125,6 +126,17 @@ class LensClassificationTest {
         assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["main"])
         assertEquals(CameraDeviceType.ULTRA_WIDE, kinds["x0_75"])
         assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["x0_86"])
+
+        // With a main lens the ratio replaces the absolute 20 mm: 19 mm beside a 24 mm main is 0.79x, so
+        // WIDE_ANGLE, where 1.x said ULTRA_WIDE.
+        val above = deriveLensDeviceTypes(
+            listOf(
+                raw("main", listOf(6.0f), 9.0f),
+                raw("x0_79", listOf(2.375f), 4.5f),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, above["main"])
+        assertEquals(CameraDeviceType.WIDE_ANGLE, above["x0_79"])
     }
 
     @Test
@@ -150,6 +162,17 @@ class LensClassificationTest {
         assertEquals(CameraDeviceType.ULTRA_WIDE, unreadable["uw"])
         assertEquals(CameraDeviceType.WIDE_ANGLE, unreadable["wide"])
         assertEquals(CameraDeviceType.TELEPHOTO, unreadable["tele"])
+
+        // The only lens in the band has no sensor width, so it is not the main lens. Were its raw 22 mm the main,
+        // the readable 18 mm lens would be 0.82x and WIDE_ANGLE; with no main it is ULTRA_WIDE by the absolute rule.
+        val inBandUnreadable = deriveLensDeviceTypes(
+            listOf(
+                raw("noSensor", listOf(22.0f), null),
+                raw("uw", listOf(2.25f), 4.5f),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, inBandUnreadable["noSensor"])
+        assertEquals(CameraDeviceType.ULTRA_WIDE, inBandUnreadable["uw"])
     }
 
     @Test
@@ -205,6 +228,16 @@ class LensClassificationTest {
         assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["main"])
         assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["noSensor"])
         assertEquals(CameraDeviceType.TELEPHOTO, kinds["noSensorTele"])
+
+        // A sensor width of 0 is unreadable too: the raw 40 mm stays WIDE_ANGLE rather than 1.6x the 25 mm main.
+        val zeroWidth = deriveLensDeviceTypes(
+            listOf(
+                raw("main", listOf(6.25f), 9.0f),
+                raw("zeroWidth", listOf(40.0f), 0f),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, zeroWidth["main"])
+        assertEquals(CameraDeviceType.WIDE_ANGLE, zeroWidth["zeroWidth"])
     }
 
     @Test
