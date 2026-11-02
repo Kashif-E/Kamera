@@ -8,6 +8,7 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.frames.FrameFormat
 
 /**
  * Configuration for camera initialization.
@@ -56,4 +57,10 @@ data class CameraConfiguration(
     val targetResolution: Pair<Int, Int>? = null,
     val directory: Directory = Directory.DOCUMENTS,
     val mirrorFrontCamera: Boolean = false,
+    // S1' stubs: placeholder defaults until the fields get theirs.
+    val cameraId: String? = "",
+    val outputDirectory: String? = "",
+    val frameAnalysis: Boolean = true,
+    val analysisResolution: Resolution? = null,
+    val analysisFormat: FrameFormat = FrameFormat.RGBA_8888,
 )
