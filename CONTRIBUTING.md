@@ -24,7 +24,7 @@ scripts/verify.sh
 (`ANDROID_HOME`, default `~/Library/Android/sdk`).
 
 ```bash
-scripts/verify.sh                            # full run: spotless, every module's desktop, Android and iOS tests, screenshots, Sample build
+scripts/verify.sh                            # full run: spotless, every module's desktop, Android and iOS tests, Android lint, screenshots, Sample build and iOS framework link
 scripts/verify.sh --quick                    # desktop JVM tests only, the fastest loop
 scripts/verify.sh --module qrScannerPlugin   # one module
 scripts/verify.sh --only android             # one target: desktop, android, ios, screenshots, lint or sample

@@ -988,9 +988,10 @@ fun verifyTaskPaths(
             paths += ":$module:desktopTest"
         }
         // Tests run on debug and the simulator; release and the device targets are what ship, so
-        // they are compiled too.
+        // they are compiled too, and release is linted.
         if ("android" in targets) {
-            paths += listOf(":$module:testDebugUnitTest", ":$module:compileReleaseKotlinAndroid")
+            paths +=
+                listOf(":$module:testDebugUnitTest", ":$module:compileReleaseKotlinAndroid", ":$module:lintRelease")
         }
         if ("ios" in targets) {
             paths +=
@@ -1013,6 +1014,9 @@ fun verifyTaskPaths(
                 ":Sample:assembleDebug",
                 ":Sample:compileKotlinIosSimulatorArm64",
                 ":Sample:compileKotlinIosArm64",
+                ":Sample:lintDebug",
+                // The framework the iOS app embeds; linking it is where Kotlin/Native runs out of heap.
+                ":Sample:linkDebugFrameworkIosSimulatorArm64",
             )
     }
     return paths

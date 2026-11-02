@@ -1,5 +1,6 @@
 package com.kashif.cameraK.compose
 
+import android.content.Context
 import android.content.res.Configuration
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Box
@@ -24,11 +25,7 @@ actual fun CameraPreviewView(
     overlay: @Composable (CameraPreviewScope.() -> Unit)?,
 ) {
     val context = LocalContext.current
-    // FIT_CENTER shows the whole frame (letterboxed) instead of cropping it to fill the view,
-    // so the preview matches the captured field of view.
-    val previewView = remember {
-        PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_CENTER }
-    }
+    val previewView = remember { fitCenterPreviewView(context) }
 
     DisposableEffect(controller, previewView) {
         controller.bindCamera(previewView) {}
@@ -62,3 +59,9 @@ actual fun CameraPreviewView(
         }
     }
 }
+
+// FIT_CENTER shows the whole frame (letterboxed) instead of cropping it to fill the view, so the
+// preview matches the captured field of view. Built outside remember's lambda because Compose lint's
+// RememberReturnType reads an apply block that ends in an assignment as remember returning Unit.
+private fun fitCenterPreviewView(context: Context): PreviewView =
+    PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_CENTER }

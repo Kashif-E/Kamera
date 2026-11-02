@@ -47,7 +47,7 @@ jobs:
           # macos-15 is Apple silicon with ~7 GB; -Xmx5g leaves room for the Kotlin/Native linker itself.
           echo "org.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=1g" >> ~/.gradle/gradle.properties
 
-      - name: Verify (spotless, tests on every target, release and device compiles, screenshots, Sample)
+      - name: Verify (spotless, tests on every target, release and device compiles, Android lint, screenshots, Sample and its iOS framework link)
         run: scripts/verify.sh --full -- --no-daemon
 
       - name: Upload verification results
