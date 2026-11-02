@@ -117,7 +117,7 @@ dependencies {
 <key>NSPhotoLibraryUsageDescription</key>
 <string>Photo library access required for showing saved images</string>
 ```
-An app that saves only to `Directory.DOCUMENTS` needs neither Photos key.
+An app that saves only to `Directory.DOCUMENTS` and does not use the image saver plugin needs no `NSPhotoLibraryAddUsageDescription`; it still needs `NSPhotoLibraryUsageDescription` if it calls `RequestStoragePermission`.
 
 **Desktop** - CameraK depends only on bytedeco's Java bindings (`javacv`, `javacpp`, `ffmpeg`, `videoinput`; the OCR plugin adds `tesseract` and `leptonica`), so your app chooses which operating systems' natives it ships. Either declare the classifier jars for each platform you ship:
 

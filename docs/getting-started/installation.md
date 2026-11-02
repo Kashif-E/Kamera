@@ -119,7 +119,7 @@ Add usage descriptions to `Info.plist`. iOS terminates the app when it asks for 
 | `NSPhotoLibraryAddUsageDescription` | Saving to Photos (`Directory.PICTURES`, the default, or `Directory.DCIM`) and the image saver plugin |
 | `NSPhotoLibraryUsageDescription` | `RequestStoragePermission` and reading a saved `ph://` photo back |
 
-An app that saves only to `Directory.DOCUMENTS` needs neither Photos key.
+An app that saves only to `Directory.DOCUMENTS` and does not use the image saver plugin needs no `NSPhotoLibraryAddUsageDescription`; it still needs `NSPhotoLibraryUsageDescription` if it calls `RequestStoragePermission`.
 
 ### Desktop (JVM)
 

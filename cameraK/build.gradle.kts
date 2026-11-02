@@ -119,6 +119,13 @@ dependencies {
 tasks.named<Test>("desktopTest") {
     val record = providers.gradleProperty("camerak.recordScreenshots").orElse("false")
     inputs.property("camerak.recordScreenshots", record)
+    // IosInstallDocsTest reads these, so a docs-only change must rerun it.
+    inputs
+        .files(
+            layout.projectDirectory.file("../README.MD"),
+            layout.projectDirectory.file("../docs/getting-started/installation.md"),
+        ).withPropertyName("iosInstallDocs")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     systemProperty("camerak.screenshots.record", record.get())
     systemProperty(
         "camerak.screenshots.goldenDir",
