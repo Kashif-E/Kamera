@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.MediaStore
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.UseCase
@@ -42,6 +43,9 @@ internal class FakeCameraXBackend : CameraXBackend {
     val captures = mutableListOf<PendingCapture>()
     val recordings = mutableListOf<FakeRecording>()
 
+    /** The consumer each ImageAnalysis currently delivers its frames to. */
+    val analyzers = mutableMapOf<ImageAnalysis, ImageAnalysis.Analyzer>()
+
     override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
         executor.execute { onResult(Result.success(binding)) }
     }
@@ -53,6 +57,14 @@ internal class FakeCameraXBackend : CameraXBackend {
         callback: ImageCapture.OnImageSavedCallback,
     ) {
         captures += PendingCapture(options, executor, callback)
+    }
+
+    override fun setAnalyzer(analysis: ImageAnalysis, executor: Executor, analyzer: ImageAnalysis.Analyzer) {
+        analyzers[analysis] = analyzer
+    }
+
+    override fun clearAnalyzer(analysis: ImageAnalysis) {
+        analyzers -= analysis
     }
 
     override fun startRecording(

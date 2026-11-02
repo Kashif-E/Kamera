@@ -538,7 +538,7 @@ actual class CameraController internal constructor(
             .apply {
                 // Run analysis off the main thread — frame work (e.g. JPEG-encoding the analyzer
                 // frame, QR/OCR) is too heavy to block the UI thread.
-                setAnalyzer(analyzerExecutor, composite)
+                backend.setAnalyzer(this, analyzerExecutor, composite)
             }
     }
 
@@ -1236,7 +1236,7 @@ actual class CameraController internal constructor(
 
         // Stop frame delivery before anything it uses goes away, and stop a recording while its
         // VideoCapture is still bound so it finalizes cleanly.
-        imageAnalyzer?.clearAnalyzer()
+        imageAnalyzer?.let { backend.clearAnalyzer(it) }
         activeRecording?.stop()
         activeRecording = null
 

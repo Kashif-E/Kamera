@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
@@ -75,6 +76,12 @@ internal interface CameraXBackend {
         onFinalized: (RecordingFinalized) -> Unit,
     ): RecordingSession
 
+    /** Makes [analyzer] the consumer of [analysis]'s frames, run on [executor]. */
+    fun setAnalyzer(analysis: ImageAnalysis, executor: Executor, analyzer: ImageAnalysis.Analyzer)
+
+    /** Stops delivering [analysis]'s frames to any consumer. */
+    fun clearAnalyzer(analysis: ImageAnalysis)
+
     object Default : CameraXBackend {
         override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
             val future = ProcessCameraProvider.getInstance(context)
@@ -89,6 +96,12 @@ internal interface CameraXBackend {
         ) {
             imageCapture.takePicture(options, executor, callback)
         }
+
+        override fun setAnalyzer(analysis: ImageAnalysis, executor: Executor, analyzer: ImageAnalysis.Analyzer) {
+            analysis.setAnalyzer(executor, analyzer)
+        }
+
+        override fun clearAnalyzer(analysis: ImageAnalysis) = analysis.clearAnalyzer()
 
         @SuppressLint("MissingPermission") // The caller asks for audio only when RECORD_AUDIO is granted.
         override fun startRecording(
