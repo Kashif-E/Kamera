@@ -255,7 +255,9 @@ sealed class CameraKEvent {
  * @property cameraDeviceType Preferred camera device type.
  * @property aspectRatio Aspect ratio for preview and capture.
  * @property targetResolution Target resolution (width x height) or null for auto.
- * @property directory Directory for saving captured images.
+ * @property directory Where captures are saved. The default, [Directory.DOCUMENTS], keeps them in
+ *   app-private storage; [Directory.PICTURES] and [Directory.DCIM] publish every capture to the shared
+ *   gallery and are an explicit opt-in (as is ImageSaverPlugin).
  * @property mirrorFrontCamera If true, front-camera captures are horizontally mirrored to match
  *   the mirrored preview (selfie "what you see is what you get"). No effect on the back camera.
  *   Representation note: iOS and the Android byte-array path bake the flip into the pixels; the
@@ -284,6 +286,6 @@ data class CameraConfiguration(
     val cameraDeviceType: CameraDeviceType = CameraDeviceType.DEFAULT,
     val aspectRatio: AspectRatio = AspectRatio.RATIO_16_9,
     val targetResolution: Pair<Int, Int>? = null,
-    val directory: Directory = Directory.PICTURES,
+    val directory: Directory = Directory.DOCUMENTS,
     val mirrorFrontCamera: Boolean = false,
 )

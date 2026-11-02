@@ -260,9 +260,9 @@ val cameraState by rememberCameraKState(
 ```
 
 **Options:**
-- `Directory.PICTURES` — User pictures (default)
-- `Directory.DCIM` — Camera roll
-- `Directory.DOCUMENTS` — Documents
+- `Directory.DOCUMENTS` — App-private storage (default; not visible in the gallery)
+- `Directory.PICTURES` — Publishes each capture to the shared gallery (`Pictures/CameraK`)
+- `Directory.DCIM` — Publishes each capture to the camera roll (`DCIM/CameraK`)
 
 **File naming:**
 Files are named with the capture time in epoch milliseconds and a random suffix, so captures in

@@ -261,7 +261,7 @@ val cameraState by rememberCameraKState(
 
         // Image output
         imageFormat = ImageFormat.JPEG,          // JPEG or PNG
-        directory = Directory.PICTURES,         // PICTURES, DCIM, DOCUMENTS
+        directory = Directory.DOCUMENTS,        // DOCUMENTS (app-private, default); PICTURES/DCIM publish to the gallery
 
         // Quality
         qualityPrioritization = QualityPrioritization.BALANCED,
@@ -291,7 +291,7 @@ val cameraState by rememberCameraKState(
 | `flashMode` | `FlashMode` | `OFF` | ON, OFF, or AUTO |
 | `torchMode` | `TorchMode` | `OFF` | ON, OFF, or AUTO |
 | `imageFormat` | `ImageFormat` | `JPEG` | JPEG or PNG |
-| `directory` | `Directory` | `PICTURES` | PICTURES, DCIM, or DOCUMENTS |
+| `directory` | `Directory` | `DOCUMENTS` | DOCUMENTS keeps captures app-private; PICTURES or DCIM publish each one to the gallery |
 | `qualityPrioritization` | `QualityPrioritization` | `BALANCED` | Capture quality vs speed tradeoff |
 | `mirrorFrontCamera` | `Boolean` | `false` | Mirror front-camera captures to match preview (Android/iOS) |
 | `cameraDeviceType` | `CameraDeviceType` | `DEFAULT` | iOS: DEFAULT, WIDE_ANGLE, ULTRA_WIDE, TELEPHOTO, MACRO |

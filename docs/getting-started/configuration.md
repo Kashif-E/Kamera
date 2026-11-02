@@ -162,9 +162,9 @@ config = CameraConfiguration(
 
 | Directory | Android Path | iOS Path |
 |-----------|--------------|----------|
-| `PICTURES` | `Environment.DIRECTORY_PICTURES` | Photo Library (default) |
-| `DCIM` | `Environment.DIRECTORY_DCIM` | Photo Library |
-| `DOCUMENTS` | `getExternalFilesDir(DOCUMENTS)` | Documents folder |
+| `DOCUMENTS` (default) | `filesDir/CameraK` (app-private) | Documents folder |
+| `PICTURES` | MediaStore `Pictures/CameraK` (shared gallery) | Photo Library |
+| `DCIM` | MediaStore `DCIM/CameraK` (shared gallery) | Photo Library |
 
 **Example:**
 
@@ -354,7 +354,7 @@ controller.toggleCameraLens()  // BACK <-> FRONT
 | `targetResolution` | `Pair<Int, Int>` | Device default | All |
 | `flashMode` | `FlashMode` | `AUTO` | Android, iOS |
 | `imageFormat` | `ImageFormat` | `JPEG` | All |
-| `directory` | `Directory` | `PICTURES` | All |
+| `directory` | `Directory` | `DOCUMENTS` | All |
 | `qualityPrioritization` | `QualityPrioritization` | `BALANCED` | All |
 | `torchMode` | `TorchMode` | `OFF` | Android, iOS |
 | `mirrorFrontCamera` | `Boolean` | `false` | Android, iOS |

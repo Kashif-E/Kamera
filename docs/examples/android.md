@@ -236,9 +236,9 @@ If using ProGuard/R8, add rules:
 
 On Android, photos are saved to:
 
-- `Directory.PICTURES` -> `/storage/emulated/0/Pictures/`
-- `Directory.DCIM` -> `/storage/emulated/0/DCIM/`
-- `Directory.DOCUMENTS` -> `/data/data/your.package/files/Documents/`
+- `Directory.DOCUMENTS` (default) -> `/data/data/your.package/files/CameraK/` (app-private)
+- `Directory.PICTURES` -> MediaStore `Pictures/CameraK/` (shared gallery, returns a `content://` URI)
+- `Directory.DCIM` -> MediaStore `DCIM/CameraK/` (shared gallery, returns a `content://` URI)
 
 ## Testing
 

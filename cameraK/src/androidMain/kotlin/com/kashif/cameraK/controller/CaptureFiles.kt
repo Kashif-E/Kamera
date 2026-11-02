@@ -25,6 +25,8 @@ internal fun newCaptureFile(dir: File, prefix: String, extension: String): File 
     throw IOException("No free name for a new capture file")
 }
 
-/** The folder captures that do not go to the gallery (photos and videos) are written to. */
-internal fun appCaptureDirectory(context: Context): File =
-    File(context.getExternalFilesDir(null) ?: context.filesDir, "CameraK")
+/**
+ * The app-private folder captures that do not go to the gallery (photos and videos) are written to:
+ * internal storage, which no other app can read and which never sits on removable media.
+ */
+internal fun appCaptureDirectory(context: Context): File = File(context.filesDir, "CameraK")

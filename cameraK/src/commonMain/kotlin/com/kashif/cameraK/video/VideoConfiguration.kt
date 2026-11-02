@@ -10,8 +10,10 @@ import androidx.compose.runtime.Immutable
  *                        warning when this is true.
  * @property maxDurationMs Maximum recording duration in milliseconds. 0 means unlimited.
  * @property outputDirectory Absolute path to directory for saving the video file.
- *                           Null uses the platform default (DCIM/CameraK on Android, temp on iOS,
- *                           `~/Movies/CameraK` on macOS and `~/Videos/CameraK` on Linux and Windows).
+ *                           Null uses the platform default: on Android `filesDir/CameraK` for
+ *                           [com.kashif.cameraK.enums.Directory.DOCUMENTS] and public
+ *                           `Movies/CameraK` for PICTURES and DCIM; temp on iOS; `~/Movies/CameraK`
+ *                           on macOS and `~/Videos/CameraK` on Linux and Windows.
  * @property filePrefix Prefix for the generated filename.
  */
 @Immutable
