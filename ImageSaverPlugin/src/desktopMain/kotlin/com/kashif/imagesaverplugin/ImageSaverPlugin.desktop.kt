@@ -40,7 +40,9 @@ import javax.imageio.ImageWriteParam
  *
  * [getByteArrayFrom] and [readBytes] read only the library's own output: this saver's folder and
  * the `CameraK` folders under `Pictures` and `Documents`, where CameraK's desktop captures go. Any
- * other file, including the user's own files elsewhere in `Pictures` or `Documents`, is refused.
+ * other file, including the user's own files elsewhere in `Pictures` or `Documents`, is refused. A
+ * `CameraK` or custom folder that is itself a symbolic link is neither read nor written, wherever it
+ * points.
  *
  * @param config The configuration settings for the plugin.
  * @param onImageSaved Callback invoked when the image is successfully saved, on a `Dispatchers.IO`
@@ -105,14 +107,14 @@ class JVMImageSaverPlugin(
         ImageSaveResult.Failed(e)
     }
 
-    // customFolderName is one validated name, and the folder it names must still resolve inside the
-    // configured directory once symbolic links are followed.
+    // customFolderName is one validated name, and the folder it names must be that folder of the
+    // configured directory, not a symbolic link to any other.
     private fun resolveOutputDirectory(): File {
         val base = directoryFolder(config.directory)
         val name = config.customFolderName?.let { requireSafeFileName(it, "customFolderName") } ?: OUTPUT_FOLDER
         val folder = File(base, name)
-        if (!isInside(folder, base)) {
-            throw SaveFailure("The output folder resolves outside the configured directory")
+        if (!isOwnFolder(folder, base)) {
+            throw SaveFailure("The output folder is a link or resolves outside the configured directory")
         }
         return folder
     }
@@ -123,7 +125,8 @@ class JVMImageSaverPlugin(
     }
 
     // The library's own output folders: this saver's, and the CameraK folders that CameraK's desktop
-    // captures write to. A folder that links out of its directory is not one of them.
+    // captures write to. A folder that is a symbolic link, even to its own directory or a folder
+    // beside it, is not one of them.
     private fun readRoots(): List<Path> {
         val captureFolders = listOf(Directory.PICTURES, Directory.DOCUMENTS)
             .map { directoryFolder(it) }
@@ -135,7 +138,7 @@ class JVMImageSaverPlugin(
             emptyList()
         }
         return (captureFolders + ownFolder)
-            .filter { (folder, base) -> isInside(folder, base) }
+            .filter { (folder, base) -> isOwnFolder(folder, base) }
             .map { (folder, _) -> folder.canonicalFile.toPath() }
     }
 
@@ -166,9 +169,10 @@ class JVMImageSaverPlugin(
     }
 }
 
-// Whether [folder] is [base] or inside it once `..` and symbolic links are resolved.
-private fun isInside(folder: File, base: File): Boolean =
-    folder.canonicalFile.toPath().startsWith(base.canonicalFile.toPath())
+// Whether [folder], a name in [base], resolves to exactly that name in [base] once symbolic links are
+// followed: false when the folder is itself a link, wherever it points. [base] may be a link.
+private fun isOwnFolder(folder: File, base: File): Boolean =
+    folder.canonicalFile.toPath() == base.canonicalFile.toPath().resolve(folder.name)
 
 // A failure the saver describes itself, in a message with no path or user data.
 private class SaveFailure(message: String) : IOException(message)
