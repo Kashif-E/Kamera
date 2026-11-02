@@ -15,6 +15,7 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.TorchState
 import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.ViewPort
 import androidx.camera.core.ZoomState
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Recorder
@@ -202,12 +203,15 @@ internal class FakeCameraBinding : CameraBinding {
     /** The camera each bind returned, oldest first. Each starts as CameraX opens one: torch off, zoom 1x. */
     val cameras = mutableListOf<FakeCamera>()
 
+    /** The ViewPort of each use-case group bound, oldest first (null when the group had none). */
+    val viewPorts = mutableListOf<ViewPort?>()
+
     override fun unbind(vararg useCases: UseCase) {
         bound.removeAll(useCases.toSet())
     }
 
     override fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, useCaseGroup: UseCaseGroup): Camera =
-        bind(owner, useCaseGroup.useCases)
+        bind(owner, useCaseGroup.useCases).also { viewPorts += useCaseGroup.viewPort }
 
     override fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, vararg useCases: UseCase): Camera =
         bind(owner, useCases.toList())
