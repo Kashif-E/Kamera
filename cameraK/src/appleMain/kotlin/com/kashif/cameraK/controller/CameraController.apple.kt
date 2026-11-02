@@ -128,6 +128,7 @@ actual class CameraController internal constructor(
         // torch use; the torch is applied once the session runs and again after each lens switch.
         customCameraController.setFlashMode(flashMode.toAVCaptureFlashMode())
         customCameraController.setTorchMode(torchMode.toAVCaptureTorchMode())
+        customCameraController.recordingInProgress = { movieFileOutput?.isRecording() == true }
 
         // Queued at construction, ahead of any plugin change (a plugin needs this controller to queue
         // one), so the metadata and movie outputs join the session's single startup transaction on its

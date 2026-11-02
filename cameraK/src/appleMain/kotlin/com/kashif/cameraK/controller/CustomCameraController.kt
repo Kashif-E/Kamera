@@ -152,6 +152,10 @@ class CustomCameraController(
     @Volatile
     private var isUsingFrontCamera = false
 
+    /** Whether a recording is in progress; CameraController answers from its movie file output. */
+    @Volatile
+    internal var recordingInProgress: () -> Boolean = { false }
+
     var onPhotoCapture: ((NSData?) -> Unit)? = null
     var onError: ((CameraException) -> Unit)? = null
     var onSessionReady: (() -> Unit)? = null
