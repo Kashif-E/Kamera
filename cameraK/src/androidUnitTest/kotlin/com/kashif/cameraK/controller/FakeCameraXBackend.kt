@@ -6,19 +6,26 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraControl
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.TorchState
 import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.ZoomState
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
+import androidx.concurrent.futures.ResolvableFuture
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.MutableLiveData
+import com.google.common.util.concurrent.ListenableFuture
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -28,6 +35,7 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import java.io.File
+import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
@@ -191,6 +199,9 @@ internal class FakeCameraBinding : CameraBinding {
     var bindCalls = 0
         private set
 
+    /** The camera each bind returned, oldest first. Each starts as CameraX opens one: torch off, zoom 1x. */
+    val cameras = mutableListOf<FakeCamera>()
+
     override fun unbind(vararg useCases: UseCase) {
         bound.removeAll(useCases.toSet())
     }
@@ -207,20 +218,77 @@ internal class FakeCameraBinding : CameraBinding {
         }
         bindCalls++
         bound += useCases
-        return fakeCamera()
+        return FakeCamera().also { cameras += it }.camera
     }
 }
 
-private fun fakeCamera(): Camera = Proxy.newProxyInstance(Camera::class.java.classLoader, arrayOf(Camera::class.java)) {
-        _,
-        method,
-        _,
-    ->
-    when (method.returnType) {
-        java.lang.Boolean.TYPE -> false
-        else -> null
+/**
+ * A bound camera. Its control records what the controller asks of the hardware and, like CameraX,
+ * reports the result through the camera info's torch and zoom state.
+ */
+internal class FakeCamera(private val maxZoom: Float = 8f) {
+    val torchRequests = mutableListOf<Boolean>()
+    val zoomRequests = mutableListOf<Float>()
+    val torchState = MutableLiveData(TorchState.OFF)
+    val zoomState = MutableLiveData<ZoomState>(FakeZoomState(1f, maxZoom))
+
+    private val control = proxy<CameraControl> { method, args ->
+        when (method.name) {
+            "enableTorch" -> {
+                val on = args!![0] as Boolean
+                torchRequests += on
+                torchState.value = if (on) TorchState.ON else TorchState.OFF
+                completedFuture()
+            }
+            "setZoomRatio" -> {
+                val ratio = args!![0] as Float
+                zoomRequests += ratio
+                zoomState.value = FakeZoomState(ratio.coerceIn(1f, maxZoom), maxZoom)
+                completedFuture()
+            }
+            else -> completedFuture()
+        }
     }
-} as Camera
+
+    private val info = proxy<CameraInfo> { method, _ ->
+        when (method.name) {
+            "hasFlashUnit" -> true
+            "getTorchState" -> torchState
+            "getZoomState" -> zoomState
+            else -> null
+        }
+    }
+
+    val camera: Camera = proxy { method, _ ->
+        when (method.name) {
+            "getCameraControl" -> control
+            "getCameraInfo" -> info
+            else -> if (method.returnType == java.lang.Boolean.TYPE) false else null
+        }
+    }
+}
+
+private class FakeZoomState(private val ratio: Float, private val max: Float) : ZoomState {
+    override fun getZoomRatio() = ratio
+
+    override fun getMaxZoomRatio() = max
+
+    override fun getMinZoomRatio() = 1f
+
+    override fun getLinearZoom() = (ratio - 1f) / (max - 1f)
+}
+
+private fun completedFuture(): ListenableFuture<Void> = ResolvableFuture.create<Void>().apply { set(null) }
+
+private inline fun <reified T> proxy(crossinline answer: (Method, Array<Any?>?) -> Any?): T =
+    Proxy.newProxyInstance(T::class.java.classLoader, arrayOf(T::class.java)) { self, method, args ->
+        when (method.name) {
+            "hashCode" -> System.identityHashCode(self)
+            "equals" -> self === args?.firstOrNull()
+            "toString" -> "Fake${T::class.java.simpleName}"
+            else -> answer(method, args)
+        }
+    } as T
 
 /** A host lifecycle that has reached RESUMED, like the activity hosting the camera screen. */
 internal class ResumedLifecycleOwner : LifecycleOwner {
@@ -236,11 +304,12 @@ internal fun testController(
     analyzerExecutor: ExecutorService = Executors.newSingleThreadExecutor(),
     directory: Directory = Directory.DOCUMENTS,
     imageFormat: ImageFormat = ImageFormat.JPEG,
+    torchMode: TorchMode = TorchMode.OFF,
 ) = CameraController(
     context = context,
     lifecycleOwner = lifecycleOwner,
     flashMode = FlashMode.OFF,
-    torchMode = TorchMode.OFF,
+    torchMode = torchMode,
     cameraLens = CameraLens.BACK,
     imageFormat = imageFormat,
     qualityPriority = QualityPrioritization.BALANCED,
