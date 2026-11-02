@@ -150,8 +150,8 @@ if (providers.gradleProperty("camerak.verify.rerunTests").orNull.toBoolean()) {
 
 // kotlinx-coroutines-test on a consumer's runtime classpath hijacks Dispatchers.Main (#165).
 // This fails the build if it, or any other test library, reaches what a published variant gives
-// consumers: the desktop and both Android runtime classpaths (cameraK publishes debug as well as
-// release) and the klibs every iOS target compiles against.
+// consumers: the desktop and Android runtime classpaths (debug too, though only release is published)
+// and the klibs every iOS target compiles against.
 val testOnlyModules =
     listOf(
         Regex("""^org\.jetbrains\.kotlinx:kotlinx-coroutines-test"""),

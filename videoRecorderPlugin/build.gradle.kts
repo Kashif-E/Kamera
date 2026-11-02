@@ -11,7 +11,7 @@ plugins {
 kotlin {
     jvmToolchain(17)
     androidTarget {
-        publishLibraryVariants("release", "debug")
+        publishLibraryVariants("release")
     }
     jvm("desktop")
 
@@ -75,9 +75,6 @@ android {
         singleVariant("release") {
             withJavadocJar()
             withSourcesJar()
-        }
-
-        singleVariant("debug") {
         }
     }
 }

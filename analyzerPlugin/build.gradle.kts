@@ -11,7 +11,7 @@ plugins {
 kotlin {
     jvmToolchain(17)
     androidTarget {
-        publishLibraryVariants("release", "debug")
+        publishLibraryVariants("release")
     }
 
     jvm("desktop")
@@ -77,11 +77,6 @@ android {
         singleVariant("release") {
             withJavadocJar()
             withSourcesJar()
-        }
-
-        // For debug variant, we exclude Javadoc and sources to prevent conflicts
-        singleVariant("debug") {
-            // Exclude Javadoc and sources JARs for debug variant
         }
     }
 }
