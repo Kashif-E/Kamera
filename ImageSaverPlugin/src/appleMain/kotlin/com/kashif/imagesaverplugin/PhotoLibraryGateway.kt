@@ -3,7 +3,6 @@ package com.kashif.imagesaverplugin
 import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Photos.PHAsset
-import platform.Photos.PHAssetChangeRequest
 import platform.Photos.PHAssetCreationRequest
 import platform.Photos.PHAssetResourceCreationOptions
 import platform.Photos.PHAssetResourceTypePhoto
@@ -11,20 +10,14 @@ import platform.Photos.PHImageManager
 import platform.Photos.PHImageRequestID
 import platform.Photos.PHImageRequestOptions
 import platform.Photos.PHPhotoLibrary
-import platform.UIKit.UIImage
 
 /** The Photos library calls [IOSImageSaverPlugin] makes, so tests can run without photo-library access. */
 internal interface PhotoLibraryGateway {
     /**
-     * Writes [image] to the library as a new asset. [completion] runs once, on a queue Photos
-     * chooses, with the new asset's local identifier (null when the write failed) and the error.
-     */
-    fun createImageAsset(image: UIImage, completion: (localIdentifier: String?, error: NSError?) -> Unit)
-
-    /**
      * Stores [data], an encoded image of type [uniformTypeIdentifier], in the library as a new
      * asset's photo resource, byte for byte: no decode, no re-encode, metadata kept. [completion]
-     * follows [createImageAsset]'s contract.
+     * runs once, on a queue Photos chooses, with the new asset's local identifier (null when the
+     * write failed) and the error.
      */
     fun createPhotoAsset(
         data: NSData,
@@ -50,16 +43,6 @@ internal interface PhotoLibraryGateway {
 }
 
 internal object SystemPhotoLibrary : PhotoLibraryGateway {
-    override fun createImageAsset(image: UIImage, completion: (localIdentifier: String?, error: NSError?) -> Unit) {
-        var localIdentifier: String? = null
-        PHPhotoLibrary.sharedPhotoLibrary().performChanges({
-            val request = PHAssetChangeRequest.creationRequestForAssetFromImage(image)
-            localIdentifier = request.placeholderForCreatedAsset?.localIdentifier
-        }) { success, error ->
-            completion(if (success) localIdentifier else null, error)
-        }
-    }
-
     override fun createPhotoAsset(
         data: NSData,
         uniformTypeIdentifier: String,

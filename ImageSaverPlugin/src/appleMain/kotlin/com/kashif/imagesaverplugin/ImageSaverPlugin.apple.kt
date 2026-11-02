@@ -1,7 +1,6 @@
 package com.kashif.imagesaverplugin
 import coil3.PlatformContext
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.utils.fixOrientation
 import com.kashif.cameraK.utils.toByteArray
 import com.kashif.cameraK.utils.toNSData
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -10,11 +9,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.io.IOException
+import platform.CoreFoundation.CFDataRef
+import platform.CoreFoundation.CFRelease
+import platform.CoreFoundation.CFRetain
+import platform.Foundation.CFBridgingRelease
+import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
+import platform.ImageIO.CGImageSourceCreateWithData
+import platform.ImageIO.CGImageSourceGetCount
+import platform.ImageIO.CGImageSourceGetType
 import platform.Photos.PHImageRequestOptions
 import platform.Photos.PHImageRequestOptionsDeliveryModeHighQualityFormat
 import platform.Photos.PHImageRequestOptionsVersionCurrent
-import platform.UIKit.UIImage
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -40,22 +46,23 @@ class IOSImageSaverPlugin internal constructor(
     ) : this(config, onImageSaved, onImageSavedFailed, SystemPhotoLibrary)
 
     /**
-     * Decodes [byteArray] and writes it to the Photos library as a new asset, returning its
-     * `ph://` location. Runs on [Dispatchers.Default] and suspends while Photos writes, so it never
-     * occupies the main thread; cancelling it stops the wait but not a write already handed to Photos.
+     * Stores [byteArray], an encoded image, in the Photos library as a new asset byte for byte, so
+     * its EXIF (orientation, location, capture settings) stays as it was and nothing is decoded or
+     * re-encoded, and returns its `ph://` location. Runs on [Dispatchers.Default] and suspends while
+     * Photos writes, so it never occupies the main thread; cancelling it stops the wait but not a
+     * write already handed to Photos.
      */
     override suspend fun saveImage(byteArray: ByteArray, imageName: String?): String? =
         withContext(Dispatchers.Default) {
             val assetId = try {
-                val image = UIImage.imageWithData(byteArray.toNSData())
-                if (image == null) {
-                    CameraKLogger.e("CameraK", "Failed to convert NSData to UIImage.")
-                    notifyFailed("Failed to create UIImage from NSData.")
+                val data = byteArray.toNSData()
+                val type = imageTypeOf(data)
+                if (type == null) {
+                    CameraKLogger.e("CameraK", "The data to save is not an image.")
+                    notifyFailed("The data is not an image.")
                     return@withContext null
                 }
-
-                // Fix orientation before saving to ensure the image is displayed correctly
-                createAsset(image.fixOrientation())
+                createAsset(data, type)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -67,6 +74,20 @@ class IOSImageSaverPlugin internal constructor(
             notifySaved()
             "ph://$assetId"
         }
+
+    /** The uniform type of the image encoded in [data], read from its header without decoding it; null when it is not one. */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun imageTypeOf(data: NSData): String? {
+        val cfData = CFBridgingRetain(data) as CFDataRef
+        val source = CGImageSourceCreateWithData(cfData, null)
+        try {
+            if (source == null || CGImageSourceGetCount(source) == 0uL) return null
+            return CGImageSourceGetType(source)?.let { CFBridgingRelease(CFRetain(it)) as String }
+        } finally {
+            source?.let(::CFRelease)
+            CFRelease(cfData)
+        }
+    }
 
     private fun notifySaved() {
         try {
@@ -84,8 +105,8 @@ class IOSImageSaverPlugin internal constructor(
         }
     }
 
-    private suspend fun createAsset(image: UIImage): String = suspendCancellableCoroutine { continuation ->
-        photoLibrary.createImageAsset(image) { localIdentifier, error ->
+    private suspend fun createAsset(data: NSData, type: String): String = suspendCancellableCoroutine { continuation ->
+        photoLibrary.createPhotoAsset(data, type) { localIdentifier, error ->
             if (localIdentifier != null) {
                 continuation.resume(localIdentifier)
             } else {

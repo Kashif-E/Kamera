@@ -32,7 +32,6 @@ import platform.Photos.PHImageRequestOptions
 import platform.UIKit.UIGraphicsBeginImageContextWithOptions
 import platform.UIKit.UIGraphicsEndImageContext
 import platform.UIKit.UIGraphicsGetImageFromCurrentImageContext
-import platform.UIKit.UIImage
 import platform.UIKit.UIImageJPEGRepresentation
 import platform.UIKit.UIImagePNGRepresentation
 import platform.darwin.DISPATCH_TIME_NOW
@@ -306,7 +305,6 @@ class IOSImageSaverPluginPhotosTest {
     }
 
     private fun assertStoredUnchanged(photos: FakePhotoLibrary, bytes: ByteArray, type: String) {
-        assertEquals(false, photos.decodedImageCreated.value, "Photos was given a decoded image to re-encode")
         val (stored, storedType) = assertNotNull(photos.storedPhoto.value, "Photos was not given the image's bytes")
         assertContentEquals(bytes, stored, "Photos was not given the bytes saveImage received")
         assertEquals(type, storedType)
@@ -370,9 +368,6 @@ class IOSImageSaverPluginPhotosTest {
         val requestedIdentifier = atomic<String?>(null)
         val createdOnMainThread = atomic<Boolean?>(null)
 
-        /** Whether an asset was created from a decoded UIImage, which Photos re-encodes. */
-        val decodedImageCreated = atomic(false)
-
         /** The bytes and type of the photo resource stored byte for byte, if one was. */
         val storedPhoto = atomic<Pair<ByteArray, String>?>(null)
         val creationStarted = CompletableDeferred<Unit>()
@@ -386,11 +381,6 @@ class IOSImageSaverPluginPhotosTest {
 
         fun answerBlockedReads() {
             repeat(4) { dispatch_semaphore_signal(blockedReads) }
-        }
-
-        override fun createImageAsset(image: UIImage, completion: (String?, NSError?) -> Unit) {
-            decodedImageCreated.value = true
-            create(completion)
         }
 
         override fun createPhotoAsset(
