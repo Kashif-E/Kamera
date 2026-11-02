@@ -94,7 +94,7 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
 
     // Stable reference so addImageCaptureListener / removeImageCaptureListener target the same lambda.
     @OptIn(ExperimentalTime::class)
-    private val captureListener: (ByteArray) -> Unit = { byteArray ->
+    internal val captureListener: (ByteArray) -> Unit = { byteArray ->
         stateHolder?.pluginScope?.launch(Dispatchers.IO) {
             val imageName = config.prefix?.let { autoSaveImageName(it, Clock.System.now().toEpochMilliseconds()) }
             saveImage(byteArray, imageName)

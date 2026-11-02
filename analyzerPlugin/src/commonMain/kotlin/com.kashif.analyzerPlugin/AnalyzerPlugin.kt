@@ -24,7 +24,15 @@ fun interface AnalyzerHandle {
     fun stop()
 }
 
-class AnalyzerPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
+class AnalyzerPlugin internal constructor(
+    val coroutineScope: CoroutineScope,
+    private val startFrameAnalyzer: (CameraController, (ByteArray) -> Unit) -> AnalyzerHandle,
+) : CameraKPlugin {
+    constructor(coroutineScope: CoroutineScope) : this(
+        coroutineScope,
+        { controller, onFrame -> com.kashif.analyzerPlugin.startAnalyzer(controller, onFrame) },
+    )
+
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
     private val analyzerFlow = MutableSharedFlow<ByteArray>(
@@ -41,7 +49,7 @@ class AnalyzerPlugin(val coroutineScope: CoroutineScope) : CameraKPlugin {
         // analyzers (Android) or outputs (iOS), which would multiply per-frame work and leak.
         analyzerHandle?.stop()
         isAnalyzing.value = true
-        analyzerHandle = startAnalyzer(controller) { frame ->
+        analyzerHandle = startFrameAnalyzer(controller) { frame ->
             if (isAnalyzing.value) analyzerFlow.tryEmit(frame)
         }
     }

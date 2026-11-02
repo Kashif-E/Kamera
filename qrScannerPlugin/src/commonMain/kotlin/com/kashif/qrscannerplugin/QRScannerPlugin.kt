@@ -40,7 +40,15 @@ import kotlinx.coroutines.launch
  * @property coroutineScope Scope for managing QR scanning operations and event emission.
  */
 @Stable
-class QRScannerPlugin(private val coroutineScope: CoroutineScope) : CameraKPlugin {
+class QRScannerPlugin internal constructor(
+    private val coroutineScope: CoroutineScope,
+    private val startScanner: (CameraController, (String) -> Unit) -> ScannerHandle,
+) : CameraKPlugin {
+    constructor(coroutineScope: CoroutineScope) : this(
+        coroutineScope,
+        { controller, onQrScanner -> com.kashif.qrscannerplugin.startScanning(controller, onQrScanner) },
+    )
+
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
     private val qrCodeFlow = MutableSharedFlow<String>(
@@ -111,7 +119,7 @@ class QRScannerPlugin(private val coroutineScope: CoroutineScope) : CameraKPlugi
         scannerHandle?.stop()
         isScanning.value = true
         scannerHandle = try {
-            startScanning(controller = controller) { qrCode ->
+            startScanner(controller) { qrCode ->
                 if (isScanning.value) {
                     qrCodeFlow.tryEmit(qrCode)
                     // Also surface as a state-holder event (emitEvent is suspend → launch on the

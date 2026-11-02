@@ -38,7 +38,19 @@ import kotlinx.coroutines.launch
  * ```
  */
 @Stable
-class OcrPlugin(val coroutineScope: CoroutineScope, val config: OcrConfig = OcrConfig()) : CameraKPlugin {
+class OcrPlugin internal constructor(
+    val coroutineScope: CoroutineScope,
+    val config: OcrConfig,
+    private val startRecognizer: (CameraController, OcrConfig, (String) -> Unit) -> RecognitionHandle,
+) : CameraKPlugin {
+    constructor(coroutineScope: CoroutineScope, config: OcrConfig = OcrConfig()) : this(
+        coroutineScope,
+        config,
+        { controller, recognizerConfig, onText ->
+            com.kashif.ocrPlugin.startRecognition(controller, recognizerConfig, onText)
+        },
+    )
+
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
 
@@ -114,7 +126,7 @@ class OcrPlugin(val coroutineScope: CoroutineScope, val config: OcrConfig = OcrC
         // Tear down any previous analyzer/output so re-init doesn't stack recognizers.
         recognitionHandle?.stop()
         isRecognising.value = true
-        recognitionHandle = startRecognition(controller, config) { text ->
+        recognitionHandle = startRecognizer(controller, config) { text ->
             if (isRecognising.value) {
                 ocrFlow.trySend(text)
                 // emitEvent is suspend → launch on the owned plugin scope (cancelled on shutdown).
