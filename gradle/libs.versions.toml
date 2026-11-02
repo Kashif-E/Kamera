@@ -5,9 +5,7 @@ android-compileSdk = "36"
 android-minSdk = "23"
 
 atomicfu = "0.33.0"
-camera-core = "1.5.3"
-camera-lifecycle = "1.5.3"
-camera-view = "1.5.3"
+camerax = "1.5.3"
 zxing = "3.5.4"
 kotlin = "2.4.10"
 agp = "8.13.2"
@@ -18,7 +16,8 @@ kotlinx-io = "0.9.0"
 kermit = "2.2.0"
 
 compose-multiplatform = "1.11.1"
-activity = "1.9.2" # https://developer.android.com/jetpack/androidx/releases/activity
+# Compose Material 3 has its own version line; this is the one compose-multiplatform 1.11.1 ships.
+compose-material3 = "1.9.0"
 coil-mp-version = "3.5.0"
 lucide-icons = "2.2.1"
 androidx-activityCompose = "1.13.0"
@@ -44,13 +43,13 @@ paparazzi = "2.0.0-alpha02"
 
 [libraries]
 
-androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camera-view" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 androidx-startup-runtime = { module = "androidx.startup:startup-runtime", version.ref = "startupRuntime" }
 atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camera-core" }
-camera-core = { module = "androidx.camera:camera-core", version.ref = "camera-core" }
-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camera-lifecycle" }
-camera-video = { module = "androidx.camera:camera-video", version.ref = "camera-core" }
+camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
+camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+camera-video = { module = "androidx.camera:camera-video", version.ref = "camerax" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
@@ -58,7 +57,9 @@ kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
 kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }
-composeGradle = { module = "org.jetbrains.compose:compose-gradle-plugin", version.ref = "compose-multiplatform" }
+compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
+compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose-material3" }
 
 coil3-core = { module = "io.coil-kt.coil3:coil-core", version.ref = "coil-mp-version" }
 coil3-compose-core = { module = "io.coil-kt.coil3:coil-compose-core", version.ref = "coil-mp-version" }
@@ -84,7 +85,7 @@ androidx-test-core = { module = "androidx.test:core", version.ref = "androidx-te
 multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

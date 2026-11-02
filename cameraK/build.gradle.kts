@@ -3,7 +3,7 @@ import org.jetbrains.compose.compose
 plugins {
     alias(libs.plugins.multiplatform)
     alias(libs.plugins.android.library)
-    id("org.jetbrains.compose")
+    alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.vanniktech.publish)
     alias(libs.plugins.dokka)
@@ -34,9 +34,9 @@ kotlin {
         commonMain.dependencies {
             api(libs.kotlinx.coroutines.core)
             api(libs.kermit)
-            api(compose.ui)
-            api(compose.material3)
-            api(compose.foundation)
+            api(libs.compose.ui)
+            api(libs.compose.material3)
+            api(libs.compose.foundation)
             implementation(libs.atomicfu)
         }
 

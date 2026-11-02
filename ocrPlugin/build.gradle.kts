@@ -3,7 +3,7 @@ import org.jetbrains.compose.compose
 plugins {
     alias(libs.plugins.multiplatform)
     alias(libs.plugins.android.library)
-    id("org.jetbrains.compose")
+    alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.vanniktech.publish)
     alias(libs.plugins.dokka)
