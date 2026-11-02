@@ -88,7 +88,7 @@ internal class FakeCameraXBackend : CameraXBackend {
         onFinalized: (RecordingFinalized) -> Unit,
     ): RecordingSession {
         startFailure?.let { throw it }
-        return FakeRecording(output.file, executor, onFinalized).also { recordings += it }
+        return FakeRecording(output, executor, onFinalized).also { recordings += it }
     }
 }
 
@@ -97,10 +97,13 @@ internal class FakeCameraXBackend : CameraXBackend {
  * recording with a Finalize event on the callback executor, whether or not stop() was called.
  */
 internal class FakeRecording(
-    val outputFile: File,
+    /** What the controller asked CameraX to record into: the file and its limits. */
+    val output: FileOutputOptions,
     private val executor: Executor,
     private val onFinalized: (RecordingFinalized) -> Unit,
 ) : RecordingSession {
+    val outputFile: File get() = output.file
+
     var stopCalls = 0
         private set
 
