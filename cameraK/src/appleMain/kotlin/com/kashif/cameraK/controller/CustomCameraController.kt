@@ -685,12 +685,27 @@ class CustomCameraController(
 
     /**
      * Capture an image. Output quality is governed by the configured [qualityPrioritization].
+     * The photo goes to [onPhotoCapture], a failure to [onError].
      */
     fun captureImage() {
-        if (photoOutput == null || session?.isRunning != true) {
-            onError?.invoke(CameraException.ConfigurationError("Camera not ready for capture"))
-            return
-        }
+        val issued = capturePhoto(
+            object : PhotoCaptureCallbacks {
+                override fun photoProcessed(data: NSData?, error: NSError?) = deliverPhoto(data, error)
+
+                override fun captureFinished(error: NSError?) = Unit
+            },
+        )
+        if (!issued) onError?.invoke(CameraException.ConfigurationError("Camera not ready for capture"))
+    }
+
+    /**
+     * Issues one capture whose photo and completion go only to [callbacks], through a delegate of its
+     * own that is kept alive until AVFoundation's last callback for it. Returns false, without calling
+     * [callbacks], when the camera is not ready.
+     */
+    internal fun capturePhoto(callbacks: PhotoCaptureCallbacks): Boolean {
+        val output = photoOutput
+        if (output == null || session?.isRunning != true) return false
 
         // Do NOT reconfigure the session preset here. Switching the preset synchronously right
         // before capturePhotoWithSettings disrupts auto-exposure, so the still is captured
@@ -713,7 +728,7 @@ class CustomCameraController(
 
         // Set the photo output connection orientation to match current device orientation
         // This ensures the captured photo has the correct orientation metadata
-        photoOutput?.connectionWithMediaType(AVMediaTypeVideo)?.let { connection ->
+        output.connectionWithMediaType(AVMediaTypeVideo)?.let { connection ->
             if (connection.isVideoOrientationSupported()) {
                 connection.videoOrientation = currentVideoOrientation()
             }
@@ -727,15 +742,19 @@ class CustomCameraController(
         lateinit var delegate: PhotoCaptureDelegate
         delegate = PhotoCaptureDelegate(
             object : PhotoCaptureCallbacks {
-                override fun photoProcessed(data: NSData?, error: NSError?) = deliverPhoto(data, error)
+                override fun photoProcessed(data: NSData?, error: NSError?) = callbacks.photoProcessed(data, error)
 
-                override fun captureFinished(error: NSError?) = releasePhotoDelegate(delegate)
+                override fun captureFinished(error: NSError?) {
+                    releasePhotoDelegate(delegate)
+                    callbacks.captureFinished(error)
+                }
             },
         )
         retainPhotoDelegate(delegate)
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
-            photoOutput?.let { photoCapturer.capture(it, settings, delegate) } ?: releasePhotoDelegate(delegate)
+            photoCapturer.capture(output, settings, delegate)
         }
+        return true
     }
 
     /**

@@ -19,9 +19,9 @@ import com.kashif.cameraK.utils.toUIImage
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
-import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.autoreleasepool
+import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.AVFoundation.AVCaptureDeviceInput
 import platform.AVFoundation.AVCaptureFlashMode
@@ -45,6 +45,7 @@ import platform.AVFoundation.AVCaptureVideoOrientationPortraitUpsideDown
 import platform.AVFoundation.AVMediaTypeAudio
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
+import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSURL
@@ -248,10 +249,16 @@ actual class CameraController internal constructor(
                     val data = imageData.toByteArray()
 
                     dispatch_async(dispatch_get_main_queue()) {
-                        imageCaptureListeners.forEach { it(data) }
+                        for (listener in imageCaptureListeners.toList()) {
+                            try {
+                                listener(data)
+                            } catch (e: Exception) {
+                                CameraKLogger.e("CameraK", "CameraK: an image capture listener failed", e)
+                            }
+                        }
                     }
                 } catch (e: Exception) {
-                    CameraKLogger.e("CameraK", "CameraK: Error processing image data: ${e.message ?: "Unknown error"}")
+                    CameraKLogger.e("CameraK", "CameraK: copying the captured photo for listeners failed", e)
                 }
             }
         }
@@ -303,8 +310,10 @@ actual class CameraController internal constructor(
 
     /**
      * Fast file-based capture for iOS - saves directly without ByteArray processing.
+     *
+     * Each call is its own request: its photo and outcome come back through its own delegate, never
+     * a shared slot, so session errors and other captures cannot decide it.
      */
-    @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
     actual suspend fun takePictureToFile(): ImageCaptureResult = suspendCancellableCoroutine { continuation ->
         if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
             pendingCaptures.decrementAndGet()
@@ -319,103 +328,101 @@ actual class CameraController internal constructor(
             return@suspendCancellableCoroutine
         }
 
-        val captureHandler = object {
-            val completed = atomic(false)
-
-            /** Set when the caller cancels; AVFoundation still finishes the capture. */
-            val detached = atomic(false)
-
-            /** Frees the capture slot; runs once, when AVFoundation has finished the capture. */
-            fun release() {
-                isCapturing.value = false
-                pendingCaptures.decrementAndGet()
-            }
-
-            fun process(image: NSData?, error: String?) {
-                if (!completed.compareAndSet(expect = false, update = true)) return
-
-                if (detached.value) {
-                    CameraKLogger.d("CameraK", "CameraK: discarding the photo of a cancelled capture")
-                    release()
-                    return
-                }
-
-                if (image != null) {
-                    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
-                        try {
-                            autoreleasepool {
-                                val result = try {
-                                    val filePath = createTempFile()
-                                    val writeSuccess = if (imageFormat == ImageFormat.JPEG) {
-                                        writeDataToFile(image, filePath)
-                                    } else {
-                                        val uiImage = image.toUIImage()
-                                        val orientedImage = uiImage.fixOrientation()
-                                        val pngData = UIImagePNGRepresentation(orientedImage)
-                                        if (pngData != null) writeDataToFile(pngData, filePath) else false
-                                    }
-
-                                    if (writeSuccess) {
-                                        when (directory) {
-                                            Directory.PICTURES, Directory.DCIM -> {
-                                                val photosPath = saveToPhotosLibrary(filePath, image)
-                                                NSFileManager.defaultManager.removeItemAtPath(
-                                                    filePath,
-                                                    null,
-                                                )
-
-                                                if (photosPath != null) {
-                                                    ImageCaptureResult.SuccessWithFile(photosPath)
-                                                } else {
-                                                    ImageCaptureResult.Error(
-                                                        Exception("Failed to save to Photos library"),
-                                                    )
-                                                }
-                                            }
-                                            Directory.DOCUMENTS -> {
-                                                ImageCaptureResult.SuccessWithFile(filePath)
-                                            }
-                                        }
-                                    } else {
-                                        ImageCaptureResult.Error(Exception("Failed to write image to file"))
-                                    }
-                                } catch (e: Exception) {
-                                    CameraKLogger.e("CameraK", "CameraK: File capture error: ${e.message ?: "Unknown"}")
-                                    ImageCaptureResult.Error(e)
-                                }
-
-                                dispatch_async(dispatch_get_main_queue()) {
-                                    release()
-                                    continuation.resume(result)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            dispatch_async(dispatch_get_main_queue()) {
-                                release()
-                                continuation.resume(ImageCaptureResult.Error(e))
-                            }
-                        }
-                    }
-                } else {
-                    release()
-                    continuation.resume(ImageCaptureResult.Error(Exception(error ?: "Capture failed")))
-                }
-            }
-        }
-
-        customCameraController.onPhotoCapture = { image ->
-            captureHandler.process(image, null)
-        }
-
-        customCameraController.onError = { error ->
-            captureHandler.process(null, error.toString())
-        }
-
+        val request = PhotoRequest(continuation)
         // Cancelling only detaches the caller: AVFoundation keeps working on the request, so the slot
-        // stays taken until its outcome arrives and process() releases it, exactly once.
-        continuation.invokeOnCancellation { captureHandler.detached.value = true }
+        // stays taken until its last callback releases it, exactly once.
+        continuation.invokeOnCancellation { request.detach() }
+        if (!customCameraController.capturePhoto(request)) request.notIssued()
+    }
 
-        customCameraController.captureImage()
+    /** One takePictureToFile call: AVFoundation's callbacks for its capture arrive here and only here. */
+    private inner class PhotoRequest(private val continuation: CancellableContinuation<ImageCaptureResult>) :
+        PhotoCaptureCallbacks {
+        private val settled = atomic(false)
+        private val released = atomic(false)
+        private val detached = atomic(false)
+
+        fun detach() {
+            detached.value = true
+        }
+
+        override fun photoProcessed(data: NSData?, error: NSError?) {
+            if (!settled.compareAndSet(expect = false, update = true)) return
+            if (detached.value) {
+                CameraKLogger.d("CameraK", "CameraK: discarding the photo of a cancelled capture")
+                return
+            }
+            if (error != null || data == null) {
+                continuation.resume(ImageCaptureResult.Error(photoCaptureFailure(error)))
+                return
+            }
+            // Writing and the Photos import stay off AVFoundation's delegate queue.
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
+                val result = autoreleasepool { savePhoto(data) }
+                continuation.resume(result)
+            }
+        }
+
+        override fun captureFinished(error: NSError?) {
+            if (settled.compareAndSet(expect = false, update = true) && !detached.value) {
+                continuation.resume(ImageCaptureResult.Error(photoCaptureFailure(error)))
+            }
+            release()
+        }
+
+        /** The camera was not ready, so AVFoundation never got the request. */
+        fun notIssued() {
+            if (settled.compareAndSet(expect = false, update = true)) {
+                continuation.resume(ImageCaptureResult.Error(Exception("Camera not ready for capture")))
+            }
+            release()
+        }
+
+        private fun release() {
+            if (!released.compareAndSet(expect = false, update = true)) return
+            isCapturing.value = false
+            pendingCaptures.decrementAndGet()
+        }
+    }
+
+    private fun photoCaptureFailure(error: NSError?): Exception = Exception(
+        "Photo capture failed: ${error?.let { "${it.domain} ${it.code}: ${it.localizedDescription}" } ?: "no photo"}",
+    )
+
+    /**
+     * Writes [image] where [directory] says and tells image-capture listeners about the bytes written.
+     * Runs off the main thread and off AVFoundation's delegate queue.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun savePhoto(image: NSData): ImageCaptureResult = try {
+        val filePath = createTempFile()
+        val written = if (imageFormat == ImageFormat.JPEG) {
+            image
+        } else {
+            UIImagePNGRepresentation(image.toUIImage().fixOrientation())
+        }
+
+        if (written != null && writeDataToFile(written, filePath)) {
+            processImageCapture(written)
+            when (directory) {
+                Directory.PICTURES, Directory.DCIM -> {
+                    val photosPath = saveToPhotosLibrary(filePath, image)
+                    NSFileManager.defaultManager.removeItemAtPath(filePath, null)
+
+                    if (photosPath != null) {
+                        ImageCaptureResult.SuccessWithFile(photosPath)
+                    } else {
+                        ImageCaptureResult.Error(Exception("Failed to save to Photos library"))
+                    }
+                }
+                Directory.DOCUMENTS -> ImageCaptureResult.SuccessWithFile(filePath)
+            }
+        } else {
+            ImageCaptureResult.Error(Exception("Failed to write image to file"))
+        }
+    } catch (e: Exception) {
+        CameraKLogger.e("CameraK", "CameraK: saving the captured photo failed", e)
+        ImageCaptureResult.Error(e)
     }
 
     actual fun toggleFlashMode() {
