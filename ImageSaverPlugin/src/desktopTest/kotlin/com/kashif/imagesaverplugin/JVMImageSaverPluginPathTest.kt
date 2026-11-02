@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import javax.imageio.ImageIO
 import kotlin.test.AfterTest
@@ -17,7 +18,8 @@ import kotlin.test.assertNull
  * Names a consumer passes to the desktop saver (customFolderName, imageName, and the prefix the
  * auto-save names are built from) cannot put a file outside the configured folder: a name with a
  * separator, a `..` segment or a control character is rejected with an [IllegalArgumentException],
- * and nothing is written anywhere.
+ * a customFolderName that is a symbolic link out of the folder fails with an [IOException], and
+ * nothing is written anywhere.
  */
 class JVMImageSaverPluginPathTest {
 
@@ -102,8 +104,41 @@ class JVMImageSaverPluginPathTest {
         assertEquals("MyApp_1700000000000.v2.jpg", saved.name)
     }
 
+    @Test
+    fun aCustomFolderThatLinksOutOfTheFolder_failsAndWritesNothingOutside() = runTest {
+        val outside = File(sandbox, "outside").apply { mkdirs() }
+        val pictures = File(home, "Pictures").apply { mkdirs() }
+        Files.createSymbolicLink(File(pictures, "linked").toPath(), outside.toPath())
+
+        val result = plugin(customFolderName = "linked").save(jpeg(), "shot")
+
+        val failed = assertIs<ImageSaveResult.Failed>(result, "save result for a folder that links outside")
+        assertIs<IOException>(failed.error, "the error for a folder that links outside")
+        assertEquals(emptyList(), outside.list()?.toList(), "files written through the link")
+    }
+
+    @Test
+    fun anAutoSavePrefixOf50Characters_saves() = runTest {
+        val name = autoSaveImageName("p".repeat(50), AUTO_SAVE_MILLIS)
+
+        val result = plugin().save(jpeg(), name)
+
+        val saved = File(assertIs<ImageSaveResult.Saved>(result, "save result: $result").location)
+        assertEquals("$name.jpg", saved.name)
+    }
+
+    @Test
+    fun anAutoSavePrefixOf51Characters_isRejected() = runTest {
+        assertRejected(plugin(), autoSaveImageName("p".repeat(51), AUTO_SAVE_MILLIS))
+    }
+
     private fun jpeg(): ByteArray {
         val image = BufferedImage(8, 8, BufferedImage.TYPE_3BYTE_BGR)
         return ByteArrayOutputStream().also { check(ImageIO.write(image, "jpg", it)) }.toByteArray()
+    }
+
+    private companion object {
+        // A capture time with as many digits as any until the year 2286: 13.
+        const val AUTO_SAVE_MILLIS = 1_700_000_000_000L
     }
 }
