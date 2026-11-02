@@ -29,6 +29,7 @@ internal class CaptureRig(
     val device: FakeDevice = FakeDevice(),
     qualityPrioritization: QualityPrioritization = QualityPrioritization.NONE,
     directory: Directory = Directory.DOCUMENTS,
+    imageFormat: ImageFormat = ImageFormat.JPEG,
 ) {
     val session = RecordingSession()
     val capturer = FakePhotoCapturer()
@@ -46,7 +47,7 @@ internal class CaptureRig(
         flashMode = FlashMode.OFF,
         torchMode = TorchMode.OFF,
         cameraLens = CameraLens.BACK,
-        imageFormat = ImageFormat.JPEG,
+        imageFormat = imageFormat,
         qualityPriority = qualityPrioritization,
         directory = directory,
         cameraDeviceType = CameraDeviceType.DEFAULT,
