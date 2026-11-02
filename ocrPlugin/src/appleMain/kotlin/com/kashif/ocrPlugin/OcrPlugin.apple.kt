@@ -48,6 +48,7 @@ import platform.CoreGraphics.kCGColorSpaceSRGB
 import platform.CoreImage.CIImage
 import platform.CoreMedia.CMSampleBufferGetImageBuffer
 import platform.CoreMedia.CMSampleBufferRef
+import platform.CoreVideo.CVPixelBufferRef
 import platform.CoreVideo.kCVPixelBufferPixelFormatTypeKey
 import platform.CoreVideo.kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
 import platform.Foundation.CFBridgingRelease
@@ -68,6 +69,7 @@ import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_queue_create
+import platform.darwin.dispatch_queue_t
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
 
@@ -243,22 +245,50 @@ private class VisionException(error: NSError) :
     Exception("Vision error ${error.domain} ${error.code}: ${error.localizedDescription}")
 
 /**
+ * Runs live OCR's Vision request over one frame, so a test can stand in for Vision. Returns the error
+ * Vision reported, or null when the request ran.
+ */
+internal fun interface LiveVisionPerformer {
+    @OptIn(ExperimentalForeignApi::class)
+    fun perform(pixelBuffer: CVPixelBufferRef, request: VNRecognizeTextRequest): NSError?
+}
+
+/** [LiveVisionPerformer] over VNImageRequestHandler.performRequests. */
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+internal fun performLiveVisionRequest(pixelBuffer: CVPixelBufferRef, request: VNRecognizeTextRequest): NSError? =
+    memScoped {
+        val error = alloc<ObjCObjectVar<NSError?>>()
+        val handler = VNImageRequestHandler(pixelBuffer, emptyMap<Any?, String>())
+        if (handler.performRequests(listOf(request), error.ptr)) null else error.value
+    }
+
+private fun wallClockNanos(): Long = (NSDate.date().timeIntervalSince1970() * NANOS_PER_SECOND).toLong()
+
+/**
  * Delegate for handling video frame capture and processing.
  * Processes frames asynchronously to extract text using Vision framework.
  *
  * @property onText Callback invoked when text is successfully extracted from a frame.
  */
 @OptIn(ExperimentalForeignApi::class)
-class VideoDataDelegate(private val onText: (String) -> Unit, maxFps: Int = DEFAULT_LIVE_OCR_MAX_FPS) :
-    NSObject(),
+class VideoDataDelegate internal constructor(
+    private val onText: (String) -> Unit,
+    maxFps: Int,
+    private val performer: LiveVisionPerformer,
+    private val clockNanos: () -> Long,
+    private val processingQueue: dispatch_queue_t,
+) : NSObject(),
     AVCaptureVideoDataOutputSampleBufferDelegateProtocol {
+    constructor(onText: (String) -> Unit, maxFps: Int = DEFAULT_LIVE_OCR_MAX_FPS) : this(
+        onText,
+        maxFps,
+        LiveVisionPerformer { pixelBuffer, request -> performLiveVisionRequest(pixelBuffer, request) },
+        ::wallClockNanos,
+        dispatch_queue_create("com.kashif.ocrPlugin.processing", null),
+    )
+
     @Volatile
     private var isProcessingFrame = false
-    private val processingQueue =
-        dispatch_queue_create(
-            "com.kashif.ocrPlugin.processing",
-            null,
-        )
 
     // Read only on the delegate's serial queue.
     private val gate = FrameRateGate(maxFps)
@@ -276,19 +306,23 @@ class VideoDataDelegate(private val onText: (String) -> Unit, maxFps: Int = DEFA
         fromConnection: AVCaptureConnection,
     ) {
         if (didOutputSampleBuffer == null) return
+        onFrame(didOutputSampleBuffer)
+    }
 
+    /** Hands [sampleBuffer] to Vision on the processing queue, unless a frame is in flight or the rate says wait. */
+    internal fun onFrame(sampleBuffer: CMSampleBufferRef) {
         // Skip if already processing
         if (isProcessingFrame) return
 
-        if (!gate.tryPass((NSDate.date().timeIntervalSince1970() * NANOS_PER_SECOND).toLong())) return
+        if (!gate.tryPass(clockNanos())) return
 
         // Mark as processing before async work
         isProcessingFrame = true
 
-        CFRetain(didOutputSampleBuffer)
+        CFRetain(sampleBuffer)
 
         dispatch_async(processingQueue) {
-            processFrame(didOutputSampleBuffer)
+            processFrame(sampleBuffer)
         }
     }
 
@@ -316,15 +350,13 @@ class VideoDataDelegate(private val onText: (String) -> Unit, maxFps: Int = DEFA
                     handleRecognitionResults(vnRequest?.results as? NSArray, sampleBuffer)
                 }
 
-            val handler =
-                ciImage.pixelBuffer?.let {
-                    VNImageRequestHandler(it, emptyMap<Any?, String>())
-                } ?: run {
+            val framePixels =
+                ciImage.pixelBuffer ?: run {
                     cleanupAndRelease(sampleBuffer)
                     return
                 }
 
-            handler?.performRequests(listOf(request), null)
+            performer.perform(framePixels, request)
         } catch (e: Exception) {
             cleanupAndRelease(sampleBuffer)
         }
