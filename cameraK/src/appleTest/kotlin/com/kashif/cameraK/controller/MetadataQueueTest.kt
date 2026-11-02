@@ -8,7 +8,7 @@ import platform.darwin.NSObject
 import platform.darwin.dispatch_queue_get_label
 import kotlin.test.AfterTest
 import kotlin.test.Test
-import kotlin.test.assertFalse
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 
@@ -41,9 +41,12 @@ class MetadataQueueTest {
         )
         assertSame(scanner, output.metadataObjectsDelegate, "the scanner is not the output's delegate")
         val queue = assertNotNull(output.metadataObjectsCallbackQueue, "the output has no callback queue")
-        val label = dispatch_queue_get_label(queue)?.toKString().orEmpty()
-        assertFalse(label == "com.apple.main-thread", "metadata callbacks run on the main queue")
-        // Global queues are concurrent: AVFoundation's callbacks for successive frames could overlap.
-        assertFalse(label.startsWith("com.apple.root."), "metadata callbacks run on a concurrent global queue: $label")
+        // Not main, where they would compete with the UI, nor a global queue, which is concurrent so
+        // AVFoundation's callbacks for successive frames could overlap: CameraK's serial queue.
+        assertEquals(
+            "com.kashif.cameraK.metadata",
+            dispatch_queue_get_label(queue)?.toKString(),
+            "metadata callbacks are not delivered on CameraK's serial metadata queue",
+        )
     }
 }
