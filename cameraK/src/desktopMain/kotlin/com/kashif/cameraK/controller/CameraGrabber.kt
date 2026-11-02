@@ -256,7 +256,7 @@ class CameraGrabber(
             VideoInputFrameGrabber(0)
         }
         OperatingSystem.LINUX -> {
-            // Prefer /dev/video0 but fall back to the first available readable device (#52, #53)
+            // The lowest-numbered node that captures video (#52, #53)
             val videoDevice = findBestVideoDevice(File("/dev"), File("/sys/class/video4linux"))
             CameraKLogger.d("CameraK", "Using video device: $videoDevice")
             FFmpegFrameGrabber(videoDevice)
@@ -280,21 +280,36 @@ class CameraGrabber(
 }
 
 /**
- * The V4L2 device the default camera opens on Linux: [devDir]/video0 if it is readable, else the
- * first readable video node. [sysDir] is the kernel's video4linux class folder.
+ * The V4L2 device the default camera opens on Linux: the lowest-numbered readable `videoN` node in
+ * [devDir] that captures video, or [devDir]/video0 if there is none. Nodes sort by number, so
+ * video2 comes before video10. A UVC camera also exposes a metadata node, which streams no
+ * pictures. The kernel gives each of a device's nodes an `index` file in its [sysDir] folder (the
+ * video4linux class folder), 0 for the capture node, so a node whose index is not 0 is skipped. A
+ * node with no readable index is kept.
  */
 internal fun findBestVideoDevice(devDir: File, sysDir: File): String {
-    val defaultFile = File(devDir, "video0")
-    if (defaultFile.exists() && defaultFile.canRead()) return defaultFile.path
-
     val candidates =
         devDir
-            .listFiles { file ->
-                file.name.startsWith("video") && file.canRead()
-            }?.sortedBy { it.name } ?: emptyList()
+            .listFiles { file -> VIDEO_NODE.matches(file.name) && file.canRead() }
+            .orEmpty()
+            .filter { isCaptureNode(File(sysDir, it.name)) }
+            .sortedBy { it.name.removePrefix("video").toIntOrNull() ?: Int.MAX_VALUE }
 
-    return candidates.firstOrNull()?.path ?: defaultFile.path
+    return candidates.firstOrNull()?.path ?: File(devDir, "video0").path
 }
+
+private fun isCaptureNode(sysNode: File): Boolean {
+    val index = File(sysNode, "index")
+    if (!index.canRead()) return true
+    return try {
+        index.readText().trim() == "0"
+    } catch (e: java.io.IOException) {
+        CameraKLogger.w(TAG, "Could not read a video node's index; treating it as a capture node", e)
+        true
+    }
+}
+
+private val VIDEO_NODE = Regex("video\\d+")
 
 /**
  * Replaces how a grab loop with no custom grabber opens the system's default camera. Null, the
