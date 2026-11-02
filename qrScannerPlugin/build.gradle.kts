@@ -22,8 +22,8 @@ kotlin {
     sourceSets {
         val desktopMain by getting {
             dependencies {
-                implementation(libs.javase)
-                implementation(libs.core)
+                implementation(libs.zxing.javase)
+                implementation(libs.zxing.core)
             }
         }
 
@@ -50,6 +50,7 @@ kotlin {
         }
 
         androidMain.dependencies {
+            implementation(libs.zxing.core)
         }
     }
 
