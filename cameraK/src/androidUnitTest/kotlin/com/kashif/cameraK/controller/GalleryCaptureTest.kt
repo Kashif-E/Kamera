@@ -59,6 +59,7 @@ class GalleryCaptureTest {
     }
 
     @Test
+    @Config(sdk = [35])
     fun picturesCapture_isAMediaStoreImageInPicturesCameraK() {
         val result = capture(Directory.PICTURES)
 
@@ -72,6 +73,7 @@ class GalleryCaptureTest {
     }
 
     @Test
+    @Config(sdk = [35])
     fun dcimCapture_isAMediaStoreImageInDcimCameraK() {
         capture(Directory.DCIM)
 
@@ -80,6 +82,7 @@ class GalleryCaptureTest {
     }
 
     @Test
+    @Config(sdk = [35])
     fun galleryCapture_writesNoFileIntoPublicStorageAndRequestsNoScan() {
         capture(Directory.PICTURES)
 
@@ -90,7 +93,7 @@ class GalleryCaptureTest {
 
     /** Below API 29 there is no RELATIVE_PATH; the row names its file in the public folder instead. */
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun dcimCapture_belowApi29_isAMediaStoreImageWhoseFileIsInDcimCameraK() {
         capture(Directory.DCIM)
 
@@ -131,7 +134,7 @@ class GalleryCaptureTest {
     }
 
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun storagePermission_isNeededBelowApi29() {
         assertFalse(storagePermissionGranted(context))
 

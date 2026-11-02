@@ -10,6 +10,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
 import java.util.function.Supplier
 import kotlin.test.assertEquals
@@ -19,6 +20,7 @@ import kotlin.test.assertEquals
  * a name in the same second must not be given the same default name.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class AndroidImageSaverPluginNameTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val mediaStore = Robolectric.setupContentProvider(FakeMediaStore::class.java, MediaStore.AUTHORITY)

@@ -13,6 +13,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.function.Supplier
@@ -23,6 +24,7 @@ import kotlin.test.assertEquals
  * auto-save configured for PNG used to store JPEG bytes as a `.png` registered as `image/png`.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class AndroidImageSaverPluginFormatTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val mediaStore = Robolectric.setupContentProvider(FakeMediaStore::class.java, MediaStore.AUTHORITY)
