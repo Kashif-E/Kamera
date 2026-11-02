@@ -457,6 +457,11 @@ registerRepoPolicyCheck(
     "build-integrity",
     "Fails if the wrapper, actions or docs requirements are unpinned, or Dependabot does not cover them",
 )
+registerRepoPolicyCheck(
+    "checkCatalogHygiene",
+    "catalog",
+    "Fails on dead or split catalog entries, plugins outside [plugins], or compose.* accessors in libraries",
+)
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
@@ -1188,6 +1193,7 @@ fun verifyTaskPaths(
                 ":checkBuildIntegrity",
                 ":checkPublishedVariants",
                 ":checkNoLibraryFrameworks",
+                ":checkCatalogHygiene",
             )
     }
     modules.forEach { module ->

@@ -17,6 +17,12 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      Gradle validates the wrapper jar; every action is pinned by commit SHA;
                      Dependabot updates Gradle, GitHub Actions and the docs' pip requirements; and the
                      docs install only hash-pinned requirements.
+  catalog            gradle/libs.versions.toml has no unreferenced version, library or plugin entry,
+                     one version key per release train (no two keys give one Maven group the same
+                     version), and every plugin it declares is applied somewhere; build scripts
+                     apply third-party plugins only through [plugins] aliases (no buildscript
+                     classpath, no versionless id("...")), and libraries declare Compose by explicit
+                     coordinates rather than the compose.* accessors.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -335,11 +341,123 @@ def check_build_integrity() -> List[str]:
     return build_integrity_problems((ROOT / WRAPPER_PROPERTIES).read_text(), workflows, dependabot)
 
 
+# ─── catalog ────────────────────────────────────────────────────────────────────────────────────
+
+CATALOG = "gradle/libs.versions.toml"
+LIBRARY_MODULES = ["cameraK", "ImageSaverPlugin", "qrScannerPlugin", "ocrPlugin", "videoRecorderPlugin", "analyzerPlugin"]
+CATALOG_ENTRY = re.compile(r"^([A-Za-z0-9_.-]+)\s*=\s*(.+?)\s*$")
+INLINE_FIELD = re.compile(r'([A-Za-z.]+)\s*=\s*"([^"]*)"')
+ACCESSOR = re.compile(r"\blibs\.((?:[A-Za-z0-9]+\.)*[A-Za-z0-9]+)")
+PLUGIN_ALIAS = re.compile(r"\balias\(libs\.plugins\.([A-Za-z0-9.]+)\)(\s*\.?\s*apply\s*\(?\s*false)?")
+VERSIONLESS_PLUGIN_ID = re.compile(r'\bid\("([A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+)"\)(?!\s*version)')
+COMPOSE_ACCESSOR = re.compile(
+    r"\b(?:api|implementation|compileOnly|runtimeOnly)\(compose\.(?!desktop\.currentOs\b)([A-Za-z0-9.]+)\)"
+)
+
+
+def parse_catalog(text: str) -> Dict[str, Dict[str, Dict[str, str]]]:
+    sections: Dict[str, Dict[str, Dict[str, str]]] = {"versions": {}, "libraries": {}, "plugins": {}}
+    section = None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("["):
+            section = line.strip("[]").strip()
+            continue
+        match = CATALOG_ENTRY.match(line)
+        if section not in sections or not match:
+            continue
+        key, value = match.groups()
+        if value.startswith("{"):
+            sections[section][key] = dict(INLINE_FIELD.findall(value))
+        else:
+            sections[section][key] = {"version": value.strip('"')}
+    return sections
+
+
+def accessor(alias: str) -> str:
+    return re.sub(r"[-_.]", ".", alias)
+
+
+def catalog_problems(catalog_text: str, scripts: Dict[str, str]) -> List[str]:
+    catalog = parse_catalog(catalog_text)
+    problems = []
+    used = {"versions": set(), "libraries": set(), "plugins": set()}
+    applied = set()
+    accessors = {
+        "versions": {accessor(key): key for key in catalog["versions"]},
+        "plugins": {accessor(key): key for key in catalog["plugins"]},
+        "libraries": {accessor(key): key for key in catalog["libraries"]},
+    }
+    for name, text in scripts.items():
+        for match in ACCESSOR.finditer(text):
+            path = match.group(1)
+            section = "libraries"
+            for prefix in ("versions", "plugins"):
+                if path.startswith(prefix + "."):
+                    section, path = prefix, path[len(prefix) + 1:]
+            # The longest alias whose accessor the reference starts with, at a segment boundary.
+            candidates = [a for a in accessors[section] if path == a or path.startswith(a + ".")]
+            if candidates:
+                used[section].add(accessors[section][max(candidates, key=len)])
+        for match in PLUGIN_ALIAS.finditer(text):
+            if not match.group(2):
+                applied.add(accessors["plugins"].get(match.group(1), match.group(1)))
+        if "classpath(" in text:
+            problems.append(f"{name} puts a plugin on a buildscript classpath; declare it in [plugins] and use alias(...)")
+        for plugin_id in VERSIONLESS_PLUGIN_ID.findall(text):
+            problems.append(f"{name} applies id(\"{plugin_id}\") without the catalog; use a [plugins] alias")
+        module = name.split("/", 1)[0]
+        if module in LIBRARY_MODULES:
+            for coordinate in COMPOSE_ACCESSOR.findall(text):
+                problems.append(f"{name} declares compose.{coordinate}; use explicit org.jetbrains.compose coordinates")
+    for entries in (catalog["libraries"], catalog["plugins"]):
+        for fields in entries.values():
+            if "version.ref" in fields:
+                used["versions"].add(fields["version.ref"])
+    for section in ("versions", "libraries", "plugins"):
+        for key in sorted(set(catalog[section]) - used[section]):
+            problems.append(f"{CATALOG} [{section}] {key} is not referenced by any build script")
+    for key in sorted(set(catalog["plugins"]) - applied):
+        if key in used["plugins"]:
+            problems.append(f"{CATALOG} [plugins] {key} is only ever declared with apply false")
+    trains: Dict[tuple, set] = {}
+    for fields in catalog["libraries"].values():
+        if "module" in fields and "version.ref" in fields:
+            version = catalog["versions"].get(fields["version.ref"], {}).get("version")
+            trains.setdefault((fields["module"].split(":")[0], version), set()).add(fields["version.ref"])
+    for (group, version), keys in sorted(trains.items()):
+        if len(keys) > 1:
+            problems.append(f"{CATALOG} gives {group} version {version} through {sorted(keys)}; use one key")
+    return problems
+
+
+def check_catalog() -> List[str]:
+    fixture_catalog = (
+        '[versions]\na = "1"\nb = "1"\ndead = "2"\n[libraries]\n'
+        'x = { module = "g:x", version.ref = "a" }\ny = { module = "g:y", version.ref = "b" }\n'
+        'z = { module = "g:z", version.ref = "a" }\n[plugins]\np = { id = "p", version.ref = "a" }\n'
+    )
+    fixture_scripts = {
+        "build.gradle.kts": "plugins { alias(libs.plugins.p) apply false }\nbuildscript { dependencies { classpath(libs.z) } }",
+        "cameraK/build.gradle.kts": 'plugins { id("org.example.plugin") }\napi(libs.x)\napi(libs.y.get())\napi(compose.ui)',
+    }
+    if len(catalog_problems(fixture_catalog, fixture_scripts)) < 6:
+        raise CheckError("the catalog rule accepts a fixture it must reject")
+    scripts = {
+        path.relative_to(ROOT).as_posix(): path.read_text()
+        for path in tracked("*.gradle.kts")
+    }
+    return catalog_problems((ROOT / CATALOG).read_text(), scripts)
+
+
 POLICIES: Dict[str, Callable[[], List[str]]] = {
     "agent-permissions": check_agent_permissions,
     "security-policy": check_security_policy,
     "docs-workflow": check_docs_workflow,
     "build-integrity": check_build_integrity,
+    "catalog": check_catalog,
 }
 
 
