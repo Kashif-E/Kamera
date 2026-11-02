@@ -80,6 +80,21 @@ class PendingCapturesTest {
         }
     }
 
+    @Test
+    fun captureWhoseCallerHasAlreadyLeft_neverReachesCameraXAndKeepsNoSlot() {
+        controller.bindCamera(PreviewView(context))
+        idleMainLooper()
+
+        hostScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            cancel()
+            controller.takePictureToFile()
+        }
+
+        assertEquals(0, backend.captures.size, "a capture whose caller had already left still reached CameraX")
+        List(MAX_IN_FLIGHT) { hostScope.async(start = CoroutineStart.UNDISPATCHED) { controller.takePictureToFile() } }
+        assertEquals(MAX_IN_FLIGHT, backend.captures.size, "the abandoned capture kept a slot")
+    }
+
     private companion object {
         const val MAX_IN_FLIGHT = 3
     }
