@@ -49,6 +49,7 @@ import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.CopyOnWriteArrayList
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
@@ -136,8 +137,9 @@ actual class CameraController(
     private val recordingLock = Mutex()
     private var recordingOutputPath: String? = null
 
-    // Null when no one listens, so a capture reads its file back only for a listener.
-    @Volatile private var listener: ((ByteArray) -> Unit)? = null
+    // Copy-on-write: listeners change rarely and are iterated once per capture, from the capture's
+    // thread, while another thread may add or remove one. Empty means a capture reads nothing back.
+    private val listeners = CopyOnWriteArrayList<(ByteArray) -> Unit>()
 
     actual suspend fun takePictureToFile(): ImageCaptureResult {
         return withContext(Dispatchers.IO) {
@@ -159,25 +161,27 @@ actual class CameraController(
                 return@withContext ImageCaptureResult.Error(e)
             }
             // The photo is written; nothing a listener does can undo that or change the result.
-            notifyListener(File(result.filePath))
+            notifyListeners(File(result.filePath))
             result
         }
     }
 
-    private fun notifyListener(file: File) {
-        val listener = listener ?: return
+    private fun notifyListeners(file: File) {
+        if (listeners.isEmpty()) return
         val bytes = try {
             readCapture(file)
         } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "CameraK: Error reading the capture back for its listener", e)
+            CameraKLogger.e("CameraK", "CameraK: Error reading the capture back for its listeners", e)
             return
         }
-        try {
-            listener(bytes)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "CameraK: A capture listener failed", e)
+        for (listener in listeners) {
+            try {
+                listener(bytes)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                CameraKLogger.e("CameraK", "CameraK: A capture listener failed", e)
+            }
         }
     }
 
@@ -335,14 +339,11 @@ actual class CameraController(
      * @param listener The listener to add, receiving image data as [ByteArray].
      */
     actual fun addImageCaptureListener(listener: (ByteArray) -> Unit) {
-        this.listener = listener
+        listeners.add(listener)
     }
 
     actual fun removeImageCaptureListener(listener: (ByteArray) -> Unit) {
-        // Desktop holds a single listener; clear it if it's the one being removed.
-        if (this.listener == listener) {
-            this.listener = null
-        }
+        listeners.remove(listener)
     }
 
     actual fun getDeviceOrientation(): DeviceOrientation = DeviceOrientation.PORTRAIT
