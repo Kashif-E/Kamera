@@ -1,0 +1,90 @@
+package com.kashif.cameraK.controller
+
+import platform.AVFoundation.AVCaptureFileOutputRecordingDelegateProtocol
+import platform.AVFoundation.AVCaptureMovieFileOutput
+import platform.AVFoundation.AVCaptureVideoOrientation
+import platform.Foundation.NSError
+import platform.Foundation.NSLock
+import platform.Foundation.NSURL
+
+/**
+ * A [MovieRecorder] that records each call instead of recording. A started recording stays "in
+ * progress" until the test reports it finished through the delegate it was given, as AVFoundation
+ * would, so tests decide when (and whether) a recording starts and ends.
+ */
+internal class FakeMovieRecorder : MovieRecorder {
+    class Start(
+        val output: AVCaptureMovieFileOutput,
+        val url: NSURL,
+        val orientation: AVCaptureVideoOrientation,
+        val delegate: VideoRecordingDelegate,
+    )
+
+    /** Whether pause takes effect; a pause the output does not apply leaves isPaused false. */
+    var pauseTakesEffect = true
+
+    private val lock = NSLock()
+    private val startList = mutableListOf<Start>()
+    private var stopCount = 0
+    private var pauseCount = 0
+    private var recording = false
+    private var paused = false
+
+    val starts: List<Start> get() = locked { startList.toList() }
+    val stops: Int get() = locked { stopCount }
+    val pauses: Int get() = locked { pauseCount }
+
+    override fun isRecording(output: AVCaptureMovieFileOutput): Boolean = locked { recording }
+
+    override fun start(
+        output: AVCaptureMovieFileOutput,
+        url: NSURL,
+        orientation: AVCaptureVideoOrientation,
+        delegate: AVCaptureFileOutputRecordingDelegateProtocol,
+    ) = locked {
+        startList += Start(output, url, orientation, delegate as VideoRecordingDelegate)
+        recording = true
+    }
+
+    override fun stop(output: AVCaptureMovieFileOutput) {
+        locked { stopCount++ }
+    }
+
+    override fun pause(output: AVCaptureMovieFileOutput) = locked {
+        pauseCount++
+        if (pauseTakesEffect) paused = true
+    }
+
+    override fun resume(output: AVCaptureMovieFileOutput) = locked { paused = false }
+
+    override fun isPaused(output: AVCaptureMovieFileOutput): Boolean = locked { paused }
+
+    /** AVFoundation's didStartRecording callback for [start]. */
+    fun reportStarted(start: Start) {
+        start.delegate.captureOutput(
+            start.output,
+            didStartRecordingToOutputFileAtURL = start.url,
+            fromConnections = emptyList<Any>(),
+        )
+    }
+
+    /** AVFoundation's didFinishRecording callback for [start]; the output stops recording first. */
+    fun reportFinished(start: Start, error: NSError?) {
+        locked { recording = false }
+        start.delegate.captureOutput(
+            start.output,
+            didFinishRecordingToOutputFileAtURL = start.url,
+            fromConnections = emptyList<Any>(),
+            error = error,
+        )
+    }
+
+    private fun <T> locked(block: () -> T): T {
+        lock.lock()
+        try {
+            return block()
+        } finally {
+            lock.unlock()
+        }
+    }
+}
