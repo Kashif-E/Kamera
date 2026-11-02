@@ -69,6 +69,7 @@ import platform.darwin.DISPATCH_QUEUE_PRIORITY_HIGH
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_global_queue
 import platform.darwin.dispatch_get_main_queue
+import platform.darwin.dispatch_queue_create
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
 
@@ -121,6 +122,9 @@ actual class CameraController internal constructor(
     private var imageCaptureListeners = mutableListOf<(ByteArray) -> Unit>()
     private var metadataOutput = AVCaptureMetadataOutput()
     private var metadataObjectsDelegate: AVCaptureMetadataOutputObjectsDelegateProtocol? = null
+
+    /** Scanner callbacks run here, one at a time and off main, so scanning never competes with the UI. */
+    private val metadataQueue = dispatch_queue_create("com.kashif.cameraK.metadata", null)
 
     // Video recording
     // Set on the session queue when the output joins the session; read from recording calls.
@@ -266,11 +270,12 @@ actual class CameraController internal constructor(
 
     /**
      * Sets the scanner's delegate and attaches the metadata output, as a queued change, so a change
-     * the scanner queues next (setting its object types) finds the output attached.
+     * the scanner queues next (setting its object types) finds the output attached. The delegate is
+     * called on a serial background queue, not on main; hop to main before touching UI state.
      */
     fun setMetadataObjectsDelegate(delegate: AVCaptureMetadataOutputObjectsDelegateProtocol) {
         metadataObjectsDelegate = delegate
-        metadataOutput.setMetadataObjectsDelegate(delegate, dispatch_get_main_queue())
+        metadataOutput.setMetadataObjectsDelegate(delegate, metadataQueue)
         customCameraController.queueConfigurationChange {
             if (!customCameraController.containsOutput(metadataOutput)) {
                 customCameraController.safeAddOutput(metadataOutput)
@@ -283,7 +288,7 @@ actual class CameraController internal constructor(
      */
     fun clearMetadataObjectsDelegate() {
         metadataObjectsDelegate = null
-        metadataOutput.setMetadataObjectsDelegate(null, dispatch_get_main_queue())
+        metadataOutput.setMetadataObjectsDelegate(null, metadataQueue)
         customCameraController.safeRemoveOutput(metadataOutput)
     }
 
