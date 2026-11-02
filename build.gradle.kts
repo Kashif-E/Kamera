@@ -228,6 +228,8 @@ val forbiddenOnPublishedClasspath =
             Regex("""^com\.google\.mlkit:"""),
             "analyzerPlugin imports no ML Kit",
         ),
+        ClasspathRule("cameraK", publishedGraphs, Regex("""^io\.coil-kt"""), "core imports no Coil"),
+        ClasspathRule("cameraK", publishedGraphs, Regex("""^io\.ktor:"""), "core imports no Ktor"),
     )
 
 subprojects {
