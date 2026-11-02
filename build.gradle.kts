@@ -246,6 +246,12 @@ val forbiddenOnPublishedClasspath =
             Regex("""^androidx\.camera:camera-extensions$"""),
             "core imports no androidx.camera.extensions",
         ),
+        ClasspathRule(
+            "qrScannerPlugin",
+            listOf("desktopRuntimeClasspath"),
+            Regex("""^com\.google\.zxing:javase$"""),
+            "zxing core's RGBLuminanceSource replaces the one javase class the desktop scanner used",
+        ),
     )
 
 // Consumers compile against every dependency a library declares api, so api is only for libraries
