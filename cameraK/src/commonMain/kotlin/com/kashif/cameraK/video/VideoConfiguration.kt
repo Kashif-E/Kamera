@@ -19,6 +19,7 @@ import androidx.compose.runtime.Immutable
  * @property maxFileSizeBytes Maximum size of the video file in bytes. 0 means unlimited. On Android the
  *                           recording stops when the file reaches it, and stopRecording returns
  *                           the file; other platforms do not apply it yet.
+ * @throws IllegalArgumentException if [maxDurationMs] or [maxFileSizeBytes] is negative.
  */
 @Immutable
 data class VideoConfiguration(
@@ -28,4 +29,9 @@ data class VideoConfiguration(
     val outputDirectory: String? = null,
     val filePrefix: String = "VID",
     val maxFileSizeBytes: Long = 0L,
-)
+) {
+    init {
+        require(maxDurationMs >= 0L) { "maxDurationMs must be 0 (unlimited) or positive, was $maxDurationMs" }
+        require(maxFileSizeBytes >= 0L) { "maxFileSizeBytes must be 0 (unlimited) or positive, was $maxFileSizeBytes" }
+    }
+}
