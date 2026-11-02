@@ -29,9 +29,12 @@ import kotlin.time.ExperimentalTime
  * @param isAutoSave Determines if images should be saved automatically upon capture. Auto-save is then
  *   the capture's gallery publisher: keep `CameraConfiguration.directory` at its default,
  *   `Directory.DOCUMENTS`, because PICTURES or DCIM make the camera publish the photo as well.
- * @param prefix Optional prefix for image filenames when auto-saving.
+ * @param prefix Optional prefix for image filenames when auto-saving, which names each file
+ *   `<prefix>_<epochMillis>`. The desktop saver accepts at most 50 characters from
+ *   `A-Z a-z 0-9 . _ -` and throws [IllegalArgumentException] when it is created with any other.
  * @param directory Specifies the directory where images will be saved when auto-saving.
- * @param customFolderName Optional custom folder name within the specified directory.
+ * @param customFolderName Optional folder name within the specified directory. On Android and
+ *   desktop images go to `<directory>/<customFolderName>`, or `<directory>/CameraK` when it is null.
  */
 @Immutable
 data class ImageSaverConfig(

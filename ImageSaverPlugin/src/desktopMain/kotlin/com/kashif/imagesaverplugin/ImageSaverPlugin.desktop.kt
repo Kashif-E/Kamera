@@ -28,14 +28,19 @@ import javax.imageio.ImageWriteParam
  * format. Each save creates a new file and never overwrites one: a name that is taken gets a
  * numeric suffix.
  *
+ * Images go to `<directory>/<customFolderName or CameraK>` under the user's home, where
+ * [ImageSaverConfig.directory] PICTURES and DCIM mean `Pictures` and DOCUMENTS means `Documents`.
+ *
  * `imageName` and [ImageSaverConfig.customFolderName] must each be 1 to 64 characters from
  * `A-Z a-z 0-9 . _ -` and not `.` or `..`; any other name fails the save with an
  * [IllegalArgumentException], so a forwarded name can never place a file outside the folder. An
  * auto-save names its file `<prefix>_<epochMillis>`, which adds 14 characters, so
- * [ImageSaverConfig.prefix] may be at most 50 of those characters.
+ * [ImageSaverConfig.prefix] may be at most 50 of those characters; the constructor throws an
+ * [IllegalArgumentException] for any other prefix.
  *
- * [getByteArrayFrom] reads only the library's own output: files under the user's Pictures and
- * Documents folders, where this saver and CameraK's desktop captures write.
+ * [getByteArrayFrom] and [readBytes] read only the library's own output: this saver's folder and
+ * the `CameraK` folders under `Pictures` and `Documents`, where CameraK's desktop captures go. Any
+ * other file, including the user's own files elsewhere in `Pictures` or `Documents`, is refused.
  *
  * @param config The configuration settings for the plugin.
  * @param onImageSaved Callback invoked when the image is successfully saved, on a `Dispatchers.IO`
@@ -51,6 +56,10 @@ class JVMImageSaverPlugin(
 ) : ImageSaverPlugin(config) {
     // The folder the configured Directory resolves under: the user's home.
     private var userHome: File = defaultUserHome()
+
+    init {
+        config.prefix?.let(::requireAutoSavePrefix)
+    }
 
     internal constructor(
         config: ImageSaverConfig,
@@ -96,42 +105,58 @@ class JVMImageSaverPlugin(
         ImageSaveResult.Failed(e)
     }
 
-    // Resolve a real per-user directory (the old code wrote to a relative dir literally named
-    // "PICTURES" in the process CWD and ignored customFolderName/imageFormat).
     // customFolderName is one validated name, and the folder it names must still resolve inside the
     // configured directory once symbolic links are followed.
     private fun resolveOutputDirectory(): File {
-        val base = when (config.directory) {
-            Directory.PICTURES, Directory.DCIM -> File(userHome, "Pictures")
-            Directory.DOCUMENTS -> File(userHome, "Documents")
-        }
-        val folder = config.customFolderName
-            ?.let { File(base, requireSafeFileName(it, "customFolderName")) }
-            ?: return base
-        if (!folder.canonicalFile.toPath().startsWith(base.canonicalFile.toPath())) {
-            throw SaveFailure("customFolderName resolves outside the configured directory")
+        val base = directoryFolder(config.directory)
+        val name = config.customFolderName?.let { requireSafeFileName(it, "customFolderName") } ?: OUTPUT_FOLDER
+        val folder = File(base, name)
+        if (!isInside(folder, base)) {
+            throw SaveFailure("The output folder resolves outside the configured directory")
         }
         return folder
     }
 
+    private fun directoryFolder(directory: Directory): File = when (directory) {
+        Directory.PICTURES, Directory.DCIM -> File(userHome, "Pictures")
+        Directory.DOCUMENTS -> File(userHome, "Documents")
+    }
+
+    // The library's own output folders: this saver's, and the CameraK folders that CameraK's desktop
+    // captures write to. A folder that links out of its directory is not one of them.
+    private fun readRoots(): List<Path> {
+        val captureFolders = listOf(Directory.PICTURES, Directory.DOCUMENTS)
+            .map { directoryFolder(it) }
+            .map { base -> File(base, OUTPUT_FOLDER) to base }
+        val ownFolder = try {
+            listOf(resolveOutputDirectory() to directoryFolder(config.directory))
+        } catch (e: Exception) {
+            CameraKLogger.w("CameraK", "The image saver's output folder is not readable", e)
+            emptyList()
+        }
+        return (captureFolders + ownFolder)
+            .filter { (folder, base) -> isInside(folder, base) }
+            .map { (folder, _) -> folder.canonicalFile.toPath() }
+    }
+
     /**
      * Reads an image this saver or a CameraK capture wrote. [path] must resolve, after `..` and
-     * symbolic links, to a file under the user's Pictures or Documents folder; any other path, or a
-     * file that cannot be read, throws an [IOException] whose message has no path (its cause may).
+     * symbolic links, to a file in this saver's folder or in `Pictures/CameraK` or
+     * `Documents/CameraK`; any other path, or a file that cannot be read, throws an [IOException]
+     * whose message has no path (its cause may).
      */
     @Deprecated(
         "Blocks the calling thread while it reads. Use readBytes, which suspends.",
         ReplaceWith("readBytes(path)"),
     )
     override fun getByteArrayFrom(path: String): ByteArray {
-        val file = try {
-            File(path).canonicalFile.toPath()
+        val (file, roots) = try {
+            File(path).canonicalFile.toPath() to readRoots()
         } catch (e: IOException) {
             throw IOException("Failed to resolve the image's path", e)
         }
-        val roots = listOf(File(userHome, "Pictures"), File(userHome, "Documents"))
-        if (roots.none { file.startsWith(it.canonicalFile.toPath()) }) {
-            throw IOException("getByteArrayFrom reads only images under the user's Pictures and Documents folders")
+        if (roots.none { file.startsWith(it) }) {
+            throw IOException("getByteArrayFrom reads only images in the library's own output folders")
         }
         return try {
             Files.readAllBytes(file)
@@ -140,6 +165,10 @@ class JVMImageSaverPlugin(
         }
     }
 }
+
+// Whether [folder] is [base] or inside it once `..` and symbolic links are resolved.
+private fun isInside(folder: File, base: File): Boolean =
+    folder.canonicalFile.toPath().startsWith(base.canonicalFile.toPath())
 
 // A failure the saver describes itself, in a message with no path or user data.
 private class SaveFailure(message: String) : IOException(message)
@@ -260,6 +289,10 @@ private val PNG_MAGIC = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A,
 // The quality CameraK's own captures use, so a converted image matches a direct capture.
 private const val JPEG_QUALITY = 0.95f
 private const val MAX_NAME_ATTEMPTS = 100
+
+// The folder the saver writes to when no customFolderName is set; CameraK's desktop captures and
+// the Android saver use the same name.
+private const val OUTPUT_FOLDER = "CameraK"
 
 /**
  * Factory function to create an jvm-specific [ImageSaverPlugin].
