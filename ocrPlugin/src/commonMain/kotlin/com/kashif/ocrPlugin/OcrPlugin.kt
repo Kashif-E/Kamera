@@ -131,15 +131,25 @@ class OcrPlugin internal constructor(
     }
 
     /**
-     * Extracts text from a bitmap image asynchronously.
+     * Reads the text in [bitmap] once and returns it to the caller. The text is not logged.
      *
-     * @param textureImage The image bitmap to extract text from.
+     * @return The recognised text, or "" when there is none.
      */
-    fun extractTextFromBitmap(textureImage: ImageBitmap) = coroutineScope.launch {
-        CameraKLogger.d("CameraK", "Starting text extraction from bitmap")
-        val extractedText = recognizeBitmap(textureImage, config)
-        CameraKLogger.d("CameraK", "Extracted text: $extractedText")
+    suspend fun recognize(bitmap: ImageBitmap): String {
+        val text = recognizeBitmap(bitmap, config)
+        CameraKLogger.d("CameraK", "OcrPlugin: one-shot text recognition finished, length=${text.length}")
+        return text
     }
+
+    /**
+     * Reads the text in [textureImage] in the plugin's constructor scope. The returned [Job] carries
+     * no result, so the text reaches nobody: use [recognize].
+     */
+    @Deprecated(
+        "The text never reaches the caller. Call the suspending recognize(bitmap), which returns it.",
+        ReplaceWith("recognize(textureImage)"),
+    )
+    fun extractTextFromBitmap(textureImage: ImageBitmap): Job = coroutineScope.launch { recognize(textureImage) }
 
     fun startRecognition() {
         val controller = cameraController ?: return
