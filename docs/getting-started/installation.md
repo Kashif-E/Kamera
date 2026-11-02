@@ -104,7 +104,7 @@ Add usage descriptions to `Info.plist`. iOS terminates the app when it asks for 
 <!-- Video recording with audio (VideoConfiguration.enableAudio is true by default) -->
 <key>NSMicrophoneUsageDescription</key>
 <string>This app needs microphone access to record video with sound</string>
-<!-- Saving photos and videos to Photos: Directory.PICTURES (the default) or DCIM, and the image saver plugin -->
+<!-- Saving photos and videos to Photos (Directory.PICTURES or DCIM; captures default to the app's Documents), and the image saver plugin -->
 <key>NSPhotoLibraryAddUsageDescription</key>
 <string>This app needs to save photos to your library</string>
 <!-- RequestStoragePermission, which asks for read-write Photos access, and reading a saved ph:// photo back -->
@@ -116,7 +116,7 @@ Add usage descriptions to `Info.plist`. iOS terminates the app when it asks for 
 |-----|-----------|
 | `NSCameraUsageDescription` | Any camera use |
 | `NSMicrophoneUsageDescription` | Recording video with audio; pass `VideoConfiguration(enableAudio = false)` to record without it |
-| `NSPhotoLibraryAddUsageDescription` | Saving to Photos (`Directory.PICTURES`, the default, or `Directory.DCIM`) and the image saver plugin |
+| `NSPhotoLibraryAddUsageDescription` | Saving captures to Photos (`Directory.PICTURES` or `Directory.DCIM`; captures default to the app's Documents) and the image saver plugin |
 | `NSPhotoLibraryUsageDescription` | `RequestStoragePermission` and reading a saved `ph://` photo back |
 
 An app that saves only to `Directory.DOCUMENTS` and does not use the image saver plugin needs no `NSPhotoLibraryAddUsageDescription`; it still needs `NSPhotoLibraryUsageDescription` if it calls `RequestStoragePermission`.

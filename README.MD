@@ -110,7 +110,7 @@ dependencies {
 <!-- Video recording with audio (VideoConfiguration.enableAudio is true by default) -->
 <key>NSMicrophoneUsageDescription</key>
 <string>Microphone access required for video recording</string>
-<!-- Saving photos and videos to Photos: Directory.PICTURES (the default) or DCIM, and the image saver plugin -->
+<!-- Saving photos and videos to Photos (Directory.PICTURES or DCIM; captures default to the app's Documents), and the image saver plugin -->
 <key>NSPhotoLibraryAddUsageDescription</key>
 <string>Photo library access required for saving images</string>
 <!-- RequestStoragePermission, which asks for read-write Photos access, and reading a saved ph:// photo back -->

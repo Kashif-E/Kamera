@@ -13,8 +13,8 @@ import kotlin.test.fail
  * - NSCameraUsageDescription: every camera session.
  * - NSMicrophoneUsageDescription: recordings with audio, which VideoConfiguration.enableAudio turns on
  *   by default.
- * - NSPhotoLibraryAddUsageDescription: saving captures and recordings to Photos (Directory.PICTURES,
- *   the default, and DCIM), and the image saver plugin.
+ * - NSPhotoLibraryAddUsageDescription: saving captures and recordings to Photos (Directory.PICTURES
+ *   and DCIM; captures default to DOCUMENTS, the app's own storage), and the image saver plugin.
  * - NSPhotoLibraryUsageDescription: RequestStoragePermission, which asks for read-write access, and
  *   reading a saved ph:// photo back.
  *
