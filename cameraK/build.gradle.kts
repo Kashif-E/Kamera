@@ -16,15 +16,8 @@ kotlin {
     }
     jvm("desktop")
 
-    listOf(
-        iosArm64(),
-        iosSimulatorArm64(),
-    ).forEach {
-        it.binaries.framework {
-            baseName = "cameraK"
-            isStatic = true
-        }
-    }
+    iosArm64()
+    iosSimulatorArm64()
 
     sourceSets {
         val desktopMain by getting {

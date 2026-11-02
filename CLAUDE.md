@@ -58,7 +58,7 @@ All library modules target: `androidTarget`, `jvm("desktop")`, `iosArm64()`, `io
 - Formatting: Spotless + ktlint 1.5.0 with `.editorconfig`. Composable function naming is exempt from ktlint rules.
 - JVM toolchain: Java 17
 - Android: minSdk 23, compileSdk 36
-- iOS: deployment target 13.0, static XCFrameworks
+- iOS: deployment target 13.0. Libraries publish klibs only; the static framework an app embeds is built by `Sample`
 - Compose stability: `@Stable` and `@Immutable` annotations used for optimization
 - Concurrency: AtomicFU for lock-free operations, coroutines + StateFlow throughout
 - `takePictureToFile()` is the recommended capture API; `takePicture()` is deprecated
