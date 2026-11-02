@@ -4,6 +4,9 @@ import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Photos.PHAsset
 import platform.Photos.PHAssetChangeRequest
+import platform.Photos.PHAssetCreationRequest
+import platform.Photos.PHAssetResourceCreationOptions
+import platform.Photos.PHAssetResourceTypePhoto
 import platform.Photos.PHImageManager
 import platform.Photos.PHImageRequestID
 import platform.Photos.PHImageRequestOptions
@@ -17,6 +20,17 @@ internal interface PhotoLibraryGateway {
      * chooses, with the new asset's local identifier (null when the write failed) and the error.
      */
     fun createImageAsset(image: UIImage, completion: (localIdentifier: String?, error: NSError?) -> Unit)
+
+    /**
+     * Stores [data], an encoded image of type [uniformTypeIdentifier], in the library as a new
+     * asset's photo resource, byte for byte: no decode, no re-encode, metadata kept. [completion]
+     * follows [createImageAsset]'s contract.
+     */
+    fun createPhotoAsset(
+        data: NSData,
+        uniformTypeIdentifier: String,
+        completion: (localIdentifier: String?, error: NSError?) -> Unit,
+    )
 
     /**
      * Requests the image data of the asset with [localIdentifier], returning the request's ID, or
@@ -40,6 +54,22 @@ internal object SystemPhotoLibrary : PhotoLibraryGateway {
         var localIdentifier: String? = null
         PHPhotoLibrary.sharedPhotoLibrary().performChanges({
             val request = PHAssetChangeRequest.creationRequestForAssetFromImage(image)
+            localIdentifier = request.placeholderForCreatedAsset?.localIdentifier
+        }) { success, error ->
+            completion(if (success) localIdentifier else null, error)
+        }
+    }
+
+    override fun createPhotoAsset(
+        data: NSData,
+        uniformTypeIdentifier: String,
+        completion: (localIdentifier: String?, error: NSError?) -> Unit,
+    ) {
+        var localIdentifier: String? = null
+        PHPhotoLibrary.sharedPhotoLibrary().performChanges({
+            val request = PHAssetCreationRequest.creationRequestForAsset()
+            val options = PHAssetResourceCreationOptions().apply { this.uniformTypeIdentifier = uniformTypeIdentifier }
+            request.addResourceWithType(PHAssetResourceTypePhoto, data, options)
             localIdentifier = request.placeholderForCreatedAsset?.localIdentifier
         }) { success, error ->
             completion(if (success) localIdentifier else null, error)

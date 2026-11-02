@@ -323,6 +323,12 @@ class IOSImageSaverPluginPhotosTest {
     ) : PhotoLibraryGateway {
         val requestedIdentifier = atomic<String?>(null)
         val createdOnMainThread = atomic<Boolean?>(null)
+
+        /** Whether an asset was created from a decoded UIImage, which Photos re-encodes. */
+        val decodedImageCreated = atomic(false)
+
+        /** The bytes and type of the photo resource stored byte for byte, if one was. */
+        val storedPhoto = atomic<Pair<ByteArray, String>?>(null)
         val creationStarted = CompletableDeferred<Unit>()
         val readStarted = CompletableDeferred<PHImageRequestID>()
         val cancelledRequests = atomic(emptyList<PHImageRequestID>())
@@ -337,6 +343,20 @@ class IOSImageSaverPluginPhotosTest {
         }
 
         override fun createImageAsset(image: UIImage, completion: (String?, NSError?) -> Unit) {
+            decodedImageCreated.value = true
+            create(completion)
+        }
+
+        override fun createPhotoAsset(
+            data: NSData,
+            uniformTypeIdentifier: String,
+            completion: (String?, NSError?) -> Unit,
+        ) {
+            storedPhoto.value = data.toByteArray() to uniformTypeIdentifier
+            create(completion)
+        }
+
+        private fun create(completion: (String?, NSError?) -> Unit) {
             createdOnMainThread.value = NSThread.isMainThread
             creationStarted.complete(Unit)
             if (completesCreation) completion(createdIdentifier, createError)
