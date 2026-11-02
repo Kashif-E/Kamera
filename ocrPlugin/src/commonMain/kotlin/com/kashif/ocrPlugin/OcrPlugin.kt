@@ -45,12 +45,13 @@ import kotlinx.coroutines.launch
 class OcrPlugin internal constructor(
     val coroutineScope: CoroutineScope,
     val config: OcrConfig,
+    private val recognizeBitmap: suspend (ImageBitmap, OcrConfig) -> String = ::extractTextFromBitmapImpl,
     private val startRecognizer: (CameraController, OcrConfig, (String) -> Unit) -> RecognitionHandle,
 ) : CameraKPlugin {
     constructor(coroutineScope: CoroutineScope, config: OcrConfig = OcrConfig()) : this(
         coroutineScope,
         config,
-        { controller, recognizerConfig, onText ->
+        startRecognizer = { controller, recognizerConfig, onText ->
             com.kashif.ocrPlugin.startRecognition(controller, recognizerConfig, onText)
         },
     )
@@ -136,7 +137,7 @@ class OcrPlugin internal constructor(
      */
     fun extractTextFromBitmap(textureImage: ImageBitmap) = coroutineScope.launch {
         CameraKLogger.d("CameraK", "Starting text extraction from bitmap")
-        val extractedText = extractTextFromBitmapImpl(textureImage, config)
+        val extractedText = recognizeBitmap(textureImage, config)
         CameraKLogger.d("CameraK", "Extracted text: $extractedText")
     }
 
