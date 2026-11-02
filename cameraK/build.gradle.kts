@@ -37,7 +37,7 @@ kotlin {
             api(compose.ui)
             api(compose.material3)
             api(compose.foundation)
-            api(libs.atomicfu)
+            implementation(libs.atomicfu)
         }
 
         commonTest.dependencies {
