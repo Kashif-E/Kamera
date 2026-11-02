@@ -87,6 +87,53 @@ class DesktopRecordingPipelineTest {
         }
     }
 
+    @Test
+    fun aCameraFasterThanTheRecordingsFrameRate_neverGivesTwoFramesTheSameFrameNumber() = runBlocking<Unit> {
+        val clock = AtomicLong(0)
+        // A 60 fps camera: two frames for every frame slot of the 30 fps recording.
+        val fake = FakeFrameGrabber { frame ->
+            clock.addAndGet(FAST_FRAME_NANOS)
+            frame
+        }
+        val recorder = FakeFrameRecorder().apply { finishFirstRecord() }
+        val sut = CameraController(
+            imageFormat = ImageFormat.JPEG,
+            directory = Directory.PICTURES,
+            customGrabber = fake,
+            sessionDispatcher = Dispatchers.Unconfined,
+            recorderFactory = { _, _ -> recorder },
+            nanoClock = clock::get,
+        )
+        try {
+            sut.startSession()
+            assertTrue(fake.firstGrabEntered.await(5, TimeUnit.SECONDS), "the grab loop never called grab()")
+            sut.startRecording(config())
+            var tries = 0
+            do {
+                fake.allowGrabs(1)
+            } while (!recorder.awaitRecords(1, 200) && ++tries < 25)
+            // One camera frame at a time, giving the recording time to take each one.
+            repeat(FAST_FRAMES) {
+                fake.allowGrabs(1)
+                recorder.awaitRecords(1, 200)
+            }
+            withTimeout(10_000) { sut.stopRecording() }
+
+            // The encoder turns each timestamp into a frame number at its frame rate, as
+            // FFmpegFrameRecorder.setTimestamp does; a repeated number is a duplicate pts it rejects.
+            val frameNumbers = recorder.timestamps.map { Math.round(it * recorder.frameRate / 1_000_000) }
+            assertTrue(frameNumbers.size >= FAST_FRAMES / 4, "frames recorded: $frameNumbers")
+            assertTrue(
+                frameNumbers.zipWithNext().all { (a, b) -> b > a },
+                "frame numbers are not strictly increasing: $frameNumbers",
+            )
+        } finally {
+            fake.openGate()
+            sut.cleanup()
+            outputDirectory.deleteRecursively()
+        }
+    }
+
     private fun recordFrames(fake: FakeFrameGrabber, recorder: FakeFrameRecorder, count: Int) = repeat(count) {
         fake.allowGrabs(1)
         assertTrue(recorder.awaitRecords(1, 5_000), "the recording missed a frame")
@@ -167,5 +214,7 @@ class DesktopRecordingPipelineTest {
         const val FRAME_NANOS = 40_000_000L
         const val FRAME_MICROS = FRAME_NANOS / 1_000
         const val PAUSED_FRAMES = 25
+        const val FAST_FRAME_NANOS = 16_000_000L
+        const val FAST_FRAMES = 20
     }
 }

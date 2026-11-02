@@ -17,6 +17,12 @@ import java.util.concurrent.atomic.AtomicInteger
  * open the output or the codec.
  */
 internal class FakeFrameRecorder(private val startFailure: Exception? = null) : FrameRecorder() {
+    init {
+        // The rate createFrameRecorder gives the real encoder, which turns each timestamp into a
+        // frame number at this rate.
+        frameRate = 30.0
+    }
+
     private val firstRecordGate = CountDownLatch(1)
     private val inFlight = AtomicInteger(0)
 
