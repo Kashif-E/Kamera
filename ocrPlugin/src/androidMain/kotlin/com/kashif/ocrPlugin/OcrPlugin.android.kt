@@ -83,7 +83,7 @@ private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { conti
 
 internal fun CameraController.enableTextRecognition(
     onTextRecognized: (String) -> Unit,
-    onError: (Exception) -> Unit = { CameraKLogger.e("TextRecognition", "Recognition error", it) },
+    onError: (Exception) -> Unit = logRecognitionError,
 ): TextRecognitionAnalyzer {
     CameraKLogger.d("TextRecognition", "Configuring text recognition analyzer")
 
@@ -97,32 +97,53 @@ internal fun CameraController.enableTextRecognition(
     return analyzer
 }
 
-internal class TextRecognitionAnalyzer(
-    private val onTextRecognized: (String) -> Unit,
-    private val onError: (Exception) -> Unit,
-) : ImageAnalysis.Analyzer {
+/**
+ * The ML Kit call live OCR makes on each analysis frame, so a test can stand in for the recognizer
+ * and count the frames it is asked to read. [close] frees the recognizer's native model handles.
+ */
+internal interface LiveTextRecognizer {
+    /**
+     * Starts reading the text in [frame], or returns null when the frame has no image to read. The
+     * task fails with ML Kit's exception. The caller closes [frame] once the task completes.
+     */
+    fun recognize(frame: ImageProxy): Task<String>?
+
+    fun close()
+}
+
+/** [LiveTextRecognizer] over ML Kit's Latin text recognizer. */
+internal class MlKitLiveTextRecognizer : LiveTextRecognizer {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-    private val processedTexts = mutableSetOf<String>()
 
     @androidx.annotation.OptIn(ExperimentalGetImage::class)
+    override fun recognize(frame: ImageProxy): Task<String>? {
+        val mediaImage = frame.image ?: return null
+        val image = InputImage.fromMediaImage(mediaImage, frame.imageInfo.rotationDegrees)
+        return recognizer.process(image).onSuccessTask(DirectExecutor) { Tasks.forResult(it.text) }
+    }
+
+    override fun close() = recognizer.close()
+}
+
+private val logRecognitionError: (Exception) -> Unit = { CameraKLogger.e("TextRecognition", "Recognition error", it) }
+
+internal class TextRecognitionAnalyzer(
+    private val onTextRecognized: (String) -> Unit,
+    private val onError: (Exception) -> Unit = logRecognitionError,
+    private val recognizer: LiveTextRecognizer = MlKitLiveTextRecognizer(),
+) : ImageAnalysis.Analyzer {
+    private val processedTexts = mutableSetOf<String>()
+
     override fun analyze(imageProxy: ImageProxy) {
-        val mediaImage = imageProxy.image
-        if (mediaImage == null) {
-            imageProxy.close()
-            return
-        }
-
         try {
-            val image =
-                InputImage.fromMediaImage(
-                    mediaImage,
-                    imageProxy.imageInfo.rotationDegrees,
-                )
+            val task = recognizer.recognize(imageProxy)
+            if (task == null) {
+                imageProxy.close()
+                return
+            }
 
-            recognizer
-                .process(image)
-                .addOnSuccessListener { visionText ->
-                    val text = visionText.text
+            task
+                .addOnSuccessListener { text ->
                     // Avoid duplicate emissions for same text
                     if (text.isNotEmpty() && !processedTexts.contains(text)) {
                         processedTexts.add(text)

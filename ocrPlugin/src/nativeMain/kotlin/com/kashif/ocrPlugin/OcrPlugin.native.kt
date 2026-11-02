@@ -60,6 +60,7 @@ import platform.Vision.VNImageRequestHandler
 import platform.Vision.VNRecognizeTextRequest
 import platform.Vision.VNRecognizedText
 import platform.Vision.VNRecognizedTextObservation
+import platform.Vision.VNRequest
 import platform.Vision.VNRequestTextRecognitionLevelAccurate
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
@@ -306,23 +307,14 @@ class VideoDataDelegate(private val onText: (String) -> Unit) :
                     return
                 }
 
-            /**
-             * Text recognition request using Vision framework.
-             * Configured for accurate recognition with language correction disabled.
-             */
             val request =
-                VNRecognizeTextRequest { vnRequest, error ->
+                liveTextRequest { vnRequest, error ->
                     if (error != null) {
                         cleanupAndRelease(sampleBuffer)
-                        return@VNRecognizeTextRequest
+                        return@liveTextRequest
                     }
 
                     handleRecognitionResults(vnRequest?.results as? NSArray, sampleBuffer)
-                }.apply {
-                    recognitionLevel = VNRequestTextRecognitionLevelAccurate
-                    usesLanguageCorrection = false
-                    minimumTextHeight = 0.1f
-                    recognitionLanguages = listOf("en-US")
                 }
 
             val handler =
@@ -392,6 +384,27 @@ class VideoDataDelegate(private val onText: (String) -> Unit) :
     }
 }
 
+/** The Vision request live OCR runs on each frame it reads; [onComplete] receives Vision's result. */
+internal fun liveTextRequest(onComplete: (VNRequest?, NSError?) -> Unit): VNRecognizeTextRequest =
+    VNRecognizeTextRequest(onComplete).apply {
+        recognitionLevel = VNRequestTextRecognitionLevelAccurate
+        usesLanguageCorrection = false
+        minimumTextHeight = 0.1f
+        recognitionLanguages = listOf("en-US")
+    }
+
+/** The video output live OCR reads frames from, before its sample-buffer delegate is set. */
+@OptIn(ExperimentalForeignApi::class)
+internal fun ocrVideoDataOutput(): AVCaptureVideoDataOutput =
+    AVCaptureVideoDataOutput().apply {
+        setVideoSettings(
+            mapOf(
+                kCVPixelBufferPixelFormatTypeKey to kCVPixelFormatType_32BGRA,
+            ),
+        )
+        setAlwaysDiscardsLateVideoFrames(true)
+    }
+
 /**
  * Enables continuous text recognition on the iOS camera controller.
  *
@@ -413,13 +426,7 @@ actual fun startRecognition(
     // Idempotency/teardown is owned by the plugin (it stops the prior handle before re-starting),
     // so no module-global dedup is needed here.
     val videoDataOutput =
-        AVCaptureVideoDataOutput().apply {
-            setVideoSettings(
-                mapOf(
-                    kCVPixelBufferPixelFormatTypeKey to kCVPixelFormatType_32BGRA,
-                ),
-            )
-            setAlwaysDiscardsLateVideoFrames(true)
+        ocrVideoDataOutput().apply {
             setSampleBufferDelegate(
                 VideoDataDelegate(onText),
                 dispatch_queue_create("com.kashif.ocrPlugin.videoQueue", null),
