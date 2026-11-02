@@ -496,7 +496,9 @@ tasks.register("checkReleaseMetadata") {
             .filter { file ->
                 val path = file.relativeTo(root).invariantSeparatorsPath
                 path == "README.MD" ||
-                    path.startsWith("docs/") && !path.startsWith("docs/superpowers/") && file.extension == "md"
+                    path.startsWith("docs/") &&
+                    !path.startsWith("docs/superpowers/") &&
+                    file.extension == "md"
             }.forEach { file ->
                 file.readLines().forEachIndexed { index, line ->
                     val at = "${file.relativeTo(root)}:${index + 1}"
@@ -516,6 +518,77 @@ tasks.register("checkReleaseMetadata") {
             }
         check(problems.isEmpty()) { "Release metadata is inconsistent:\n" + problems.joinToString("\n") }
     }
+}
+
+// Release 2.0 is built on Compose Multiplatform 1.11 and Coil 3.5. Each library's shipped desktop and
+// Android classpaths must resolve Compose's runtime, foundation and ui at exactly the Compose plugin's
+// version, on or above that baseline and stable, and Coil on or above its baseline. Resolving the
+// classpaths, rather than reading the catalog, catches a dependency that drags Compose to another line.
+val composeBaseline = "1.11.0"
+val coilBaseline = "3.5.0"
+val composePluginVersion =
+    libs.versions.compose.multiplatform
+        .get()
+val composeCoreModules = listOf("runtime", "foundation", "ui").map { "org.jetbrains.compose.$it:$it" }
+
+fun versionAtLeast(
+    version: String,
+    baseline: String,
+): Boolean {
+    fun parts(v: String) = v.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+    val (actual, wanted) = parts(version) to parts(baseline)
+    return (0 until maxOf(actual.size, wanted.size))
+        .map { actual.getOrElse(it) { 0 }.compareTo(wanted.getOrElse(it) { 0 }) }
+        .firstOrNull { it != 0 }
+        ?.let { it > 0 } ?: true
+}
+
+subprojects {
+    if (name !in libraryModules) return@subprojects
+    val resolved =
+        listOf("desktopRuntimeClasspath", "releaseRuntimeClasspath").map { configurationName ->
+            configurationName to
+                provider {
+                    configurations
+                        .getByName(configurationName)
+                        .incoming.resolutionResult.allComponents
+                        .mapNotNull { it.moduleVersion }
+                        .map { "${it.group}:${it.name}" to it.version }
+                }
+        }
+    tasks.register("checkComposeBaseline") {
+        group = "verification"
+        description = "Fails if this library ships Compose off the plugin's version or Coil below the 2.0 baseline"
+        doLast {
+            val problems = mutableListOf<String>()
+            if (composePluginVersion.contains('-') || !versionAtLeast(composePluginVersion, composeBaseline)) {
+                problems +=
+                    "the Compose Multiplatform plugin is $composePluginVersion; 2.0 needs a stable $composeBaseline or later"
+            }
+            problems +=
+                resolved.flatMap { (configurationName, components) ->
+                    components.get().mapNotNull { (module, version) ->
+                        when {
+                            module in composeCoreModules && version != composePluginVersion ->
+                                "$configurationName resolves $module $version, not the Compose plugin's $composePluginVersion"
+                            module.startsWith("io.coil-kt.coil3:") && !versionAtLeast(version, coilBaseline) ->
+                                "$configurationName resolves $module $version; 2.0 needs Coil $coilBaseline or later"
+                            else -> null
+                        }
+                    }
+                }
+            check(problems.isEmpty()) {
+                "$path is off the 2.0 Compose baseline:\n" +
+                    problems.distinct().joinToString("\n")
+            }
+        }
+    }
+}
+
+tasks.register("checkComposeBaseline") {
+    group = "verification"
+    description = "Fails if a library ships Compose or Coil off the 2.0 baseline"
+    dependsOn(libraryModules.map { ":$it:checkComposeBaseline" })
 }
 
 // --only screenshots runs just the screenshot classes from cameraK's desktop suite.
@@ -540,6 +613,7 @@ tasks.register("verifyAll") {
                 ":checkNoIntelSimulatorTarget",
                 ":checkAndroidSdkFloor",
                 ":checkReleaseMetadata",
+                ":checkComposeBaseline",
             )
     }
     verifyModules.forEach { module ->
