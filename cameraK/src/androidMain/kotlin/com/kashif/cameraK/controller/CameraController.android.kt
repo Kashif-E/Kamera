@@ -59,7 +59,6 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.utils.MemoryManager
 import com.kashif.cameraK.utils.getActivityOrNull
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
@@ -197,8 +196,6 @@ actual class CameraController internal constructor(
     // so every iteration is a consistent snapshot and concurrent registrations are never lost.
     private val imageCaptureListeners = CopyOnWriteArrayList<(ByteArray) -> Unit>()
 
-    private val memoryManager = MemoryManager
-
     // Set once by cleanup(). Every main-executor callback (provider ready, capture saved, recording
     // finalized) checks it first, so a callback that lands after release cannot rebind the camera,
     // touch the shut-down executors or resume a capture twice.
@@ -250,8 +247,6 @@ actual class CameraController internal constructor(
         }
         this.previewView = previewView
         listenForDisplayChanges()
-
-        memoryManager.initialize(context)
 
         backend.requestProvider(context, ContextCompat.getMainExecutor(context)) { providerResult ->
             if (released.value) {
@@ -325,12 +320,8 @@ actual class CameraController internal constructor(
         }
     }
 
-    /**
-     * Create a resolution selector based on memory conditions
-     */
+    /** The resolution selector for the configured aspect ratio and target resolution. */
     private fun createResolutionSelector(): ResolutionSelector {
-        memoryManager.updateMemoryStatus()
-
         // Always honor the configured aspect ratio. When a target resolution is also set, keep the
         // ratio as the primary constraint and use the resolution as the preferred size within it —
         // previously targetResolution dropped the ratio entirely, so a 16:9 target produced 16:9
@@ -502,7 +493,8 @@ actual class CameraController internal constructor(
     }
 
     /**
-     * Configure the image capture use case with settings adapted to current memory conditions
+     * Configures the image capture use case. [QualityPrioritization.NONE] states no preference and
+     * captures at maximum quality, as it always did on a device that was not short of memory.
      */
     @OptIn(ExperimentalZeroShutterLag::class, ExperimentalCamera2Interop::class)
     private fun configureCaptureUseCase(resolutionSelector: ResolutionSelector) {
@@ -513,13 +505,7 @@ actual class CameraController internal constructor(
                     QualityPrioritization.QUALITY -> ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
                     QualityPrioritization.SPEED -> ImageCapture.CAPTURE_MODE_ZERO_SHUTTER_LAG
                     QualityPrioritization.BALANCED -> ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
-                    QualityPrioritization.NONE -> {
-                        if (memoryManager.isUnderMemoryPressure()) {
-                            ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
-                        } else {
-                            ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
-                        }
-                    }
+                    QualityPrioritization.NONE -> ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
                 },
             )
             .setResolutionSelector(resolutionSelector)
@@ -969,13 +955,6 @@ actual class CameraController internal constructor(
             CameraKLogger.w("CameraController", "Ignoring lens switch while recording")
             return
         }
-        memoryManager.updateMemoryStatus()
-
-        if (memoryManager.isUnderMemoryPressure()) {
-            memoryManager.clearBufferPools()
-            System.gc()
-        }
-
         cameraLens = if (cameraLens == CameraLens.BACK) CameraLens.FRONT else CameraLens.BACK
         previewView?.let { bindCamera(it) }
     }
@@ -1005,10 +984,8 @@ actual class CameraController internal constructor(
 
     actual fun getCameraCapabilities(): CameraCapabilities = CameraCapabilities(lensSnapshot().map { it.info })
 
-    actual fun startSession() {
-        memoryManager.updateMemoryStatus()
-        memoryManager.clearBufferPools()
-    }
+    /** Nothing to start: the session runs from [bindCamera] until [stopSession]. */
+    actual fun startSession() = Unit
 
     /**
      * Unbinds the use cases this controller bound, and no other CameraX consumer's. Call on the main
@@ -1016,7 +993,6 @@ actual class CameraController internal constructor(
      */
     actual fun stopSession() {
         unbindOwnUseCases()
-        memoryManager.clearBufferPools()
     }
 
     /** Unbinds every use case this controller bound, and nothing another CameraX consumer bound. */
@@ -1410,7 +1386,6 @@ actual class CameraController internal constructor(
 
         imageProcessingExecutor.shutdown()
         analyzerExecutor.shutdown()
-        memoryManager.clearBufferPools()
     }
 
     private fun controllerReleased() = IllegalStateException("Camera controller was released")
