@@ -54,6 +54,10 @@ class CameraGrabber(
 
     @Volatile private var isHorizontallyFlipped = false
 
+    /** The width and height of the frames the grab loop last produced, or null before the first. */
+    @Volatile internal var frameSize: Pair<Int, Int>? = null
+        private set
+
     // Copies of the loop's frames, made only while someone collects. Each copy is new and never
     // written again, so a collector may keep it. null marks the end of a run.
     private val snapshots = MutableSharedFlow<CapturedFrame?>(
@@ -160,6 +164,10 @@ class CameraGrabber(
                         framesWithoutImage = 0
                         converter.setHorizontalFlip(isHorizontallyFlipped)
                         val image = converter.convert(frame) ?: continue
+                        val size = frameSize
+                        if (size == null || size.first != image.width || size.second != image.height) {
+                            frameSize = image.width to image.height
+                        }
                         frameFlow.tryEmit(image)
                         if (snapshots.subscriptionCount.value > 0) {
                             snapshots.tryEmit(CapturedFrame(image.copy(), captureNanos))

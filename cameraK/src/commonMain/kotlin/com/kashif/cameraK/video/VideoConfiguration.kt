@@ -6,7 +6,8 @@ import androidx.compose.runtime.Immutable
  * Immutable configuration for video recording sessions.
  *
  * @property quality Resolution and bitrate preset.
- * @property enableAudio Whether to record microphone audio (AAC).
+ * @property enableAudio Whether to record microphone audio (AAC). Desktop records no audio and logs a
+ *                        warning when this is true.
  * @property maxDurationMs Maximum recording duration in milliseconds. 0 means unlimited.
  * @property outputDirectory Absolute path to directory for saving the video file.
  *                           Null uses the platform default (DCIM/CameraK on Android, temp on iOS,

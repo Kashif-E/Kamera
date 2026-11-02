@@ -111,12 +111,9 @@ actual class CameraController(
     // Video recording
 
     @Volatile private var isCurrentlyRecording = false
-
-    @Volatile private var isPausedRecording = false
     private val activeRecording = atomic<ActiveRecording?>(null)
     private val recordingLock = Mutex()
     private var recordingOutputPath: String? = null
-    private var recordingStartMs: Long = 0L
 
     private var listener: (ByteArray) -> Unit = {
         // default no-op listener
@@ -332,6 +329,11 @@ actual class CameraController(
         check(activeRecording.value == null) { "A recording is already in progress" }
         val outputPath = createVideoOutputPath(configuration)
         val recorder = recorderFactory(outputPath, configuration)
+        // Encode at the camera's own frame size, so no frame is rescaled on the way in.
+        cameraGrabber.frameSize?.let { (width, height) ->
+            recorder.imageWidth = width
+            recorder.imageHeight = height
+        }
         try {
             recorder.start()
         } catch (e: Exception) {
@@ -345,8 +347,7 @@ actual class CameraController(
         }
         recordingOutputPath = outputPath
         isCurrentlyRecording = true
-        isPausedRecording = false
-        recordingStartMs = System.currentTimeMillis()
+        val clock = RecordingClock(nanoClock())
 
         // The recording coroutine owns the recorder: it is the only code that calls record(), and it
         // stops and releases the recorder in its finally, after its last record() has returned.
@@ -358,8 +359,11 @@ actual class CameraController(
             try {
                 // Fed by the grab loop's frames; this coroutine never grabs from the camera itself.
                 frames.collect { captured ->
-                    if (isCurrentlyRecording && !isPausedRecording) {
+                    // Frames captured while paused have no timestamp and are left out.
+                    val timestamp = clock.timestampMicros(captured.captureNanos)
+                    if (isCurrentlyRecording && timestamp != null) {
                         try {
+                            recorder.timestamp = timestamp
                             recorder.record(converter.convert(captured.image))
                         } catch (e: Exception) {
                             CameraKLogger.e("CameraK", "CameraK recording frame error", e)
@@ -376,10 +380,11 @@ actual class CameraController(
                 CameraKLogger.e("CameraK", "CameraK recording loop error", e)
                 failure = e
             } finally {
+                closeConverter(converter)
                 finalized.complete(releaseRecorder(recorder) ?: failure)
             }
         }
-        activeRecording.value = ActiveRecording(job, finalized)
+        activeRecording.value = ActiveRecording(job, finalized, clock)
 
         return outputPath
     }
@@ -388,7 +393,7 @@ actual class CameraController(
         recordingLock.withLock {
             isCurrentlyRecording = false
             val recording = activeRecording.getAndSet(null)
-            val durationMs = System.currentTimeMillis() - recordingStartMs
+            val durationMs = recording?.clock?.recordedMillis(nanoClock()) ?: 0L
             recording?.job?.cancelAndJoin()
             when (val failure = recording?.finalized?.await()) {
                 null -> VideoCaptureResult.Success(recordingOutputPath ?: "", durationMs)
@@ -397,15 +402,14 @@ actual class CameraController(
         }
     }
 
-    // Known limitation: while paused the frame loop stops feeding the recorder but wall-clock keeps
-    // advancing, so the resumed video has a frozen-frame gap equal to the pause duration rather than
-    // a seamless cut. Acceptable for now; a true pause would re-base the FFmpeg frame timestamps.
+    // Frames captured while paused are dropped and the paused time is taken out of every later
+    // timestamp, so the video cuts straight from the last frame before the pause to the first after.
     actual suspend fun pauseRecording() {
-        isPausedRecording = true
+        activeRecording.value?.clock?.pause(nanoClock())
     }
 
     actual suspend fun resumeRecording() {
-        isPausedRecording = false
+        activeRecording.value?.clock?.resume(nanoClock())
     }
 
     // Non-blocking: the recording coroutine stops and releases the recorder once its in-flight
@@ -433,7 +437,19 @@ actual class CameraController(
         return failure
     }
 
-    private class ActiveRecording(val job: Job, val finalized: CompletableDeferred<Exception?>)
+    private fun closeConverter(converter: JavaCvFrameConverter<BufferedImage>) {
+        try {
+            converter.close()
+        } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "CameraK: Error closing the recording's frame converter", e)
+        }
+    }
+
+    private class ActiveRecording(
+        val job: Job,
+        val finalized: CompletableDeferred<Exception?>,
+        val clock: RecordingClock,
+    )
 
     private fun createVideoOutputPath(config: VideoConfiguration): String {
         val timestamp = LocalDateTime.now()
@@ -481,23 +497,23 @@ internal fun createUniqueFile(folder: File, prefix: String, extension: String): 
     throw IOException("No free file name for $prefix in $MAX_NAME_ATTEMPTS attempts")
 }
 
-internal fun createFrameRecorder(outputPath: String, configuration: VideoConfiguration): FrameRecorder =
-    FFmpegFrameRecorder(
-        outputPath,
-        configuration.quality.width,
-        configuration.quality.height,
-        if (configuration.enableAudio) 1 else 0,
-    ).apply {
+/**
+ * An H.264 MP4 recorder for [configuration], sized from its quality until the controller sets the
+ * camera's frame size. Desktop captures no microphone audio, so the file has no audio track even
+ * when audio is asked for: an AAC track with no samples would be empty.
+ */
+internal fun createFrameRecorder(outputPath: String, configuration: VideoConfiguration): FrameRecorder {
+    if (configuration.enableAudio) {
+        CameraKLogger.w("CameraK", "CameraK: Desktop records no audio; the video has no audio track")
+    }
+    return FFmpegFrameRecorder(outputPath, configuration.quality.width, configuration.quality.height, 0).apply {
         videoCodec = avcodec.AV_CODEC_ID_H264
         format = "mp4"
+        // The time base for the capture-time timestamps set on each frame.
         frameRate = 30.0
         videoBitrate = configuration.quality.bitrateBps
-        if (configuration.enableAudio) {
-            audioCodec = avcodec.AV_CODEC_ID_AAC
-            sampleRate = 44100
-            audioBitrate = 128_000
-        }
     }
+}
 
 /** Writes [image] to [file] as [format], throwing if no writer accepts it. */
 internal fun writeImage(image: BufferedImage, format: ImageFormat, file: File) {
