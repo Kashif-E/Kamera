@@ -54,12 +54,26 @@ val libraryModules =
     listOf("cameraK", "ImageSaverPlugin", "qrScannerPlugin", "ocrPlugin", "videoRecorderPlugin", "analyzerPlugin")
 val screenshotModule = "cameraKScreenshotTests"
 
+val bomModule = "camerak-bom"
+
 // One version and group for every published module, from gradle.properties (vanniktech reads the
 // same keys for the published coordinates).
 subprojects {
-    if (name in libraryModules) {
+    if (name in libraryModules || name == bomModule) {
         group = providers.gradleProperty("GROUP").get()
         version = providers.gradleProperty("VERSION_NAME").get()
+    }
+}
+
+// The BOM constrains every published library, so consumers can declare
+// platform("io.github.kashif-mehmood-km:camerak-bom:<version>") and leave the versions off the rest.
+project(":$bomModule") {
+    plugins.withId("java-platform") {
+        dependencies {
+            constraints {
+                libraryModules.forEach { add("api", project(":$it")) }
+            }
+        }
     }
 }
 val allVerifyTargets = listOf("desktop", "android", "ios", "screenshots", "lint", "sample")
@@ -526,7 +540,6 @@ tasks.register("checkAndroidSdkFloor") {
 // group and version equal the published ones, a BOM pins every library at that version, the version has
 // a CHANGELOG.md section, and the docs install that version. It reads the POM each module would
 // publish, so it checks what consumers get rather than what a build script says.
-val bomModule = "camerak-bom"
 val sharedPomFields = listOf("groupId", "version", "url", "inceptionYear", "licenses", "developers", "scm")
 val perModulePomFields = listOf("artifactId", "name", "description")
 val installSnippet = Regex("""io\.github\.kashif-mehmood-km:([A-Za-z0-9_.-]+):([0-9][A-Za-z0-9_.-]*)""")

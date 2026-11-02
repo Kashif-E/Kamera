@@ -46,6 +46,23 @@ dependencies {
 }
 ```
 
+### Using the BOM
+
+`camerak-bom` pins the core and every plugin to one version. Import it once and leave the versions off
+the CameraK artifacts:
+
+```kotlin
+kotlin {
+    sourceSets {
+        commonMain.dependencies {
+            implementation(project.dependencies.platform("io.github.kashif-mehmood-km:camerak-bom:2.0"))
+            implementation("io.github.kashif-mehmood-km:camerak")
+            implementation("io.github.kashif-mehmood-km:qr_scanner_plugin")
+        }
+    }
+}
+```
+
 ### Using Version Catalog
 
 Add to your `libs.versions.toml`:
