@@ -21,15 +21,26 @@ import androidx.compose.runtime.Immutable
  *
  * @property tessdataPath Desktop only: a directory containing `eng.traineddata`. Ignored on Android
  *   and iOS.
+ * @property maxFps The most camera frames live OCR reads per second, on every platform; frames in
+ *   between are skipped unread. Text recognition is a neural network (ML Kit, Vision) or Tesseract,
+ *   so reading every frame drains the battery for no gain: text in view changes slowly. Defaults
+ *   to 2. Raise it only if results must follow a moving camera more closely.
  */
 @Immutable
-class OcrConfig(val tessdataPath: String? = null) {
+class OcrConfig(val tessdataPath: String? = null, val maxFps: Int = DEFAULT_LIVE_OCR_MAX_FPS) {
+    init {
+        require(maxFps > 0) { "maxFps must be positive" }
+    }
+
     // Not a data class: fields will be added, and a data class's copy and componentN would change
     // signature with each one.
     override fun equals(other: Any?): Boolean =
-        this === other || other is OcrConfig && tessdataPath == other.tessdataPath
+        this === other || other is OcrConfig && tessdataPath == other.tessdataPath && maxFps == other.maxFps
 
-    override fun hashCode(): Int = tessdataPath.hashCode()
+    override fun hashCode(): Int = 31 * tessdataPath.hashCode() + maxFps
 
-    override fun toString(): String = "OcrConfig(tessdataPath=$tessdataPath)"
+    override fun toString(): String = "OcrConfig(tessdataPath=$tessdataPath, maxFps=$maxFps)"
 }
+
+/** How many frames a second live OCR reads unless [OcrConfig.maxFps] says otherwise. */
+internal const val DEFAULT_LIVE_OCR_MAX_FPS = 2

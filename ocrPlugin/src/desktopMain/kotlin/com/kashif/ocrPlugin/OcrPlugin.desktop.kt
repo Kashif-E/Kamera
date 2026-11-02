@@ -202,16 +202,38 @@ actual fun startRecognition(
     onText: (text: String) -> Unit,
 ): RecognitionHandle {
     val ocrProcessor = OCRProcessor(config)
-    return startRecognition(cameraController.frameFlow, ocrProcessor::scanImage, ocrProcessor::close, onText)
+    return startRecognition(
+        cameraController.frameFlow,
+        ocrProcessor::scanImage,
+        ocrProcessor::close,
+        config.maxFps,
+        System::nanoTime,
+        onText,
+    )
 }
 
-/** Scans [frames] with [scan] and frees the scanner with [close] when the returned handle stops. */
+/** [startRecognition] at the default rate, [DEFAULT_LIVE_OCR_MAX_FPS]. */
 internal fun startRecognition(
     frames: Flow<BufferedImage>,
     scan: (BufferedImage) -> String?,
     close: () -> Unit,
     onText: (text: String) -> Unit,
+): RecognitionHandle = startRecognition(frames, scan, close, DEFAULT_LIVE_OCR_MAX_FPS, System::nanoTime, onText)
+
+/**
+ * Scans at most [maxFps] of [frames] a second with [scan], and frees the scanner with [close] when
+ * the returned handle stops. [clock] reads nanoseconds.
+ */
+internal fun startRecognition(
+    frames: Flow<BufferedImage>,
+    scan: (BufferedImage) -> String?,
+    close: () -> Unit,
+    maxFps: Int,
+    clock: () -> Long,
+    onText: (text: String) -> Unit,
 ): RecognitionHandle {
+    // Only the collector below reads the gate.
+    val gate = FrameRateGate(maxFps)
     val scope = CoroutineScope(Dispatchers.Default)
 
     // The collector owns the scanner: it is the only caller of scan(), and it closes the scanner in
@@ -220,6 +242,7 @@ internal fun startRecognition(
     scope.launch(start = CoroutineStart.ATOMIC) {
         try {
             frames.collect { image ->
+                if (!gate.tryPass(clock())) return@collect
                 scan(image)?.let { text ->
                     withContext(Dispatchers.Main) {
                         onText(text)

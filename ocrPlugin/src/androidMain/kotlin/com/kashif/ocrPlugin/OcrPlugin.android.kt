@@ -82,6 +82,7 @@ private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { conti
 }
 
 internal fun CameraController.enableTextRecognition(
+    maxFps: Int,
     onTextRecognized: (String) -> Unit,
     onError: (Exception) -> Unit = logRecognitionError,
 ): TextRecognitionAnalyzer {
@@ -91,6 +92,7 @@ internal fun CameraController.enableTextRecognition(
         TextRecognitionAnalyzer(
             onTextRecognized = onTextRecognized,
             onError = onError,
+            maxFps = maxFps,
         )
 
     registerImageAnalyzer(analyzer)
@@ -131,10 +133,21 @@ internal class TextRecognitionAnalyzer(
     private val onTextRecognized: (String) -> Unit,
     private val onError: (Exception) -> Unit = logRecognitionError,
     private val recognizer: LiveTextRecognizer = MlKitLiveTextRecognizer(),
+    maxFps: Int = DEFAULT_LIVE_OCR_MAX_FPS,
 ) : ImageAnalysis.Analyzer {
     private val processedTexts = mutableSetOf<String>()
 
+    // Analysis runs on CameraX's single analysis executor, the only caller of the gate.
+    private val gate = FrameRateGate(maxFps)
+
     override fun analyze(imageProxy: ImageProxy) {
+        // Judged by the frame's sensor timestamp, before the frame is read. A skipped frame is closed
+        // at once, so the analysis stream (shared with other analyzers) moves on.
+        if (!gate.tryPass(imageProxy.imageInfo.timestamp)) {
+            imageProxy.close()
+            return
+        }
+
         try {
             val task = recognizer.recognize(imageProxy)
             if (task == null) {
@@ -183,7 +196,7 @@ actual fun startRecognition(
     config: OcrConfig,
     onText: (text: String) -> Unit,
 ): RecognitionHandle {
-    val analyzer = cameraController.enableTextRecognition(onText)
+    val analyzer = cameraController.enableTextRecognition(config.maxFps, onText)
     return RecognitionHandle {
         cameraController.unregisterImageAnalyzer(analyzer)
         analyzer.shutdown() // close the ML Kit recognizer

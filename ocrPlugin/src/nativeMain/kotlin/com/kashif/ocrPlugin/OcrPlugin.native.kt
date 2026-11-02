@@ -49,7 +49,8 @@ import platform.CoreImage.CIImage
 import platform.CoreMedia.CMSampleBufferGetImageBuffer
 import platform.CoreMedia.CMSampleBufferRef
 import platform.CoreVideo.kCVPixelBufferPixelFormatTypeKey
-import platform.CoreVideo.kCVPixelFormatType_32BGRA
+import platform.CoreVideo.kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+import platform.Foundation.CFBridgingRelease
 import platform.Foundation.NSArray
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
@@ -62,6 +63,7 @@ import platform.Vision.VNRecognizedText
 import platform.Vision.VNRecognizedTextObservation
 import platform.Vision.VNRequest
 import platform.Vision.VNRequestTextRecognitionLevelAccurate
+import platform.Vision.VNRequestTextRecognitionLevelFast
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
@@ -234,6 +236,8 @@ private val releasePinnedPixels =
 
 private const val TAG = "TextRecognition"
 
+private const val NANOS_PER_SECOND = 1_000_000_000.0
+
 /** An error Vision reported, carried as a Kotlin exception so it can be logged. */
 private class VisionException(error: NSError) :
     Exception("Vision error ${error.domain} ${error.code}: ${error.localizedDescription}")
@@ -245,7 +249,7 @@ private class VisionException(error: NSError) :
  * @property onText Callback invoked when text is successfully extracted from a frame.
  */
 @OptIn(ExperimentalForeignApi::class)
-class VideoDataDelegate(private val onText: (String) -> Unit) :
+class VideoDataDelegate(private val onText: (String) -> Unit, maxFps: Int = DEFAULT_LIVE_OCR_MAX_FPS) :
     NSObject(),
     AVCaptureVideoDataOutputSampleBufferDelegateProtocol {
     @Volatile
@@ -256,9 +260,8 @@ class VideoDataDelegate(private val onText: (String) -> Unit) :
             null,
         )
 
-    @Volatile
-    private var lastProcessedTime: Double = 0.0
-    private val minimumProcessingInterval = 0.5 // Process max 2 frames per second
+    // Read only on the delegate's serial queue.
+    private val gate = FrameRateGate(maxFps)
 
     /**
      * Processes a captured video frame to extract text.
@@ -277,14 +280,10 @@ class VideoDataDelegate(private val onText: (String) -> Unit) :
         // Skip if already processing
         if (isProcessingFrame) return
 
-        val currentTime = NSDate.date().timeIntervalSince1970()
-        if (currentTime - lastProcessedTime < minimumProcessingInterval) {
-            return
-        }
+        if (!gate.tryPass((NSDate.date().timeIntervalSince1970() * NANOS_PER_SECOND).toLong())) return
 
         // Mark as processing before async work
         isProcessingFrame = true
-        lastProcessedTime = currentTime
 
         CFRetain(didOutputSampleBuffer)
 
@@ -384,26 +383,30 @@ class VideoDataDelegate(private val onText: (String) -> Unit) :
     }
 }
 
-/** The Vision request live OCR runs on each frame it reads; [onComplete] receives Vision's result. */
+/**
+ * The Vision request live OCR runs on each frame it reads; [onComplete] receives Vision's result.
+ * Live frames use the fast level, which Vision provides for real-time use; one-shot recognition of a
+ * still keeps the accurate level.
+ */
 internal fun liveTextRequest(onComplete: (VNRequest?, NSError?) -> Unit): VNRecognizeTextRequest =
     VNRecognizeTextRequest(onComplete).apply {
-        recognitionLevel = VNRequestTextRecognitionLevelAccurate
+        recognitionLevel = VNRequestTextRecognitionLevelFast
         usesLanguageCorrection = false
         minimumTextHeight = 0.1f
         recognitionLanguages = listOf("en-US")
     }
 
-/** The video output live OCR reads frames from, before its sample-buffer delegate is set. */
+/**
+ * The video output live OCR reads frames from, before its sample-buffer delegate is set. Frames come
+ * in the camera's native 420f, which Vision reads directly, so none is colour-converted to BGRA.
+ */
 @OptIn(ExperimentalForeignApi::class)
-internal fun ocrVideoDataOutput(): AVCaptureVideoDataOutput =
-    AVCaptureVideoDataOutput().apply {
-        setVideoSettings(
-            mapOf(
-                kCVPixelBufferPixelFormatTypeKey to kCVPixelFormatType_32BGRA,
-            ),
-        )
-        setAlwaysDiscardsLateVideoFrames(true)
-    }
+internal fun ocrVideoDataOutput(): AVCaptureVideoDataOutput = AVCaptureVideoDataOutput().apply {
+    // The key is a CFString constant; it has to cross into the dictionary as an NSString.
+    val pixelFormatKey = CFBridgingRelease(CFRetain(kCVPixelBufferPixelFormatTypeKey))
+    setVideoSettings(mapOf(pixelFormatKey to kCVPixelFormatType_420YpCbCr8BiPlanarFullRange))
+    setAlwaysDiscardsLateVideoFrames(true)
+}
 
 /**
  * Enables continuous text recognition on the iOS camera controller.
@@ -428,7 +431,7 @@ actual fun startRecognition(
     val videoDataOutput =
         ocrVideoDataOutput().apply {
             setSampleBufferDelegate(
-                VideoDataDelegate(onText),
+                VideoDataDelegate(onText, config.maxFps),
                 dispatch_queue_create("com.kashif.ocrPlugin.videoQueue", null),
             )
         }
