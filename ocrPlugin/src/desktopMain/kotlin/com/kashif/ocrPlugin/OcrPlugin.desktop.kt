@@ -42,6 +42,13 @@ class OCRProcessor internal constructor(
         System::currentTimeMillis,
     )
 
+    /** Reads language data from [tessdataDir] through [library], timing scans by the system clock. */
+    internal constructor(library: TesseractLibrary, tessdataDir: String?) : this(
+        library,
+        tessdataDir,
+        System::currentTimeMillis,
+    )
+
     private val api = library.newEngine()
     private val lock = ReentrantLock()
     private var lastProcessTime = 0L
