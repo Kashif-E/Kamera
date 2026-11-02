@@ -320,11 +320,25 @@ actual class CameraController internal constructor(
         }
 
         val captureHandler = object {
-            var completed = false
+            val completed = atomic(false)
+
+            /** Set when the caller cancels; AVFoundation still finishes the capture. */
+            val detached = atomic(false)
+
+            /** Frees the capture slot; runs once, when AVFoundation has finished the capture. */
+            fun release() {
+                isCapturing.value = false
+                pendingCaptures.decrementAndGet()
+            }
 
             fun process(image: NSData?, error: String?) {
-                if (completed) return
-                completed = true
+                if (!completed.compareAndSet(expect = false, update = true)) return
+
+                if (detached.value) {
+                    CameraKLogger.d("CameraK", "CameraK: discarding the photo of a cancelled capture")
+                    release()
+                    return
+                }
 
                 if (image != null) {
                     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
@@ -371,22 +385,19 @@ actual class CameraController internal constructor(
                                 }
 
                                 dispatch_async(dispatch_get_main_queue()) {
-                                    isCapturing.value = false
-                                    pendingCaptures.decrementAndGet()
+                                    release()
                                     continuation.resume(result)
                                 }
                             }
                         } catch (e: Exception) {
                             dispatch_async(dispatch_get_main_queue()) {
-                                isCapturing.value = false
-                                pendingCaptures.decrementAndGet()
+                                release()
                                 continuation.resume(ImageCaptureResult.Error(e))
                             }
                         }
                     }
                 } else {
-                    isCapturing.value = false
-                    pendingCaptures.decrementAndGet()
+                    release()
                     continuation.resume(ImageCaptureResult.Error(Exception(error ?: "Capture failed")))
                 }
             }
@@ -400,11 +411,9 @@ actual class CameraController internal constructor(
             captureHandler.process(null, error.toString())
         }
 
-        continuation.invokeOnCancellation {
-            isCapturing.value = false
-            pendingCaptures.decrementAndGet()
-            captureHandler.process(null, "Capture cancelled")
-        }
+        // Cancelling only detaches the caller: AVFoundation keeps working on the request, so the slot
+        // stays taken until its outcome arrives and process() releases it, exactly once.
+        continuation.invokeOnCancellation { captureHandler.detached.value = true }
 
         customCameraController.captureImage()
     }
