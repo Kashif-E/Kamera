@@ -59,7 +59,6 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.utils.InvalidConfigurationException
 import com.kashif.cameraK.utils.MemoryManager
 import com.kashif.cameraK.utils.getActivityOrNull
 import com.kashif.cameraK.video.VideoCaptureResult
@@ -526,37 +525,16 @@ actual class CameraController internal constructor(
             .build()
     }
 
+    /**
+     * Applies the registered analyzers to the camera. [registerImageAnalyzer] and
+     * [unregisterImageAnalyzer] already do this without a rebind, so there is nothing left to call
+     * this for; it never rebinds and is harmless before the camera is bound.
+     */
+    @Deprecated("registerImageAnalyzer and unregisterImageAnalyzer apply analyzers themselves; remove the call.")
     fun updateImageAnalyzer() {
-        if (released.value) return
-        camera?.let {
-            if (activeRecording == null) {
-                // Not recording: rebind the whole camera so the analyzer is bound INSIDE the
-                // UseCaseGroup and shares its ViewPort crop, instead of being bound alone with its
-                // own selector outside the group (which skipped the shared crop and could diverge
-                // from the group on any future config). previewView is set by bindCamera, so this
-                // is only null if updateImageAnalyzer is somehow called before the first bind —
-                // fall back to the old solo-bind path in that case.
-                val pv = previewView
-                if (pv != null) {
-                    bindCamera(pv)
-                    return
-                }
-            }
-            // Recording is active: a full rebind (unbind and bind) would tear down the live VideoCapture
-            // session, so fall back to solo-binding just the analyzer outside the UseCaseGroup.
-            imageAnalyzer?.let { unbindOwn(it) }
-            imageAnalyzer?.let { analyzer ->
-                cameraProvider?.bindToLifecycle(
-                    lifecycleOwner,
-                    // Reuse createCameraSelector() rather than a bare lens-facing selector: a
-                    // pinned physical lens must carry the same selector-level pin as the main
-                    // bind, otherwise the analyzer silently reads frames from the default camera.
-                    createCameraSelector(),
-                    analyzer,
-                )
-                boundUseCases += analyzer
-            }
-        } ?: throw InvalidConfigurationException("Camera not initialized.")
+        onMainThread {
+            if (analysisRequested && imageAnalyzer == null) bindImageAnalysis() else applyAnalyzerConsumers()
+        }
     }
 
     /**
@@ -574,8 +552,8 @@ actual class CameraController internal constructor(
     }
 
     /**
-     * Unregisters a previously registered analyzer. It receives no frame delivered after this
-     * returns; the camera is not rebound.
+     * Unregisters a previously registered analyzer; the camera is not rebound. Frames dispatched
+     * after this returns do not reach it, but a frame already being dispatched may.
      */
     fun unregisterImageAnalyzer(analyzer: ImageAnalysis.Analyzer) {
         analyzerConsumers.update { it - analyzer }
