@@ -108,7 +108,9 @@ internal fun SettingsPanel(
             // Image Format
             SettingRow(icon = Lucide.Image, label = "Image Format") {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(ImageFormat.entries.toList()) { format ->
+                    // HEIC stays out until the platform capture slices implement it; until then a HEIC
+                    // capture returns an error.
+                    items(listOf(ImageFormat.JPEG, ImageFormat.PNG)) { format ->
                         Chip(format.name, format == imageFormat) { onImageFormatChange(format) }
                     }
                 }
