@@ -26,7 +26,7 @@ kotlin {
                 // FFmpeg and videoInput. No natives: the app adds those for the OSes it ships.
                 api(libs.javacv.get().let { "${it.module}:${it.version}" }) { exclude(group = "org.bytedeco") }
                 api(libs.javacpp)
-                api(libs.ffmpeg)
+                implementation(libs.ffmpeg)
                 implementation(libs.videoinput)
             }
         }
