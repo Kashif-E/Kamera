@@ -41,6 +41,7 @@ internal class RecordingSession : CaptureSessionOps {
     private val inputList = mutableListOf<AVCaptureInput>()
     private val outputList = mutableListOf<AVCaptureOutput>()
     private val refused = mutableSetOf<AVCaptureInput>()
+    private val refusedPresets = mutableSetOf<String?>()
 
     val calls: List<Call> get() = locked { recorded.toList() }
     val openConfigurations: Int get() = locked { depth }
@@ -58,7 +59,10 @@ internal class RecordingSession : CaptureSessionOps {
 
     override fun commitConfiguration() = record("commitConfiguration") { depth-- }
 
-    override fun canSetSessionPreset(preset: String): Boolean = true
+    /** Presets canSetSessionPreset refuses, as AVFoundation does for one the camera cannot deliver. */
+    fun refusePreset(preset: String?) = locked { refusedPresets.add(preset) }
+
+    override fun canSetSessionPreset(preset: String): Boolean = locked { preset !in refusedPresets }
 
     override fun setSessionPreset(preset: String) = record("setSessionPreset", preset) {}
 
