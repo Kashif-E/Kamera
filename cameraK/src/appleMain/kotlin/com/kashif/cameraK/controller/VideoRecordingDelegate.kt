@@ -6,8 +6,10 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CompletableDeferred
 import platform.AVFoundation.AVCaptureFileOutput
 import platform.AVFoundation.AVCaptureFileOutputRecordingDelegateProtocol
+import platform.AVFoundation.AVErrorRecordingSuccessfullyFinishedKey
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
+import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.timeIntervalSince1970
 import platform.darwin.NSObject
@@ -15,6 +17,13 @@ import platform.darwin.NSObject
 /**
  * Delegate for AVCaptureMovieFileOutput recording callbacks.
  */
+private fun NSError.recordingFinishedSuccessfully(): Boolean =
+    when (val finished = userInfo[AVErrorRecordingSuccessfullyFinishedKey]) {
+        is NSNumber -> finished.boolValue
+        is Boolean -> finished
+        else -> false
+    }
+
 @OptIn(ExperimentalForeignApi::class)
 class VideoRecordingDelegate :
     NSObject(),
@@ -50,17 +59,16 @@ class VideoRecordingDelegate :
         val filePath = didFinishRecordingToOutputFileAtURL.path ?: ""
         val durationMs = (NSDate().timeIntervalSince1970 * 1000).toLong() - startTimeMs
 
-        val result = if (error != null) {
-            // Check if recording was stopped by user (not a real error)
-            // AVFoundation sets error when recording is stopped normally in some cases
-            val fileExists = platform.Foundation.NSFileManager.defaultManager.fileExistsAtPath(filePath)
-            if (fileExists && durationMs > 0) {
-                VideoCaptureResult.Success(filePath, durationMs)
-            } else {
-                VideoCaptureResult.Error(Exception(error.localizedDescription))
-            }
-        } else {
+        // AVFoundation reports an error for recordings that still produced a playable file (a duration
+        // or size limit, some interruptions) and says so in AVErrorRecordingSuccessfullyFinishedKey.
+        // Anything else (disk full, a failure mid-recording) is an error; the partial file is kept.
+        val result = if (error == null || error.recordingFinishedSuccessfully()) {
             VideoCaptureResult.Success(filePath, durationMs)
+        } else {
+            CameraKLogger.e("CameraK", "CameraK: the recording failed: ${error.domain} ${error.code}")
+            VideoCaptureResult.Error(
+                Exception("Recording failed: ${error.domain} ${error.code}: ${error.localizedDescription}"),
+            )
         }
         if (!started.isCompleted) {
             started.completeExceptionally(IllegalStateException("The recording ended before it started"))

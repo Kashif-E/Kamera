@@ -21,6 +21,7 @@ import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.autoreleasepool
+import kotlinx.cinterop.readValue
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +48,8 @@ import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVCaptureVideoOrientationPortrait
 import platform.AVFoundation.AVMediaTypeAudio
+import platform.CoreMedia.CMTimeMakeWithSeconds
+import platform.CoreMedia.kCMTimeInvalid
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
@@ -122,6 +125,9 @@ actual class CameraController internal constructor(
     // Set on the session queue when the output joins the session; read from recording calls.
     @Volatile
     private var movieFileOutput: AVCaptureMovieFileOutput? = null
+
+    /** Free space a recording leaves on disk: room for the system and the file's finalisation. */
+    private val minFreeRecordingDiskBytes = 200L * 1024 * 1024
 
     /** Test seam: the movie-file-output calls a recording makes. */
     internal var movieRecorder: MovieRecorder = AVMovieRecorder
@@ -627,6 +633,8 @@ actual class CameraController internal constructor(
             // Delete existing file at path if any
             NSFileManager.defaultManager.removeItemAtPath(filePath, null)
 
+            applyRecordingLimits(output, configuration)
+
             val delegate = VideoRecordingDelegate()
             val recording = ActiveRecording(output, delegate)
             delegate.onRecordingEnded = { result -> recordingEnded(recording, result) }
@@ -650,6 +658,20 @@ actual class CameraController internal constructor(
             return filePath
         } finally {
             recordingStarting.value = false
+        }
+    }
+
+    /**
+     * Keeps [minFreeRecordingDiskBytes] free (AVFoundation ends the recording, still playable, before
+     * the disk fills) and stops at [VideoConfiguration.maxDurationMs] when one is set.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun applyRecordingLimits(output: AVCaptureMovieFileOutput, configuration: VideoConfiguration) {
+        output.minFreeDiskSpaceLimit = minFreeRecordingDiskBytes
+        output.maxRecordedDuration = if (configuration.maxDurationMs > 0) {
+            CMTimeMakeWithSeconds(configuration.maxDurationMs / 1000.0, 600)
+        } else {
+            kCMTimeInvalid.readValue()
         }
     }
 
@@ -777,10 +799,36 @@ actual class CameraController internal constructor(
                 )
             }
             "$dir/$fileName"
+        } else if (directory == Directory.DOCUMENTS) {
+            // Documents/CameraK, like photos: iOS purges the temporary directory.
+            "${cameraKDocumentsDirectory()}/$fileName"
         } else {
+            // PICTURES/DCIM: a temporary file until it is imported into Photos.
             val tempDir = platform.Foundation.NSTemporaryDirectory()
             "$tempDir$fileName"
         }
+    }
+
+    /** Documents/CameraK, created when missing; the temporary directory when there is no Documents. */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun cameraKDocumentsDirectory(): String {
+        val documentsDir = platform.Foundation.NSSearchPathForDirectoriesInDomains(
+            platform.Foundation.NSDocumentDirectory,
+            platform.Foundation.NSUserDomainMask,
+            true,
+        ).firstOrNull() as? String ?: platform.Foundation.NSTemporaryDirectory()
+
+        val cameraKDir = "$documentsDir/CameraK"
+        val fileManager = NSFileManager.defaultManager
+        if (!fileManager.fileExistsAtPath(cameraKDir)) {
+            fileManager.createDirectoryAtPath(
+                cameraKDir,
+                withIntermediateDirectories = true,
+                attributes = null,
+                error = null,
+            )
+        }
+        return cameraKDir
     }
 
     @OptIn(ExperimentalForeignApi::class)
@@ -794,28 +842,7 @@ actual class CameraController internal constructor(
                 val tempDir = platform.Foundation.NSTemporaryDirectory()
                 "$tempDir$fileName"
             }
-            Directory.DOCUMENTS -> {
-                // For Documents, create permanent location
-                val documentsDir = platform.Foundation.NSSearchPathForDirectoriesInDomains(
-                    platform.Foundation.NSDocumentDirectory,
-                    platform.Foundation.NSUserDomainMask,
-                    true,
-                ).firstOrNull() as? String ?: platform.Foundation.NSTemporaryDirectory()
-
-                // Create CameraK subdirectory
-                val cameraKDir = "$documentsDir/CameraK"
-                val fileManager = NSFileManager.defaultManager
-                if (!fileManager.fileExistsAtPath(cameraKDir)) {
-                    fileManager.createDirectoryAtPath(
-                        cameraKDir,
-                        withIntermediateDirectories = true,
-                        attributes = null,
-                        error = null,
-                    )
-                }
-
-                "$cameraKDir/$fileName"
-            }
+            Directory.DOCUMENTS -> "${cameraKDocumentsDirectory()}/$fileName"
         }
     }
 
@@ -861,18 +888,12 @@ actual class CameraController internal constructor(
 
         val filePath = result.filePath
         val savedAssetId = videoLibraryImport(filePath)
+            // The video stays at its temporary path, so nothing recorded is lost.
+            ?: return VideoCaptureResult.Error(Exception("Saving the video to the Photos library failed"))
 
         // Clean up temp file after saving to Photos
-        if (savedAssetId != null) {
-            NSFileManager.defaultManager.removeItemAtPath(filePath, null)
-        }
-
-        return if (savedAssetId != null) {
-            VideoCaptureResult.Success("ph://$savedAssetId", result.durationMs)
-        } else {
-            // Still return success with temp path if Photos save failed
-            result
-        }
+        NSFileManager.defaultManager.removeItemAtPath(filePath, null)
+        return VideoCaptureResult.Success("ph://$savedAssetId", result.durationMs)
     }
 
     /**
