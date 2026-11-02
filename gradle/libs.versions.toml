@@ -52,7 +52,6 @@ camera-core = { module = "androidx.camera:camera-core", version.ref = "camera-co
 camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camera-lifecycle" }
 camera-video = { module = "androidx.camera:camera-video", version.ref = "camera-core" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
-zxing-javase = { module = "com.google.zxing:javase", version.ref = "zxing" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }

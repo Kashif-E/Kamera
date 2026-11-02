@@ -5,7 +5,7 @@ import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
-import com.google.zxing.client.j2se.BufferedImageLuminanceSource
+import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import java.awt.image.BufferedImage
 import java.util.concurrent.locks.ReentrantLock
@@ -48,7 +48,8 @@ class QRScanner {
                 return null
             }
 
-            val source = BufferedImageLuminanceSource(image)
+            val pixels = image.getRGB(0, 0, image.width, image.height, null, 0, image.width)
+            val source = RGBLuminanceSource(image.width, image.height, pixels)
             val bitmap = BinaryBitmap(HybridBinarizer(source))
 
             try {

@@ -22,7 +22,6 @@ kotlin {
     sourceSets {
         val desktopMain by getting {
             dependencies {
-                implementation(libs.zxing.javase)
                 implementation(libs.zxing.core)
             }
         }
