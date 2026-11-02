@@ -1,0 +1,84 @@
+package com.kashif.cameraK.controller
+
+import androidx.annotation.OptIn
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.ImageAnalysis
+import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.update
+import java.util.concurrent.Executor
+
+/**
+ * The frame consumers (plugins' analyzers) and the one [ImageAnalysis] that feeds them. The bound
+ * ImageAnalysis feeds them through one [MultiplexingAnalyzer] that reads the consumer list on every
+ * frame, so registering or removing one never touches CameraX bindings.
+ */
+internal class FramePipeline(private val backend: CameraXBackend, private val analyzerExecutor: Executor) {
+    private val consumers = atomic(emptyList<ImageAnalysis.Analyzer>())
+    private val multiplexer = MultiplexingAnalyzer { consumers.value }
+
+    // Set by the first registration and kept for the controller's lifetime: from then on every bind
+    // includes one ImageAnalysis, so later consumers join without a rebind.
+    @Volatile
+    var analysisRequested = false
+        private set
+
+    /** The ImageAnalysis use case of the current bind, or null when none was built. */
+    var analysis: ImageAnalysis? = null
+
+    // Whether the multiplexer is set on the current analysis. Main thread only.
+    private var multiplexerAttached = false
+
+    /** Adds [analyzer] as a frame consumer and asks every later bind for an ImageAnalysis. Any thread. */
+    fun add(analyzer: ImageAnalysis.Analyzer) {
+        consumers.update { it + analyzer }
+        analysisRequested = true
+    }
+
+    /** Removes [analyzer]; a frame already being dispatched may still reach it. Any thread. */
+    fun remove(analyzer: ImageAnalysis.Analyzer) {
+        consumers.update { it - analyzer }
+    }
+
+    /**
+     * Builds the [ImageAnalysis] use case, baking in [pinnedPhysicalId] via Camera2Interop, makes it
+     * the current [analysis] and attaches the multiplexer when someone is consuming. Construction
+     * only: it does not bind.
+     */
+    @OptIn(ExperimentalCamera2Interop::class)
+    fun build(pinnedPhysicalId: String?): ImageAnalysis {
+        val built = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
+            .build()
+        analysis = built
+        multiplexerAttached = false
+        applyConsumers()
+        return built
+    }
+
+    /** Attaches the multiplexer while anyone consumes frames and detaches it when no one does. */
+    fun applyConsumers() {
+        val current = analysis ?: return
+        val wanted = consumers.value.isNotEmpty()
+        if (wanted == multiplexerAttached) return
+        // Run analysis off the main thread — frame work (e.g. JPEG-encoding the analyzer frame,
+        // QR/OCR) is too heavy to block the UI thread.
+        if (wanted) {
+            backend.setAnalyzer(current, analyzerExecutor, multiplexer)
+        } else {
+            backend.clearAnalyzer(current)
+        }
+        multiplexerAttached = wanted
+    }
+
+    /** Stops frame delivery, before anything the consumers use goes away. */
+    fun stopDelivery() {
+        analysis?.let { backend.clearAnalyzer(it) }
+    }
+
+    /** Drops every consumer. */
+    fun clearConsumers() {
+        consumers.value = emptyList()
+    }
+}
