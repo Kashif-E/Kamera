@@ -150,7 +150,8 @@ actual class CameraController internal constructor(
     private var cameraProvider: CameraBinding? = null
 
     // Every use case this controller has bound and not yet unbound. ProcessCameraProvider is shared
-    // by the whole process, so rebinds and teardown unbind exactly these, never unbindAll().
+    // by the whole process, so rebinds and teardown unbind exactly these, never unbindAll(). Main
+    // thread only, like every binding call.
     private val boundUseCases = linkedSetOf<UseCase>()
     private var imageCapture: ImageCapture? = null
     private var preview: Preview? = null
@@ -1003,6 +1004,10 @@ actual class CameraController internal constructor(
         memoryManager.clearBufferPools()
     }
 
+    /**
+     * Unbinds the use cases this controller bound, and no other CameraX consumer's. Call on the main
+     * thread, like every other CameraX binding call: the set of bound use cases is main-thread state.
+     */
     actual fun stopSession() {
         unbindOwnUseCases()
         memoryManager.clearBufferPools()
