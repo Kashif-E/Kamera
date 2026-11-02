@@ -40,7 +40,7 @@ class JVMImageSaverPluginTest {
     @Test
     fun getByteArrayFrom_readsTheFile() {
         val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 42)
-        val file = File(home, "Pictures/camerak.jpg").apply { parentFile.mkdirs() }
+        val file = File(home, "Pictures/CameraK/camerak.jpg").apply { parentFile.mkdirs() }
         file.writeBytes(bytes)
 
         assertContentEquals(bytes, plugin().getByteArrayFrom(file.absolutePath))
@@ -48,7 +48,7 @@ class JVMImageSaverPluginTest {
 
     @Test
     fun getByteArrayFrom_missingFile_throwsIOExceptionWithoutThePath() {
-        val missing = File(home, "Pictures/camerak-missing.jpg").apply { parentFile.mkdirs() }
+        val missing = File(home, "Pictures/CameraK/camerak-missing.jpg").apply { parentFile.mkdirs() }
 
         val error = assertFailsWith<IOException> { plugin().getByteArrayFrom(missing.absolutePath) }
 
@@ -58,7 +58,7 @@ class JVMImageSaverPluginTest {
     @Test
     fun readBytes_readsTheFile() = runTest {
         val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 43)
-        val file = File(home, "Pictures/camerak-read.jpg").apply { parentFile.mkdirs() }
+        val file = File(home, "Pictures/CameraK/camerak-read.jpg").apply { parentFile.mkdirs() }
         file.writeBytes(bytes)
 
         assertContentEquals(bytes, plugin().readBytes(file.absolutePath))
@@ -66,7 +66,9 @@ class JVMImageSaverPluginTest {
 
     @Test
     fun readBytes_missingFile_throwsIOExceptionWithoutThePath() = runTest {
-        val missing = File(home, "Pictures/camerak-missing-${System.nanoTime()}.jpg").apply { parentFile.mkdirs() }
+        val missing = File(home, "Pictures/CameraK/camerak-missing-${System.nanoTime()}.jpg").apply {
+            parentFile.mkdirs()
+        }
 
         val error = assertFailsWith<IOException> { plugin().readBytes(missing.absolutePath) }
 
@@ -74,7 +76,7 @@ class JVMImageSaverPluginTest {
     }
 
     @Test
-    fun readBytes_outsidePicturesAndDocuments_throwsIOExceptionWithoutThePath() = runTest {
+    fun readBytes_outsideTheOutputFolders_throwsIOExceptionWithoutThePath() = runTest {
         val outside = File(home, "elsewhere/camerak.jpg").apply { parentFile.mkdirs() }
         outside.writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 44))
 

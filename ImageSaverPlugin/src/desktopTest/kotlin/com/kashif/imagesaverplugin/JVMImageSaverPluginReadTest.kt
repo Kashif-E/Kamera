@@ -1,5 +1,6 @@
 package com.kashif.imagesaverplugin
 
+import com.kashif.cameraK.enums.Directory
 import kotlinx.coroutines.test.runTest
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
@@ -15,16 +16,20 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 
 /**
- * getByteArrayFrom on desktop reads only the library's own output: files under the user's Pictures
- * and Documents folders, where the saver and CameraK's captures write. A path that resolves anywhere
- * else, through `..` or a symbolic link, fails with an [IOException] whose message has no path.
+ * getByteArrayFrom on desktop reads only the library's own output: the folder this saver writes to
+ * (`<directory>/<customFolderName or CameraK>`) and the `CameraK` folders under the user's Pictures
+ * and Documents, where CameraK's desktop captures go. Any other file, including the user's own files
+ * elsewhere in Pictures or Documents, and any path that resolves outside those folders through `..`
+ * or a symbolic link, fails with an [IOException] whose message has no path.
  */
 class JVMImageSaverPluginReadTest {
 
     private val sandbox: File = Files.createTempDirectory("camerak-saver-read").toFile()
     private val home = File(sandbox, "home").apply { mkdirs() }
-    private val sut =
-        JVMImageSaverPlugin(ImageSaverConfig(), onImageSaved = {}, onImageSavedFailed = {}, userHome = home)
+    private val sut = plugin(ImageSaverConfig())
+
+    private fun plugin(config: ImageSaverConfig) =
+        JVMImageSaverPlugin(config, onImageSaved = {}, onImageSavedFailed = {}, userHome = home)
 
     @AfterTest
     fun tearDown() {
@@ -36,8 +41,8 @@ class JVMImageSaverPluginReadTest {
         return File(parent, name).apply { writeBytes(bytes) }
     }
 
-    private fun assertRefused(path: String) {
-        val error = assertFailsWith<IOException>("reading $path") { sut.getByteArrayFrom(path) }
+    private fun assertRefused(path: String, reader: JVMImageSaverPlugin = sut) {
+        val error = assertFailsWith<IOException>("reading $path") { reader.getByteArrayFrom(path) }
         assertFalse(sandbox.name in error.message.orEmpty(), "the error message contains a path: ${error.message}")
     }
 
@@ -50,12 +55,56 @@ class JVMImageSaverPluginReadTest {
     }
 
     @Test
-    fun cameraKCapturesAndDocuments_readBack() {
-        val capture = file(File(home, "Pictures/CameraK"), "CameraK.jpg")
-        val document = file(File(home, "Documents/Scans"), "scan.jpg")
+    fun cameraKCapturesInPicturesAndDocuments_readBack() {
+        val picture = file(File(home, "Pictures/CameraK"), "CameraK.jpg")
+        val document = file(File(home, "Documents/CameraK"), "CameraK_1.jpg")
 
-        assertContentEquals(capture.readBytes(), sut.getByteArrayFrom(capture.path))
+        assertContentEquals(picture.readBytes(), sut.getByteArrayFrom(picture.path))
         assertContentEquals(document.readBytes(), sut.getByteArrayFrom(document.path))
+    }
+
+    @Test
+    fun anImageSavedToACustomFolder_readsBack() = runTest {
+        val bytes = jpeg()
+        val reader = plugin(ImageSaverConfig(directory = Directory.DOCUMENTS, customFolderName = "Receipts"))
+        val saved = assertIs<ImageSaveResult.Saved>(reader.save(bytes, "shot"))
+
+        assertContentEquals(bytes, reader.getByteArrayFrom(saved.location))
+    }
+
+    // The user's own files in Pictures and Documents are not the library's output, so the default
+    // saver cannot be used to read them.
+    @Test
+    fun theUsersOtherFilesInPicturesAndDocuments_areRefused() {
+        assertRefused(file(File(home, "Documents/taxes"), "return.pdf").path)
+        assertRefused(file(File(home, "Documents/Scans"), "scan.jpg").path)
+        assertRefused(file(File(home, "Documents"), "notes.jpg").path)
+        assertRefused(file(File(home, "Pictures"), "holiday.jpg").path)
+        assertRefused(file(File(home, "Pictures/Family"), "birthday.jpg").path)
+    }
+
+    @Test
+    fun anotherSaversCustomFolder_isRefused() {
+        val other = file(File(home, "Pictures/OtherApp"), "shot.jpg")
+
+        assertRefused(other.path, plugin(ImageSaverConfig(customFolderName = "Receipts")))
+    }
+
+    @Test
+    fun aPathThatClimbsOutOfTheCameraKFolder_isRefused() {
+        file(File(home, "Pictures"), "holiday.jpg")
+        File(home, "Pictures/CameraK").mkdirs()
+
+        assertRefused(File(home, "Pictures/CameraK/../holiday.jpg").path)
+    }
+
+    @Test
+    fun aCameraKFolderThatLinksOutOfPictures_isRefused() {
+        val secret = file(File(sandbox, "elsewhere"), "secret.jpg")
+        val pictures = File(home, "Pictures").apply { mkdirs() }
+        Files.createSymbolicLink(File(pictures, "CameraK").toPath(), secret.parentFile.toPath())
+
+        assertRefused(File(pictures, "CameraK/secret.jpg").path)
     }
 
     @Test
@@ -72,20 +121,20 @@ class JVMImageSaverPluginReadTest {
     }
 
     @Test
-    fun aLinkInPicturesToAFileOutside_isRefused() {
+    fun aLinkInTheCameraKFolderToAFileOutside_isRefused() {
         val secret = file(File(sandbox, "elsewhere"), "secret.jpg")
-        val pictures = File(home, "Pictures").apply { mkdirs() }
-        val link = File(pictures, "linked.jpg")
+        val cameraK = File(home, "Pictures/CameraK").apply { mkdirs() }
+        val link = File(cameraK, "linked.jpg")
         Files.createSymbolicLink(link.toPath(), secret.toPath())
 
         assertRefused(link.path)
     }
 
     @Test
-    fun aMissingFileInPictures_failsWithoutItsPath() {
-        File(home, "Pictures").mkdirs()
+    fun aMissingFileInTheCameraKFolder_failsWithoutItsPath() {
+        File(home, "Pictures/CameraK").mkdirs()
 
-        assertRefused(File(home, "Pictures/missing.jpg").path)
+        assertRefused(File(home, "Pictures/CameraK/missing.jpg").path)
     }
 
     private fun jpeg(): ByteArray {

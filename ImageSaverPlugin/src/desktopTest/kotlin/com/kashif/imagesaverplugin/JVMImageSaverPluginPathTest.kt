@@ -10,6 +10,7 @@ import javax.imageio.ImageIO
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -19,7 +20,8 @@ import kotlin.test.assertNull
  * auto-save names are built from) cannot put a file outside the configured folder: a name with a
  * separator, a `..` segment or a control character is rejected with an [IllegalArgumentException],
  * a customFolderName that is a symbolic link out of the folder fails with an [IOException], and
- * nothing is written anywhere.
+ * nothing is written anywhere. An auto-save prefix that cannot make a valid name is rejected when
+ * the plugin is made.
  */
 class JVMImageSaverPluginPathTest {
 
@@ -104,6 +106,29 @@ class JVMImageSaverPluginPathTest {
         assertEquals("MyApp_1700000000000.v2.jpg", saved.name)
     }
 
+    // Like Android, and like CameraK's own desktop captures, the saver keeps its images in a CameraK
+    // folder rather than loose among the user's own files.
+    @Test
+    fun withNoCustomFolder_imagesSaveInACameraKFolder() = runTest {
+        val result = plugin().save(jpeg(), "shot")
+
+        val saved = File(assertIs<ImageSaveResult.Saved>(result, "save result: $result").location)
+        assertEquals(File(home, "Pictures/CameraK").canonicalFile, saved.canonicalFile.parentFile)
+    }
+
+    @Test
+    fun aCameraKFolderThatLinksOutOfTheFolder_failsAndWritesNothingOutside() = runTest {
+        val outside = File(sandbox, "outside").apply { mkdirs() }
+        val pictures = File(home, "Pictures").apply { mkdirs() }
+        Files.createSymbolicLink(File(pictures, "CameraK").toPath(), outside.toPath())
+
+        val result = plugin().save(jpeg(), "shot")
+
+        val failed = assertIs<ImageSaveResult.Failed>(result, "save result for a folder that links outside")
+        assertIs<IOException>(failed.error, "the error for a folder that links outside")
+        assertEquals(emptyList(), outside.list()?.toList(), "files written through the link")
+    }
+
     @Test
     fun aCustomFolderThatLinksOutOfTheFolder_failsAndWritesNothingOutside() = runTest {
         val outside = File(sandbox, "outside").apply { mkdirs() }
@@ -131,6 +156,35 @@ class JVMImageSaverPluginPathTest {
     fun anAutoSavePrefixOf51Characters_isRejected() = runTest {
         assertRejected(plugin(), autoSaveImageName("p".repeat(51), AUTO_SAVE_MILLIS))
     }
+
+    // An auto-save prefix that can never make a valid name is rejected when the plugin is made, not
+    // on every capture afterwards.
+    @Test
+    fun anAutoSavePrefixOver50Characters_isRejectedWhenThePluginIsConfigured() {
+        val error = assertFailsWith<IllegalArgumentException> { pluginWithPrefix("p".repeat(51)) }
+
+        assertFalse("p".repeat(51) in error.message.orEmpty(), "the error message repeats the prefix")
+    }
+
+    @Test
+    fun anAutoSavePrefixWithASeparator_isRejectedWhenThePluginIsConfigured() {
+        for (prefix in listOf("../escaped", "nested/shot", "line\nbreak")) {
+            assertFailsWith<IllegalArgumentException>("prefix $prefix") { pluginWithPrefix(prefix) }
+        }
+    }
+
+    @Test
+    fun anAutoSavePrefixOf50Characters_isAcceptedWhenThePluginIsConfigured() {
+        pluginWithPrefix("p".repeat(50))
+        pluginWithPrefix("MyApp.v2-photo_")
+    }
+
+    private fun pluginWithPrefix(prefix: String) = JVMImageSaverPlugin(
+        ImageSaverConfig(isAutoSave = true, prefix = prefix),
+        onImageSaved = {},
+        onImageSavedFailed = {},
+        userHome = home,
+    )
 
     private fun jpeg(): ByteArray {
         val image = BufferedImage(8, 8, BufferedImage.TYPE_3BYTE_BGR)
