@@ -329,23 +329,31 @@ actual class CameraController internal constructor(
      * Each call is its own request: its photo and outcome come back through its own delegate, never
      * a shared slot, so session errors and other captures cannot decide it.
      */
-    actual suspend fun takePictureToFile(): ImageCaptureResult = suspendCancellableCoroutine { continuation ->
-        if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
-            pendingCaptures.decrementAndGet()
-            CameraKLogger.e("CameraK", "CameraK: Burst queue full, dropping frame")
-            continuation.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
-            return@suspendCancellableCoroutine
-        }
+    actual suspend fun takePictureToFile(): ImageCaptureResult {
+        val photo = suspendCancellableCoroutine { continuation ->
+            if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
+                pendingCaptures.decrementAndGet()
+                CameraKLogger.e("CameraK", "CameraK: Burst queue full, dropping frame")
+                continuation.resume(Result.failure(Exception("Burst queue full, capture rejected")))
+                return@suspendCancellableCoroutine
+            }
 
-        val request = PhotoRequest(continuation)
-        // Cancelling only detaches the caller: AVFoundation keeps working on the request, so the slot
-        // stays taken until its last callback releases it, exactly once.
-        continuation.invokeOnCancellation { request.detach() }
-        if (!customCameraController.capturePhoto(request)) request.notIssued()
+            val request = PhotoRequest(continuation)
+            // Cancelling only detaches the caller: AVFoundation keeps working on the request, so the slot
+            // stays taken until its last callback releases it, exactly once.
+            continuation.invokeOnCancellation { request.detach() }
+            if (!customCameraController.capturePhoto(request)) request.notIssued()
+        }
+        val data = photo.getOrElse { return ImageCaptureResult.Error(it as Exception) }
+        // Writing and the Photos import stay off the caller's thread and AVFoundation's delegate queue.
+        return withContext(Dispatchers.IO) { savePhoto(data) }
     }
 
-    /** One takePictureToFile call: AVFoundation's callbacks for its capture arrive here and only here. */
-    private inner class PhotoRequest(private val continuation: CancellableContinuation<ImageCaptureResult>) :
+    /**
+     * One takePictureToFile call: AVFoundation's callbacks for its capture arrive here and only here,
+     * and its continuation gets the photo's data or why there is none.
+     */
+    private inner class PhotoRequest(private val continuation: CancellableContinuation<Result<NSData>>) :
         PhotoCaptureCallbacks {
         private val settled = atomic(false)
         private val released = atomic(false)
@@ -362,19 +370,15 @@ actual class CameraController internal constructor(
                 return
             }
             if (error != null || data == null) {
-                continuation.resume(ImageCaptureResult.Error(photoCaptureFailure(error)))
+                continuation.resume(Result.failure(photoCaptureFailure(error)))
                 return
             }
-            // Writing and the Photos import stay off AVFoundation's delegate queue.
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
-                val result = autoreleasepool { savePhoto(data) }
-                continuation.resume(result)
-            }
+            continuation.resume(Result.success(data))
         }
 
         override fun captureFinished(error: NSError?) {
             if (settled.compareAndSet(expect = false, update = true) && !detached.value) {
-                continuation.resume(ImageCaptureResult.Error(photoCaptureFailure(error)))
+                continuation.resume(Result.failure(photoCaptureFailure(error)))
             }
             release()
         }
@@ -382,7 +386,7 @@ actual class CameraController internal constructor(
         /** The camera was not ready, so AVFoundation never got the request. */
         fun notIssued() {
             if (settled.compareAndSet(expect = false, update = true)) {
-                continuation.resume(ImageCaptureResult.Error(Exception("Camera not ready for capture")))
+                continuation.resume(Result.failure(Exception("Camera not ready for capture")))
             }
             release()
         }
@@ -397,39 +401,46 @@ actual class CameraController internal constructor(
     )
 
     /**
-     * Writes [image] where [directory] says and tells image-capture listeners about the bytes written.
-     * Runs off the main thread and off AVFoundation's delegate queue.
+     * Writes [image] where [directory] says, tells image-capture listeners about the bytes written,
+     * and for PICTURES and DCIM imports the file into Photos. Runs on [Dispatchers.IO].
      */
     @OptIn(ExperimentalForeignApi::class)
-    private fun savePhoto(image: NSData): ImageCaptureResult = try {
+    private suspend fun savePhoto(image: NSData): ImageCaptureResult {
+        val filePath = try {
+            autoreleasepool { writePhoto(image) }
+        } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "CameraK: saving the captured photo failed", e)
+            return ImageCaptureResult.Error(e)
+        } ?: return ImageCaptureResult.Error(Exception("Failed to write image to file"))
+
+        return when (directory) {
+            Directory.PICTURES, Directory.DCIM -> {
+                val assetId = importIntoPhotos { completion ->
+                    photosLibrary.importImage(NSURL.fileURLWithPath(filePath), completion)
+                }
+                NSFileManager.defaultManager.removeItemAtPath(filePath, null)
+                if (assetId != null) {
+                    ImageCaptureResult.SuccessWithFile("ph://$assetId")
+                } else {
+                    ImageCaptureResult.Error(Exception("Failed to save to Photos library"))
+                }
+            }
+            Directory.DOCUMENTS -> ImageCaptureResult.SuccessWithFile(filePath)
+        }
+    }
+
+    /** Writes [image] in [imageFormat] to a new file and hands the bytes to listeners; its path, or null. */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun writePhoto(image: NSData): String? {
         val filePath = createTempFile()
         val written = if (imageFormat == ImageFormat.JPEG) {
             image
         } else {
             UIImagePNGRepresentation(image.toUIImage().fixOrientation())
         }
-
-        if (written != null && writeDataToFile(written, filePath)) {
-            processImageCapture(written)
-            when (directory) {
-                Directory.PICTURES, Directory.DCIM -> {
-                    val photosPath = saveToPhotosLibrary(filePath, image)
-                    NSFileManager.defaultManager.removeItemAtPath(filePath, null)
-
-                    if (photosPath != null) {
-                        ImageCaptureResult.SuccessWithFile(photosPath)
-                    } else {
-                        ImageCaptureResult.Error(Exception("Failed to save to Photos library"))
-                    }
-                }
-                Directory.DOCUMENTS -> ImageCaptureResult.SuccessWithFile(filePath)
-            }
-        } else {
-            ImageCaptureResult.Error(Exception("Failed to write image to file"))
-        }
-    } catch (e: Exception) {
-        CameraKLogger.e("CameraK", "CameraK: saving the captured photo failed", e)
-        ImageCaptureResult.Error(e)
+        if (written == null || !writeDataToFile(written, filePath)) return null
+        processImageCapture(written)
+        return filePath
     }
 
     actual fun toggleFlashMode() {
@@ -847,21 +858,13 @@ actual class CameraController internal constructor(
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    private fun saveToPhotosLibrary(filePath: String, imageData: NSData): String? {
-        val savedAssetId = awaitPhotosImport { completion ->
-            photosLibrary.importImage(NSURL.fileURLWithPath(filePath), completion)
-        }
-        return savedAssetId?.let { "ph://$it" } // Use custom scheme to indicate Photos library asset
-    }
-
-    @OptIn(ExperimentalForeignApi::class)
-    private fun saveVideoToPhotosLibrary(result: VideoCaptureResult.Success): VideoCaptureResult {
+    private suspend fun saveVideoToPhotosLibrary(result: VideoCaptureResult.Success): VideoCaptureResult {
         // Only save to Photos if no custom output directory was specified
         // and directory is PICTURES or DCIM (not DOCUMENTS)
         if (directory == Directory.DOCUMENTS) return result
 
         val filePath = result.filePath
-        val savedAssetId = awaitPhotosImport { completion ->
+        val savedAssetId = importIntoPhotos { completion ->
             photosLibrary.importVideo(NSURL.fileURLWithPath(filePath), completion)
         }
         // The video stays at its temporary path, so nothing recorded is lost.
@@ -878,22 +881,35 @@ actual class CameraController internal constructor(
     /** How long a capture or a recording's stop waits for a Photos import before reporting it failed. */
     internal var photosImportTimeoutMs: Long = 60_000
 
-    /** Starts an import with [start] and waits for its completion; the asset's identifier, or null. */
-    private fun awaitPhotosImport(start: (completion: (String?, NSError?) -> Unit) -> Unit): String? {
-        var savedAssetId: String? = null
-        val semaphore = platform.darwin.dispatch_semaphore_create(0)
-        start { localIdentifier, error ->
-            if (localIdentifier == null) {
-                CameraKLogger.e(
-                    "CameraK",
-                    "CameraK: Failed to save to Photos: ${error?.localizedDescription ?: "Unknown error"}",
-                )
+    /**
+     * Runs the Photos import [start] begins and returns the new asset's identifier, or null when Photos
+     * reported a failure or did not finish within [photosImportTimeoutMs]. It suspends rather than
+     * holding a thread, so an import Photos never finishes costs nothing but the wait.
+     */
+    private suspend fun importIntoPhotos(start: (completion: (String?, NSError?) -> Unit) -> Unit): String? {
+        val outcome = withTimeoutOrNull(photosImportTimeoutMs) {
+            suspendCancellableCoroutine { continuation ->
+                start { localIdentifier, error ->
+                    if (!continuation.isActive) {
+                        CameraKLogger.w("CameraK", "CameraK: Photos finished an import after CameraK stopped waiting")
+                    }
+                    // Ignored when the wait was cancelled or timed out.
+                    continuation.resume(localIdentifier to error)
+                }
             }
-            savedAssetId = localIdentifier
-            platform.darwin.dispatch_semaphore_signal(semaphore)
         }
-        platform.darwin.dispatch_semaphore_wait(semaphore, platform.darwin.DISPATCH_TIME_FOREVER)
-        return savedAssetId
+        if (outcome == null) {
+            CameraKLogger.e("CameraK", "CameraK: Photos did not finish saving within $photosImportTimeoutMs ms")
+            return null
+        }
+        val (localIdentifier, error) = outcome
+        if (localIdentifier == null) {
+            CameraKLogger.e(
+                "CameraK",
+                "CameraK: Failed to save to Photos: ${error?.let { "${it.domain} ${it.code}" } ?: "no asset"}",
+            )
+        }
+        return localIdentifier
     }
 
     private fun FlashMode.toAVCaptureFlashMode(): AVCaptureFlashMode = when (this) {
