@@ -70,6 +70,8 @@ actual class CameraController(
     private var userHome: File = defaultUserHome()
     private var nanoClock: () -> Long = System::nanoTime
     private var recordingConverter: () -> JavaCvFrameConverter<BufferedImage> = ::Java2DFrameConverter
+    private var writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage
+    private var readCapture: (File) -> ByteArray = File::readBytes
 
     internal constructor(
         imageFormat: ImageFormat,
@@ -81,12 +83,16 @@ actual class CameraController(
         userHome: File = defaultUserHome(),
         nanoClock: () -> Long = System::nanoTime,
         recordingConverter: () -> JavaCvFrameConverter<BufferedImage> = ::Java2DFrameConverter,
+        writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage,
+        readCapture: (File) -> ByteArray = File::readBytes,
     ) : this(imageFormat, directory, horizontalFlip = horizontalFlip, customGrabber = customGrabber) {
         this.sessionDispatcher = sessionDispatcher
         this.recorderFactory = recorderFactory
         this.userHome = userHome
         this.nanoClock = nanoClock
         this.recordingConverter = recordingConverter
+        this.writeCapture = writeCapture
+        this.readCapture = readCapture
     }
 
     // The controller's own scope: the grab loop and the recording run in it, and cleanup() cancels it.
@@ -144,8 +150,8 @@ actual class CameraController(
             return@withContext try {
                 val ext = if (imageFormat == ImageFormat.PNG) "png" else "jpg"
                 val file = createUniqueFile(File(pictureFolder(), "CameraK"), "CameraK", ext).also { outFile = it }
-                writeImage(currentImage, imageFormat, file)
-                listener(file.readBytes())
+                writeCapture(currentImage, imageFormat, file)
+                listener(readCapture(file))
                 ImageCaptureResult.SuccessWithFile(file.absolutePath)
             } catch (e: Exception) {
                 CameraKLogger.e("CameraK", "CameraK: Error writing the captured image", e)
