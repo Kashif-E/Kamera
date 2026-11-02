@@ -181,6 +181,91 @@ subprojects {
     }
 }
 
+// What a published library hands consumers. Desktop apps get the bytedeco Java bindings a library
+// imports and choose their own natives: a *-platform umbrella or a native classifier jar would ship
+// every OS's binaries to every app. ocrPlugin alone imports Tesseract and Leptonica.
+val nativeClassifierJar = Regex("""-(linux|macosx|windows|android|ios)-[a-z0-9_]+\.jar$""")
+val coreBytedecoBindings = setOf("javacv", "javacpp", "ffmpeg", "videoinput")
+val bytedecoBindings =
+    libraryModules.associateWith {
+        if (it == "ocrPlugin") coreBytedecoBindings + setOf("tesseract", "leptonica") else coreBytedecoBindings
+    }
+
+data class ClasspathRule(
+    val module: String,
+    val configurations: List<String>,
+    val forbidden: Regex,
+    val reason: String,
+)
+
+val forbiddenOnPublishedClasspath =
+    listOf(
+        ClasspathRule(
+            "analyzerPlugin",
+            listOf("releaseRuntimeClasspath"),
+            Regex("""^com\.google\.mlkit:"""),
+            "analyzerPlugin imports no ML Kit",
+        ),
+    )
+
+subprojects {
+    if (name !in libraryModules) return@subprojects
+    val moduleName = name
+    val components =
+        publishedGraphs.associateWith { configurationName ->
+            provider {
+                configurations
+                    .getByName(configurationName)
+                    .incoming.resolutionResult.allComponents
+                    .mapNotNull { it.moduleVersion }
+                    .map { "${it.group}:${it.name}" }
+            }
+        }
+    val desktopArtifacts =
+        provider {
+            configurations
+                .getByName("desktopRuntimeClasspath")
+                .incoming
+                .artifactView { componentFilter { it is ModuleComponentIdentifier } }
+                .artifacts.artifacts
+                .map { it.file }
+        }
+    tasks.register("checkPublishedClasspath") {
+        group = "verification"
+        description = "Fails if this library hands consumers natives, umbrellas or libraries it does not import"
+        doLast {
+            val allowed = bytedecoBindings.getValue(moduleName)
+            val problems = mutableListOf<String>()
+            components.getValue("desktopRuntimeClasspath").get().forEach { component ->
+                val (group, artifact) = component.split(':')
+                if (group == "org.bytedeco" && artifact !in allowed) {
+                    problems +=
+                        "desktopRuntimeClasspath -> $component: $moduleName imports only bytedeco ${allowed.sorted()}" +
+                        if (artifact.endsWith("-platform")) "; a -platform umbrella ships every OS's natives" else ""
+                }
+            }
+            val artifacts = desktopArtifacts.get()
+            artifacts.filter { nativeClassifierJar.containsMatchIn(it.name) }.forEach {
+                problems += "desktopRuntimeClasspath ships the native jar ${it.name}; the app chooses its natives"
+            }
+            forbiddenOnPublishedClasspath.filter { it.module == moduleName }.forEach { rule ->
+                rule.configurations.forEach { configurationName ->
+                    components.getValue(configurationName).get().filter(rule.forbidden::containsMatchIn).forEach {
+                        problems += "$configurationName -> $it: ${rule.reason}"
+                    }
+                }
+            }
+            logger.lifecycle(
+                "$path desktopRuntimeClasspath: ${artifacts.size} external jars, " +
+                    "%.1f MB".format(artifacts.sumOf { it.length() } / 1_048_576.0),
+            )
+            check(problems.isEmpty()) {
+                "$path hands consumers what it does not need:\n" + problems.distinct().joinToString("\n")
+            }
+        }
+    }
+}
+
 // The Maven Central token and signing passphrase were once committed in the tracked
 // gradle.properties. This fails if anything could put them back in a tracked file or a run: line.
 tasks.register("checkCredentialHygiene") {
@@ -887,7 +972,7 @@ tasks.register("verifyAll") {
                 )
         }
         if (listOf("desktop", "android", "ios").any { it in verifyTargets }) {
-            paths += ":$module:checkTestOnlyDependencies"
+            paths += listOf(":$module:checkTestOnlyDependencies", ":$module:checkPublishedClasspath")
         }
     }
     if ("screenshots" in verifyTargets) {
