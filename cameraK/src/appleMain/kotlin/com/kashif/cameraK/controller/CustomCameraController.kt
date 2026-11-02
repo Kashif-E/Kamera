@@ -211,7 +211,7 @@ class CustomCameraController(
                 val inputsReady = inputConfigurator?.invoke(ops, cameraDeviceType) ?: setupInputs(cameraDeviceType)
                 if (inputsReady) {
                     setupPhotoOutput()
-                    ops.setSessionPreset(targetResolution?.toPreset() ?: aspectRatio.toSessionPreset())
+                    applySessionPreset(ops)
                     runPendingConfigurations()
                     null
                 } else {
@@ -245,14 +245,46 @@ class CustomCameraController(
         }
     }
 
-    private fun Pair<Int, Int>.toPreset(): String? {
-        val (w, h) = this
-        return when {
-            w >= 3840 && h >= 2160 -> AVCaptureSessionPreset3840x2160
-            w >= 1920 && h >= 1080 -> AVCaptureSessionPreset1920x1080
-            w >= 1280 && h >= 720 -> AVCaptureSessionPreset1280x720
-            else -> null
+    /**
+     * The presets setup tries, best first: those the target resolution reaches (its long and short
+     * sides, so 1080x1920 means 1920x1080), then the aspect ratio's, then High.
+     */
+    private fun presetCandidates(): List<String> {
+        val byResolution = targetResolution?.let { (w, h) ->
+            val long = maxOf(w, h)
+            val short = minOf(w, h)
+            listOfNotNull(
+                AVCaptureSessionPreset3840x2160.takeIf { long >= 3840 && short >= 2160 },
+                AVCaptureSessionPreset1920x1080.takeIf { long >= 1920 && short >= 1080 },
+                AVCaptureSessionPreset1280x720.takeIf { long >= 1280 && short >= 720 },
+            )
+        }.orEmpty()
+        val byAspectRatio = when (aspectRatio) {
+            AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> listOfNotNull(
+                AVCaptureSessionPreset1920x1080,
+                AVCaptureSessionPreset1280x720,
+            )
+            AspectRatio.RATIO_1_1, AspectRatio.RATIO_4_3 -> listOfNotNull(AVCaptureSessionPresetPhoto)
         }
+        return (byResolution + byAspectRatio + listOfNotNull(AVCaptureSessionPresetHigh)).distinct()
+    }
+
+    /**
+     * Sets the best preset the session can take with its current input. Assigning one it cannot
+     * take raises an NSException Kotlin cannot catch, so each is checked first. Runs on the session
+     * queue inside the setup transaction.
+     */
+    private fun applySessionPreset(ops: CaptureSessionOps) {
+        val candidates = presetCandidates()
+        val preset = candidates.firstOrNull(ops::canSetSessionPreset)
+        if (preset == null) {
+            CameraKLogger.w(TAG, "CameraK: the session can take none of the presets $candidates; keeping its default")
+            return
+        }
+        if (preset != candidates.first()) {
+            CameraKLogger.w(TAG, "CameraK: the session cannot take preset ${candidates.first()}; using $preset")
+        }
+        ops.setSessionPreset(preset)
     }
 
     /** Whether captures request high resolution; QUALITY is the only prioritization that does. */
@@ -495,15 +527,6 @@ class CustomCameraController(
                 ops.stopRunning()
             }
         }
-    }
-
-    private fun AspectRatio.toSessionPreset(): String = when (this) {
-        AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> (
-            AVCaptureSessionPreset1920x1080
-                ?: AVCaptureSessionPresetPhoto
-            )!!
-        AspectRatio.RATIO_1_1 -> AVCaptureSessionPresetPhoto!!
-        AspectRatio.RATIO_4_3 -> AVCaptureSessionPresetPhoto!!
     }
 
     /**
