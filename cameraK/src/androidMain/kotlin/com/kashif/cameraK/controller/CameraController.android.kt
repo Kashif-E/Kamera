@@ -74,6 +74,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.nio.ByteBuffer
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -543,6 +544,11 @@ actual class CameraController internal constructor(
      * Multiple analyzers can be registered simultaneously — they share a single
      * [ImageAnalysis] use case via ref-counted frame dispatch. Safe to call from any thread; only the
      * first registration binds anything.
+     *
+     * Analyzers run one after another on the analysis thread, and the frame is released once every
+     * analyzer has closed it, so close it before returning or copy what you need first. Each
+     * analyzer reads the frame's planes through its own read-only buffers; a throwing analyzer is
+     * logged and its share of the frame closed.
      */
     fun registerImageAnalyzer(analyzer: ImageAnalysis.Analyzer) {
         analyzerConsumers.update { it + analyzer }
@@ -1471,14 +1477,31 @@ internal class MultiplexingAnalyzer(private val consumers: () -> List<ImageAnaly
 /**
  * Wraps an [ImageProxy] with reference-counted close semantics.
  * The real proxy is closed only when the last holder calls [close]; each holder's close counts once.
+ *
+ * Each holder reads the planes through its own read-only views of CameraX's buffers, so one analyzer
+ * reading or trying to write a plane cannot move the position or change the pixels another analyzer
+ * sees. [getImage] is still CameraX's shared image: read it, never write to it.
  */
 private class RefCountedImageProxy(private val delegate: ImageProxy, private val refCount: AtomicInteger) :
     ImageProxy by delegate {
     private val closed = AtomicBoolean(false)
+
+    private val ownPlanes: Array<ImageProxy.PlaneProxy> by lazy {
+        delegate.planes.map { plane -> ReadOnlyPlane(plane) as ImageProxy.PlaneProxy }.toTypedArray()
+    }
+
+    override fun getPlanes(): Array<ImageProxy.PlaneProxy> = ownPlanes
 
     override fun close() {
         if (closed.compareAndSet(false, true) && refCount.decrementAndGet() == 0) {
             delegate.close()
         }
     }
+}
+
+/** A read-only view of [plane]'s buffer, with its own position and limit. */
+private class ReadOnlyPlane(plane: ImageProxy.PlaneProxy) : ImageProxy.PlaneProxy by plane {
+    private val buffer: ByteBuffer = plane.buffer.asReadOnlyBuffer()
+
+    override fun getBuffer(): ByteBuffer = buffer
 }
