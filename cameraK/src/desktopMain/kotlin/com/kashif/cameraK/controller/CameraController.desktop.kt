@@ -404,12 +404,23 @@ actual class CameraController(
         val job = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
             val converter = recordingConverter()
             var failure: Exception? = null
+            var lastFrameNumber = -1L
             try {
                 // Fed by the grab loop's frames; this coroutine never grabs from the camera itself.
                 frames.collect { captured ->
                     // Frames captured while paused have no timestamp and are left out.
                     val timestamp = clock.timestampMicros(captured.captureNanos)
-                    if (isCurrentlyRecording && timestamp != null) {
+                    // The encoder rounds each timestamp to a frame number at its frame rate. A frame
+                    // that rounds to the previous frame's number would repeat its pts, which the
+                    // encoder rejects, so it is left out: a camera faster than the recording's frame
+                    // rate is recorded at that rate.
+                    val frameNumber = timestamp?.let { frameNumberAt(it, recorder.frameRate) }
+                    if (isCurrentlyRecording &&
+                        timestamp != null &&
+                        frameNumber != null &&
+                        frameNumber > lastFrameNumber
+                    ) {
+                        lastFrameNumber = frameNumber
                         try {
                             recorder.timestamp = timestamp
                             recorder.record(converter.convert(captured.image))
@@ -588,6 +599,13 @@ internal fun createFrameRecorder(outputPath: String, configuration: VideoConfigu
         videoBitrate = configuration.quality.bitrateBps
     }
 }
+
+/**
+ * The frame number an encoder at [frameRate] gives a frame stamped [timestampMicros], as
+ * `FFmpegFrameRecorder.setTimestamp` computes it. A recorder with no frame rate keeps the timestamp.
+ */
+private fun frameNumberAt(timestampMicros: Long, frameRate: Double): Long =
+    if (frameRate > 0) Math.round(timestampMicros * frameRate / 1_000_000) else timestampMicros
 
 /** Writes [image] to [file] as [format], throwing if no writer accepts it. */
 internal fun writeImage(image: BufferedImage, format: ImageFormat, file: File) {
