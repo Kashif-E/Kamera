@@ -2,6 +2,7 @@ package com.kashif.ocrPlugin
 
 import androidx.compose.ui.graphics.ImageBitmap
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.toByteArray
 import com.kashif.cameraK.utils.toNSData
 import kotlinx.cinterop.BetaInteropApi
@@ -11,6 +12,9 @@ import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import platform.AVFoundation.AVCaptureConnection
 import platform.AVFoundation.AVCaptureOutput
 import platform.AVFoundation.AVCaptureVideoDataOutput
@@ -43,7 +47,6 @@ import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_queue_create
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalForeignApi::class)
 actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig): String =
@@ -66,67 +69,81 @@ internal fun performVisionRequest(image: CGImageRef, request: VNRecognizeTextReq
     if (handler.performRequests(listOf(request), error.ptr)) null else error.value
 }
 
-/** Reads the text in [bitmap] once, running Vision through [performer]. */
+/**
+ * Reads the text in [bitmap] once, running Vision through [performer] off the caller's thread.
+ * Returns "" when the bitmap cannot be handed to Vision or Vision fails; the failure is logged.
+ */
 @OptIn(ExperimentalForeignApi::class)
 internal suspend fun recognizeText(bitmap: ImageBitmap, performer: VisionPerformer): String =
-    suspendCoroutine { continuation ->
-        val imageData = bitmap.toByteArray()?.toNSData()
-        if (imageData == null) {
-            continuation.resume("")
-            return@suspendCoroutine
+    withContext(Dispatchers.Default) {
+        val uiImage = bitmap.toByteArray()?.toNSData()?.let { UIImage.imageWithData(it) }
+        val cgImage = uiImage?.CGImage
+        if (cgImage == null) {
+            CameraKLogger.e(TAG, "Text extraction failed: the bitmap could not be converted to a CGImage")
+            return@withContext ""
         }
 
-        val uiImage = UIImage.imageWithData(imageData)
-        if (uiImage == null) {
-            continuation.resume("")
-            return@suspendCoroutine
-        }
+        suspendCancellableCoroutine { continuation ->
+            val request =
+                VNRecognizeTextRequest { request, error ->
+                    if (error != null) {
+                        CameraKLogger.e(TAG, "Text extraction failed", VisionException(error))
+                        continuation.resume("")
+                        return@VNRecognizeTextRequest
+                    }
 
-        val request =
-            VNRecognizeTextRequest { request, error ->
-                if (error != null) {
-                    continuation.resume("")
-                    return@VNRecognizeTextRequest
-                }
+                    val results = request?.results as? NSArray
+                    if (results == null) {
+                        continuation.resume("")
+                        return@VNRecognizeTextRequest
+                    }
 
-                val results = request?.results as? NSArray
-                if (results == null) {
-                    continuation.resume("")
-                    return@VNRecognizeTextRequest
-                }
+                    val recognizedText =
+                        buildString {
+                            for (i in 0 until results.count.toInt()) {
+                                val observation =
+                                    results.objectAtIndex(i.toULong()) as? VNRecognizedTextObservation
+                                observation?.let { obs ->
+                                    val candidatesArray = obs.topCandidates(1u)
 
-                val recognizedText =
-                    buildString {
-                        for (i in 0 until results.count.toInt()) {
-                            val observation =
-                                results.objectAtIndex(i.toULong()) as? VNRecognizedTextObservation
-                            observation?.let { obs ->
-                                val candidatesArray = obs.topCandidates(1u)
-
-                                if (candidatesArray.isNotEmpty()) {
-                                    val text =
-                                        (candidatesArray.first() as? NSObject)?.valueForKey("string") as? String
-                                    if (!text.isNullOrBlank()) {
-                                        if (isNotEmpty()) append("\n")
-                                        append(text)
+                                    if (candidatesArray.isNotEmpty()) {
+                                        val text =
+                                            (candidatesArray.first() as? NSObject)?.valueForKey("string") as? String
+                                        if (!text.isNullOrBlank()) {
+                                            if (isNotEmpty()) append("\n")
+                                            append(text)
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                continuation.resume(recognizedText.trim())
+                    continuation.resume(recognizedText.trim())
+                }
+
+            request.recognitionLevel = VNRequestTextRecognitionLevelAccurate
+            request.usesLanguageCorrection = true
+
+            // Vision calls the completion handler synchronously inside performRequests, if at all,
+            // so once perform returns the continuation is resumed already or never will be.
+            val failure =
+                try {
+                    performer.perform(cgImage, request)?.let(::VisionException)
+                } catch (e: Exception) {
+                    e
+                }
+            if (failure != null && continuation.isActive) {
+                CameraKLogger.e(TAG, "Text extraction failed: Vision did not run the request", failure)
+                continuation.resume("")
             }
-
-        request.recognitionLevel = VNRequestTextRecognitionLevelAccurate
-        request.usesLanguageCorrection = true
-
-        try {
-            performer.perform(uiImage.CGImage!!, request)
-        } catch (e: Exception) {
-            continuation.resume("")
         }
     }
+
+private const val TAG = "TextRecognition"
+
+/** An error Vision reported, carried as a Kotlin exception so it can be logged. */
+private class VisionException(error: NSError) :
+    Exception("Vision error ${error.domain} ${error.code}: ${error.localizedDescription}")
 
 /**
  * Delegate for handling video frame capture and processing.

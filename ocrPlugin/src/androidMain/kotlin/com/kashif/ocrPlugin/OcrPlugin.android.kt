@@ -17,6 +17,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executor
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig): String =
@@ -47,44 +49,37 @@ internal class MlKitBitmapTextRecognizer : BitmapTextRecognizer {
 // instead of being posted to the main thread.
 private val DirectExecutor = Executor(Runnable::run)
 
-/** Reads the text in [bitmap] once with a recognizer from [newRecognizer]. */
+/**
+ * Reads the text in [bitmap] once with a recognizer from [newRecognizer], which is closed before
+ * this returns, however it returns.
+ */
 internal suspend fun extractText(bitmap: ImageBitmap, newRecognizer: () -> BitmapTextRecognizer): String =
     withContext(Dispatchers.Default) {
         try {
-            suspendCancellableCoroutine { continuation ->
-                CameraKLogger.d("TextRecognition", "Starting text extraction from bitmap")
+            CameraKLogger.d("TextRecognition", "Starting text extraction from bitmap")
+            require(bitmap.width > 0 && bitmap.height > 0) { "Invalid bitmap dimensions" }
 
-                val recognizer = newRecognizer()
-
-                if (bitmap.width <= 0 || bitmap.height <= 0) {
-                    continuation.resumeWithException(IllegalArgumentException("Invalid bitmap dimensions"))
-                    return@suspendCancellableCoroutine
-                }
-
-                recognizer
-                    .recognize(bitmap.asAndroidBitmap())
-                    .addOnSuccessListener(DirectExecutor) { extractedText ->
-                        CameraKLogger.d(
-                            "TextRecognition",
-                            "Text extracted successfully: ${extractedText.take(100)}...",
-                        )
-                        continuation.resume(extractedText) { cause, _, _ ->
-                            recognizer.close()
-                        }
-                    }.addOnFailureListener(DirectExecutor) { exception ->
-                        CameraKLogger.e("TextRecognition", "Text extraction failed", exception)
-                        continuation.resumeWithException(exception)
-                    }
-
-                continuation.invokeOnCancellation {
-                    recognizer.close()
-                }
+            val recognizer = newRecognizer()
+            try {
+                val extractedText = recognizer.recognize(bitmap.asAndroidBitmap()).await()
+                CameraKLogger.d("TextRecognition", "Text extracted successfully: ${extractedText.take(100)}...")
+                extractedText
+            } finally {
+                recognizer.close()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            CameraKLogger.e("TextRecognition", "Error during text extraction", e)
+            CameraKLogger.e("TextRecognition", "Text extraction failed", e)
             throw e
         }
     }
+
+// Cancelling the caller resumes at once; the task's late result is then dropped.
+private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
+    addOnSuccessListener(DirectExecutor) { continuation.resume(it) }
+    addOnFailureListener(DirectExecutor) { continuation.resumeWithException(it) }
+}
 
 internal fun CameraController.enableTextRecognition(
     onTextRecognized: (String) -> Unit,
