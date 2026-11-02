@@ -132,6 +132,11 @@ class CustomCameraController(
             // it would deadlock.
             if (isOnSessionQueue) replace() else dispatch_sync(sessionQueue, replace)
         }
+
+    /** Whether setupSession has created the session (and cleanupSession not yet released it). */
+    internal val hasSession: Boolean
+        get() = session != null
+
     private var backCamera: CaptureDeviceOps? = null
     private var frontCamera: CaptureDeviceOps? = null
 
@@ -151,8 +156,13 @@ class CustomCameraController(
     var onError: ((CameraException) -> Unit)? = null
     var onSessionReady: (() -> Unit)? = null
 
+    /** The flash mode captures request; a mode the photo output lacks is turned off at capture time. */
+    @Volatile
     var flashMode: AVCaptureFlashMode = AVCaptureFlashModeAuto
-    var torchMode: AVCaptureTorchMode = AVCaptureTorchModeAuto
+
+    /** The torch mode applied to the camera in use whenever the session starts or the lens changes. */
+    @Volatile
+    var torchMode: AVCaptureTorchMode = AVCaptureTorchModeOff
 
     // Configuration changes for plugin outputs (Apple WWDC pattern). Touched only on sessionQueue.
     private val pendingConfigurations = mutableListOf<() -> Unit>()
@@ -464,6 +474,8 @@ class CustomCameraController(
             val ops = session ?: return@dispatch_async
             if (!ops.isRunning) {
                 ops.startRunning()
+                // A torch set before the session ran does not survive its start.
+                applyConfiguredTorch()
             }
         }
     }
@@ -542,10 +554,14 @@ class CustomCameraController(
         return lastVideoOrientation
     }
 
+    /**
+     * Sets the flash mode later captures request. It is kept even before the photo output exists;
+     * a capture turns off a mode the device lacks (devices without a flash, such as iPads).
+     */
     fun setFlashMode(mode: AVCaptureFlashMode) {
-        flashMode = supportedFlashMode(mode)
-        if (flashMode != mode) {
-            CameraKLogger.e("CameraK", "CameraK: Flash mode not supported on this device, using OFF")
+        flashMode = mode
+        if (photoOutput != null && supportedFlashMode(mode) != mode) {
+            CameraKLogger.w(TAG, "CameraK: flash mode $mode is not supported on this device; captures use OFF")
         }
     }
 
@@ -554,6 +570,13 @@ class CustomCameraController(
         dispatch_async(sessionQueue) {
             currentCamera?.let { applyTorchMode(it, mode) }
         }
+    }
+
+    /** Applies [torchMode] to the camera in use unless it is already set. Runs on the session queue. */
+    private fun applyConfiguredTorch() {
+        val camera = currentCamera ?: return
+        val mode = torchMode
+        if (camera.torchMode != mode) applyTorchMode(camera, mode)
     }
 
     /** Sets [mode] on [camera] when it has a torch that supports it. Runs on the session queue. */
@@ -700,6 +723,7 @@ class CustomCameraController(
             } else {
                 applyPreviewMirroring()
             }
+            if (ops.isRunning) applyConfiguredTorch()
         }
     }
 
@@ -739,6 +763,7 @@ class CustomCameraController(
             } else {
                 applyPreviewMirroring()
             }
+            if (ops.isRunning) applyConfiguredTorch()
         }
     }
 

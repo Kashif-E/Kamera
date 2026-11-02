@@ -124,6 +124,11 @@ actual class CameraController internal constructor(
     private var videoOutputFilePath: String? = null
 
     init {
+        // The configured modes, not CustomCameraController's defaults, are what captures and the
+        // torch use; the torch is applied once the session runs and again after each lens switch.
+        customCameraController.setFlashMode(flashMode.toAVCaptureFlashMode())
+        customCameraController.setTorchMode(torchMode.toAVCaptureTorchMode())
+
         // Queued at construction, ahead of any plugin change (a plugin needs this controller to queue
         // one), so the metadata and movie outputs join the session's single startup transaction on its
         // session queue before a plugin configures them, instead of rebuilding the graph from main.
@@ -167,7 +172,7 @@ actual class CameraController internal constructor(
      * Returns whether the capture session is ready for use.
      * Used by plugins to check if they can add outputs.
      */
-    fun isSessionReady(): Boolean = customCameraController.captureSession != null
+    fun isSessionReady(): Boolean = customCameraController.hasSession
 
     /**
      * Queues a configuration change to be applied atomically (plugin outputs, etc).
@@ -495,7 +500,7 @@ actual class CameraController internal constructor(
         // This method is called from CameraKStateHolder.initialize() which may be before
         // viewDidLoad() triggers setupCamera(). The session will start automatically
         // when ready, so we only need to handle the case where session IS ready.
-        if (customCameraController.captureSession != null) {
+        if (customCameraController.hasSession) {
             memoryManager.clearBufferPools()
             customCameraController.startSession()
         }
