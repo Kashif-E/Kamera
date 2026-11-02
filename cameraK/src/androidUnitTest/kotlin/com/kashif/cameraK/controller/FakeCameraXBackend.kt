@@ -212,6 +212,9 @@ internal class FakeCameraBinding : CameraBinding {
     /** The ViewPort of each use-case group bound, oldest first (null when the group had none). */
     val viewPorts = mutableListOf<ViewPort?>()
 
+    /** Makes the camera each bind returns; a test swaps it for a camera with other hardware. */
+    var newCamera: () -> FakeCamera = { FakeCamera() }
+
     override fun unbind(vararg useCases: UseCase) {
         bound.removeAll(useCases.toSet())
     }
@@ -228,32 +231,43 @@ internal class FakeCameraBinding : CameraBinding {
         }
         bindCalls++
         bound += useCases
-        return FakeCamera().also { cameras += it }.camera
+        return newCamera().also { cameras += it }.camera
     }
 }
 
 /**
  * A bound camera. Its control records what the controller asks of the hardware and, like CameraX,
- * reports the result through the camera info's torch and zoom state.
+ * reports the result through the camera info's torch and zoom state. [minZoom] below 1 is a logical
+ * camera that can switch to its ultra-wide lens. With [torchFailure] set, every torch request fails
+ * through its future, as CameraX fails it when the camera is closed or has no flash unit.
  */
-internal class FakeCamera(private val maxZoom: Float = 8f) {
+internal class FakeCamera(
+    private val maxZoom: Float = 8f,
+    private val minZoom: Float = 1f,
+    private val hasFlashUnit: Boolean = true,
+    private val torchFailure: Throwable? = null,
+) {
     val torchRequests = mutableListOf<Boolean>()
     val zoomRequests = mutableListOf<Float>()
     val torchState = MutableLiveData(TorchState.OFF)
-    val zoomState = MutableLiveData<ZoomState>(FakeZoomState(1f, maxZoom))
+    val zoomState = MutableLiveData<ZoomState>(FakeZoomState(1f, minZoom, maxZoom))
 
     private val control = proxy<CameraControl> { method, args ->
         when (method.name) {
             "enableTorch" -> {
                 val on = args!![0] as Boolean
                 torchRequests += on
-                torchState.value = if (on) TorchState.ON else TorchState.OFF
-                completedFuture()
+                if (torchFailure != null) {
+                    failedFuture(torchFailure)
+                } else {
+                    torchState.value = if (on) TorchState.ON else TorchState.OFF
+                    completedFuture()
+                }
             }
             "setZoomRatio" -> {
                 val ratio = args!![0] as Float
                 zoomRequests += ratio
-                zoomState.value = FakeZoomState(ratio.coerceIn(1f, maxZoom), maxZoom)
+                zoomState.value = FakeZoomState(ratio.coerceIn(minZoom, maxZoom), minZoom, maxZoom)
                 completedFuture()
             }
             else -> completedFuture()
@@ -262,7 +276,7 @@ internal class FakeCamera(private val maxZoom: Float = 8f) {
 
     private val info = proxy<CameraInfo> { method, _ ->
         when (method.name) {
-            "hasFlashUnit" -> true
+            "hasFlashUnit" -> hasFlashUnit
             "getTorchState" -> torchState
             "getZoomState" -> zoomState
             else -> null
@@ -278,17 +292,20 @@ internal class FakeCamera(private val maxZoom: Float = 8f) {
     }
 }
 
-private class FakeZoomState(private val ratio: Float, private val max: Float) : ZoomState {
+private class FakeZoomState(private val ratio: Float, private val min: Float, private val max: Float) : ZoomState {
     override fun getZoomRatio() = ratio
 
     override fun getMaxZoomRatio() = max
 
-    override fun getMinZoomRatio() = 1f
+    override fun getMinZoomRatio() = min
 
-    override fun getLinearZoom() = (ratio - 1f) / (max - 1f)
+    override fun getLinearZoom() = (ratio - min) / (max - min)
 }
 
 private fun completedFuture(): ListenableFuture<Void> = ResolvableFuture.create<Void>().apply { set(null) }
+
+private fun failedFuture(cause: Throwable): ListenableFuture<Void> =
+    ResolvableFuture.create<Void>().apply { setException(cause) }
 
 private inline fun <reified T> proxy(crossinline answer: (Method, Array<Any?>?) -> Any?): T =
     Proxy.newProxyInstance(T::class.java.classLoader, arrayOf(T::class.java)) { self, method, args ->
