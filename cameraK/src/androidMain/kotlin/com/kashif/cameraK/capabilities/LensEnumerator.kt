@@ -37,7 +37,8 @@ internal object LensEnumerator {
             emptyArray()
         }
 
-        val rawByFacing = mutableMapOf<CameraLens, MutableList<RawCamera>>()
+        // External cameras are classified apart from built-in ones: they share no hardware with them.
+        val rawByFacing = mutableMapOf<Facing, MutableList<RawCamera>>()
         for (id in cameraIds) {
             val raw = describe(manager, id, isPhysicalChild = false, parentLogicalId = null) ?: continue
             rawByFacing.getOrPut(raw.facing) { mutableListOf() }.add(raw)
@@ -69,11 +70,12 @@ internal object LensEnumerator {
                         info = LensInfo(
                             id = raw.id,
                             deviceType = deviceType,
-                            lens = facing,
+                            lens = facing.lens,
                             minZoom = raw.minZoomRatio,
                             maxZoom = raw.maxZoomRatio,
                             hasFlash = raw.hasFlash,
                             isLogical = raw.isLogical,
+                            isExternal = facing.isExternal,
                         ),
                         isPhysicalChild = raw.isPhysicalChild,
                         parentLogicalId = raw.parentLogicalId,
@@ -109,9 +111,15 @@ internal object LensEnumerator {
         return topLevel + children.filter { it.id in survivingIds }
     }
 
+    /**
+     * Which way a camera faces. An external camera faces neither way; it reports [CameraLens.BACK]
+     * with [isExternal] set, since [CameraLens] has no entry for it.
+     */
+    private data class Facing(val lens: CameraLens, val isExternal: Boolean)
+
     private class RawCamera(
         val id: String,
-        val facing: CameraLens,
+        val facing: Facing,
         val minZoomRatio: Float,
         val maxZoomRatio: Float,
         val hasFlash: Boolean,
@@ -138,8 +146,9 @@ internal object LensEnumerator {
         } ?: return null
 
         val facing = when (characteristics.get(CameraCharacteristics.LENS_FACING)) {
-            CameraCharacteristics.LENS_FACING_FRONT -> CameraLens.FRONT
-            else -> CameraLens.BACK
+            CameraCharacteristics.LENS_FACING_FRONT -> Facing(CameraLens.FRONT, isExternal = false)
+            CameraCharacteristics.LENS_FACING_EXTERNAL -> Facing(CameraLens.BACK, isExternal = true)
+            else -> Facing(CameraLens.BACK, isExternal = false)
         }
 
         // CONTROL_ZOOM_RATIO_RANGE is an API 30+ Key FIELD — referencing it below 30 throws

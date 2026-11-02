@@ -459,7 +459,7 @@ actual class CameraController internal constructor(
         }
 
         val target = lensSnapshot().firstOrNull {
-            it.info.lens == cameraLens && it.info.deviceType == cameraDeviceType
+            it.info.lens == cameraLens && !it.info.isExternal && it.info.deviceType == cameraDeviceType
         }
         if (target == null) {
             CameraKLogger.w("CameraK", "$cameraDeviceType not available for $cameraLens, using default camera")
