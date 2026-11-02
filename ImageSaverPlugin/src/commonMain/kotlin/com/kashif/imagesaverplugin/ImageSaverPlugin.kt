@@ -96,7 +96,7 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
     @OptIn(ExperimentalTime::class)
     private val captureListener: (ByteArray) -> Unit = { byteArray ->
         stateHolder?.pluginScope?.launch(Dispatchers.IO) {
-            val imageName = config.prefix?.let { "${it}_${Clock.System.now().toEpochMilliseconds()}" }
+            val imageName = config.prefix?.let { autoSaveImageName(it, Clock.System.now().toEpochMilliseconds()) }
             saveImage(byteArray, imageName)
         }
     }
@@ -184,6 +184,9 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
     @Suppress("DEPRECATION")
     open suspend fun readBytes(path: String): ByteArray = withContext(Dispatchers.IO) { getByteArrayFrom(path) }
 }
+
+/** The name an auto-save gives a capture taken at [epochMillis]: [prefix], `_`, then the milliseconds. */
+internal fun autoSaveImageName(prefix: String, epochMillis: Long): String = "${prefix}_$epochMillis"
 
 /**
  * Creates a remembered [ImageSaverPlugin] instance with automatic lifecycle management.
