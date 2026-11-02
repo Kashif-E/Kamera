@@ -383,6 +383,26 @@ tasks.register("checkCredentialHygiene") {
     }
 }
 
+// Dead text the compiler cannot see in the plugin modules: commented-out code, orphaned KDoc, and
+// KDoc code samples, which belong in compiled functions referenced with @sample.
+tasks.register("checkPluginSources") {
+    group = "verification"
+    description = "Fails on commented-out code, orphaned KDoc or uncompiled KDoc samples in the plugin modules"
+    val script = layout.projectDirectory.file("scripts/check_plugin_sources.py").asFile
+    val root = layout.projectDirectory.asFile
+    doLast {
+        val process =
+            ProcessBuilder("python3", "-I", script.path)
+                .directory(root)
+                .redirectErrorStream(true)
+                .start()
+        val output = process.inputStream.bufferedReader().readText()
+        val exit = process.waitFor()
+        if (exit != 0) throw GradleException("Plugin source check failed (exit $exit):\n$output")
+        logger.lifecycle(output.trimEnd())
+    }
+}
+
 // A Maven Central upload is irreversible. This fails unless the publish workflow runs only for a v*
 // tag matching VERSION_NAME, after the full harness, from the protected maven-central environment.
 tasks.register("checkReleaseWorkflow") {
@@ -1196,6 +1216,7 @@ fun verifyTaskPaths(
                 ":checkNativeSettings",
                 ":checkRepositoryLinks",
                 ":Sample:checkMacOsCameraPackaging",
+                ":checkPluginSources",
             )
     }
     modules.forEach { module ->
