@@ -533,11 +533,14 @@ class CustomCameraController(
      * queued configuration change (the recorder adds its microphone this way). The check, [create]
      * and the add all run on the session queue, so no other session work can interleave with them.
      */
-    internal fun addInputUnlessPresent(isPresent: (AVCaptureInput) -> Boolean, create: () -> AVCaptureInput?) {
+    internal fun addInputUnlessPresent(
+        isPresent: (AVCaptureInput) -> Boolean,
+        create: () -> Result<AVCaptureInput>,
+    ) {
         queueConfigurationChange {
             val ops = session ?: return@queueConfigurationChange
             if (ops.inputs.any(isPresent)) return@queueConfigurationChange
-            val input = create() ?: return@queueConfigurationChange
+            val input = create().getOrNull() ?: return@queueConfigurationChange
             if (ops.canAddInput(input)) {
                 ops.addInput(input)
             }

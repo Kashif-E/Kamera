@@ -91,7 +91,7 @@ class OnDemandOutputsTest {
         val output = assertNotNull(runBlocking { controller.attachMovieOutput() }, "no movie output for a recording")
         assertTrue(output in session.outputs, "the recording's movie output is not attached")
         val microphone = captureInputWithoutCamera()
-        custom.addInputUnlessPresent(isPresent = { it === microphone }, create = { microphone })
+        custom.addInputUnlessPresent(isPresent = { it === microphone }, create = { Result.success(microphone) })
 
         controller.releaseRecordingResources(output) { it === microphone }
         drainSessionThenMain(custom)

@@ -80,7 +80,7 @@ class LensSwitchTest {
     fun theMicrophoneSurvivesLensSwitches() {
         startRunning()
         val microphone = captureInputWithoutCamera()
-        controller.addInputUnlessPresent(isPresent = { it === microphone }, create = { microphone })
+        controller.addInputUnlessPresent(isPresent = { it === microphone }, create = { Result.success(microphone) })
 
         controller.switchCamera()
         controller.switchCamera()

@@ -137,6 +137,9 @@ actual class CameraController internal constructor(
     /** Test seam: the movie-file-output calls a recording makes. */
     internal var movieRecorder: MovieRecorder = AVMovieRecorder
 
+    /** Test seam: the microphone's session input for a recording with audio, or why there is none. */
+    internal var microphoneInput: () -> Result<AVCaptureInput> = ::defaultMicrophoneInput
+
     /** How long startRecording waits for AVFoundation to report the recording started. */
     internal var recordingStartTimeoutMs: Long = 10_000
 
@@ -240,9 +243,6 @@ actual class CameraController internal constructor(
             CameraKLogger.e("CameraK", "CameraK: the camera reported an error", error)
         }
     }
-
-    private fun writeDataToFile(data: NSData, filePath: String): Boolean =
-        NSFileManager.defaultManager.createFileAtPath(filePath, data, null)
 
     private fun processImageCapture(imageData: NSData) {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
@@ -424,7 +424,7 @@ actual class CameraController internal constructor(
     private fun writePhoto(image: NSData): String? {
         val filePath = createTempFile()
         if (imageFormat == ImageFormat.JPEG) {
-            if (!writeDataToFile(image, filePath)) return null
+            writeDataToFile(image, filePath).getOrElse { return null }
             processImageCapture(image)
         } else {
             if (!writePng(image, filePath)) {
@@ -766,15 +766,8 @@ actual class CameraController internal constructor(
         }
     }
 
-    @OptIn(ExperimentalForeignApi::class)
     private fun addAudioInputIfNeeded() {
-        customCameraController.addInputUnlessPresent(
-            isPresent = ::isAudioDeviceInput,
-            create = {
-                platform.AVFoundation.AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeAudio)
-                    ?.let { AVCaptureDeviceInput.deviceInputWithDevice(it, null) }
-            },
-        )
+        customCameraController.addInputUnlessPresent(isPresent = ::isAudioDeviceInput, create = microphoneInput)
     }
 
     @OptIn(ExperimentalForeignApi::class)
@@ -1003,3 +996,19 @@ actual class CameraController internal constructor(
         return locked?.toVideoOrientation() ?: currentVideoOrientation()
     }
 }
+
+@OptIn(ExperimentalForeignApi::class)
+private fun defaultMicrophoneInput(): Result<AVCaptureInput> {
+    val microphone = platform.AVFoundation.AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeAudio)
+        ?: return Result.failure(IllegalStateException("No microphone is available"))
+    return AVCaptureDeviceInput.deviceInputWithDevice(microphone, null)?.let { Result.success(it) }
+        ?: Result.failure(IllegalStateException("AVFoundation made no input for the microphone"))
+}
+
+/** Writes [data] to a new file at [filePath]; a failure says why. */
+internal fun writeDataToFile(data: NSData, filePath: String): Result<Unit> =
+    if (NSFileManager.defaultManager.createFileAtPath(filePath, data, null)) {
+        Result.success(Unit)
+    } else {
+        Result.failure(IllegalStateException("Could not write the file"))
+    }

@@ -301,7 +301,7 @@ class SessionQueueTest {
         val inputsMade = atomic(0)
         controller.addInputUnlessPresent(isPresent = { false }, create = {
             inputsMade.incrementAndGet()
-            null
+            Result.failure(IllegalStateException("no input in this test"))
         })
         drainSessionQueueThenMain(controller)
 
