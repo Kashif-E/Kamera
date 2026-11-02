@@ -234,6 +234,12 @@ val forbiddenOnPublishedClasspath =
         ),
         ClasspathRule("cameraK", publishedGraphs, Regex("""^io\.coil-kt"""), "core imports no Coil"),
         ClasspathRule("cameraK", publishedGraphs, Regex("""^io\.ktor:"""), "core imports no Ktor"),
+        ClasspathRule(
+            "cameraK",
+            publishedGraphs,
+            Regex("""^com\.google\.zxing:"""),
+            "core imports no ZXing; qrScannerPlugin declares the ZXing it uses",
+        ),
     )
 
 subprojects {
@@ -1072,7 +1078,9 @@ tasks.register("checkNoLibraryFrameworks") {
                     .targets
                     .withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>()
                     .flatMap { target ->
-                        target.binaries.withType<org.jetbrains.kotlin.gradle.plugin.mpp.Framework>().map { "${target.name}.${it.name}" }
+                        target.binaries.withType<org.jetbrains.kotlin.gradle.plugin.mpp.Framework>().map {
+                            "${target.name}.${it.name}"
+                        }
                     }
             }
         }
