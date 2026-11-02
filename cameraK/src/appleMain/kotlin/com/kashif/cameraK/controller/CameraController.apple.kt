@@ -129,20 +129,8 @@ actual class CameraController internal constructor(
         customCameraController.setFlashMode(flashMode.toAVCaptureFlashMode())
         customCameraController.setTorchMode(torchMode.toAVCaptureTorchMode())
         customCameraController.recordingInProgress = { movieFileOutput?.isRecording() == true }
-
-        // Queued at construction, ahead of any plugin change (a plugin needs this controller to queue
-        // one), so the metadata and movie outputs join the session's single startup transaction on its
-        // session queue before a plugin configures them, instead of rebuilding the graph from main.
-        customCameraController.queueConfigurationChange {
-            customCameraController.safeAddOutput(metadataOutput)
-        }
-        val movieOutput = AVCaptureMovieFileOutput()
-        customCameraController.queueConfigurationChange {
-            customCameraController.safeAddOutput(movieOutput)
-            if (customCameraController.containsOutput(movieOutput)) {
-                movieFileOutput = movieOutput
-            }
-        }
+        // The metadata output joins the session only while a scanner is set, and the movie output only
+        // for a recording: each costs memory and power and limits the formats the session can use.
     }
 
     private val memoryManager = MemoryManager
@@ -275,9 +263,18 @@ actual class CameraController internal constructor(
         }
     }
 
+    /**
+     * Sets the scanner's delegate and attaches the metadata output, as a queued change, so a change
+     * the scanner queues next (setting its object types) finds the output attached.
+     */
     fun setMetadataObjectsDelegate(delegate: AVCaptureMetadataOutputObjectsDelegateProtocol) {
         metadataObjectsDelegate = delegate
         metadataOutput.setMetadataObjectsDelegate(delegate, dispatch_get_main_queue())
+        customCameraController.queueConfigurationChange {
+            if (!customCameraController.containsOutput(metadataOutput)) {
+                customCameraController.safeAddOutput(metadataOutput)
+            }
+        }
     }
 
     /**
@@ -286,6 +283,7 @@ actual class CameraController internal constructor(
     fun clearMetadataObjectsDelegate() {
         metadataObjectsDelegate = null
         metadataOutput.setMetadataObjectsDelegate(null, dispatch_get_main_queue())
+        customCameraController.safeRemoveOutput(metadataOutput)
     }
 
     fun updateMetadataObjectTypes(newTypes: List<String>) {
@@ -538,22 +536,34 @@ actual class CameraController internal constructor(
     }
 
     /**
-     * The movie file output a recording writes to, once every session change already queued has
-     * run; null when the session has none.
+     * Attaches a movie file output for a recording, as a queued change, and returns it once the
+     * change has run; null when there is no session or the session refuses the output.
      */
-    internal suspend fun attachMovieOutput(): AVCaptureMovieFileOutput? = suspendCancellableCoroutine { cont ->
-        customCameraController.afterQueuedSessionWork { cont.resume(movieFileOutput) }
+    internal suspend fun attachMovieOutput(): AVCaptureMovieFileOutput? {
+        movieFileOutput?.let { return it }
+        if (!customCameraController.hasSession) return null
+        val output = AVCaptureMovieFileOutput()
+        customCameraController.safeAddOutput(output)
+        return suspendCancellableCoroutine { cont ->
+            customCameraController.afterQueuedSessionWork {
+                val attached = customCameraController.containsOutput(output)
+                if (attached) movieFileOutput = output
+                cont.resume(output.takeIf { attached })
+            }
+        }
     }
 
     /**
-     * Gives back what a recording on [output] held once it has ended. The movie output and the
-     * inputs [isAudioInput] matches stay attached for now.
+     * Detaches a finished recording's movie output and the microphone it added ([isAudioInput]
+     * picks it), so the session and the microphone indicator return to their photo-only state.
      */
-    @Suppress("UNUSED_PARAMETER")
     internal fun releaseRecordingResources(
         output: AVCaptureMovieFileOutput,
         isAudioInput: (AVCaptureInput) -> Boolean = ::isAudioDeviceInput,
     ) {
+        if (movieFileOutput === output) movieFileOutput = null
+        customCameraController.safeRemoveOutput(output)
+        customCameraController.removeInputsMatching(isAudioInput)
     }
 
     @OptIn(ExperimentalForeignApi::class)

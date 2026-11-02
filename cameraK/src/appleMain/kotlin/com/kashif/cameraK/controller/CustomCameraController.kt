@@ -504,6 +504,14 @@ class CustomCameraController(
         }
     }
 
+    /** Removes, as one queued configuration change, every attached input [matches] picks. */
+    internal fun removeInputsMatching(matches: (AVCaptureInput) -> Boolean) {
+        queueConfigurationChange {
+            val ops = session ?: return@queueConfigurationChange
+            ops.inputs.filter(matches).forEach(ops::removeInput)
+        }
+    }
+
     /** Runs [block] on the session queue after every piece of session work already requested. */
     internal fun afterQueuedSessionWork(block: () -> Unit) {
         dispatch_async(sessionQueue, block)
