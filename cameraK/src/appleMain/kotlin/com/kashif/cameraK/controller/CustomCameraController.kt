@@ -17,6 +17,7 @@ import kotlinx.cinterop.toCPointer
 import platform.AVFoundation.*
 import platform.Foundation.NSData
 import platform.Foundation.NSError
+import platform.Foundation.NSLock
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIView
@@ -63,6 +64,7 @@ class CustomCameraController(
     private var lensSwitcher: ((CaptureSessionOps, Boolean) -> Unit)? = null
     private var cameraDevices = CameraDeviceProvider(::discoverCamera)
     private var previewMirroring: (AVCaptureVideoPreviewLayer?, Boolean) -> Unit = ::mirrorPreview
+    private var photoCapturer: PhotoCapturer = AVPhotoCapturer
 
     /**
      * Test seam: [sessionFactory] supplies the session, and [inputConfigurator], when set, adds the
@@ -71,6 +73,7 @@ class CustomCameraController(
      * in place of the device lookup, and [previewMirroring], when set, applies the preview layer's
      * mirroring in place of setting it on the layer's connection. [cameraDevices], when set, finds
      * the cameras setup and the lens switches open, in place of AVCaptureDevice discovery.
+     * [photoCapturer], when set, receives each capture request in place of the photo output.
      */
     internal constructor(
         qualityPrioritization: QualityPrioritization,
@@ -83,12 +86,14 @@ class CustomCameraController(
         lensSwitcher: ((CaptureSessionOps, Boolean) -> Unit)? = null,
         previewMirroring: ((AVCaptureVideoPreviewLayer?, Boolean) -> Unit)? = null,
         cameraDevices: CameraDeviceProvider? = null,
+        photoCapturer: PhotoCapturer? = null,
     ) : this(qualityPrioritization, initialCameraLens, aspectRatio, targetResolution, mirrorFrontCamera) {
         this.sessionFactory = sessionFactory
         this.inputConfigurator = inputConfigurator
         this.lensSwitcher = lensSwitcher
         previewMirroring?.let { this.previewMirroring = it }
         cameraDevices?.let { this.cameraDevices = it }
+        photoCapturer?.let { this.photoCapturer = it }
     }
 
     /**
@@ -719,8 +724,17 @@ class CustomCameraController(
             }
         }
 
+        lateinit var delegate: PhotoCaptureDelegate
+        delegate = PhotoCaptureDelegate(
+            object : PhotoCaptureCallbacks {
+                override fun photoProcessed(data: NSData?, error: NSError?) = deliverPhoto(data, error)
+
+                override fun captureFinished(error: NSError?) = releasePhotoDelegate(delegate)
+            },
+        )
+        retainPhotoDelegate(delegate)
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
-            photoOutput?.capturePhotoWithSettings(settings, delegate = this)
+            photoOutput?.let { photoCapturer.capture(it, settings, delegate) } ?: releasePhotoDelegate(delegate)
         }
     }
 
@@ -855,12 +869,36 @@ class CustomCameraController(
         didFinishProcessingPhoto: AVCapturePhoto,
         error: NSError?,
     ) {
+        deliverPhoto(if (error == null) didFinishProcessingPhoto.fileDataRepresentation() else null, error)
+    }
+
+    // AVCam keeps each capture's delegate alive until AVFoundation's last callback for it.
+    private val photoDelegatesLock = NSLock()
+    private val photoDelegates = mutableSetOf<PhotoCaptureDelegate>()
+
+    private fun retainPhotoDelegate(delegate: PhotoCaptureDelegate) {
+        photoDelegatesLock.lock()
+        try {
+            photoDelegates += delegate
+        } finally {
+            photoDelegatesLock.unlock()
+        }
+    }
+
+    private fun releasePhotoDelegate(delegate: PhotoCaptureDelegate) {
+        photoDelegatesLock.lock()
+        try {
+            photoDelegates -= delegate
+        } finally {
+            photoDelegatesLock.unlock()
+        }
+    }
+
+    private fun deliverPhoto(data: NSData?, error: NSError?) {
         if (error != null) {
             onError?.invoke(CameraException.CaptureError(error.localizedDescription))
             return
         }
-
-        val imageData = didFinishProcessingPhoto.fileDataRepresentation()
-        onPhotoCapture?.invoke(imageData)
+        onPhotoCapture?.invoke(data)
     }
 }
