@@ -35,6 +35,7 @@ import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -60,8 +61,8 @@ import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
@@ -157,7 +158,11 @@ actual class CameraController internal constructor(
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: RecordingSession? = null
     private var recordingOutputFile: File? = null
-    private val recordingFinalizeChannel = Channel<VideoCaptureResult>(Channel.CONFLATED)
+
+    // The outcome of the current recording, completed by its Finalize however the recording ended,
+    // and kept until a stopRecording() claims it. A recording CameraX ends by itself (source
+    // inactive, disk full, a limit reached) is still reported by the next stop.
+    private var recordingOutcome: CompletableDeferred<VideoCaptureResult>? = null
 
     // VideoCapture is only bound while recording. A 16:9 VideoCapture in the photo UseCaseGroup
     // shares the ViewPort and shrinks the common field of view, so every still gets cropped/zoomed
@@ -1006,6 +1011,8 @@ actual class CameraController internal constructor(
 
             val outputFile = createVideoOutputFile(configuration)
             recordingOutputFile = outputFile
+            val outcome = CompletableDeferred<VideoCaptureResult>()
+            recordingOutcome = outcome
             val outputOptions = FileOutputOptions.Builder(outputFile).build()
 
             val hasAudioPermission = ContextCompat.checkSelfPermission(
@@ -1020,28 +1027,20 @@ actual class CameraController internal constructor(
                 withAudio = configuration.enableAudio && hasAudioPermission,
                 executor = ContextCompat.getMainExecutor(context),
             ) { event ->
-                val file = recordingOutputFile
-                if (event.hasError) {
-                    recordingFinalizeChannel.trySend(
-                        VideoCaptureResult.Error(
-                            Exception("Recording error code: ${event.error}"),
-                        ),
-                    )
-                } else {
-                    // Notify MediaStore so video appears in Gallery
-                    file?.let { notifyMediaStoreVideo(it) }
-                    recordingFinalizeChannel.trySend(
-                        VideoCaptureResult.Success(
-                            filePath = file?.absolutePath ?: "",
-                            durationMs = event.recordedDurationNanos / 1_000_000,
-                        ),
-                    )
-                }
+                outcome.complete(finalizedResult(event, outputFile))
                 recordingOutputFile = null
-                // Clear here too: a recording can finalize on error without stopRecording()
-                // being called, and a stale non-null activeRecording would permanently block
-                // ViewPort rebinds on rotation.
+                // stopRecording() clears activeRecording before it waits, so a recording that is
+                // still active here was ended by CameraX, with no stop call to restore the session.
+                val endedByCameraX = activeRecording != null
+                // Clear here too: a stale non-null activeRecording would permanently block ViewPort
+                // rebinds on rotation.
                 activeRecording = null
+                if (endedByCameraX && includeVideoUseCase && !released.value) {
+                    // Drop VideoCapture so stills are full-FOV again (#136).
+                    includeVideoUseCase = false
+                    pendingViewPortRebind = false
+                    previewView?.let { bindCamera(it) }
+                }
                 // Apply any rotation flip that was deferred while recording was in progress.
                 if (pendingViewPortRebind && !released.value) {
                     pendingViewPortRebind = false
@@ -1053,24 +1052,15 @@ actual class CameraController internal constructor(
         }
 
     actual suspend fun stopRecording(): VideoCaptureResult {
-        val recording = activeRecording ?: return VideoCaptureResult.Error(
-            IllegalStateException("No active recording"),
-        )
-        // The channel is CONFLATED, so a late finalize from a previous recording (or a previously
-        // timed-out stop) can still be buffered. Drain it so receive() below corresponds to THIS stop.
-        while (recordingFinalizeChannel.tryReceive().isSuccess) { /* discard stale finalize */ }
-
-        recording.stop()
+        val outcome = recordingOutcome
+            ?: return VideoCaptureResult.Error(IllegalStateException("No active recording"))
+        recordingOutcome = null
+        activeRecording?.stop()
         activeRecording = null
-        // Don't wait forever: if the CameraX finalize event never arrives (already finalized,
-        // dropped, etc.) this would hang the caller and leave isRecording stuck true. Also guard
-        // against cleanup() closing the channel mid-stop (receive() would throw).
-        val result = try {
-            withTimeoutOrNull(stopFinalizeTimeoutMs) { recordingFinalizeChannel.receive() }
-                ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
-        } catch (e: Exception) {
-            VideoCaptureResult.Error(e)
-        }
+        // Don't wait forever: if the CameraX finalize event never arrives this would hang the
+        // caller and leave isRecording stuck true.
+        val result = withTimeoutOrNull(stopFinalizeTimeoutMs) { outcome.await() }
+            ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
         // Drop VideoCapture and rebind back to the full-FOV photo session. Await the rebind before
         // returning: a fire-and-forget rebind lets an immediate photo (or a quick startRecording)
         // race the pending bind — capturing on the old UseCaseGroup, or the late rebind unbinding a
@@ -1080,6 +1070,29 @@ actual class CameraController internal constructor(
             previewView?.let { rebindAndAwait(it) }
         }
         return result
+    }
+
+    /**
+     * What a Finalize means for the caller. Several errors end the recording but leave a playable
+     * file (the camera was taken away, a size or duration limit or a full disk stopped it); those
+     * report the file, and the error is logged.
+     */
+    private fun finalizedResult(event: RecordingFinalized, file: File): VideoCaptureResult {
+        val playable = file.isFile && file.length() > 0
+        val keepsFile = !event.hasError || (event.error in PLAYABLE_FINALIZE_ERRORS && playable)
+        if (!keepsFile) {
+            CameraKLogger.e(TAG, "Recording failed with CameraX error ${event.error}", event.cause)
+            return VideoCaptureResult.Error(Exception("Recording error code: ${event.error}", event.cause))
+        }
+        if (event.hasError) {
+            CameraKLogger.w(TAG, "Recording ended by CameraX error ${event.error}; its file is playable", event.cause)
+        }
+        // Notify MediaStore so video appears in Gallery
+        notifyMediaStoreVideo(file)
+        return VideoCaptureResult.Success(
+            filePath = file.absolutePath,
+            durationMs = event.recordedDurationNanos / 1_000_000,
+        )
     }
 
     actual suspend fun pauseRecording() {
@@ -1237,7 +1250,7 @@ actual class CameraController internal constructor(
 
         registeredAnalyzers.clear()
         imageCaptureListeners.clear()
-        recordingFinalizeChannel.close()
+        recordingOutcome?.complete(VideoCaptureResult.Error(controllerReleased()))
 
         // A capture still in flight would otherwise wait for a callback that is now ignored.
         inFlightCaptures.toList().forEach { continuation ->
@@ -1258,6 +1271,13 @@ actual class CameraController internal constructor(
         const val CAMERAK_FOLDER = "CameraK"
 
         val Directory.isGallery: Boolean get() = this == Directory.PICTURES || this == Directory.DCIM
+
+        val PLAYABLE_FINALIZE_ERRORS = setOf(
+            VideoRecordEvent.Finalize.ERROR_SOURCE_INACTIVE,
+            VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED,
+            VideoRecordEvent.Finalize.ERROR_DURATION_LIMIT_REACHED,
+            VideoRecordEvent.Finalize.ERROR_INSUFFICIENT_STORAGE,
+        )
 
         val Directory.publicDirectoryName: String
             get() = when (this) {
