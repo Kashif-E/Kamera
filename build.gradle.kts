@@ -201,6 +201,26 @@ tasks.register("checkCredentialHygiene") {
     }
 }
 
+// A Maven Central upload is irreversible. This fails unless the publish workflow runs only for a v*
+// tag matching VERSION_NAME, after the full harness, from the protected maven-central environment.
+tasks.register("checkReleaseWorkflow") {
+    group = "verification"
+    description = "Fails if the publish workflow could upload an untested, untagged or unapproved commit"
+    val script = layout.projectDirectory.file("scripts/check_release_workflow.py").asFile
+    val root = layout.projectDirectory.asFile
+    doLast {
+        val process =
+            ProcessBuilder("python3", "-I", script.path)
+                .directory(root)
+                .redirectErrorStream(true)
+                .start()
+        val output = process.inputStream.bufferedReader().readText()
+        val exit = process.waitFor()
+        if (exit != 0) throw GradleException("Release workflow check failed (exit $exit):\n$output")
+        logger.lifecycle(output.trimEnd())
+    }
+}
+
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
 
@@ -842,6 +862,7 @@ tasks.register("verifyAll") {
             listOf(
                 ":spotlessCheck",
                 ":checkCredentialHygiene",
+                ":checkReleaseWorkflow",
                 ":checkNoIntelSimulatorTarget",
                 ":checkAndroidSdkFloor",
                 ":checkReleaseMetadata",
