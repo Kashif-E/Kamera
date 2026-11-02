@@ -14,7 +14,9 @@ import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -57,6 +59,9 @@ class OcrPlugin internal constructor(
     // Buffered (not rendezvous): trySend no longer silently drops when no consumer is parked.
     // Intentionally never closed — closing a val channel would make a later re-attach throw.
     val ocrFlow = Channel<String>(Channel.BUFFERED)
+
+    /** Text recognised in the live camera stream. */
+    val textFlow: Flow<String> = ocrFlow.receiveAsFlow()
     private var isRecognising = atomic(false)
     private var collectorJob: Job? = null
     private var recognitionHandle: RecognitionHandle? = null
