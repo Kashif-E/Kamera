@@ -14,6 +14,7 @@ import com.kashif.cameraK.enums.CameraLens
  * @property maxZoom Maximum zoom ratio.
  * @property hasFlash Whether this lens has a flash unit.
  * @property isLogical Android logical multi-camera (merges several physical lenses behind one id); false elsewhere.
+ * @property isExternal A camera attached to the device rather than built in (USB, for example).
  */
 @Immutable
 data class LensInfo(
@@ -24,6 +25,7 @@ data class LensInfo(
     val maxZoom: Float,
     val hasFlash: Boolean,
     val isLogical: Boolean,
+    val isExternal: Boolean = false,
 )
 
 /**
