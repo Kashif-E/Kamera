@@ -124,7 +124,7 @@ runtimeOnly("org.bytedeco:tesseract:5.5.1-1.5.12:macosx-arm64")     // ocrPlugin
 runtimeOnly("org.bytedeco:leptonica:1.85.0-1.5.12:macosx-arm64")    // ocrPlugin only
 ```
 
-or depend on the `-platform` artifacts (`ffmpeg-platform`, `javacpp-platform`, ...) and narrow them with the [`org.bytedeco.gradle-javacpp-platform`](https://github.com/bytedeco/gradle-javacpp) plugin, setting `javacppPlatform` (or `-Djavacpp.platform=macosx-arm64` on the Gradle command line) to the platforms you ship. Without natives, opening the camera fails with an `UnsatisfiedLinkError`. The Sample's `build.gradle.kts` adds the natives for the machine that builds it.
+or depend on the `-platform` artifacts (`ffmpeg-platform`, `javacpp-platform`, ...) and narrow them with the [`org.bytedeco.gradle-javacpp-platform`](https://github.com/bytedeco/gradle-javacpp) plugin, setting `javacppPlatform` (or `-Djavacpp.platform=macosx-arm64` on the Gradle command line) to the platforms you ship. Without natives the camera does not open: the desktop controller logs an `IllegalStateException` that names the missing bytedeco natives, caused by JavaCV's `NoClassDefFoundError` ("Could not initialize class org.bytedeco.ffmpeg.global.avutil"), and the OCR plugin's calls throw `UnsatisfiedLinkError` the first time and `NoClassDefFoundError` after that. The Sample's `build.gradle.kts` adds the natives for the machine that builds it.
 
 ## Quick Start
 

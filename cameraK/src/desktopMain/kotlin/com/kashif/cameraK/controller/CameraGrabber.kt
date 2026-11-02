@@ -152,6 +152,8 @@ class CameraGrabber(
                     throw e
                 } catch (e: Exception) {
                     errorHandler(e)
+                } catch (e: LinkageError) {
+                    errorHandler(missingNatives(e))
                 } finally {
                     owned?.let { release(it, converter) }
                     snapshots.tryEmit(null)
@@ -178,18 +180,34 @@ class CameraGrabber(
             owned.stop()
         } catch (e: Exception) {
             errorHandler(e)
+        } catch (e: LinkageError) {
+            errorHandler(missingNatives(e))
         }
         try {
             owned.release()
         } catch (e: Exception) {
             errorHandler(e)
+        } catch (e: LinkageError) {
+            errorHandler(missingNatives(e))
         }
         try {
             converter.release()
         } catch (e: Exception) {
             errorHandler(e)
+        } catch (e: LinkageError) {
+            errorHandler(missingNatives(e))
         }
     }
+
+    // CameraK ships no natives on desktop. Without them JavaCV's first native call throws
+    // NoClassDefFoundError (caused by an UnsatisfiedLinkError), an Error the catches above would miss.
+    private fun missingNatives(e: LinkageError): Throwable = IllegalStateException(
+        "CameraK could not load the bytedeco natives for ${System.getProperty("os.name")} " +
+            "${System.getProperty("os.arch")}. Desktop apps supply them: add the javacpp and ffmpeg " +
+            "classifier jars (and videoinput on Windows) for each platform you ship, or the -platform " +
+            "artifacts. See docs/getting-started/installation.md.",
+        e,
+    )
 
     private fun createGrabber(): FrameGrabber = when (getOperatingSystem()) {
         OperatingSystem.MAC -> {
