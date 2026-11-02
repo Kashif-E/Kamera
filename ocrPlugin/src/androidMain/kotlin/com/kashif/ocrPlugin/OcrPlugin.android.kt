@@ -62,7 +62,7 @@ internal suspend fun extractText(bitmap: ImageBitmap, newRecognizer: () -> Bitma
             val recognizer = newRecognizer()
             try {
                 val extractedText = recognizer.recognize(bitmap.asAndroidBitmap()).await()
-                CameraKLogger.d("TextRecognition", "Text extracted successfully: ${extractedText.take(100)}...")
+                CameraKLogger.d("TextRecognition", "Text extracted, length=${extractedText.length}")
                 extractedText
             } finally {
                 recognizer.close()
