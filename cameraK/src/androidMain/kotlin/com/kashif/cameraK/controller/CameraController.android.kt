@@ -1121,7 +1121,11 @@ actual class CameraController internal constructor(
 
             val outputFile = createVideoOutputFile(configuration)
             val outcome = CompletableDeferred<VideoCaptureResult>()
-            val outputOptions = FileOutputOptions.Builder(outputFile).build()
+            // CameraX stops at either limit and finalizes a playable file (see PLAYABLE_FINALIZE_ERRORS).
+            val outputOptions = FileOutputOptions.Builder(outputFile)
+                .setDurationLimitMillis(configuration.maxDurationMs.coerceAtLeast(0L))
+                .setFileSizeLimit(configuration.maxFileSizeBytes.coerceAtLeast(0L))
+                .build()
 
             val hasAudioPermission = ContextCompat.checkSelfPermission(
                 context,
