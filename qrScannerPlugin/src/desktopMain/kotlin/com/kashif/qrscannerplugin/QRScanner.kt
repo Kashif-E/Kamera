@@ -23,9 +23,9 @@ import java.util.concurrent.locks.ReentrantLock
 class QRScanner internal constructor(
     private val clock: () -> Long,
     private val decoder: QrFrameDecoder,
-    private val scanIntervalMs: Long = DEFAULT_SCAN_INTERVAL_MS,
+    private val scanIntervalMs: Long = DEFAULT_QR_SCAN_INTERVAL_MS,
 ) {
-    constructor(scanIntervalMs: Long = DEFAULT_SCAN_INTERVAL_MS) : this(
+    constructor(scanIntervalMs: Long = DEFAULT_QR_SCAN_INTERVAL_MS) : this(
         System::currentTimeMillis,
         ZxingQrFrameDecoder(),
         scanIntervalMs,
@@ -83,8 +83,6 @@ class QRScanner internal constructor(
     }
 
     private companion object {
-        const val DEFAULT_SCAN_INTERVAL_MS = 200L
-
         // ZXing's TRY_HARDER pass costs several fast passes; one attempt in this many uses it.
         const val SLOW_PASS_EVERY = 5L
 

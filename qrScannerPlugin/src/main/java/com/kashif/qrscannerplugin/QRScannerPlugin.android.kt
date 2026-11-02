@@ -142,16 +142,8 @@ internal class QRCodeAnalyzer(
 
     private var lastScannedCode: String? = null
     private var lastScanTime: Long = 0
-    private val scanDebounceMs = 1000L
 
-    // Inverted (white-on-black) codes are uncommon, and the retry costs a second full ZXing
-    // decode. Only attempt it every Nth frame so normal scanning isn't doing two decodes on
-    // every empty frame — still catches an inverted code within a few frames (#116).
     private var frameCount = 0L
-    private val invertedRetryEveryNFrames = 3
-
-    // ZXing's TRY_HARDER pass costs several fast passes; one frame in this many uses it.
-    private val slowPassEveryNFrames = 5
 
     // The Y plane is copied here, reused while frames keep their size: analysis runs at frame rate.
     private var luma = ByteArray(0)
@@ -203,7 +195,7 @@ internal class QRCodeAnalyzer(
         // Outside the try: an exception from the consumer's callback is the consumer's, not an empty frame.
         if (text != null) {
             val currentTime = System.currentTimeMillis()
-            if (text != lastScannedCode || (currentTime - lastScanTime) > scanDebounceMs) {
+            if (text != lastScannedCode || (currentTime - lastScanTime) > SAME_CODE_DEBOUNCE_MS) {
                 CameraKLogger.d("QRScanner", "QR Code detected")
                 lastScannedCode = text
                 lastScanTime = currentTime
@@ -242,10 +234,10 @@ internal class QRCodeAnalyzer(
             )
 
         frameCount++
-        val tryHarder = frameCount % slowPassEveryNFrames == 0L
+        val tryHarder = frameCount % SLOW_PASS_EVERY == 0L
         return decoder.decode(frame, tryHarder, inverted = false)
             // Periodic inverted pass for white-on-black / light-on-dark codes (#116).
-            ?: if (frameCount % invertedRetryEveryNFrames == 0L) {
+            ?: if (frameCount % INVERTED_RETRY_EVERY == 0L) {
                 decoder.decode(frame, tryHarder, inverted = true)
             } else {
                 null
@@ -253,6 +245,17 @@ internal class QRCodeAnalyzer(
     }
 
     private companion object {
+        // A code held in view is reported again after this long, not on every decoded frame.
+        const val SAME_CODE_DEBOUNCE_MS = 1000L
+
+        // Inverted (white-on-black) codes are uncommon, and the retry costs a second full ZXing
+        // decode. Only attempt it every Nth frame so normal scanning isn't doing two decodes on
+        // every empty frame — still catches an inverted code within a few frames (#116).
+        const val INVERTED_RETRY_EVERY = 3L
+
+        // ZXing's TRY_HARDER pass costs several fast passes; one frame in this many uses it.
+        const val SLOW_PASS_EVERY = 5L
+
         const val LOG_FAILURE_EVERY = 100L
     }
 }

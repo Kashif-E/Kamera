@@ -45,7 +45,6 @@ class OCRProcessor internal constructor(
     private val api = library.newEngine()
     private val lock = ReentrantLock()
     private var lastProcessTime = 0L
-    private val processInterval = 200L
 
     // Guarded by lock: set by close(), after which nothing calls into Tesseract.
     private var isClosed = false
@@ -90,7 +89,7 @@ class OCRProcessor internal constructor(
         return try {
             if (isClosed) return null
             val currentTime = clock()
-            if (currentTime - lastProcessTime < processInterval) {
+            if (currentTime - lastProcessTime < MIN_SCAN_INTERVAL_MS) {
                 return null
             }
 
@@ -167,6 +166,10 @@ class OCRProcessor internal constructor(
         }
     }
 }
+
+// A processor scans at most once per this many milliseconds, counted from its last successful scan.
+// Live OCR is also gated by OcrConfig.maxFps before a frame reaches the processor.
+private const val MIN_SCAN_INTERVAL_MS = 200L
 
 actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig): String =
     extractText(bitmap.toAwtImage()) { OCRProcessor(config) }

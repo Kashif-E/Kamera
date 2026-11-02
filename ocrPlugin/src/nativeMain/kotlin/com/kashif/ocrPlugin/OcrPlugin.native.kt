@@ -350,7 +350,7 @@ class VideoDataDelegate(private val onText: (String) -> Unit, maxFps: Int = DEFA
                     val candidate = topCandidates.objectAtIndex(0uL) as? VNRecognizedText
                     val confidence = candidate?.confidence ?: 0.0f
 
-                    if (confidence > 0.3f) {
+                    if (confidence > MIN_LIVE_CONFIDENCE) {
                         candidate?.string?.let { text ->
                             if (text.isNotBlank()) {
                                 recognizedStrings.add(text)
@@ -392,9 +392,19 @@ internal fun liveTextRequest(onComplete: (VNRequest?, NSError?) -> Unit): VNReco
     VNRecognizeTextRequest(onComplete).apply {
         recognitionLevel = VNRequestTextRecognitionLevelFast
         usesLanguageCorrection = false
-        minimumTextHeight = 0.1f
-        recognitionLanguages = listOf("en-US")
+        minimumTextHeight = MIN_LIVE_TEXT_HEIGHT
+        recognitionLanguages = listOf(LIVE_LANGUAGE)
     }
+
+// Live candidates below this confidence are dropped: at the fast level they are mostly noise.
+private const val MIN_LIVE_CONFIDENCE = 0.3f
+
+// Text shorter than this fraction of the frame height is ignored, which skips the small print
+// Vision misreads in live frames and saves time on each one.
+private const val MIN_LIVE_TEXT_HEIGHT = 0.1f
+
+// Live recognition reads English, as Android's Latin ML Kit model and desktop's eng model do.
+private const val LIVE_LANGUAGE = "en-US"
 
 /**
  * The video output live OCR reads frames from, before its sample-buffer delegate is set. Frames come

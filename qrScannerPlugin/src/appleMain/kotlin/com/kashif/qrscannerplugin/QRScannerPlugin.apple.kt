@@ -145,7 +145,6 @@ private class CodeAnalyzer(private val onCodeScanned: (ScannedCode) -> Unit) :
     AVCaptureMetadataOutputObjectsDelegateProtocol {
     private val isProcessing = atomic(false)
     private val scope = CoroutineScope(Dispatchers.Main)
-    private val debounceMs = 500L
 
     /**
      * Processes metadata objects detected by the camera.
@@ -178,7 +177,7 @@ private class CodeAnalyzer(private val onCodeScanned: (ScannedCode) -> Unit) :
             scope.launch {
                 try {
                     onCodeScanned(code)
-                    delay(debounceMs)
+                    delay(CODE_DEBOUNCE_MS)
                 } finally {
                     isProcessing.value = false
                 }
@@ -191,3 +190,7 @@ private class CodeAnalyzer(private val onCodeScanned: (ScannedCode) -> Unit) :
         scope.cancel()
     }
 }
+
+// The metadata output reports a code on every frame it is in view; after delivering one, the
+// delegate ignores codes for this long.
+private const val CODE_DEBOUNCE_MS = 500L

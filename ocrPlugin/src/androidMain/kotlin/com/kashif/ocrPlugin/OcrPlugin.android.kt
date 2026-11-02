@@ -165,8 +165,7 @@ internal class TextRecognitionAnalyzer(
                         CameraKLogger.d("TextRecognition", "Text recognised, length=${text.length}")
                         onTextRecognized(text)
 
-                        // Clear cache periodically to avoid memory buildup
-                        if (processedTexts.size > 50) {
+                        if (processedTexts.size > MAX_REMEMBERED_TEXTS) {
                             processedTexts.clear()
                         }
                     }
@@ -181,6 +180,12 @@ internal class TextRecognitionAnalyzer(
             onError(e)
             imageProxy.close()
         }
+    }
+
+    private companion object {
+        // Texts already delivered are remembered so the same text is not delivered on every frame it
+        // stays in view; past this many the set is cleared, so it cannot grow for the whole session.
+        const val MAX_REMEMBERED_TEXTS = 50
     }
 
     fun shutdown() {
