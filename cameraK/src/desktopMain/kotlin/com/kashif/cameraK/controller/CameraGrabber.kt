@@ -25,6 +25,7 @@ import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
 import org.bytedeco.javacv.VideoInputFrameGrabber
 import java.awt.image.BufferedImage
+import java.io.File
 import java.util.WeakHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -256,7 +257,7 @@ class CameraGrabber(
         }
         OperatingSystem.LINUX -> {
             // Prefer /dev/video0 but fall back to the first available readable device (#52, #53)
-            val videoDevice = findBestVideoDevice()
+            val videoDevice = findBestVideoDevice(File("/dev"), File("/sys/class/video4linux"))
             CameraKLogger.d("CameraK", "Using video device: $videoDevice")
             FFmpegFrameGrabber(videoDevice)
         }
@@ -268,22 +269,6 @@ class CameraGrabber(
         imageHeight = height
     }
 
-    private fun findBestVideoDevice(): String {
-        val defaultDevice = "/dev/video0"
-        val defaultFile = java.io.File(defaultDevice)
-
-        if (defaultFile.exists() && defaultFile.canRead()) return defaultDevice
-
-        val devDir = java.io.File("/dev")
-        val candidates =
-            devDir
-                .listFiles { file ->
-                    file.name.startsWith("video") && file.canRead()
-                }?.sortedBy { it.name } ?: emptyList()
-
-        return candidates.firstOrNull()?.absolutePath ?: defaultDevice
-    }
-
     private fun getOperatingSystem(): OperatingSystem {
         val os = System.getProperty("os.name").lowercase()
         return when {
@@ -292,6 +277,23 @@ class CameraGrabber(
             else -> OperatingSystem.LINUX
         }
     }
+}
+
+/**
+ * The V4L2 device the default camera opens on Linux: [devDir]/video0 if it is readable, else the
+ * first readable video node. [sysDir] is the kernel's video4linux class folder.
+ */
+internal fun findBestVideoDevice(devDir: File, sysDir: File): String {
+    val defaultFile = File(devDir, "video0")
+    if (defaultFile.exists() && defaultFile.canRead()) return defaultFile.path
+
+    val candidates =
+        devDir
+            .listFiles { file ->
+                file.name.startsWith("video") && file.canRead()
+            }?.sortedBy { it.name } ?: emptyList()
+
+    return candidates.firstOrNull()?.path ?: defaultFile.path
 }
 
 /**
