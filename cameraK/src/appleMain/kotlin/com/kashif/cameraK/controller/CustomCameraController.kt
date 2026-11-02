@@ -30,7 +30,6 @@ import platform.darwin.dispatch_get_specific
 import platform.darwin.dispatch_queue_create
 import platform.darwin.dispatch_queue_set_specific
 import platform.darwin.dispatch_sync
-import kotlin.collections.emptyList
 import kotlin.concurrent.Volatile
 
 private const val TAG = "CameraK"
@@ -337,14 +336,6 @@ class CustomCameraController(
         if (!usesMaxPhotoDimensions) photoOutput?.setHighResolutionCaptureEnabled(highResolution)
         avQualityPrioritization?.let { photoOutput?.setMaxPhotoQualityPrioritization(it) }
 
-        photoOutput?.let { output ->
-            photoCapturer.prepare(output, emptyList()) { _, error ->
-                if (error != null) {
-                    onError?.invoke(CameraException.ConfigurationError(error.localizedDescription))
-                }
-            }
-        }
-
         if (session?.canAddOutput(photoOutput!!) == true) {
             session?.addOutput(photoOutput!!)
         } else {
@@ -552,6 +543,7 @@ class CustomCameraController(
                 ops.startRunning()
                 // A torch set before the session ran does not survive its start.
                 applyConfiguredTorch()
+                preparePhotoOutput()
             }
         }
     }
@@ -628,10 +620,12 @@ class CustomCameraController(
      * a capture turns off a mode the device lacks (devices without a flash, such as iPads).
      */
     fun setFlashMode(mode: AVCaptureFlashMode) {
+        val before = supportedFlashMode(flashMode)
         flashMode = mode
         if (photoOutput != null && supportedFlashMode(mode) != mode) {
             CameraKLogger.w(TAG, "CameraK: flash mode $mode is not supported on this device; captures use OFF")
         }
+        if (supportedFlashMode(mode) != before) dispatch_async(sessionQueue) { preparePhotoOutput() }
     }
 
     fun setTorchMode(mode: AVCaptureTorchMode) {
@@ -901,6 +895,23 @@ class CustomCameraController(
         isUsingFrontCamera = camera.isFront
         applyPreviewMirroring()
         applyMaxPhotoDimensions()
+        preparePhotoOutput()
+    }
+
+    /**
+     * Has the photo output allocate its capture buffers now for the settings captures use, rather
+     * than on the first shutter press. Runs on the session queue while the session runs: after it
+     * starts, after a camera swap, and when the flash mode captures use changes.
+     */
+    private fun preparePhotoOutput() {
+        val output = photoOutput ?: return
+        if (session?.isRunning != true) return
+        photoCapturer.prepare(output, listOf(photoSettings())) { _, error ->
+            if (error != null) {
+                CameraKLogger.e(TAG, "CameraK: preparing the photo output failed: ${error.domain} ${error.code}")
+                reportError(CameraException.ConfigurationError("Preparing the photo output failed"))
+            }
+        }
     }
 
     /**
