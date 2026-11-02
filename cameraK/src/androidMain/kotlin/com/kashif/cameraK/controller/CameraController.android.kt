@@ -62,8 +62,10 @@ import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.*
@@ -953,26 +955,35 @@ actual class CameraController internal constructor(
         if (activeRecording != null) throw IllegalStateException("A recording is already in progress")
         // VideoCapture is bound lazily (it isn't part of the photo session — see includeVideoUseCase).
         // Bind it now and wait for the rebind before recording.
-        if (videoCapture == null) {
+        val videoBind = if (videoCapture == null) {
             val pv = previewView ?: throw IllegalStateException("Camera preview not ready for recording")
             pendingVideoQuality = configuration.quality
             includeVideoUseCase = true
-            // Wait for the rebind, but don't hang forever if it fails (bindCamera only invokes
-            // onCameraReady on success). On timeout, startRecordingInternal reports a clean error.
-            withTimeoutOrNull(stopFinalizeTimeoutMs) {
-                suspendCancellableCoroutine<Unit> { c -> bindCamera(pv) { if (c.isActive) c.resume(Unit) } }
-            }
+            pv
+        } else {
+            null
         }
         return try {
+            // Don't hang forever if the bind fails (bindCamera only invokes onCameraReady on
+            // success). On timeout, startRecordingInternal reports a clean error.
+            videoBind?.let { rebindAndAwait(it) }
             startRecordingInternal(configuration)
         } catch (e: Exception) {
-            // Recording never started — drop the lazily-bound VideoCapture and rebind, otherwise the
-            // flag stays set and every later photo silently reverts to the cropped FOV (#136).
+            // Recording never started, whether it failed or the caller was cancelled during the bind:
+            // drop the lazily-bound VideoCapture and rebind, otherwise the flag stays set and every
+            // later photo silently reverts to the cropped FOV (#136).
             if (includeVideoUseCase) {
                 includeVideoUseCase = false
-                previewView?.let { bindCamera(it) }
+                withContext(NonCancellable) { previewView?.let { rebindAndAwait(it) } }
             }
             throw e
+        }
+    }
+
+    /** Rebinds and waits for the bind to finish, for at most [stopFinalizeTimeoutMs]. */
+    private suspend fun rebindAndAwait(previewView: PreviewView) {
+        withTimeoutOrNull(stopFinalizeTimeoutMs) {
+            suspendCancellableCoroutine<Unit> { c -> bindCamera(previewView) { if (c.isActive) c.resume(Unit) } }
         }
     }
 
@@ -1062,11 +1073,7 @@ actual class CameraController internal constructor(
         // freshly-started recording's use cases.
         if (includeVideoUseCase) {
             includeVideoUseCase = false
-            previewView?.let { pv ->
-                withTimeoutOrNull(stopFinalizeTimeoutMs) {
-                    suspendCancellableCoroutine<Unit> { c -> bindCamera(pv) { if (c.isActive) c.resume(Unit) } }
-                }
-            }
+            previewView?.let { rebindAndAwait(it) }
         }
         return result
     }
