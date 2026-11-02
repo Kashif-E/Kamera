@@ -523,9 +523,10 @@ tasks.register("checkAndroidSdkFloor") {
 }
 
 // Every published module carries the same version, group, compileSdk and shared POM metadata, the Gradle
-// coordinates equal the published ones (so includeBuild substitution works), the version has a
-// CHANGELOG.md section, and the docs install that version. It reads the POM each module would
+// group and version equal the published ones, a BOM pins every library at that version, the version has
+// a CHANGELOG.md section, and the docs install that version. It reads the POM each module would
 // publish, so it checks what consumers get rather than what a build script says.
+val bomModule = "camerak-bom"
 val sharedPomFields = listOf("groupId", "version", "url", "inceptionYear", "licenses", "developers", "scm")
 val perModulePomFields = listOf("artifactId", "name", "description")
 val installSnippet = Regex("""io\.github\.kashif-mehmood-km:([A-Za-z0-9_.-]+):([0-9][A-Za-z0-9_.-]*)""")
@@ -561,9 +562,12 @@ tasks.register("checkReleaseMetadata") {
         libraryModules.associateWith {
             project(":$it").layout.buildDirectory.file("publications/kotlinMultiplatform/pom-default.xml")
         }
+    val bomProject = findProject(":$bomModule")
+    if (bomProject != null) dependsOn(":$bomModule:generatePomFileForMavenPublication")
+    val bomPomFile = bomProject?.layout?.buildDirectory?.file("publications/maven/pom-default.xml")
     val gradleCoordinates =
         provider {
-            libraryModules.associateWith {
+            (libraryModules + listOfNotNull(bomProject?.name)).associateWith {
                 project(":$it").let { p ->
                     "${p.group}:${p.version}"
                 }
@@ -572,15 +576,51 @@ tasks.register("checkReleaseMetadata") {
     val compileSdks = provider { androidModules.associateWith { androidSettings(project(":$it")).compileSdk } }
     val root = layout.projectDirectory.asFile
     doLast {
-        val poms =
-            pomFiles.mapValues { (_, file) ->
-                javax.xml.parsers.DocumentBuilderFactory
-                    .newInstance()
-                    .newDocumentBuilder()
-                    .parse(file.get().asFile)
-                    .documentElement
-            }
+        fun parsePom(file: File) =
+            javax.xml.parsers.DocumentBuilderFactory
+                .newInstance()
+                .newDocumentBuilder()
+                .parse(file)
+                .documentElement
+        val libraryPoms = pomFiles.mapValues { (_, file) -> parsePom(file.get().asFile) }
+        val bomPom = bomPomFile?.get()?.asFile?.let(::parsePom)
+        val poms = libraryPoms + listOfNotNull(bomPom?.let { bomModule to it })
         val problems = mutableListOf<String>()
+        if (bomPom == null) {
+            problems += "no :$bomModule module publishes a BOM, so consumers can mix core and plugin versions"
+        } else {
+            if (pomField(bomPom, "packaging") != "pom") {
+                problems += "$bomModule: POM packaging is ${pomField(bomPom, "packaging")}, not pom"
+            }
+            val managed =
+                bomPom
+                    .getElementsByTagName("dependencyManagement")
+                    .let { if (it.length == 0) null else it.item(0) as org.w3c.dom.Element }
+                    ?.getElementsByTagName("dependency")
+                    ?.let { dependencies ->
+                        (0 until dependencies.length).map { index ->
+                            val dependency = dependencies.item(index) as org.w3c.dom.Element
+                            listOf("groupId", "artifactId", "version").joinToString(":") { tag ->
+                                dependency
+                                    .getElementsByTagName(tag)
+                                    .item(0)
+                                    ?.textContent
+                                    ?.trim() ?: "<missing>"
+                            }
+                        }
+                    }.orEmpty()
+                    .toSet()
+            val expected =
+                libraryPoms.values
+                    .map {
+                        listOf(
+                            "groupId",
+                            "artifactId",
+                            "version",
+                        ).joinToString(":") { field -> pomField(it, field) }
+                    }.toSet()
+            if (managed != expected) problems += "$bomModule manages $managed, but the published modules are $expected"
+        }
         sharedPomFields.forEach { field ->
             val values = poms.mapValues { (_, pom) -> pomField(pom, field) }
             if (values.values.toSet().size > 1) {
