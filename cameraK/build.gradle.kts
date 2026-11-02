@@ -44,8 +44,6 @@ kotlin {
             api(compose.ui)
             api(compose.material3)
             api(compose.foundation)
-            api(libs.coil3.compose)
-            api(libs.coil3.ktor)
             api(libs.atomicfu)
         }
 

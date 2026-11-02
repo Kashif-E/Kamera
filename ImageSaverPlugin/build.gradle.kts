@@ -29,6 +29,13 @@ kotlin {
         val desktopMain by getting
         commonMain.dependencies {
             api(projects.cameraK)
+            // coil3.PlatformContext is in rememberImageSaverPlugin's and the factory's signatures.
+            api(libs.coil3.core)
+            implementation(libs.coil3.compose.core)
+        }
+
+        appleMain.dependencies {
+            implementation(libs.kotlinx.io.core)
         }
 
         commonTest.dependencies {

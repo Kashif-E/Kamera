@@ -16,6 +16,7 @@ agp = "8.13.2"
 dokka = "2.2.0"
 spotless = "8.10.4"
 kotlinx-coroutines = "1.11.0"
+kotlinx-io = "0.9.0"
 kermit = "2.2.0"
 
 compose-multiplatform = "1.11.1"
@@ -59,13 +60,12 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
 kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }
 composeGradle = { module = "org.jetbrains.compose:compose-gradle-plugin", version.ref = "compose-multiplatform" }
 
-coil3 = { module = "io.coil-kt.coil3:coil", version.ref = "coil-mp-version" }
-coil3-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil-mp-version" }
+coil3-core = { module = "io.coil-kt.coil3:coil-core", version.ref = "coil-mp-version" }
 coil3-compose-core = { module = "io.coil-kt.coil3:coil-compose-core", version.ref = "coil-mp-version" }
-coil3-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil-mp-version" }
 androidx-activityCompose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
 lucide-icons-cmp = { module = "com.composables:icons-lucide-cmp", version.ref = "lucide-icons" }
 
