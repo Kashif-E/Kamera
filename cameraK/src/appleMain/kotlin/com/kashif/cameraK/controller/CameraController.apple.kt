@@ -13,9 +13,7 @@ import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.MemoryManager
-import com.kashif.cameraK.utils.fixOrientation
 import com.kashif.cameraK.utils.toByteArray
-import com.kashif.cameraK.utils.toUIImage
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
@@ -63,10 +61,10 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
+import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.timeIntervalSince1970
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientationDidChangeNotification
-import platform.UIKit.UIImagePNGRepresentation
 import platform.UIKit.UIViewController
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_HIGH
 import platform.darwin.dispatch_async
@@ -438,13 +436,18 @@ actual class CameraController internal constructor(
     @OptIn(ExperimentalForeignApi::class)
     private fun writePhoto(image: NSData): String? {
         val filePath = createTempFile()
-        val written = if (imageFormat == ImageFormat.JPEG) {
-            image
+        if (imageFormat == ImageFormat.JPEG) {
+            if (!writeDataToFile(image, filePath)) return null
+            processImageCapture(image)
         } else {
-            UIImagePNGRepresentation(image.toUIImage().fixOrientation())
+            if (!writePng(image, filePath)) {
+                CameraKLogger.e("CameraK", "CameraK: ImageIO could not write the photo as PNG")
+                return null
+            }
+            // Listeners take the PNG's bytes, read back once ImageIO has released the decoded photo.
+            NSData.dataWithContentsOfFile(filePath)?.let(::processImageCapture)
+                ?: CameraKLogger.e("CameraK", "CameraK: reading the PNG back for image-capture listeners failed")
         }
-        if (written == null || !writeDataToFile(written, filePath)) return null
-        processImageCapture(written)
         return filePath
     }
 
