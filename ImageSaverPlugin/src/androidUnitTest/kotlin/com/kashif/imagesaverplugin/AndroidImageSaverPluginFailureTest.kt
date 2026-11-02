@@ -14,6 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.util.function.Supplier
@@ -28,8 +29,12 @@ import kotlin.test.assertSame
  * WRITE_EXTERNAL_STORAGE below API 29, IllegalArgumentException for a rejected insert. They must not
  * escape the save (the auto-save coroutine would crash the host), and a row inserted as IS_PENDING
  * must not be left behind.
+ *
+ * These cases fake the API 29+ MediaStore (VOLUME_EXTERNAL_PRIMARY, IS_PENDING), so they run at 35
+ * only; [AndroidImageSaverPluginDirectoryTest] covers the save below API 29, down to minSdk.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class AndroidImageSaverPluginFailureTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val mediaStore = Robolectric.setupContentProvider(FakeMediaStore::class.java, MediaStore.AUTHORITY)

@@ -45,6 +45,9 @@ import kotlin.test.assertTrue
  * Below API 29 there is no RELATIVE_PATH: MediaStore names the file itself under `Pictures/` unless
  * the row carries an absolute DATA path, so without one the directory and folder are ignored. With a
  * DATA path, MediaStore opens that file for the write; [writesToItsFile] does the same.
+ *
+ * The API 29+ cases pin SDK 35. The below-29 cases run at 28 and at the library's minSdk
+ * (OLDEST_SDK), the oldest Android this path has to work on.
  */
 @RunWith(RobolectricTestRunner::class)
 class AndroidImageSaverPluginDirectoryTest {
@@ -60,6 +63,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
+    @Config(sdk = [35])
     fun save_toDocuments_landsInTheDocumentsFolder() = runTest {
         val plugin = pluginFor(Directory.DOCUMENTS, customFolderName = "Scans")
         val row = firstRowOf(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY))
@@ -76,6 +80,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
+    @Config(sdk = [35])
     fun save_toDcim_staysInTheImagesCollection() = runTest {
         val plugin = pluginFor(Directory.DCIM, customFolderName = null)
         val row = firstRowOf(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY))
@@ -88,7 +93,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_writesIntoTheConfiguredDirectoryAndFolder() = runTest {
         val plugin = pluginFor(Directory.DOCUMENTS, customFolderName = "Scans")
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
@@ -102,7 +107,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_usesTheDefaultFolderLikeApi29AndAbove() = runTest {
         val plugin = pluginFor(Directory.PICTURES, customFolderName = null)
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
@@ -115,7 +120,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_keepsAnExistingFileWithTheSameName() = runTest {
         val plugin = pluginFor(Directory.PICTURES, customFolderName = "Album")
         val existing = File(publicDirectory(Environment.DIRECTORY_PICTURES), "Album/shot.jpg").apply {
@@ -133,7 +138,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_writesTheBytesIntoTheFileItNames() = runTest {
         val plugin = pluginFor(Directory.DCIM, customFolderName = "Trip")
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
@@ -151,7 +156,7 @@ class AndroidImageSaverPluginDirectoryTest {
      * two saves of the same name can run at once. Each must end up in its own file.
      */
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_concurrentSavesWithTheSameName_neverShareAFile() = runTest {
         File(publicDirectory(Environment.DIRECTORY_PICTURES), "Burst").mkdirs()
 
@@ -161,7 +166,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_concurrentSavesIntoAMissingFolder_bothSucceed() = runTest {
         val paths = saveConcurrently(pluginFor(Directory.PICTURES, customFolderName = "NewAlbum"))
 
@@ -192,7 +197,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_nameWithPathSeparators_staysInTheConfiguredFolder() = runTest {
         val plugin = pluginFor(Directory.PICTURES, customFolderName = "Inside")
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
@@ -207,7 +212,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_whenTheFolderCannotBeCreated_failsLogsAndInsertsNothing() = runTest {
         // A plain file where the folder should be makes mkdirs fail, as a missing permission does.
         File(publicDirectory(Environment.DIRECTORY_PICTURES), "Blocked").apply {
@@ -224,7 +229,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_whenTheInsertIsRejected_leavesNoFileBehind() = runTest {
         mediaStore.insertFailure = IllegalArgumentException("rejected")
 
@@ -236,7 +241,7 @@ class AndroidImageSaverPluginDirectoryTest {
     }
 
     @Test
-    @Config(sdk = [28])
+    @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_whenTheWriteFails_leavesNoFileAndNoRow() = runTest {
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         writesTo(row) { throw IOException("disk full") }

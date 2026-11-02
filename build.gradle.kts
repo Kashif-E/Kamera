@@ -340,6 +340,11 @@ subprojects {
         }
     val settings = provider { androidSettings(project) }
     val isLibrary = name in libraryModules
+    val robolectricProperties =
+        layout.projectDirectory
+            .file(
+                "src/androidUnitTest/resources/robolectric.properties",
+            ).asFile
     tasks.register("checkAndroidSdkFloor") {
         group = "verification"
         description = "Fails if a dependency's manifest needs a higher minSdk than this module declares"
@@ -354,6 +359,24 @@ subprojects {
                 ).toMutableList()
             if (isLibrary && !settings.get().includesAndroidResourcesInUnitTests) {
                 problems += "unit tests do not include Android resources, so their manifest merge never checks minSdk"
+            }
+            // Robolectric decodes OLDEST_SDK to the merged unit-test manifest's minSdk, so a suite that
+            // lists it runs every test that does not pin its own SDK at the declared floor.
+            if (isLibrary) {
+                val sdks =
+                    robolectricProperties
+                        .takeIf(File::isFile)
+                        ?.let { file -> java.util.Properties().apply { file.reader().use(::load) } }
+                        ?.getProperty("sdk")
+                        ?.split(',')
+                        ?.map(String::trim)
+                if (sdks == null || ("OLDEST_SDK" !in sdks && declared.toString() !in sdks)) {
+                    problems +=
+                        "Robolectric tests never run at minSdk $declared: ${robolectricProperties.relativeTo(
+                            rootDir,
+                        )} " +
+                        "sets sdk=${sdks?.joinToString(",") ?: "<missing>"}; list OLDEST_SDK"
+                }
             }
             check(problems.isEmpty()) { "$path declares minSdk $declared, but:\n" + problems.joinToString("\n") }
         }
@@ -370,9 +393,78 @@ val documentedMinSdk =
         Regex("""Ensure you're using API (\d+)"""),
         Regex("""minSdk(?: is|\s*=)\s*(\d+)"""),
     )
+// The floor rule run against hand-made AARs. A declared minSdk is wrong if any dependency needs more,
+// and also if it is above the highest minSdk the module ships with: the floor is what the graph
+// needs, not a number that merely clears it.
+tasks.register("checkAndroidSdkFloorRules") {
+    group = "verification"
+    description = "Runs the minSdk floor rule against fixture AARs"
+    val fixtures = layout.buildDirectory.dir("sdk-floor-fixtures")
+    doLast {
+        val dir =
+            fixtures.get().asFile.apply {
+                deleteRecursively()
+                mkdirs()
+            }
+
+        fun aar(
+            name: String,
+            minSdk: Int,
+        ): Pair<String, File> {
+            val file = File(dir, "$name-$minSdk.aar")
+            java.util.zip.ZipOutputStream(file.outputStream()).use { zip ->
+                zip.putNextEntry(java.util.zip.ZipEntry("AndroidManifest.xml"))
+                val namespace = "http://schemas.android.com/apk/res/android"
+                zip.write(
+                    (
+                        "<manifest xmlns:android=\"$namespace\" package=\"fixture.$name\">" +
+                            "<uses-sdk android:minSdkVersion=\"$minSdk\" /></manifest>"
+                    ).toByteArray(),
+                )
+                zip.closeEntry()
+            }
+            return "fixture:$name:1.0" to file
+        }
+        val core = aar("core", 21)
+        val camera = aar("camera", 23)
+        val cases =
+            listOf(
+                Triple("declared below a shipped dependency", 21, mapOf(shippedClasspath to listOf(core, camera))) to
+                    false,
+                Triple(
+                    "declared below a unit-test dependency",
+                    23,
+                    mapOf(shippedClasspath to listOf(camera), unitTestClasspath to listOf(aar("runner", 26))),
+                ) to false,
+                Triple(
+                    "declared equal to the shipped floor",
+                    23,
+                    mapOf(shippedClasspath to listOf(core, camera), unitTestClasspath to listOf(aar("junit", 19))),
+                ) to true,
+                Triple(
+                    "declared above the shipped floor",
+                    26,
+                    mapOf(shippedClasspath to listOf(core, camera)),
+                ) to false,
+            )
+        val wrong =
+            cases.mapNotNull { (case, accepted) ->
+                val (name, declared, aars) = case
+                val problems = sdkFloorProblems(declared, aars)
+                when {
+                    accepted && problems.isNotEmpty() -> "$name (minSdk $declared): rejected with $problems"
+                    !accepted && problems.isEmpty() -> "$name (minSdk $declared): accepted"
+                    else -> null
+                }
+            }
+        check(wrong.isEmpty()) { "The minSdk floor rule is wrong:\n" + wrong.joinToString("\n") }
+    }
+}
+
 tasks.register("checkAndroidSdkFloor") {
     group = "verification"
     description = "Fails if the libraries' minSdk values disagree, or the Sample or the docs use another one"
+    dependsOn("checkAndroidSdkFloorRules")
     dependsOn(androidModules.map { ":$it:checkAndroidSdkFloor" })
     val declared = provider { androidModules.associateWith { androidSettings(project(":$it")).minSdk } }
     val root = layout.projectDirectory.asFile
