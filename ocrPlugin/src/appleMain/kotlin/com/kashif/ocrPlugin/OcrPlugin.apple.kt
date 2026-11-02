@@ -70,6 +70,7 @@ import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_queue_create
 import platform.darwin.dispatch_queue_t
+import kotlin.concurrent.AtomicInt
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
 
@@ -327,44 +328,48 @@ class VideoDataDelegate internal constructor(
     }
 
     private fun processFrame(sampleBuffer: CMSampleBufferRef) {
+        val frame = InFlightFrame(sampleBuffer)
         try {
-            val pixelBuffer =
-                CMSampleBufferGetImageBuffer(sampleBuffer) ?: run {
-                    cleanupAndRelease(sampleBuffer)
-                    return
-                }
-
-            val ciImage =
-                CIImage.imageWithCVPixelBuffer(pixelBuffer) ?: run {
-                    cleanupAndRelease(sampleBuffer)
-                    return
-                }
+            val pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) ?: return frame.release()
+            val ciImage = CIImage.imageWithCVPixelBuffer(pixelBuffer) ?: return frame.release()
+            val framePixels = ciImage.pixelBuffer ?: return frame.release()
 
             val request =
                 liveTextRequest { vnRequest, error ->
+                    frame.answered = true
                     if (error != null) {
-                        cleanupAndRelease(sampleBuffer)
+                        CameraKLogger.e(TAG, "Live text recognition failed for a frame", VisionException(error))
+                        frame.release()
                         return@liveTextRequest
                     }
 
-                    handleRecognitionResults(vnRequest?.results as? NSArray, sampleBuffer)
+                    handleRecognitionResults(vnRequest?.results as? NSArray, frame)
                 }
 
-            val framePixels =
-                ciImage.pixelBuffer ?: run {
-                    cleanupAndRelease(sampleBuffer)
-                    return
+            // Vision calls the completion handler synchronously inside performRequests, if at all,
+            // so once perform returns the frame has been answered or never will be.
+            val failure = performer.perform(framePixels, request)
+            if (!frame.answered) {
+                if (failure != null) {
+                    CameraKLogger.e(
+                        TAG,
+                        "Live text recognition failed: Vision did not run the request",
+                        VisionException(failure),
+                    )
+                } else {
+                    CameraKLogger.e(TAG, "Live text recognition failed: Vision returned without a result or an error")
                 }
-
-            performer.perform(framePixels, request)
+                frame.release()
+            }
         } catch (e: Exception) {
-            cleanupAndRelease(sampleBuffer)
+            CameraKLogger.e(TAG, "Live text recognition failed for a frame", e)
+            frame.release()
         }
     }
 
-    private fun handleRecognitionResults(resultsArray: NSArray?, sampleBuffer: CMSampleBufferRef) {
+    private fun handleRecognitionResults(resultsArray: NSArray?, frame: InFlightFrame) {
         if (resultsArray == null || resultsArray.count.toInt() == 0) {
-            cleanupAndRelease(sampleBuffer)
+            frame.release()
             return
         }
 
@@ -393,10 +398,21 @@ class VideoDataDelegate internal constructor(
         if (extractedText.isNotBlank()) {
             dispatch_async(dispatch_get_main_queue()) {
                 onText(extractedText.trim())
-                cleanupAndRelease(sampleBuffer)
+                frame.release()
             }
         } else {
-            cleanupAndRelease(sampleBuffer)
+            frame.release()
+        }
+    }
+
+    /** A frame on its way through Vision. Whichever path finishes with it releases it, exactly once. */
+    private inner class InFlightFrame(private val sampleBuffer: CMSampleBufferRef) {
+        // Set by Vision's completion handler, which runs inside perform on the processing queue.
+        var answered = false
+        private val released = AtomicInt(0)
+
+        fun release() {
+            if (released.compareAndSet(0, 1)) cleanupAndRelease(sampleBuffer)
         }
     }
 
