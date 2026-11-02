@@ -23,6 +23,9 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      apply third-party plugins only through [plugins] aliases (no buildscript
                      classpath, no versionless id("...")), and libraries declare Compose by explicit
                      coordinates rather than the compose.* accessors.
+  native-settings    A module with no native code (no cpp/jni sources, CMake or ndk-build file, or
+                     .so) sets no NDK version and no jniLibs packaging option, which would have no
+                     effect on its artifact and would make contributors install an NDK.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -452,12 +455,42 @@ def check_catalog() -> List[str]:
     return catalog_problems((ROOT / CATALOG).read_text(), scripts)
 
 
+# ─── native-settings ────────────────────────────────────────────────────────────────────────────
+
+NATIVE_SOURCE = re.compile(r"(^|/)(cpp|jni|jniLibs)/|\.so$|(^|/)(CMakeLists\.txt|Android\.mk)$")
+NATIVE_SETTING = re.compile(r"^\s*(ndkVersion\s*=|ndkPath\s*=|jniLibs\s*\{|useLegacyPackaging\s*=)", re.MULTILINE)
+
+
+def native_settings_problems(scripts: Dict[str, str], files: List[str]) -> List[str]:
+    problems = []
+    for name, text in scripts.items():
+        module = name.rsplit("/", 1)[0] if "/" in name else ""
+        if any(NATIVE_SOURCE.search(f) for f in files if f.startswith(f"{module}/src/")):
+            continue
+        for match in NATIVE_SETTING.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            problems.append(f"{name}:{line}: {match.group(1).rstrip(' ={')} has no effect, {module or 'the root'} has no native code")
+    return problems
+
+
+def check_native_settings() -> List[str]:
+    fixture = {"lib/build.gradle.kts": 'android {\n    ndkVersion = "26"\n    packaging {\n        jniLibs {\n'}
+    if len(native_settings_problems(fixture, ["lib/src/main/kotlin/A.kt"])) < 2 or native_settings_problems(
+        fixture, ["lib/src/main/cpp/a.cpp"]
+    ):
+        raise CheckError("the native-settings rule misjudges its fixtures")
+    files = [path.relative_to(ROOT).as_posix() for path in tracked("*")]
+    scripts = {name: (ROOT / name).read_text() for name in files if name.endswith("build.gradle.kts")}
+    return native_settings_problems(scripts, files)
+
+
 POLICIES: Dict[str, Callable[[], List[str]]] = {
     "agent-permissions": check_agent_permissions,
     "security-policy": check_security_policy,
     "docs-workflow": check_docs_workflow,
     "build-integrity": check_build_integrity,
     "catalog": check_catalog,
+    "native-settings": check_native_settings,
 }
 
 

@@ -451,6 +451,11 @@ registerRepoPolicyCheck(
     "catalog",
     "Fails on dead or split catalog entries, plugins outside [plugins], or compose.* accessors in libraries",
 )
+registerRepoPolicyCheck(
+    "checkNativeSettings",
+    "native-settings",
+    "Fails if a module without native code pins an NDK or sets jniLibs packaging",
+)
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
@@ -1183,6 +1188,7 @@ fun verifyTaskPaths(
                 ":checkPublishedVariants",
                 ":checkNoLibraryFrameworks",
                 ":checkCatalogHygiene",
+                ":checkNativeSettings",
             )
     }
     modules.forEach { module ->
