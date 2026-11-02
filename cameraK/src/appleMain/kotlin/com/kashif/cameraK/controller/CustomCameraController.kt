@@ -235,6 +235,7 @@ class CustomCameraController(
                 reportError(failure)
                 return@dispatch_async
             }
+            applyMaxPhotoDimensions()
 
             dispatch_async(dispatch_get_main_queue()) {
                 if (setupGeneration.value == generation && session === ops) {
@@ -296,6 +297,26 @@ class CustomCameraController(
     private val highResolution: Boolean
         get() = qualityPrioritization == QualityPrioritization.QUALITY
 
+    /** iOS 16 replaced the high-resolution flags with maxPhotoDimensions; below it the flags still apply. */
+    private val usesMaxPhotoDimensions: Boolean = isOsAtLeast(16)
+
+    /** The size QUALITY captures ask for: the current camera's largest. Written on the session queue. */
+    @Volatile
+    private var maxPhotoDimensions: PhotoDimensions? = null
+
+    /**
+     * Opens the photo output up to the current camera's largest photo when QUALITY asks for high
+     * resolution. The size must be one the camera's active format supports, so this runs on the
+     * session queue once the camera (and its format) is settled: after setup and after each swap.
+     */
+    private fun applyMaxPhotoDimensions() {
+        if (!highResolution || !usesMaxPhotoDimensions) return
+        val output = photoOutput ?: return
+        val largest = currentCamera?.supportedMaxPhotoDimensions?.maxByOrNull { it.pixels }
+        maxPhotoDimensions = largest
+        if (largest != null) photoCapturer.setMaxPhotoDimensions(output, largest)
+    }
+
     /** The AVFoundation prioritization for [qualityPrioritization]; null for NONE, which leaves the default. */
     private val avQualityPrioritization: AVCapturePhotoQualityPrioritization?
         get() = when (qualityPrioritization) {
@@ -313,7 +334,7 @@ class CustomCameraController(
 
     private fun setupPhotoOutput() {
         photoOutput = AVCapturePhotoOutput()
-        photoOutput?.setHighResolutionCaptureEnabled(highResolution)
+        if (!usesMaxPhotoDimensions) photoOutput?.setHighResolutionCaptureEnabled(highResolution)
         avQualityPrioritization?.let { photoOutput?.setMaxPhotoQualityPrioritization(it) }
 
         photoOutput?.setPreparedPhotoSettingsArray(emptyList<String>(), completionHandler = { settings, error ->
@@ -557,6 +578,7 @@ class CustomCameraController(
             }
             session = null
             photoOutput = null
+            maxPhotoDimensions = null
             currentCamera = null
             videoInput = null
             requestedZoom = null
@@ -703,6 +725,7 @@ class CustomCameraController(
      * own that is kept alive until AVFoundation's last callback for it. Returns false, without calling
      * [callbacks], when the camera is not ready.
      */
+    @OptIn(ExperimentalForeignApi::class)
     internal fun capturePhoto(callbacks: PhotoCaptureCallbacks): Boolean {
         val output = photoOutput
         if (output == null || session?.isRunning != true) return false
@@ -718,7 +741,11 @@ class CustomCameraController(
             ),
         )
 
-        settings.setHighResolutionPhotoEnabled(highResolution)
+        if (usesMaxPhotoDimensions) {
+            maxPhotoDimensions?.let { settings.maxPhotoDimensions = it.toCMVideoDimensions() }
+        } else {
+            settings.setHighResolutionPhotoEnabled(highResolution)
+        }
         avQualityPrioritization?.let { settings.photoQualityPrioritization = it }
         settings.flashMode = supportedFlashMode(flashMode)
 
@@ -861,6 +888,7 @@ class CustomCameraController(
         requestedZoom = null
         isUsingFrontCamera = camera.isFront
         applyPreviewMirroring()
+        applyMaxPhotoDimensions()
     }
 
     /**

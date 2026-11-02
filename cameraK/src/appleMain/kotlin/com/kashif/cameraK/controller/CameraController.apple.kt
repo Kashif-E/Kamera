@@ -103,8 +103,6 @@ actual class CameraController internal constructor(
         customController = null,
     )
 
-    private var isCapturing = atomic(false)
-
     /** Test seam: the internal constructor can hand in a controller built on a fake session and camera. */
     private val customCameraController = customController ?: CustomCameraController(
         qualityPrioritization = qualityPriority,
@@ -136,6 +134,8 @@ actual class CameraController internal constructor(
 
     private val memoryManager = MemoryManager
     private val pendingCaptures = atomic(0)
+
+    /** Captures AVFoundation may work on at once, as on Android; each holds a slot until its last callback. */
     private val maxConcurrentCaptures = 3
 
     /** Captures started and not yet finished by AVFoundation, for tests. */
@@ -322,12 +322,6 @@ actual class CameraController internal constructor(
             return@suspendCancellableCoroutine
         }
 
-        if (!isCapturing.compareAndSet(expect = false, update = true)) {
-            pendingCaptures.decrementAndGet()
-            continuation.resume(ImageCaptureResult.Error(Exception("Capture in progress")))
-            return@suspendCancellableCoroutine
-        }
-
         val request = PhotoRequest(continuation)
         // Cancelling only detaches the caller: AVFoundation keeps working on the request, so the slot
         // stays taken until its last callback releases it, exactly once.
@@ -379,9 +373,7 @@ actual class CameraController internal constructor(
         }
 
         private fun release() {
-            if (!released.compareAndSet(expect = false, update = true)) return
-            isCapturing.value = false
-            pendingCaptures.decrementAndGet()
+            if (released.compareAndSet(expect = false, update = true)) pendingCaptures.decrementAndGet()
         }
     }
 
