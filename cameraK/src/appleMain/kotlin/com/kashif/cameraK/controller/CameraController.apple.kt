@@ -124,6 +124,7 @@ actual class CameraController internal constructor(
         customCameraController.setFlashMode(flashMode.toAVCaptureFlashMode())
         customCameraController.setTorchMode(torchMode.toAVCaptureTorchMode())
         customCameraController.recordingInProgress = { movieFileOutput?.isRecording() == true }
+        customCameraController.captureOrientation = ::effectiveVideoOrientation
         // The metadata output joins the session only while a scanner is set, and the movie output only
         // for a recording: each costs memory and power and limits the formats the session can use.
     }
@@ -200,6 +201,7 @@ actual class CameraController internal constructor(
         customCameraController.onSessionReady = {
             try {
                 customCameraController.setupPreviewLayer(view)
+                applyPreviewOrientation()
             } catch (e: Exception) {
                 CameraKLogger.e("CameraK", "CameraK Error: setupPreviewLayer", e)
             }
@@ -296,6 +298,8 @@ actual class CameraController internal constructor(
     override fun viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         customCameraController.cameraPreviewLayer?.setFrame(view.bounds)
+        // A rotation of the interface lays the view out again, so this is where the preview follows it.
+        applyPreviewOrientation()
     }
 
     /**
@@ -840,14 +844,17 @@ actual class CameraController internal constructor(
     }
 
     actual fun setTargetOrientation(orientation: DeviceOrientation?) {
+        // The target decides how photos and recordings are oriented. The preview shows what the
+        // interface shows, so it keeps following the interface orientation.
         targetOrientation = orientation
-        val effective = orientation ?: currentDeviceOrientation
-        customCameraController.orientPreview(effective.toVideoOrientation())
     }
 
-    /** Re-applies the preview orientation after the device turns; called by CameraPreviewView. */
-    internal fun refreshPreviewOrientation() {
-        customCameraController.orientPreview(effectiveVideoOrientation())
+    /**
+     * Turns the preview to the interface's orientation, so a portrait-locked app keeps an upright
+     * portrait preview whichever way the device is held. Main thread only.
+     */
+    private fun applyPreviewOrientation() {
+        interfaceOrientation()?.let(customCameraController::orientPreview)
     }
 
     /**

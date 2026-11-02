@@ -3,14 +3,11 @@ package com.kashif.cameraK.compose
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitViewController
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.DeviceOrientation
-import platform.Foundation.NSNotificationCenter
-import platform.UIKit.UIDeviceOrientationDidChangeNotification
 
 @Composable
 actual fun CameraPreviewView(
@@ -20,21 +17,6 @@ actual fun CameraPreviewView(
     overlay: @Composable (CameraPreviewScope.() -> Unit)?,
 ) {
     key(controller) {
-        DisposableEffect(controller) {
-            val notificationCenter = NSNotificationCenter.defaultCenter
-            val observer = notificationCenter.addObserverForName(
-                UIDeviceOrientationDidChangeNotification,
-                null,
-                null,
-            ) { _ ->
-                controller.refreshPreviewOrientation()
-            }
-
-            onDispose {
-                notificationCenter.removeObserver(observer)
-            }
-        }
-
         Box(modifier = modifier) {
             UIKitViewController(
                 factory = { controller },

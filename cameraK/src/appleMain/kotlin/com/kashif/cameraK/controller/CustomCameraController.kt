@@ -166,6 +166,13 @@ class CustomCameraController(
     @Volatile
     private var isUsingFrontCamera = false
 
+    /**
+     * The orientation photos are captured in; CameraController answers with its target orientation
+     * when one is set, otherwise the device's.
+     */
+    @Volatile
+    internal var captureOrientation: () -> AVCaptureVideoOrientation = { currentVideoOrientation() }
+
     /** Whether a recording is in progress; CameraController answers from its movie file output. */
     @Volatile
     internal var recordingInProgress: () -> Boolean = { false }
@@ -773,7 +780,7 @@ class CustomCameraController(
 
         // The orientation the photo's metadata records, and the front-camera photo mirrored to match
         // the mirrored preview when configured (#112).
-        val orientation = currentVideoOrientation()
+        val orientation = captureOrientation()
         val mirrored = mirrorFrontCamera && isUsingFrontCamera
 
         lateinit var delegate: PhotoCaptureDelegate
