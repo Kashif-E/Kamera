@@ -5,6 +5,7 @@ import androidx.camera.core.ImageProxy
 import org.junit.Test
 import java.lang.reflect.Proxy
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 
@@ -121,15 +122,40 @@ class MultiplexingAnalyzerTest {
         assertEquals(10, firstPixelSeenBySecond, "one analyzer rewrote the frame another analyzer reads")
         assertEquals(1, frame.closes)
     }
+
+    @Test
+    fun analyzerReadingMultiByteValues_seesThePlaneInItsOwnByteOrder() {
+        // ImageReader sets every plane buffer to the device's native order, little-endian on every
+        // shipping Android ABI, so RGBA_8888 pixels and 16-bit samples are read with that order.
+        val frame = CountingFrame(luma = byteArrayOf(0x04, 0x03, 0x02, 0x01), order = ByteOrder.LITTLE_ENDIAN)
+        var orderSeen: ByteOrder? = null
+        var intSeen = 0
+        val analyzer = MultiplexingAnalyzer(
+            listOf(
+                ImageAnalysis.Analyzer { proxy ->
+                    val buffer = proxy.planes[0].buffer
+                    orderSeen = buffer.order()
+                    intSeen = buffer.getInt(0)
+                    proxy.close()
+                },
+                ImageAnalysis.Analyzer { proxy -> proxy.close() },
+            ),
+        )
+
+        analyzer.analyze(frame.proxy)
+
+        assertEquals(ByteOrder.LITTLE_ENDIAN, orderSeen, "the analyzer's view lost the plane's byte order")
+        assertEquals(0x01020304, intSeen, "a 32-bit read through the analyzer's view came back byte-swapped")
+    }
 }
 
-private class CountingFrame(luma: ByteArray = ByteArray(0)) {
+private class CountingFrame(luma: ByteArray = ByteArray(0), order: ByteOrder = ByteOrder.BIG_ENDIAN) {
     var closes = 0
         private set
 
     /** One Y plane over [luma], shared by every caller as CameraX's plane buffers are. */
     private val plane: ImageProxy.PlaneProxy = object : ImageProxy.PlaneProxy {
-        private val buffer = ByteBuffer.wrap(luma)
+        private val buffer = ByteBuffer.wrap(luma).order(order)
 
         override fun getRowStride() = luma.size
 
