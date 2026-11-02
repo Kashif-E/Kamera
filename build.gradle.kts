@@ -980,6 +980,7 @@ fun verifyTaskPaths(
                 ":checkReleaseMetadata",
                 ":checkLicenseMetadata",
                 ":checkComposeBaseline",
+                ":checkVerifyCoverage",
             )
     }
     modules.forEach { module ->
@@ -1015,6 +1016,22 @@ fun verifyTaskPaths(
             )
     }
     return paths
+}
+
+// CI runs scripts/verify.sh --full. Tests and compiles alone miss what only Android lint reports and
+// what fails only at the Kotlin/Native link of the framework an app embeds, so the full selection
+// must lint every Android module and link the Sample's iOS framework.
+tasks.register("checkVerifyCoverage") {
+    group = "verification"
+    description = "Fails if scripts/verify.sh --full skips Android lint or the iOS framework link"
+    val full = verifyTaskPaths(allVerifyTargets, libraryModules, record = false).toSet()
+    doLast {
+        val required =
+            libraryModules.map { ":$it:lintRelease" } +
+                listOf(":Sample:lintDebug", ":Sample:linkDebugFrameworkIosSimulatorArm64")
+        val missing = required.filterNot(full::contains)
+        check(missing.isEmpty()) { "scripts/verify.sh --full does not run:\n" + missing.joinToString("\n") }
+    }
 }
 
 tasks.register("verifyAll") {
