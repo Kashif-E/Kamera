@@ -1478,9 +1478,13 @@ private class RefCountedImageProxy(private val delegate: ImageProxy, private val
     }
 }
 
-/** A read-only view of [plane]'s buffer, with its own position and limit. */
+/**
+ * A read-only view of [plane]'s buffer, with its own position and limit. asReadOnlyBuffer() always
+ * returns a big-endian view, while ImageReader hands out planes in native (little-endian) order, so
+ * the source's order is set again for multi-byte reads.
+ */
 private class ReadOnlyPlane(plane: ImageProxy.PlaneProxy) : ImageProxy.PlaneProxy by plane {
-    private val buffer: ByteBuffer = plane.buffer.asReadOnlyBuffer()
+    private val buffer: ByteBuffer = plane.buffer.let { it.asReadOnlyBuffer().order(it.order()) }
 
     override fun getBuffer(): ByteBuffer = buffer
 }
