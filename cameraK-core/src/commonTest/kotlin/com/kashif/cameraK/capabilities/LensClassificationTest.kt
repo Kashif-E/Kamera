@@ -83,6 +83,160 @@ class LensClassificationTest {
         assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["1"])
     }
 
+    // ── relative to the main lens ────────────────────────────────────
+    // Sensor widths of 9.0, 4.5 and 18.0 mm scale by exactly 4, 8 and 2, so the equivalents below are exact.
+
+    @Test
+    fun telephotoAtRatioOnePointSixOfMainLens() {
+        // Galaxy S23 Ultra back: 6.3 mm on a 9.86 mm sensor (23.0 mm equiv, main) and the 3x, 10.0 mm on a
+        // 5.22 mm sensor (69.0 mm equiv). 69 < 70 kept the 3x out of TELEPHOTO in 1.x; it is 3.0x the main.
+        val s23 = deriveLensDeviceTypes(
+            listOf(
+                raw("main", listOf(6.3f), 9.86f),
+                raw("tele3x", listOf(10.0f), 5.22f),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, s23["main"])
+        assertEquals(CameraDeviceType.TELEPHOTO, s23["tele3x"])
+
+        // 25 mm main; 40 mm is exactly 1.6x, 37.5 mm is 1.5x.
+        val boundary = deriveLensDeviceTypes(
+            listOf(
+                raw("main", listOf(6.25f), 9.0f),
+                raw("x1_6", listOf(5.0f), 4.5f),
+                raw("x1_5", listOf(4.6875f), 4.5f),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, boundary["main"])
+        assertEquals(CameraDeviceType.TELEPHOTO, boundary["x1_6"])
+        assertEquals(CameraDeviceType.WIDE_ANGLE, boundary["x1_5"])
+    }
+
+    @Test
+    fun ultraWideAtRatioPointSevenFive() {
+        // 28 mm main; 21 mm is 0.75x (above the absolute 20 mm), 24 mm is 0.86x.
+        val kinds = deriveLensDeviceTypes(
+            listOf(
+                raw("main", listOf(7.0f), 9.0f),
+                raw("x0_75", listOf(2.625f), 4.5f),
+                raw("x0_86", listOf(3.0f), 4.5f),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["main"])
+        assertEquals(CameraDeviceType.ULTRA_WIDE, kinds["x0_75"])
+        assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["x0_86"])
+    }
+
+    @Test
+    fun absoluteThresholdsWhenNoMainLens() {
+        // 16 mm and 120 mm: nothing in the 20-70 mm band, so no main lens.
+        val noneInBand = deriveLensDeviceTypes(
+            listOf(
+                raw("uw", listOf(2.0f), 4.5f),
+                raw("tele", listOf(15.0f), 4.5f),
+            ),
+        )
+        assertEquals(CameraDeviceType.ULTRA_WIDE, noneInBand["uw"])
+        assertEquals(CameraDeviceType.TELEPHOTO, noneInBand["tele"])
+
+        // No sensor width readable: the raw focal lengths meet the absolute thresholds.
+        val unreadable = deriveLensDeviceTypes(
+            listOf(
+                raw("uw", listOf(16.0f), null),
+                raw("wide", listOf(26.0f), null),
+                raw("tele", listOf(120.0f), null),
+            ),
+        )
+        assertEquals(CameraDeviceType.ULTRA_WIDE, unreadable["uw"])
+        assertEquals(CameraDeviceType.WIDE_ANGLE, unreadable["wide"])
+        assertEquals(CameraDeviceType.TELEPHOTO, unreadable["tele"])
+    }
+
+    @Test
+    fun mainLensIsTheLargestSensorInTheWideBand() {
+        // A 27 mm depth module on a 2.9 mm sensor is listed first, beside a 24 mm main on a 9.8 mm sensor.
+        // The 39 mm lens is 1.63x the main (TELEPHOTO) and would be 1.44x the depth module (WIDE_ANGLE).
+        val kinds = deriveLensDeviceTypes(
+            listOf(
+                raw("depth", listOf(27.0f * 2.9f / 36f), 2.9f),
+                raw("main", listOf(24.0f * 9.8f / 36f), 9.8f),
+                raw("x1_63", listOf(39.0f * 5.6f / 36f), 5.6f),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["main"])
+        assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["depth"])
+        assertEquals(CameraDeviceType.TELEPHOTO, kinds["x1_63"])
+
+        // Equal sensor widths: the shorter equivalent (24 mm) is the main, so 39 mm is TELEPHOTO. Were the
+        // 39 mm lens the main, the 24 mm lens would be 0.62x and ULTRA_WIDE.
+        val tie = deriveLensDeviceTypes(
+            listOf(
+                raw("long", listOf(19.5f), 18.0f),
+                raw("short", listOf(12.0f), 18.0f),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, tie["short"])
+        assertEquals(CameraDeviceType.TELEPHOTO, tie["long"])
+
+        // The largest sensor outside the band is never the main: a 16 mm ultra-wide on a 9.0 mm sensor beside a
+        // 24 mm lens on a 4.5 mm sensor. Against the 24 mm main the ultra-wide is 0.67x; were it the main, the
+        // 24 mm lens would be 1.5x and both would be WIDE_ANGLE.
+        val outOfBand = deriveLensDeviceTypes(
+            listOf(
+                raw("uw", listOf(4.0f), 9.0f),
+                raw("wide", listOf(3.0f), 4.5f),
+            ),
+        )
+        assertEquals(CameraDeviceType.ULTRA_WIDE, outOfBand["uw"])
+        assertEquals(CameraDeviceType.WIDE_ANGLE, outOfBand["wide"])
+    }
+
+    @Test
+    fun unreadableSensorWidthUsesAbsoluteThresholds() {
+        // 25 mm main. A lens with no sensor width has a raw focal length of 40 mm: 1.6x the main by ratio,
+        // but the raw figure is not an equivalent, so the absolute thresholds make it WIDE_ANGLE.
+        val kinds = deriveLensDeviceTypes(
+            listOf(
+                raw("main", listOf(6.25f), 9.0f),
+                raw("noSensor", listOf(40.0f), null),
+                raw("noSensorTele", listOf(80.0f), null),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["main"])
+        assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["noSensor"])
+        assertEquals(CameraDeviceType.TELEPHOTO, kinds["noSensorTele"])
+    }
+
+    @Test
+    fun logicalMultiFocalIsNeitherMainNorCompared() {
+        // The logical entry has the largest sensor and its first focal length reads 30 mm, in the wide band.
+        // Excluded, the main is the 28 mm lens and the 46 mm lens is 1.64x (TELEPHOTO); were the logical entry
+        // the main, 46 mm would be 1.53x (WIDE_ANGLE).
+        val kinds = deriveLensDeviceTypes(
+            listOf(
+                raw("logical", listOf(10.0f, 3.0f), 12.0f, isLogical = true),
+                raw("main", listOf(7.0f), 9.0f),
+                raw("x1_64", listOf(5.75f), 4.5f),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["logical"])
+        assertEquals(CameraDeviceType.WIDE_ANGLE, kinds["main"])
+        assertEquals(CameraDeviceType.TELEPHOTO, kinds["x1_64"])
+
+        // Pixel 7's logical back camera [2.35, 6.81] beside its physical children stays WIDE_ANGLE and leaves
+        // them as they are without it.
+        val pixel7 = deriveLensDeviceTypes(
+            listOf(
+                raw("0", listOf(2.35f, 6.81f), 9.79f, isLogical = true),
+                raw("2", listOf(6.81f), 9.79f),
+                raw("3", listOf(2.35f), 5.04f),
+            ),
+        )
+        assertEquals(CameraDeviceType.WIDE_ANGLE, pixel7["0"])
+        assertEquals(CameraDeviceType.WIDE_ANGLE, pixel7["2"])
+        assertEquals(CameraDeviceType.ULTRA_WIDE, pixel7["3"])
+    }
+
     // ── dedupeOpticallyDistinctLenses ────────────────────────────────
 
     @Test
