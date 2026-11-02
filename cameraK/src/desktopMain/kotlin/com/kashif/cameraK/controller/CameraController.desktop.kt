@@ -44,6 +44,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -134,9 +135,8 @@ actual class CameraController(
     private val recordingLock = Mutex()
     private var recordingOutputPath: String? = null
 
-    private var listener: (ByteArray) -> Unit = {
-        // default no-op listener
-    }
+    // Null when no one listens, so a capture reads its file back only for a listener.
+    @Volatile private var listener: ((ByteArray) -> Unit)? = null
 
     actual suspend fun takePictureToFile(): ImageCaptureResult {
         return withContext(Dispatchers.IO) {
@@ -147,17 +147,36 @@ actual class CameraController(
             }
 
             var outFile: File? = null
-            return@withContext try {
+            val result = try {
                 val ext = if (imageFormat == ImageFormat.PNG) "png" else "jpg"
                 val file = createUniqueFile(File(pictureFolder(), "CameraK"), "CameraK", ext).also { outFile = it }
                 writeCapture(currentImage, imageFormat, file)
-                listener(readCapture(file))
                 ImageCaptureResult.SuccessWithFile(file.absolutePath)
             } catch (e: Exception) {
                 CameraKLogger.e("CameraK", "CameraK: Error writing the captured image", e)
                 outFile?.delete()
-                ImageCaptureResult.Error(e)
+                return@withContext ImageCaptureResult.Error(e)
             }
+            // The photo is written; nothing a listener does can undo that or change the result.
+            notifyListener(File(result.filePath))
+            result
+        }
+    }
+
+    private fun notifyListener(file: File) {
+        val listener = listener ?: return
+        val bytes = try {
+            readCapture(file)
+        } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "CameraK: Error reading the capture back for its listener", e)
+            return
+        }
+        try {
+            listener(bytes)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "CameraK: A capture listener failed", e)
         }
     }
 
@@ -319,9 +338,9 @@ actual class CameraController(
     }
 
     actual fun removeImageCaptureListener(listener: (ByteArray) -> Unit) {
-        // Desktop holds a single listener; clear it back to a no-op if it's the one being removed.
+        // Desktop holds a single listener; clear it if it's the one being removed.
         if (this.listener == listener) {
-            this.listener = {}
+            this.listener = null
         }
     }
 
@@ -484,7 +503,7 @@ actual class CameraController(
         val timestamp = LocalDateTime.now()
             .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val dir = config.outputDirectory?.let(::File) ?: File(File(userHome, moviesFolderName()), "CameraK")
-        Files.createDirectories(dir.toPath())
+        createOwnerOnlyDirectory(dir)
         return File(dir, "${config.filePrefix}_$timestamp.mp4").absolutePath
     }
 
@@ -502,14 +521,40 @@ private fun defaultUserHome(): File = File(System.getProperty("user.home") ?: Sy
 private fun moviesFolderName(): String =
     if (System.getProperty("os.name").lowercase().contains("mac")) "Movies" else "Videos"
 
+private fun hasPosixPermissions(path: Path): Boolean = "posix" in path.fileSystem.supportedFileAttributeViews()
+
+/**
+ * Returns [folder], creating it (and any missing parents) if it does not exist. A folder this
+ * creates is open only to its owner where the file system has POSIX permissions; an existing one
+ * keeps its permissions.
+ */
+private fun createOwnerOnlyDirectory(folder: File): Path {
+    val path = folder.toPath().toAbsolutePath()
+    if (Files.isDirectory(path)) return path
+    path.parent?.let { Files.createDirectories(it) }
+    val ownerOnly = if (hasPosixPermissions(path)) {
+        arrayOf(PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")))
+    } else {
+        emptyArray()
+    }
+    return try {
+        Files.createDirectory(path, *ownerOnly)
+    } catch (e: FileAlreadyExistsException) {
+        // Another capture created it first; use it if it is a folder.
+        if (!Files.isDirectory(path)) throw e
+        CameraKLogger.w("CameraK", "CameraK: Capture folder created concurrently, using it", e)
+        path
+    }
+}
+
 /**
  * Creates a new, empty file in [folder] (creating the folder too) whose name no other file has,
  * readable and writable only by its owner where the file system has POSIX permissions.
  */
 internal fun createUniqueFile(folder: File, prefix: String, extension: String): File {
-    val dir = Files.createDirectories(folder.toPath())
+    val dir = createOwnerOnlyDirectory(folder)
     val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS"))
-    val ownerOnly = if ("posix" in dir.fileSystem.supportedFileAttributeViews()) {
+    val ownerOnly = if (hasPosixPermissions(dir)) {
         arrayOf(PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
     } else {
         emptyArray()
