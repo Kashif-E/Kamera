@@ -39,6 +39,7 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.google.common.util.concurrent.ListenableFuture
 import com.kashif.cameraK.capabilities.AndroidLensDescriptor
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensEnumerator
@@ -304,6 +305,7 @@ actual class CameraController internal constructor(
                     useCaseGroup,
                 )
                 boundUseCases += useCaseGroup.useCases
+                camera?.let(::applyDesiredHardwareState)
 
                 onCameraReady()
             } catch (exc: Exception) {
@@ -843,6 +845,49 @@ actual class CameraController internal constructor(
         return imageCapture?.flashMode?.toCameraKFlashMode()
     }
 
+    // The zoom ratio the user last asked for; null until they do. Re-applied after every bind,
+    // because each bind gives CameraX a camera at 1x.
+    @Volatile
+    private var desiredZoom: Float? = null
+
+    /**
+     * Applies the torch and zoom the configuration or the user asked for to a freshly bound camera:
+     * CameraX opens every bound camera with the torch off and no zoom.
+     */
+    private fun applyDesiredHardwareState(camera: Camera) {
+        if (torchMode != TorchMode.OFF) {
+            if (camera.cameraInfo.hasFlashUnit()) {
+                logIfFailed("Turning the torch on after binding") { camera.cameraControl.enableTorch(true) }
+            } else {
+                CameraKLogger.w(TAG, "TorchMode.$torchMode requested, but this camera has no flash unit")
+            }
+        }
+        desiredZoom?.let { zoom ->
+            val state = camera.cameraInfo.zoomState.value
+            val ratio = state?.let { zoom.coerceIn(it.minZoomRatio, it.maxZoomRatio) } ?: zoom
+            logIfFailed("Restoring the zoom after binding") { camera.cameraControl.setZoomRatio(ratio) }
+        }
+    }
+
+    /** Logs the failure of a CameraX control call instead of dropping its future. */
+    private fun logIfFailed(operation: String, call: () -> ListenableFuture<*>) {
+        val future = try {
+            call()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "$operation failed", e)
+            return
+        }
+        future.addListener({
+            try {
+                future.get()
+            } catch (e: java.util.concurrent.ExecutionException) {
+                CameraKLogger.w(TAG, "$operation failed", e.cause ?: e)
+            } catch (e: java.util.concurrent.CancellationException) {
+                CameraKLogger.d(TAG, "$operation was cancelled")
+            }
+        }, ContextCompat.getMainExecutor(context))
+    }
+
     actual fun toggleTorchMode() {
         torchMode = when (torchMode) {
             TorchMode.OFF -> TorchMode.ON
@@ -868,6 +913,7 @@ actual class CameraController internal constructor(
     }
 
     actual fun setZoom(zoomRatio: Float) {
+        desiredZoom = zoomRatio
         camera?.cameraControl?.setZoomRatio(zoomRatio.coerceIn(1f, getMaxZoom()))
     }
 
