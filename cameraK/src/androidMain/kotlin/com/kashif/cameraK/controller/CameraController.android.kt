@@ -76,6 +76,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadFactory
@@ -190,7 +191,9 @@ actual class CameraController internal constructor(
     @Volatile
     private var pendingVideoQuality = VideoQuality.FHD
 
-    private val imageCaptureListeners = mutableListOf<(ByteArray) -> Unit>()
+    // Added and removed on any thread (plugins), iterated on imageProcessingExecutor: copy-on-write,
+    // so every iteration is a consistent snapshot and concurrent registrations are never lost.
+    private val imageCaptureListeners = CopyOnWriteArrayList<(ByteArray) -> Unit>()
 
     private val memoryManager = MemoryManager
 
@@ -850,7 +853,7 @@ actual class CameraController internal constructor(
             CameraKLogger.e(TAG, "Reading the captured image for capture listeners ran out of memory", e)
             return
         }
-        for (listener in imageCaptureListeners.toList()) {
+        for (listener in imageCaptureListeners) {
             try {
                 listener(bytes)
             } catch (e: Exception) {
@@ -1026,10 +1029,16 @@ actual class CameraController internal constructor(
         if (boundUseCases.remove(useCase)) cameraProvider?.unbind(useCase)
     }
 
+    /**
+     * Adds a listener for captured images. Safe to call from any thread. On Android the listener runs
+     * on the controller's image-processing thread, after the capture has been saved and read back,
+     * never on the main thread.
+     */
     actual fun addImageCaptureListener(listener: (ByteArray) -> Unit) {
         imageCaptureListeners.add(listener)
     }
 
+    /** Removes a listener added with [addImageCaptureListener]. Safe to call from any thread. */
     actual fun removeImageCaptureListener(listener: (ByteArray) -> Unit) {
         imageCaptureListeners.remove(listener)
     }
