@@ -118,6 +118,61 @@ class IOSImageSaverPluginPhotosTest {
     }
 
     @Test
+    fun resolvingAHeicAssetToAFileNamesItHeic() {
+        val path = resolvedPath(FakePhotoLibrary(imageData = ASSET_BYTES.toNSData(), imageDataUTI = "public.heic"))
+
+        assertTrue(path.endsWith(".heic"), "a HEIC asset was written as ${path.substringAfterLast('/')}")
+    }
+
+    @Test
+    fun resolvingAPngAssetToAFileNamesItPng() {
+        val path = resolvedPath(FakePhotoLibrary(imageData = ASSET_BYTES.toNSData(), imageDataUTI = "public.png"))
+
+        assertTrue(path.endsWith(".png"), "a PNG asset was written as ${path.substringAfterLast('/')}")
+    }
+
+    @Test
+    fun resolvingAnAssetToAFileKeepsItInCachesCameraKNotTheTemporaryDirectory() {
+        val path = resolvedPath(FakePhotoLibrary(imageData = ASSET_BYTES.toNSData()))
+
+        assertTrue(path.contains("/Library/Caches/CameraK/"), "the asset was written outside Caches/CameraK")
+        assertTrue(path.endsWith(".jpg"), "a JPEG asset was written as ${path.substringAfterLast('/')}")
+    }
+
+    @Test
+    fun anAssetWhoseDataTypeHasNoKnownExtensionIsNotResolvedUnderAWrongOne() {
+        val logs = capturedLogs()
+        val plugin = plugin(FakePhotoLibrary(imageData = ASSET_BYTES.toNSData(), imageDataUTI = "com.example.unknown"))
+
+        val resolved = completesWithin(BOUND) { plugin.getFilePathFromAsset("ph://$ASSET_ID") }
+
+        assertNotNull(resolved, "getFilePathFromAsset did not return within $BOUND")
+        resolved.value?.let { NSFileManager.defaultManager.removeItemAtPath(it, null) }
+        assertNull(
+            resolved.value,
+            "an asset of an unknown type was written as ${resolved.value?.substringAfterLast('/')}",
+        )
+        assertTrue(
+            logs.value.any { it.level == CameraKLogger.Level.ERROR && it.throwable != null },
+            "the refused resolve was not logged with its cause",
+        )
+    }
+
+    /** Resolves the asset [photos] holds to a file, checks it holds the asset's bytes, and removes it. */
+    private fun resolvedPath(photos: FakePhotoLibrary): String {
+        val resolved = completesWithin(BOUND) { plugin(photos).getFilePathFromAsset("ph://$ASSET_ID") }
+        assertNotNull(resolved, "getFilePathFromAsset did not return within $BOUND")
+        val path = assertNotNull(resolved.value, "the asset should resolve to a file")
+        try {
+            val written = assertNotNull(NSFileManager.defaultManager.contentsAtPath(path))
+            assertContentEquals(ASSET_BYTES, written.toByteArray())
+        } finally {
+            NSFileManager.defaultManager.removeItemAtPath(path, null)
+        }
+        return path
+    }
+
+    @Test
     fun resolvingAMissingAssetLogsTheFailureWithItsCauseAndNoIdentifier() {
         val logs = capturedLogs()
         val plugin = plugin(FakePhotoLibrary(assetExists = false))
