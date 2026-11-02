@@ -55,6 +55,9 @@ internal class FakeCameraXBackend : CameraXBackend {
     /** The consumer each ImageAnalysis currently delivers its frames to. */
     val analyzers = mutableMapOf<ImageAnalysis, ImageAnalysis.Analyzer>()
 
+    /** When set, CameraX refuses to start a recording with this, as Recorder does when it is in use. */
+    var startFailure: RuntimeException? = null
+
     override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
         executor.execute { onResult(Result.success(binding)) }
     }
@@ -83,7 +86,10 @@ internal class FakeCameraXBackend : CameraXBackend {
         withAudio: Boolean,
         executor: Executor,
         onFinalized: (RecordingFinalized) -> Unit,
-    ): RecordingSession = FakeRecording(output.file, executor, onFinalized).also { recordings += it }
+    ): RecordingSession {
+        startFailure?.let { throw it }
+        return FakeRecording(output.file, executor, onFinalized).also { recordings += it }
+    }
 }
 
 /**
