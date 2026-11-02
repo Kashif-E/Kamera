@@ -137,6 +137,9 @@ actual class CameraController internal constructor(
     private val pendingCaptures = atomic(0)
     private val maxConcurrentCaptures = 3
 
+    /** Captures started and not yet finished by AVFoundation, for tests. */
+    internal val capturesInFlight: Int get() = pendingCaptures.value
+
     override fun viewDidLoad() {
         super.viewDidLoad()
 
