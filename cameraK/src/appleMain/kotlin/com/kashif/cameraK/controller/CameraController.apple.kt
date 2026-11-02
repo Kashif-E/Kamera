@@ -240,21 +240,12 @@ actual class CameraController internal constructor(
                 memoryManager.updateMemoryStatus()
 
                 try {
-                    val estimatedSize = imageData.length.toInt()
-                    val buffer = if (estimatedSize > 0) {
-                        memoryManager.getBuffer(estimatedSize)
-                    } else {
-                        ByteArray(imageData.length.toInt())
-                    }
-
-                    val data = imageData.toByteArray(reuseBuffer = buffer)
+                    // An array of the photo's exact size that only the listeners hold: a pooled buffer
+                    // is as large as the biggest earlier photo and goes back to the pool while they read.
+                    val data = imageData.toByteArray()
 
                     dispatch_async(dispatch_get_main_queue()) {
                         imageCaptureListeners.forEach { it(data) }
-                    }
-
-                    if (buffer.size >= estimatedSize) {
-                        memoryManager.recycleBuffer(buffer)
                     }
                 } catch (e: Exception) {
                     CameraKLogger.e("CameraK", "CameraK: Error processing image data: ${e.message ?: "Unknown error"}")
