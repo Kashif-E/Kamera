@@ -647,10 +647,18 @@ actual class CameraController internal constructor(
                     CameraKLogger.e("CameraK", "Image capture failed: ${exc.message}", exc)
                     pendingCaptures.decrementAndGet()
                     outputFile?.delete() // Clean up failed capture file
-                    // Below API 29 the gallery file was claimed before CameraX inserted its row.
-                    galleryValues?.getAsString(MediaStore.MediaColumns.DATA)?.let { File(it).delete() }
-                    if (inFlightCaptures.remove(continuation)) {
-                        continuation.resume(ImageCaptureResult.Error(exc))
+                    val reportError = {
+                        if (inFlightCaptures.remove(continuation)) {
+                            continuation.resume(ImageCaptureResult.Error(exc))
+                        }
+                    }
+                    if (galleryValues == null) {
+                        reportError()
+                        return
+                    }
+                    runOffMain {
+                        deleteFailedGalleryCapture(galleryValues)
+                        reportError()
                     }
                 }
             },
@@ -676,6 +684,38 @@ actual class CameraController internal constructor(
             val file = newCaptureFile(parent, "IMG", outputFormat.extension)
             put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
             put(MediaStore.MediaColumns.DATA, file.absolutePath)
+        }
+    }
+
+    /**
+     * When writing a gallery capture fails, CameraX has already inserted its MediaStore row and does
+     * not delete it (CameraX 1.5.3 FileUtil.copyFileToMediaStore marks it not pending and throws), and
+     * onError does not say which row it was. The row is found by what this capture gave it: its
+     * file path below API 29, otherwise its display name, which is unique by construction.
+     */
+    private fun deleteFailedGalleryCapture(values: ContentValues) {
+        val legacyPath = values.getAsString(MediaStore.MediaColumns.DATA)
+        val (column, value) = if (legacyPath != null) {
+            MediaStore.MediaColumns.DATA to legacyPath
+        } else {
+            MediaStore.MediaColumns.DISPLAY_NAME to values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME)
+        }
+        try {
+            context.contentResolver.delete(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "$column = ?", arrayOf(value))
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Deleting the gallery entry of a failed capture failed", e)
+        }
+        // Below API 29 the gallery file was claimed before CameraX inserted its row.
+        legacyPath?.let { File(it).delete() }
+    }
+
+    /** Runs MediaStore and file work off the main thread, or here once the controller has shut down. */
+    private fun runOffMain(block: () -> Unit) {
+        try {
+            imageProcessingExecutor.execute(block)
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            CameraKLogger.w(TAG, "Image processing has shut down; cleaning up the capture on the calling thread", e)
+            block()
         }
     }
 
@@ -1044,7 +1084,7 @@ actual class CameraController internal constructor(
                 null,
             )
         } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "Failed to notify MediaStore for video: ${e.message}")
+            CameraKLogger.e(TAG, "Notifying MediaStore of a recorded video failed", e)
         }
     }
 
