@@ -58,6 +58,8 @@ internal class RecordingSession : CaptureSessionOps {
 
     override fun commitConfiguration() = record("commitConfiguration") { depth-- }
 
+    override fun canSetSessionPreset(preset: String): Boolean = true
+
     override fun setSessionPreset(preset: String) = record("setSessionPreset", preset) {}
 
     /** Makes canAddInput refuse [input], as AVFoundation does for an input the session cannot take. */

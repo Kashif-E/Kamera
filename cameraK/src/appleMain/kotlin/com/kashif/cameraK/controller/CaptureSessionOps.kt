@@ -21,6 +21,8 @@ internal interface CaptureSessionOps {
 
     fun commitConfiguration()
 
+    fun canSetSessionPreset(preset: String): Boolean
+
     fun setSessionPreset(preset: String)
 
     fun canAddInput(input: AVCaptureInput): Boolean
@@ -48,6 +50,8 @@ internal class AVCaptureSessionOps(override val avSession: AVCaptureSession = AV
     override fun beginConfiguration() = avSession.beginConfiguration()
 
     override fun commitConfiguration() = avSession.commitConfiguration()
+
+    override fun canSetSessionPreset(preset: String): Boolean = avSession.canSetSessionPreset(preset)
 
     override fun setSessionPreset(preset: String) {
         avSession.sessionPreset = preset
