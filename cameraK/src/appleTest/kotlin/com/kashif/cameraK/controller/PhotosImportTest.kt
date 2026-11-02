@@ -7,13 +7,19 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
 import kotlin.test.AfterTest
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * A PICTURES or DCIM capture ends with an import into Photos, which may never finish: Photos holds
  * the import while its permission prompt goes unanswered. The capture waits a bounded time for it
- * and then reports the failure, instead of parking a thread until Photos answers.
+ * and then reports the failure, instead of parking a thread until Photos answers. A failed or
+ * unfinished import keeps the captured file, the only copy of the photo, and the error says what
+ * Photos reported; the temporary copy goes only once Photos has the photo.
  */
 @OptIn(ExperimentalForeignApi::class)
 class PhotosImportTest {
@@ -51,6 +57,50 @@ class PhotosImportTest {
 
         assertIs<ImageCaptureResult.Error>(result, "a capture Photos never imported was reported as $result")
         assertEquals(1, photos.imports.size, "the photo was not handed to Photos once")
+    }
+
+    @Test
+    fun aCaptureThatPhotosRefusesIsAnErrorThatNamesPhotosReasonAndKeepsThePhoto() {
+        usePhotos(FakePhotosLibrary.Answer.Failed(photosError(3311)))
+
+        val result = takePicture()
+
+        val error = assertIs<ImageCaptureResult.Error>(result, "a capture Photos refused was reported as $result")
+        val message = error.exception.message.orEmpty()
+        assertTrue(
+            "PHPhotosErrorDomain" in message && "3311" in message,
+            "the error does not say what Photos reported: $message",
+        )
+        assertPhotoKept()
+    }
+
+    @Test
+    fun aCaptureWhosePhotosImportTimesOutKeepsThePhoto() {
+        usePhotos(FakePhotosLibrary.Answer.Never)
+        rig.controller.photosImportTimeoutMs = 200
+
+        val result = takePicture()
+
+        assertIs<ImageCaptureResult.Error>(result, "a capture Photos never imported was reported as $result")
+        assertPhotoKept()
+    }
+
+    /** Guard: once Photos has the photo, its temporary copy goes (green before the fix). */
+    @Test
+    fun aCaptureThatPhotosImportsRemovesItsTemporaryCopy() {
+        usePhotos(FakePhotosLibrary.Answer.Imported("4F1C2A3B/L0/001"))
+
+        val result = takePicture()
+
+        assertEquals(ImageCaptureResult.SuccessWithFile("ph://4F1C2A3B/L0/001"), result)
+        val path = assertNotNull(photos.imports.single().url.path)
+        assertFalse(NSFileManager.defaultManager.fileExistsAtPath(path), "the temporary copy was left behind")
+    }
+
+    private fun assertPhotoKept() {
+        val path = assertNotNull(photos.imports.single().url.path)
+        assertTrue(NSFileManager.defaultManager.fileExistsAtPath(path), "the only copy of the photo was deleted")
+        assertContentEquals(PHOTO, fileBytes(path), "the kept file is not the photo")
     }
 
     private companion object {

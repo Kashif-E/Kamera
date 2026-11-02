@@ -151,6 +151,22 @@ class VideoFileOutcomeTest {
     }
 
     @Test
+    fun aRefusedPhotosImportIsAnErrorThatNamesWhatPhotosReported() {
+        use(Directory.PICTURES)
+        rig.controller.photosLibrary = FakePhotosLibrary(FakePhotosLibrary.Answer.Failed(photosError(3311)))
+        val started = startedRecording()
+
+        val result = stop(started, error = null)
+
+        val error = assertIs<VideoCaptureResult.Error>(result, "a video Photos refused was reported as $result")
+        val message = error.exception.message.orEmpty()
+        assertTrue(
+            "PHPhotosErrorDomain" in message && "3311" in message,
+            "the error does not say what Photos reported: $message",
+        )
+    }
+
+    @Test
     fun aPhotosImportThatNeverFinishesEndsTheStopWithAnErrorOnceItTimesOutAndKeepsTheFile() {
         use(Directory.PICTURES)
         rig.controller.photosLibrary = FakePhotosLibrary(FakePhotosLibrary.Answer.Never)
