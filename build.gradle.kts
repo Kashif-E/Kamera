@@ -303,10 +303,30 @@ fun manifestMinSdk(
         ?.toInt() ?: 1
 }
 
+val shippedClasspath = "releaseRuntimeClasspath"
+val unitTestClasspath = "debugUnitTestRuntimeClasspath"
+
+// What is wrong with declaring minSdk `declared` for a module whose classpaths (by configuration
+// name) hold these external AARs (component display name to file).
+fun sdkFloorProblems(
+    declared: Int,
+    aarsByClasspath: Map<String, List<Pair<String, File>>>,
+): List<String> =
+    aarsByClasspath
+        .flatMap { (configurationName, aars) ->
+            aars.map { (component, aar) -> Triple(component, manifestMinSdk(component, aar), configurationName) }
+        }.filter { (_, floor, _) -> floor > declared }
+        .groupBy(
+            { (component, floor, _) -> component to floor },
+            { (_, _, configurationName) -> configurationName },
+        ).map { (dependency, configurationNames) ->
+            "${dependency.first} needs minSdk ${dependency.second} (${configurationNames.distinct().joinToString()})"
+        }
+
 subprojects {
     if (name !in androidModules) return@subprojects
     val externalAars =
-        listOf("releaseRuntimeClasspath", "debugUnitTestRuntimeClasspath").map { configurationName ->
+        listOf(shippedClasspath, unitTestClasspath).map { configurationName ->
             configurationName to
                 provider {
                     configurations
@@ -325,20 +345,13 @@ subprojects {
         description = "Fails if a dependency's manifest needs a higher minSdk than this module declares"
         doLast {
             val declared = settings.get().minSdk ?: 1
-            val tooLow =
-                externalAars
-                    .flatMap { (configurationName, aars) ->
-                        aars.get().map { (component, aar) ->
-                            Triple(component, manifestMinSdk(component, aar), configurationName)
-                        }
-                    }.filter { (_, floor, _) -> floor > declared }
-                    .groupBy(
-                        { (component, floor, _) -> component to floor },
-                        { (_, _, configurationName) -> configurationName },
-                    ).map { (dependency, configurationNames) ->
-                        "${dependency.first} needs minSdk ${dependency.second} (${configurationNames.distinct().joinToString()})"
-                    }
-            val problems = tooLow.toMutableList()
+            val problems =
+                sdkFloorProblems(
+                    declared,
+                    externalAars.associate { (name, aars) ->
+                        name to aars.get()
+                    },
+                ).toMutableList()
             if (isLibrary && !settings.get().includesAndroidResourcesInUnitTests) {
                 problems += "unit tests do not include Android resources, so their manifest merge never checks minSdk"
             }
