@@ -14,7 +14,7 @@ class OcrProcessorModelTest {
     fun noTessdataDirectory_failsAtCreationAndFreesTheEngine() {
         val tesseract = FakeTesseract()
 
-        assertFailsWith<IllegalStateException> { OCRProcessor(tesseract, tessdataDir = null, clock = { 0L }) }
+        assertFailsWith<IllegalStateException> { OCRProcessor(tesseract, tessdataDir = null) }
 
         assertEquals(1, tesseract.engines.single().deletes.get(), "TessBaseAPI frees")
         assertEquals(emptyList(), tesseract.violations.toList())
@@ -24,7 +24,7 @@ class OcrProcessorModelTest {
     fun tesseractRejectingTheLanguageData_failsAtCreationAndFreesTheEngine() {
         val tesseract = FakeTesseract(initResult = -1)
 
-        assertFailsWith<IllegalStateException> { OCRProcessor(tesseract, tessdataDir = "tessdata", clock = { 0L }) }
+        assertFailsWith<IllegalStateException> { OCRProcessor(tesseract, tessdataDir = "tessdata") }
 
         assertEquals(1, tesseract.engines.single().deletes.get(), "TessBaseAPI frees")
         assertEquals(emptyList(), tesseract.violations.toList())

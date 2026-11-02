@@ -5,7 +5,6 @@ import java.awt.Font
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.File
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -21,7 +20,7 @@ class OcrProcessorNativeLeaksTest {
     @Test
     fun everyScan_freesTheTextBufferTesseractReturned_exactlyOnce() {
         val tesseract = FakeTesseract()
-        val processor = OCRProcessor(tesseract, TESSDATA, unthrottledClock())
+        val processor = OCRProcessor(tesseract, TESSDATA)
 
         repeat(5) { assertEquals("HELLO", processor.scanImage(colourFrame(16, 8))) }
         processor.close()
@@ -34,7 +33,7 @@ class OcrProcessorNativeLeaksTest {
     @Test
     fun everyScan_freesEveryImageItAllocated_exactlyOnce() {
         val tesseract = FakeTesseract()
-        val processor = OCRProcessor(tesseract, TESSDATA, unthrottledClock())
+        val processor = OCRProcessor(tesseract, TESSDATA)
 
         repeat(5) { processor.scanImage(colourFrame(16, 8)) }
         processor.close()
@@ -50,7 +49,7 @@ class OcrProcessorNativeLeaksTest {
     @Test
     fun close_freesTheTessBaseApi_exactlyOnce() {
         val tesseract = FakeTesseract()
-        val processor = OCRProcessor(tesseract, TESSDATA, unthrottledClock())
+        val processor = OCRProcessor(tesseract, TESSDATA)
         processor.scanImage(colourFrame(16, 8))
 
         processor.close()
@@ -67,7 +66,7 @@ class OcrProcessorNativeLeaksTest {
         val tesseract = FakeTesseract()
 
         repeat(3) {
-            val text = extractText(colourFrame(16, 8)) { OCRProcessor(tesseract, TESSDATA, unthrottledClock()) }
+            val text = extractText(colourFrame(16, 8)) { OCRProcessor(tesseract, TESSDATA) }
             assertEquals("HELLO", text)
         }
 
@@ -102,7 +101,7 @@ class OcrProcessorNativeLeaksTest {
         val frame = grayFrame(13, 7)
         val tesseract = FakeTesseract()
 
-        OCRProcessor(tesseract, TESSDATA, unthrottledClock()).scanImage(frame)
+        OCRProcessor(tesseract, TESSDATA).scanImage(frame)
 
         assertEquals(FakeTesseract.GrayImage(13, 7, frame.lumaValues()), tesseract.lastImage)
     }
@@ -114,7 +113,7 @@ class OcrProcessorNativeLeaksTest {
         val region = parent.getSubimage(3, 2, 11, 6)
         val tesseract = FakeTesseract()
 
-        OCRProcessor(tesseract, TESSDATA, unthrottledClock()).scanImage(region)
+        OCRProcessor(tesseract, TESSDATA).scanImage(region)
 
         assertEquals(FakeTesseract.GrayImage(11, 6, region.lumaValues()), tesseract.lastImage)
     }
@@ -126,7 +125,7 @@ class OcrProcessorNativeLeaksTest {
             File(tessdata, "eng.traineddata").exists(),
             "eng.traineddata not found under ${tessdata.absolutePath}",
         )
-        val processor = OCRProcessor(JavaCppTesseract, tessdata.absolutePath, unthrottledClock())
+        val processor = OCRProcessor(JavaCppTesseract, tessdata.absolutePath)
         try {
             val text = processor.scanImage(renderedText("HELLO 42"))
             assertNotNull(text, "Tesseract read nothing")
@@ -138,16 +137,10 @@ class OcrProcessorNativeLeaksTest {
 
     private fun nativeCallsForOneScan(frame: BufferedImage): Int {
         val tesseract = FakeTesseract()
-        val processor = OCRProcessor(tesseract, TESSDATA, unthrottledClock())
+        val processor = OCRProcessor(tesseract, TESSDATA)
         val before = tesseract.crossings.get()
         processor.scanImage(frame)
         return tesseract.crossings.get() - before
-    }
-
-    /** Each reading is a second after the last, so the 200 ms throttle never skips a scan. */
-    private fun unthrottledClock(): () -> Long {
-        val now = AtomicLong(0)
-        return { now.addAndGet(1_000) }
     }
 
     private fun colourFrame(width: Int, height: Int) = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)

@@ -19,17 +19,13 @@ import java.awt.image.DataBufferByte
 /**
  * Desktop implementation of OCR text recognition using Tesseract engine.
  *
- * Processes BufferedImage frames to extract text using Tesseract OCR with
- * thread-safe locking and frame rate throttling for performance.
+ * Processes BufferedImage frames to extract text using Tesseract OCR with thread-safe locking. It
+ * reads every frame it is given: live recognition decides the rate, from OcrConfig.maxFps.
  *
  * Creating a processor fails when Tesseract's language data is missing or unusable, so the caller
  * can report it; a processor that exists can always scan until it is closed.
  */
-class OCRProcessor internal constructor(
-    private val library: TesseractLibrary,
-    tessdataDir: String?,
-    private val clock: () -> Long,
-) {
+class OCRProcessor internal constructor(private val library: TesseractLibrary, tessdataDir: String?) {
     /**
      * Loads `eng.traineddata` from the first source [config] and the process offer (see [OcrConfig]).
      *
@@ -39,19 +35,10 @@ class OCRProcessor internal constructor(
     constructor(config: OcrConfig = OcrConfig()) : this(
         JavaCppTesseract,
         findTessdataDirectory(processTessdataSources(config)),
-        System::currentTimeMillis,
-    )
-
-    /** Reads language data from [tessdataDir] through [library], timing scans by the system clock. */
-    internal constructor(library: TesseractLibrary, tessdataDir: String?) : this(
-        library,
-        tessdataDir,
-        System::currentTimeMillis,
     )
 
     private val api = library.newEngine()
     private val lock = ReentrantLock()
-    private var lastProcessTime = 0L
 
     // Guarded by lock: set by close(), after which nothing calls into Tesseract.
     private var isClosed = false
@@ -84,21 +71,17 @@ class OCRProcessor internal constructor(
     /**
      * Scans a BufferedImage for text using Tesseract OCR.
      *
-     * Uses thread-safe locking and throttles processing to every 200ms. Preprocesses
-     * images to grayscale for better OCR accuracy. Returns null after [close].
+     * Uses thread-safe locking. Preprocesses images to grayscale for better OCR accuracy. Returns
+     * null after [close].
      *
      * @param image The BufferedImage frame to scan
-     * @return Extracted text if successful, null if no text found, processing is throttled, or the processor is closed
+     * @return Extracted text if successful, null if no text found, another scan is in progress, or the processor is closed
      */
     fun scanImage(image: BufferedImage): String? {
         if (!lock.tryLock()) return null
 
         return try {
             if (isClosed) return null
-            val currentTime = clock()
-            if (currentTime - lastProcessTime < MIN_SCAN_INTERVAL_MS) {
-                return null
-            }
 
             val grayImage = preprocessImage(image)
             val raster = grayImage.raster
@@ -112,7 +95,6 @@ class OCRProcessor internal constructor(
                 } finally {
                     api.clear()
                 }
-            lastProcessTime = currentTime
 
             result.takeIf { !it.isNullOrBlank() }
         } catch (e: Exception) {
@@ -173,10 +155,6 @@ class OCRProcessor internal constructor(
         }
     }
 }
-
-// A processor scans at most once per this many milliseconds, counted from its last successful scan.
-// Live OCR is also gated by OcrConfig.maxFps before a frame reaches the processor.
-private const val MIN_SCAN_INTERVAL_MS = 200L
 
 actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig): String =
     extractText(bitmap.toAwtImage()) { OCRProcessor(config) }

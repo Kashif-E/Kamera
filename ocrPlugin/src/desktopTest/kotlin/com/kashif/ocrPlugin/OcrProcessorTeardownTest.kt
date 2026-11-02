@@ -19,7 +19,7 @@ class OcrProcessorTeardownTest {
     @Test
     fun close_whileAScanIsInFlight_waitsForTheScanBeforeEndingTesseract() {
         val tesseract = FakeTesseract().apply { recognitionGate = CountDownLatch(1) }
-        val processor = OCRProcessor(tesseract, TESSDATA, clock = { 1_000L })
+        val processor = OCRProcessor(tesseract, TESSDATA)
         val scanResult = AtomicReference<String?>()
         val scanner = thread(name = "ocr-scan") { scanResult.set(processor.scanImage(frame())) }
         try {
@@ -48,7 +48,7 @@ class OcrProcessorTeardownTest {
     @Test
     fun scanImage_afterClose_returnsNullWithoutTouchingTesseract() {
         val tesseract = FakeTesseract()
-        val processor = OCRProcessor(tesseract, TESSDATA, clock = { 1_000L })
+        val processor = OCRProcessor(tesseract, TESSDATA)
         processor.close()
         val crossingsAfterClose = tesseract.crossings.get()
 
@@ -61,7 +61,7 @@ class OcrProcessorTeardownTest {
     @Test
     fun close_twice_endsTesseractOnce() {
         val tesseract = FakeTesseract()
-        val processor = OCRProcessor(tesseract, TESSDATA, clock = { 1_000L })
+        val processor = OCRProcessor(tesseract, TESSDATA)
 
         processor.close()
         processor.close()
