@@ -65,8 +65,9 @@ class VideoRecordingDelegate :
         val result = if (error == null || error.recordingFinishedSuccessfully()) {
             VideoCaptureResult.Success(filePath, durationMs)
         } else {
-            CameraKLogger.e("CameraK", "CameraK: the recording failed: ${error.domain} ${error.code}")
-            VideoCaptureResult.Error(Exception("Recording failed: ${error.summary}", NSErrorException(error)))
+            val failure = Exception("Recording failed: ${error.summary}", NSErrorException(error))
+            CameraKLogger.e("CameraK", "CameraK: the recording failed", failure)
+            VideoCaptureResult.Error(failure)
         }
         if (!started.isCompleted) {
             started.completeExceptionally(IllegalStateException("The recording ended before it started"))

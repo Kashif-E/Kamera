@@ -532,18 +532,34 @@ class CustomCameraController(
      * Adds the input [create] makes unless an attached input already satisfies [isPresent], as one
      * queued configuration change (the recorder adds its microphone this way). The check, [create]
      * and the add all run on the session queue, so no other session work can interleave with them.
+     * An input [create] cannot make, or one the session refuses, is logged and reported to [onError]
+     * as a ConfigurationError naming [what], with the platform's error as its cause; the session
+     * carries on without it.
      */
     internal fun addInputUnlessPresent(
+        what: String,
         isPresent: (AVCaptureInput) -> Boolean,
         create: () -> Result<AVCaptureInput>,
     ) {
         queueConfigurationChange {
             val ops = session ?: return@queueConfigurationChange
             if (ops.inputs.any(isPresent)) return@queueConfigurationChange
-            val input = create().getOrNull() ?: return@queueConfigurationChange
-            if (ops.canAddInput(input)) {
-                ops.addInput(input)
-            }
+            val failure = create().fold(
+                onSuccess = { input ->
+                    if (ops.canAddInput(input)) {
+                        ops.addInput(input)
+                        null
+                    } else {
+                        CameraException.ConfigurationError("The capture session refused $what")
+                    }
+                },
+                onFailure = { cause ->
+                    val reported = (cause as? NSErrorException)?.error?.let { ": ${it.summary}" }.orEmpty()
+                    CameraException.ConfigurationError("Could not add $what$reported", cause)
+                },
+            ) ?: return@queueConfigurationChange
+            CameraKLogger.e(TAG, "CameraK: adding $what failed", failure)
+            reportError(failure)
         }
     }
 

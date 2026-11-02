@@ -299,7 +299,7 @@ class SessionQueueTest {
         awaitCondition("startRunning") { session.isRunning }
 
         val inputsMade = atomic(0)
-        controller.addInputUnlessPresent(isPresent = { false }, create = {
+        controller.addInputUnlessPresent(what = "an input", isPresent = { false }, create = {
             inputsMade.incrementAndGet()
             Result.failure(IllegalStateException("no input in this test"))
         })

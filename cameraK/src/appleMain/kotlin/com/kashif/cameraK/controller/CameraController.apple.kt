@@ -54,6 +54,7 @@ import platform.AVFoundation.AVMediaTypeAudio
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.CoreMedia.kCMTimeInvalid
 import platform.Foundation.NSData
+import platform.Foundation.NSDataWritingAtomic
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
@@ -62,6 +63,7 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.timeIntervalSince1970
+import platform.Foundation.writeToFile
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import platform.UIKit.UIViewController
@@ -424,7 +426,7 @@ actual class CameraController internal constructor(
     private fun writePhoto(image: NSData): String? {
         val filePath = createTempFile()
         if (imageFormat == ImageFormat.JPEG) {
-            writeDataToFile(image, filePath).getOrElse { return null }
+            writeDataToFile(image, filePath).getOrThrow()
             processImageCapture(image)
         } else {
             if (!writePng(image, filePath)) {
@@ -766,8 +768,17 @@ actual class CameraController internal constructor(
         }
     }
 
+    /**
+     * Adds the microphone for a recording with audio. A microphone that cannot be added (one the user
+     * has not authorised) is reported to onError with AVFoundation's error, and the recording goes
+     * ahead without audio.
+     */
     private fun addAudioInputIfNeeded() {
-        customCameraController.addInputUnlessPresent(isPresent = ::isAudioDeviceInput, create = microphoneInput)
+        customCameraController.addInputUnlessPresent(
+            what = "the microphone",
+            isPresent = ::isAudioDeviceInput,
+            create = microphoneInput,
+        )
     }
 
     @OptIn(ExperimentalForeignApi::class)
@@ -997,18 +1008,35 @@ actual class CameraController internal constructor(
     }
 }
 
+/** The default microphone's input, or why there is none: AVFoundation's NSError for one it refuses. */
 @OptIn(ExperimentalForeignApi::class)
-private fun defaultMicrophoneInput(): Result<AVCaptureInput> {
+private fun defaultMicrophoneInput(): Result<AVCaptureInput> = memScoped {
     val microphone = platform.AVFoundation.AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeAudio)
-        ?: return Result.failure(IllegalStateException("No microphone is available"))
-    return AVCaptureDeviceInput.deviceInputWithDevice(microphone, null)?.let { Result.success(it) }
-        ?: Result.failure(IllegalStateException("AVFoundation made no input for the microphone"))
+        ?: return@memScoped Result.failure(IllegalStateException("No microphone is available"))
+    val error = alloc<ObjCObjectVar<NSError?>>()
+    AVCaptureDeviceInput.deviceInputWithDevice(microphone, error.ptr)?.let { Result.success(it) }
+        ?: Result.failure(
+            error.value?.let(::NSErrorException)
+                ?: IllegalStateException("AVFoundation made no input for the microphone and gave no error"),
+        )
 }
 
-/** Writes [data] to a new file at [filePath]; a failure says why. */
-internal fun writeDataToFile(data: NSData, filePath: String): Result<Unit> =
-    if (NSFileManager.defaultManager.createFileAtPath(filePath, data, null)) {
+/**
+ * Writes [data] to the file at [filePath], atomically; a failure carries the file system's NSError
+ * as its cause, and its message names neither the file nor its path.
+ */
+@OptIn(ExperimentalForeignApi::class)
+internal fun writeDataToFile(data: NSData, filePath: String): Result<Unit> = memScoped {
+    val error = alloc<ObjCObjectVar<NSError?>>()
+    if (data.writeToFile(filePath, NSDataWritingAtomic, error.ptr)) {
         Result.success(Unit)
     } else {
-        Result.failure(IllegalStateException("Could not write the file"))
+        val cause = error.value
+        Result.failure(
+            IllegalStateException(
+                "Could not write the file${cause?.let { ": ${it.summary}" }.orEmpty()}",
+                cause?.let(::NSErrorException),
+            ),
+        )
     }
+}
