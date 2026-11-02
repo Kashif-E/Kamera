@@ -4,6 +4,7 @@ import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import androidx.test.core.app.ApplicationProvider
+import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import org.junit.Before
 import org.junit.Test
@@ -13,6 +14,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowCameraCharacteristics
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * Chromebooks, tablets and TVs report USB cameras as LENS_FACING_EXTERNAL. Such a camera faces
@@ -30,7 +32,8 @@ class ExternalLensTest {
         shadowOf(manager).addCamera("1", characteristics(CameraCharacteristics.LENS_FACING_FRONT, focalLengthMm = 2.2f))
         shadowOf(manager).addCamera(
             "5",
-            characteristics(CameraCharacteristics.LENS_FACING_EXTERNAL, focalLengthMm = 12f),
+            // A USB camera that focuses close enough to classify as MACRO, a type the back side lacks.
+            characteristics(CameraCharacteristics.LENS_FACING_EXTERNAL, focalLengthMm = 12f, minFocusDiopters = 25f),
         )
     }
 
@@ -49,11 +52,26 @@ class ExternalLensTest {
         assertEquals(listOf("1"), capabilities.lenses(CameraLens.FRONT).map { it.id })
     }
 
-    private fun characteristics(facing: Int, focalLengthMm: Float): CameraCharacteristics {
+    @Test
+    fun backDeviceTypeSwitch_neverTargetsTheExternalCamera() {
+        val snapshot = LensEnumerator.snapshot(context)
+        assertEquals(CameraDeviceType.MACRO, snapshot.single { it.info.id == "5" }.info.deviceType)
+
+        val target = snapshot.deviceTypeTarget(CameraLens.BACK, CameraDeviceType.MACRO)
+
+        assertNull(target?.info?.id, "a back MACRO switch targeted the external camera")
+    }
+
+    private fun characteristics(
+        facing: Int,
+        focalLengthMm: Float,
+        minFocusDiopters: Float = 0f,
+    ): CameraCharacteristics {
         val characteristics = ShadowCameraCharacteristics.newCameraCharacteristics()
         Shadow.extract<ShadowCameraCharacteristics>(characteristics).apply {
             set(CameraCharacteristics.LENS_FACING, facing)
             set(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS, floatArrayOf(focalLengthMm))
+            set(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE, minFocusDiopters)
             set(
                 CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES,
                 intArrayOf(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE),
