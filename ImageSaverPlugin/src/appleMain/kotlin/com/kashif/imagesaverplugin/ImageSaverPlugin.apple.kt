@@ -14,7 +14,12 @@ import platform.CoreFoundation.CFRelease
 import platform.CoreFoundation.CFRetain
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
+import platform.Foundation.NSCachesDirectory
 import platform.Foundation.NSData
+import platform.Foundation.NSFileManager
+import platform.Foundation.NSSearchPathForDirectoriesInDomains
+import platform.Foundation.NSUUID
+import platform.Foundation.NSUserDomainMask
 import platform.ImageIO.CGImageSourceCreateWithData
 import platform.ImageIO.CGImageSourceGetCount
 import platform.ImageIO.CGImageSourceGetType
@@ -159,7 +164,15 @@ class IOSImageSaverPlugin internal constructor(
         "Blocks the calling thread on a synchronous Photos request. Use readBytes, which suspends.",
         ReplaceWith("readBytes(path)"),
     )
-    override fun getByteArrayFrom(path: String): ByteArray {
+    override fun getByteArrayFrom(path: String): ByteArray = readAssetSynchronously(path).first.toByteArray()
+
+    /**
+     * The data of the Photos asset at [path] and its uniform type identifier, read with a synchronous
+     * Photos request that blocks the calling thread until Photos returns them.
+     *
+     * @throws IOException when there is no such asset or Photos delivers no data.
+     */
+    private fun readAssetSynchronously(path: String): Pair<NSData, String?> {
         val assetId = path.removePrefix("ph://")
         val options =
             PHImageRequestOptions().apply {
@@ -172,34 +185,69 @@ class IOSImageSaverPlugin internal constructor(
         // A synchronous request runs the handler on this thread before it returns, so the data is
         // already here when requestImageData does.
         var imageData: NSData? = null
-        photoLibrary.requestImageData(assetId, options) { data, _ -> imageData = data }
-            ?: throw IOException("No asset found with identifier: $path")
+        var imageType: String? = null
+        photoLibrary.requestImageData(assetId, options) { data, dataUTI ->
+            imageData = data
+            imageType = dataUTI
+        } ?: throw IOException("No asset found with identifier: $path")
 
-        return imageData?.toByteArray() ?: throw IOException("Failed to get image data from asset: $path")
+        val data = imageData ?: throw IOException("Failed to get image data from asset: $path")
+        return data to imageType
     }
 
     /**
-     * Resolve a Photos asset identifier to a temporary file path on disk.
-     * Returns null if the asset cannot be found or written.
+     * Writes the image data of the Photos asset at [path] (`ph://<local identifier>`) to a new file
+     * in `Library/Caches/CameraK`, named with the extension of the data's type (`.heic`, `.png`,
+     * `.jpg`, ...), and returns its path; null when the asset cannot be found, its data type has no
+     * known image extension, or the file cannot be written.
+     *
+     * The returned file belongs to the caller, who deletes it once done with it; CameraK never
+     * deletes it, and iOS may purge `Library/Caches` when the device runs low on storage. The read
+     * is a synchronous Photos request that blocks the calling thread.
      */
     @OptIn(ExperimentalForeignApi::class)
     fun getFilePathFromAsset(path: String): String? = try {
-        @Suppress("DEPRECATION")
-        val data = getByteArrayFrom(path)
-        val tempDir = platform.Foundation.NSTemporaryDirectory()
-        val fileName = "IMG_${platform.Foundation.NSUUID().UUIDString}.jpg"
-        val fullPath = "$tempDir$fileName"
-        val success =
-            platform.Foundation.NSFileManager.defaultManager.createFileAtPath(
-                fullPath,
-                data.toNSData(),
-                null,
-            )
-        if (success) fullPath else null
+        val (data, type) = readAssetSynchronously(path)
+        val extension = type?.let(::imageFileExtension)
+            ?: throw IOException("The asset's data type has no known image file extension")
+        val fullPath = "${cameraKCachesDirectory()}/IMG_${NSUUID().UUIDString}.$extension"
+        if (!NSFileManager.defaultManager.createFileAtPath(fullPath, data, null)) {
+            throw IOException("Writing the asset's data to a file failed")
+        }
+        fullPath
     } catch (e: Exception) {
         CameraKLogger.e("CameraK", "Failed to resolve asset to file", e)
         null
     }
+
+    /** `Library/Caches/CameraK`, created when missing. */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun cameraKCachesDirectory(): String {
+        val caches = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, true).firstOrNull()
+            as? String ?: throw IOException("The app has no Caches directory")
+        val directory = "$caches/CameraK"
+        if (!NSFileManager.defaultManager.createDirectoryAtPath(directory, true, null, null)) {
+            throw IOException("Creating the CameraK caches directory failed")
+        }
+        return directory
+    }
+}
+
+/**
+ * The file extension for an image of uniform type [uniformTypeIdentifier], or null for a type that
+ * is not one of the image formats Photos stores.
+ */
+internal fun imageFileExtension(uniformTypeIdentifier: String): String? = when (uniformTypeIdentifier) {
+    "public.jpeg" -> "jpg"
+    "public.heic" -> "heic"
+    "public.heif" -> "heif"
+    "public.png" -> "png"
+    "public.tiff" -> "tiff"
+    "com.compuserve.gif" -> "gif"
+    "org.webmproject.webp" -> "webp"
+    "com.microsoft.bmp" -> "bmp"
+    "com.adobe.raw-image" -> "dng"
+    else -> null
 }
 
 //    /**
