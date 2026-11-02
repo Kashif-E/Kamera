@@ -17,7 +17,8 @@ import kotlin.test.assertNotNull
 
 /**
  * Capture listeners on desktop are a set, as on Android and iOS: adding one never drops another,
- * so an auto-saving plugin and an app listener both see every capture.
+ * so an auto-saving plugin and an app listener both see every capture. Each listener gets its own
+ * copy of the photo, so one that changes or keeps its array cannot corrupt what another sees.
  */
 class DesktopCaptureListenersTest {
 
@@ -82,5 +83,29 @@ class DesktopCaptureListenersTest {
         val bytes = capture().readBytes()
 
         assertContentEquals(bytes, assertNotNull(received, "the listener after a throwing one got nothing"))
+    }
+
+    @Test
+    fun aListenerThatOverwritesItsBytes_doesNotChangeWhatTheNextOneReceives() {
+        var received: ByteArray? = null
+        sut.addImageCaptureListener { it.fill(0) }
+        sut.addImageCaptureListener { received = it.copyOf() }
+        sut.startSession()
+
+        val bytes = capture().readBytes()
+
+        assertContentEquals(bytes, assertNotNull(received, "the second listener got nothing"))
+    }
+
+    @Test
+    fun bytesAListenerKeeps_areNotChangedByALaterListener() {
+        var kept: ByteArray? = null
+        sut.addImageCaptureListener { kept = it }
+        sut.addImageCaptureListener { it.fill(0) }
+        sut.startSession()
+
+        val bytes = capture().readBytes()
+
+        assertContentEquals(bytes, assertNotNull(kept, "the first listener got nothing"))
     }
 }
