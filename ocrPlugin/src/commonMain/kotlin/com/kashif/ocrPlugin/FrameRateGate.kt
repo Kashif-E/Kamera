@@ -15,9 +15,14 @@ internal class FrameRateGate(maxFps: Int) {
     private val intervalNanos = NANOS_PER_SECOND / maxFps
     private var lastPassNanos = Long.MIN_VALUE
 
-    /** Returns true when a frame stamped [timestampNanos] should be read, and counts it as read. */
+    /**
+     * Returns true when a frame stamped [timestampNanos] should be read, and counts it as read. A
+     * timestamp before the last pass means the clock stepped back; that frame passes and the gate
+     * counts from it, rather than waiting for the old time to come round again.
+     */
     fun tryPass(timestampNanos: Long): Boolean {
-        if (lastPassNanos != Long.MIN_VALUE && timestampNanos - lastPassNanos < intervalNanos) return false
+        val sinceLastPass = timestampNanos - lastPassNanos
+        if (lastPassNanos != Long.MIN_VALUE && sinceLastPass in 0 until intervalNanos) return false
         lastPassNanos = timestampNanos
         return true
     }
