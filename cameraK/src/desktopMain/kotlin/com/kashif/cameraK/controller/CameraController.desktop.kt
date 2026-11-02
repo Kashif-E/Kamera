@@ -30,6 +30,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -362,9 +363,13 @@ actual class CameraController(
         scope.cancel()
     }
 
-    /** Ends the controller as [cleanup] does. */
+    /**
+     * Ends the controller as [cleanup] does, then suspends until its work has ended: the grab loop
+     * has released the camera and any recording has stopped and released its recorder.
+     */
     suspend fun closeAndJoin() {
         cleanup()
+        scope.coroutineContext.job.join()
     }
 
     actual suspend fun startRecording(configuration: VideoConfiguration): String = withContext(Dispatchers.IO) {

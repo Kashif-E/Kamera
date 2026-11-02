@@ -19,11 +19,13 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
 import org.bytedeco.javacv.VideoInputFrameGrabber
 import java.awt.image.BufferedImage
+import java.util.WeakHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -52,6 +54,9 @@ class CameraGrabber(
 
     private val job = atomic<Job?>(null)
     private val ownerScope = atomic<CoroutineScope?>(null)
+
+    // Serialises start() and stop(), so two starts racing from different threads launch one loop.
+    private val startLock = Any()
 
     @Volatile private var isHorizontallyFlipped = false
 
@@ -115,11 +120,13 @@ class CameraGrabber(
      * the converter for its whole life: it opens the grabber, grabs and converts, and stops and
      * releases both in its own `finally`, so the native handle is never freed while a `grab()` or a
      * conversion of the grabber's frame is still running. A start that follows [stop] waits for the
-     * previous loop to release its grabber first.
+     * previous loop to release its grabber first, and a loop of any grabber waits for every other
+     * loop on the same camera to release it. A start while a loop runs does nothing.
      */
-    fun start(coroutineScope: CoroutineScope, customGrabber: FrameGrabber? = null) {
+    fun start(coroutineScope: CoroutineScope, customGrabber: FrameGrabber? = null): Unit = synchronized(startLock) {
         val previous = job.value
         if (previous?.isActive == true) return
+        val device = cameraDeviceLock(customGrabber)
 
         val producer =
             Executors
@@ -128,9 +135,12 @@ class CameraGrabber(
         val loop =
             coroutineScope.launch(producer, start = CoroutineStart.ATOMIC) {
                 var owned: FrameGrabber? = null
+                var holdsDevice = false
                 val converter = FrameConverter()
                 try {
                     previous?.join()
+                    device.lock()
+                    holdsDevice = true
                     // A loop cancelled before it opened the camera (a stop or cleanup right after the
                     // start) leaves it closed.
                     ensureActive()
@@ -185,15 +195,13 @@ class CameraGrabber(
                     errorHandler(missingNatives(e))
                 } finally {
                     owned?.let { release(it, converter) }
+                    if (holdsDevice) device.unlock()
                     snapshots.tryEmit(null)
                 }
             }
         loop.invokeOnCompletion { producer.close() }
-        if (job.compareAndSet(previous, loop)) {
-            ownerScope.value = coroutineScope
-        } else {
-            loop.cancel()
-        }
+        job.value = loop
+        ownerScope.value = coroutineScope
     }
 
     /**
@@ -201,7 +209,7 @@ class CameraGrabber(
      * once it leaves the native call it is in, however many times this is called.
      */
     fun stop() {
-        job.value?.cancel()
+        synchronized(startLock) { job.value }?.cancel()
     }
 
     private fun release(owned: FrameGrabber, converter: FrameConverter) {
@@ -285,6 +293,16 @@ class CameraGrabber(
         }
     }
 }
+
+// One lock per camera, held by a grab loop from before it opens the camera until it has released
+// it, so a new controller's loop waits for an old controller's loop that is still inside grab().
+// Every default grabber opens the system's first camera; a custom grabber is its own device. Weak
+// keys let a custom grabber be collected once no loop uses it.
+private val cameraDeviceLocks = WeakHashMap<Any, Mutex>()
+private val defaultCamera = Any()
+
+private fun cameraDeviceLock(customGrabber: FrameGrabber?): Mutex =
+    synchronized(cameraDeviceLocks) { cameraDeviceLocks.getOrPut(customGrabber ?: defaultCamera) { Mutex() } }
 
 /** A copy of one of the grab loop's frames, which its receiver may keep, and when it was grabbed. */
 internal class CapturedFrame(val image: BufferedImage, val captureNanos: Long)
