@@ -31,6 +31,6 @@ class OcrConfigTest {
 
     @Test
     fun toString_namesTheValues() {
-        assertEquals("OcrConfig(tessdataPath=/models)", OcrConfig("/models").toString())
+        assertEquals("OcrConfig(tessdataPath=/models, maxFps=2)", OcrConfig("/models").toString())
     }
 }
