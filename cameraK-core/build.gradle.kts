@@ -32,7 +32,6 @@ kotlin {
 
         commonMain.dependencies {
             api(libs.kotlinx.coroutines.core)
-            api(libs.kermit)
             implementation(libs.atomicfu)
         }
 

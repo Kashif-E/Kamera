@@ -19,7 +19,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            // Coroutines, kermit, CameraX and the JavaCV bindings come through camerak-core.
+            // Coroutines, CameraX and the JavaCV bindings come through camerak-core.
             api(project(":cameraK-core"))
             api(libs.compose.ui)
             api(libs.compose.material3)
