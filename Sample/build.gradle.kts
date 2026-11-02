@@ -168,26 +168,40 @@ compose.desktop {
 // denied or killed by TCC, and a hardened-runtime build also needs the camera entitlement.
 // `./gradlew run` hides both, because the terminal already holds the camera permission. The lint
 // target of scripts/verify.sh runs this check.
+// The DSL is read when the check runs, after the whole script has configured it, so the check does
+// not depend on where it is declared.
 val macOsPackaging = compose.desktop.application.nativeDistributions.macOS
-var macOsExtraPlistKeys = ""
-macOsPackaging.infoPlist { macOsExtraPlistKeys = extraKeysRawXml.orEmpty() }
-val macOsEntitlements =
-    listOfNotNull(macOsPackaging.entitlementsFile.orNull?.asFile, macOsPackaging.runtimeEntitlementsFile.orNull?.asFile)
+val macOsExtraPlistKeys =
+    provider {
+        var keys = ""
+        macOsPackaging.infoPlist { keys = extraKeysRawXml.orEmpty() }
+        keys
+    }
+val macOsEntitlementFiles =
+    provider {
+        listOfNotNull(
+            macOsPackaging.entitlementsFile.orNull?.asFile,
+            macOsPackaging.runtimeEntitlementsFile.orNull?.asFile,
+        )
+    }
 tasks.register("checkMacOsCameraPackaging") {
     group = "verification"
     description = "Fails if the packaged macOS app lacks a camera usage description or the camera entitlement"
-    inputs.files(macOsEntitlements)
+    inputs.property("extraKeysRawXml", macOsExtraPlistKeys)
+    inputs.files(macOsEntitlementFiles)
     doLast {
+        val plistKeys = macOsExtraPlistKeys.get()
+        val entitlements = macOsEntitlementFiles.get()
         val problems = mutableListOf<String>()
         val usage = Regex("""<key>NSCameraUsageDescription</key>\s*<string>\s*[^<\s][^<]*</string>""")
-        if (!usage.containsMatchIn(macOsExtraPlistKeys)) {
+        if (!usage.containsMatchIn(plistKeys)) {
             problems += "macOS { infoPlist { extraKeysRawXml } } has no non-empty NSCameraUsageDescription"
         }
         val cameraEntitlement = Regex("""<key>com\.apple\.security\.device\.camera</key>\s*<true\s*/>""")
-        if (macOsEntitlements.size < 2) {
+        if (entitlements.size < 2) {
             problems += "macOS { entitlementsFile / runtimeEntitlementsFile } are not both set"
         }
-        macOsEntitlements.filterNot { it.isFile && cameraEntitlement.containsMatchIn(it.readText()) }.forEach {
+        entitlements.filterNot { it.isFile && cameraEntitlement.containsMatchIn(it.readText()) }.forEach {
             problems += "${it.name} does not grant com.apple.security.device.camera"
         }
         if (problems.isNotEmpty()) {
