@@ -3,6 +3,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
@@ -78,8 +79,8 @@ class AnalyzerPlugin internal constructor(
                         this@AnalyzerPlugin.cameraController = readyState.controller
                         startAnalyzer()
                     } catch (e: Exception) {
-                        CameraKLogger.e("CameraK", "Analyzer: Failed to start analyzer: ${e.message}")
-                        CameraKLogger.e("CameraK", "Unhandled exception", e)
+                        CameraKLogger.e("CameraK", "Analyzer: Failed to start analyzer", e)
+                        stateHolder.emitEvent(CameraKEvent.PluginFailed(e))
                     }
                 }
         }

@@ -130,8 +130,9 @@ class QRScannerPlugin internal constructor(
                 }
             }
         } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "QRScannerPlugin: Failed to start scanning: ${e.message}")
+            CameraKLogger.e("CameraK", "QRScannerPlugin: Failed to start scanning", e)
             isScanning.value = false
+            stateHolder?.let { holder -> holder.pluginScope.launch { holder.emitEvent(CameraKEvent.PluginFailed(e)) } }
             null
         }
     }

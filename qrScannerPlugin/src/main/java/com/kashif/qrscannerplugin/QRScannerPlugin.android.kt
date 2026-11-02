@@ -10,6 +10,7 @@ import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.ReaderException
 import com.google.zxing.common.HybridBinarizer
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.utils.CameraKLogger
@@ -138,6 +139,10 @@ internal class QRCodeAnalyzer(
     // The Y plane is copied here, reused while frames keep their size: analysis runs at frame rate.
     private var luma = ByteArray(0)
 
+    // Decode failures other than "no readable code"; the first and then one in LOG_FAILURE_EVERY are
+    // logged, so a decoder that fails on every frame shows without flooding the log.
+    private var unexpectedFailures = 0L
+
     /**
      * Analyzes camera frames to detect QR codes and barcodes.
      *
@@ -154,60 +159,75 @@ internal class QRCodeAnalyzer(
             return
         }
 
-        try {
-            // The Y plane of YUV_420_888 IS the luminance ZXing wants — use it directly via
-            // PlanarYUVLuminanceSource (faster and correct). The previous RGBLuminanceSource
-            // path fed the luma byte in as the blue channel, producing a dim/wrong luminance.
-            // rowStride is honored so row padding doesn't skew the image.
-            val plane = imageProxy.planes[0]
-            // Read through a duplicate from the start, so the copy is the full Y plane whatever
-            // the buffer's position, and the proxy's buffer is left as it was.
-            val buffer = plane.buffer.duplicate().apply { rewind() }
-            val size = buffer.remaining()
-            if (luma.size < size) luma = ByteArray(maxOf(size, plane.rowStride * imageProxy.height))
-            buffer.get(luma, 0, size)
-
-            // Decode only what the use case shows: the crop rect, clamped to the frame.
-            val crop = Rect(imageProxy.cropRect)
-            if (crop.isEmpty || !crop.intersect(0, 0, imageProxy.width, imageProxy.height)) {
-                crop.set(0, 0, imageProxy.width, imageProxy.height)
-            }
-            val frame =
-                LumaFrame(
-                    luma,
-                    plane.rowStride,
-                    imageProxy.height,
-                    crop.left,
-                    crop.top,
-                    crop.width(),
-                    crop.height(),
-                )
-
-            frameCount++
-            val tryHarder = frameCount % slowPassEveryNFrames == 0L
-            val text =
-                decoder.decode(frame, tryHarder, inverted = false)
-                    // Periodic inverted pass for white-on-black / light-on-dark codes (#116).
-                    ?: if (frameCount % invertedRetryEveryNFrames == 0L) {
-                        decoder.decode(frame, tryHarder, inverted = true)
-                    } else {
-                        null
-                    }
-
-            if (text != null) {
-                val currentTime = System.currentTimeMillis()
-                if (text != lastScannedCode || (currentTime - lastScanTime) > scanDebounceMs) {
-                    CameraKLogger.d("QRScanner", "QR Code detected: $text")
-                    lastScannedCode = text
-                    lastScanTime = currentTime
-                    onQrScanner(text)
+        val text =
+            try {
+                decode(imageProxy)
+            } catch (_: ReaderException) {
+                // ZXing found no readable code in the frame: the normal case while scanning.
+                null
+            } catch (e: Exception) {
+                if (unexpectedFailures++ % LOG_FAILURE_EVERY == 0L) {
+                    CameraKLogger.e("QRScanner", "QR decode failed ($unexpectedFailures unexpected failures)", e)
                 }
+                null
+            } finally {
+                imageProxy.close()
             }
-        } catch (e: Exception) {
-            // QR code detection failed - no code found in frame (expected during normal scanning)
-        } finally {
-            imageProxy.close()
+
+        // Outside the try: an exception from the consumer's callback is the consumer's, not an empty frame.
+        if (text != null) {
+            val currentTime = System.currentTimeMillis()
+            if (text != lastScannedCode || (currentTime - lastScanTime) > scanDebounceMs) {
+                CameraKLogger.d("QRScanner", "QR Code detected")
+                lastScannedCode = text
+                lastScanTime = currentTime
+                onQrScanner(text)
+            }
         }
+    }
+
+    private fun decode(imageProxy: ImageProxy): String? {
+        // The Y plane of YUV_420_888 IS the luminance ZXing wants — use it directly via
+        // PlanarYUVLuminanceSource (faster and correct). The previous RGBLuminanceSource
+        // path fed the luma byte in as the blue channel, producing a dim/wrong luminance.
+        // rowStride is honored so row padding doesn't skew the image.
+        val plane = imageProxy.planes[0]
+        // Read through a duplicate from the start, so the copy is the full Y plane whatever
+        // the buffer's position, and the proxy's buffer is left as it was.
+        val buffer = plane.buffer.duplicate().apply { rewind() }
+        val size = buffer.remaining()
+        if (luma.size < size) luma = ByteArray(maxOf(size, plane.rowStride * imageProxy.height))
+        buffer.get(luma, 0, size)
+
+        // Decode only what the use case shows: the crop rect, clamped to the frame.
+        val crop = Rect(imageProxy.cropRect)
+        if (crop.isEmpty || !crop.intersect(0, 0, imageProxy.width, imageProxy.height)) {
+            crop.set(0, 0, imageProxy.width, imageProxy.height)
+        }
+        val frame =
+            LumaFrame(
+                luma,
+                plane.rowStride,
+                imageProxy.height,
+                crop.left,
+                crop.top,
+                crop.width(),
+                crop.height(),
+            )
+
+        frameCount++
+        val tryHarder = frameCount % slowPassEveryNFrames == 0L
+        return decoder.decode(frame, tryHarder, inverted = false)
+            // Periodic inverted pass for white-on-black / light-on-dark codes (#116).
+            ?: if (frameCount % invertedRetryEveryNFrames == 0L) {
+                decoder.decode(frame, tryHarder, inverted = true)
+            } else {
+                null
+            }
+    }
+
+    private companion object {
+        const val LOG_FAILURE_EVERY = 100L
     }
 }
 

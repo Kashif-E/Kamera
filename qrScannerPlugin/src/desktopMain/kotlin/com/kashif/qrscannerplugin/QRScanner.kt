@@ -6,7 +6,9 @@ import com.google.zxing.DecodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.ReaderException
 import com.google.zxing.common.HybridBinarizer
+import com.kashif.cameraK.utils.CameraKLogger
 import java.awt.image.BufferedImage
 import java.util.concurrent.locks.ReentrantLock
 
@@ -39,6 +41,10 @@ class QRScanner internal constructor(
     private var lastAttemptTime = Long.MIN_VALUE / 2
     private var attempts = 0L
 
+    // Guarded by lock. Decode failures other than "no readable code"; the first and then one in
+    // LOG_FAILURE_EVERY are logged, so a decoder that fails on every attempt shows without flooding the log.
+    private var unexpectedFailures = 0L
+
     /**
      * Scans a BufferedImage for QR codes.
      *
@@ -62,11 +68,15 @@ class QRScanner internal constructor(
 
             try {
                 decoder.decode(image, tryHarder = attempts % SLOW_PASS_EVERY == 0L)
-            } catch (e: NotFoundException) {
+            } catch (_: ReaderException) {
+                // ZXing found no readable code in the frame: the normal case while scanning.
+                null
+            } catch (e: Exception) {
+                if (unexpectedFailures++ % LOG_FAILURE_EVERY == 0L) {
+                    CameraKLogger.e("QRScanner", "QR decode failed ($unexpectedFailures unexpected failures)", e)
+                }
                 null
             }
-        } catch (e: Exception) {
-            null
         } finally {
             lock.unlock()
         }
@@ -77,6 +87,8 @@ class QRScanner internal constructor(
 
         // ZXing's TRY_HARDER pass costs several fast passes; one attempt in this many uses it.
         const val SLOW_PASS_EVERY = 5L
+
+        const val LOG_FAILURE_EVERY = 100L
     }
 }
 

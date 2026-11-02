@@ -9,9 +9,11 @@ import coil3.compose.LocalPlatformContext
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
+import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
+import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
@@ -95,9 +97,14 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
     // Stable reference so addImageCaptureListener / removeImageCaptureListener target the same lambda.
     @OptIn(ExperimentalTime::class)
     internal val captureListener: (ByteArray) -> Unit = { byteArray ->
-        stateHolder?.pluginScope?.launch(Dispatchers.IO) {
+        val holder = stateHolder
+        holder?.pluginScope?.launch(Dispatchers.IO) {
             val imageName = config.prefix?.let { autoSaveImageName(it, Clock.System.now().toEpochMilliseconds()) }
-            saveImage(byteArray, imageName)
+            val result = save(byteArray, imageName)
+            if (result is ImageSaveResult.Failed) {
+                CameraKLogger.e("ImageSaverPlugin", "Auto-save failed", result.error)
+                holder.emitEvent(CameraKEvent.PluginFailed(result.error))
+            }
         }
     }
 

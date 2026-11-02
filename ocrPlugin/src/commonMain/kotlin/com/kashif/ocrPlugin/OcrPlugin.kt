@@ -80,8 +80,8 @@ class OcrPlugin internal constructor(
                             this@OcrPlugin.cameraController = readyState.controller
                             startRecognition()
                         } catch (e: Exception) {
-                            CameraKLogger.e("CameraK", "OcrPlugin: Failed to start recognition: ${e.message}")
-                            CameraKLogger.e("CameraK", "Unhandled exception", e)
+                            CameraKLogger.e("CameraK", "OcrPlugin: Failed to start recognition", e)
+                            stateHolder.emitEvent(CameraKEvent.PluginFailed(e))
                         }
                     }
             }
