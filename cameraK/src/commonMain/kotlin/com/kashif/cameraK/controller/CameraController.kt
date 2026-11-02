@@ -238,6 +238,9 @@ expect class CameraController {
      * Safe to call while photo capture is active — both use cases coexist.
      * The output file format is MP4 (H.264 video + AAC audio) on all platforms.
      *
+     * On iOS it returns once the recording has actually started, and throws IllegalStateException
+     * while another recording is in progress.
+     *
      * @param configuration Recording settings (quality, audio, duration limit, output path).
      * @return The actual output file path where the recording is being written.
      */
@@ -258,7 +261,9 @@ expect class CameraController {
      * Audio and video capture are suspended; the output file remains open.
      * No-op if not currently recording.
      *
-     * Note: Desktop implementation is best-effort (frame-drop based).
+     * Note: Desktop implementation is best-effort (frame-drop based). On iOS pausing needs iOS 18:
+     * below it this throws UnsupportedOperationException, since the movie output would keep
+     * recording; from iOS 18 it returns once the recording is paused.
      */
     suspend fun pauseRecording()
 

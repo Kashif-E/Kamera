@@ -740,12 +740,13 @@ actual class CameraController internal constructor(
         }
 
     /**
-     * Pauses the recording. Below iOS 18 AVCaptureMovieFileOutput cannot pause, so this throws
-     * UnsupportedOperationException rather than leave the camera and microphone recording while the
-     * app shows "paused". It returns only once the movie output reports the recording paused.
+     * Pauses the recording; a no-op when nothing is recording. Below iOS 18 AVCaptureMovieFileOutput
+     * cannot pause, so this throws UnsupportedOperationException rather than leave the camera and
+     * microphone recording while the app shows "paused". It returns only once the movie output
+     * reports the recording paused.
      */
     actual suspend fun pauseRecording() {
-        val recording = activeRecording ?: throw IllegalStateException("No active recording")
+        val recording = activeRecording ?: return
         if (!pauseSupported()) {
             throw UnsupportedOperationException("Pausing a recording needs iOS 18 or later")
         }
@@ -755,12 +756,13 @@ actual class CameraController internal constructor(
         }
     }
 
-    /** Resumes a paused recording; below iOS 18 throws UnsupportedOperationException, as pause does. */
+    /**
+     * Resumes a paused recording; a no-op when nothing is recording or the recording is not paused,
+     * which below iOS 18 it never is.
+     */
     actual suspend fun resumeRecording() {
-        val recording = activeRecording ?: throw IllegalStateException("No active recording")
-        if (!pauseSupported()) {
-            throw UnsupportedOperationException("Resuming a recording needs iOS 18 or later")
-        }
+        val recording = activeRecording ?: return
+        if (!pauseSupported() || !movieRecorder.isPaused(recording.output)) return
         movieRecorder.resume(recording.output)
         if (movieRecorder.isPaused(recording.output)) {
             throw IllegalStateException("The movie output did not resume the recording")
