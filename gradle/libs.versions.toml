@@ -18,9 +18,9 @@ spotless = "8.10.4"
 kotlinx-coroutines = "1.11.0"
 kermit = "2.2.0"
 
-compose-multiplatform = "1.10.3"
+compose-multiplatform = "1.11.1"
 activity = "1.9.2" # https://developer.android.com/jetpack/androidx/releases/activity
-coil-mp-version = "3.4.0"
+coil-mp-version = "3.5.0"
 lucide-icons = "2.2.1"
 androidx-activityCompose = "1.13.0"
 startupRuntime = "1.2.0"

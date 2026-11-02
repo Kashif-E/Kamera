@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed (breaking)
 - **Gradle group is `io.github.kashif-mehmood-km`**, the published groupId, for every module (was `com.kashif.*`), so an `includeBuild` of this repository substitutes the published coordinates. Kotlin/Native klib unique names change with it, which matters only to libraries that compiled against a 1.x klib.
 - **Android minSdk is 23** (was 21) for every module. 1.x already required 23 in practice: CameraX 1.5, Compose's Android artifacts, activity 1.13 and core-ktx 1.18 all declare minSdk 23, so an app at 21 or 22 failed its manifest merge. The build now checks the declared minSdk against every dependency's manifest, and each library's unit tests merge their manifest at 23.
+- **Built on Compose Multiplatform 1.11.1 and Coil 3.5.0** (were 1.10.3 and 3.4.0). The core exports both as `api`, so apps resolve at least these versions; an app pinned to Compose Multiplatform 1.10 must upgrade with CameraK 2.0.
 
 ### Fixed
 - **POM metadata**: `ocr_plugin` was published under the name `qrScannerPlugin`, and `qr_scanner_plugin` and `ocr_plugin` both described themselves as "Image Saver Plugin for CameraK". Version, group and the shared POM fields now live once in `gradle.properties`, with each module's name, artifact id and description in its own `gradle.properties`.
