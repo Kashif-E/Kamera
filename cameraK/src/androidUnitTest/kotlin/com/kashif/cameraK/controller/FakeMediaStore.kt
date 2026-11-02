@@ -56,9 +56,27 @@ class FakeMediaStore : ContentProvider() {
         return 1
     }
 
+    /**
+     * Deletes one row by its URI, or, on a collection URI, every row of that collection matching
+     * [selection]: `column = ?` terms joined with `AND`, as MediaProvider takes them.
+     */
     @Synchronized
-    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int =
-        if (rows.remove(uri) != null) 1 else 0
+    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int {
+        if (selection == null) return if (rows.remove(uri) != null) 1 else 0
+        val columns = selection.split(Regex("\\s+AND\\s+", RegexOption.IGNORE_CASE)).map { term ->
+            val match = requireNotNull(Regex("^\\s*(\\w+)\\s*=\\s*\\?\\s*$").find(term)) {
+                "FakeMediaStore does not model the selection term '$term'"
+            }
+            match.groupValues[1]
+        }
+        val args = requireNotNull(selectionArgs) { "selection $selection has no arguments" }
+        require(args.size == columns.size) { "selection $selection has ${args.size} arguments" }
+        val matching = rows.filter { (row, values) ->
+            row.toString().startsWith("$uri/") && columns.indices.all { values.getAsString(columns[it]) == args[it] }
+        }.keys
+        matching.forEach { rows.remove(it) }
+        return matching.size
+    }
 
     override fun query(
         uri: Uri,

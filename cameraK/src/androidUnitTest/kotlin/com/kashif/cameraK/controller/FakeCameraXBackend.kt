@@ -8,6 +8,7 @@ import android.provider.MediaStore
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
 import androidx.lifecycle.Lifecycle
@@ -77,6 +78,34 @@ internal class PendingCapture(
     fun deliverSavedWithoutFile() {
         outputFile.delete()
         executor.execute { callback.onImageSaved(ImageCapture.OutputFileResults(Uri.fromFile(outputFile))) }
+    }
+
+    /**
+     * Writing the image fails partway, for example on a full disk, after [written] reached the
+     * destination. For a MediaStore request this is what CameraX 1.5.3 does
+     * (`FileUtil.copyFileToMediaStore`): the row is inserted pending, the copy fails, the row is
+     * marked not pending and the error is reported without deleting the row.
+     */
+    fun deliverWriteFailure(written: ByteArray) {
+        options.file?.let { file ->
+            file.parentFile?.mkdirs()
+            file.writeBytes(written)
+        } ?: run {
+            val resolver = checkNotNull(options.contentResolver) { "neither a file nor a MediaStore request" }
+            val values = ContentValues(options.contentValues ?: ContentValues())
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) values.put(MediaStore.MediaColumns.IS_PENDING, 1)
+            val row = checkNotNull(resolver.insert(checkNotNull(options.saveCollection), values))
+            checkNotNull(resolver.openOutputStream(row)).use { it.write(written) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                resolver.update(row, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+            }
+        }
+        val error = ImageCaptureException(
+            ImageCapture.ERROR_FILE_IO,
+            "Failed to write to the output",
+            java.io.IOException("No space left on device"),
+        )
+        executor.execute { callback.onError(error) }
     }
 
     private fun saveToMediaStore(bytes: ByteArray): Uri {
