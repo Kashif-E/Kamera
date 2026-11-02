@@ -95,14 +95,31 @@ No additional configuration needed — CameraX is included automatically.
 
 ### iOS
 
-Add usage descriptions to `Info.plist`:
+Add usage descriptions to `Info.plist`. iOS terminates the app when it asks for a permission whose usage description is missing, so declare every key for the features you use:
 
 ```xml
+<!-- Every camera session -->
 <key>NSCameraUsageDescription</key>
 <string>This app needs camera access to capture photos</string>
+<!-- Video recording with audio (VideoConfiguration.enableAudio is true by default) -->
+<key>NSMicrophoneUsageDescription</key>
+<string>This app needs microphone access to record video with sound</string>
+<!-- Saving photos and videos to Photos: Directory.PICTURES (the default) or DCIM, and the image saver plugin -->
 <key>NSPhotoLibraryAddUsageDescription</key>
 <string>This app needs to save photos to your library</string>
+<!-- RequestStoragePermission, which asks for read-write Photos access, and reading a saved ph:// photo back -->
+<key>NSPhotoLibraryUsageDescription</key>
+<string>This app needs to show photos it saved to your library</string>
 ```
+
+| Key | Needed for |
+|-----|-----------|
+| `NSCameraUsageDescription` | Any camera use |
+| `NSMicrophoneUsageDescription` | Recording video with audio; pass `VideoConfiguration(enableAudio = false)` to record without it |
+| `NSPhotoLibraryAddUsageDescription` | Saving to Photos (`Directory.PICTURES`, the default, or `Directory.DCIM`) and the image saver plugin |
+| `NSPhotoLibraryUsageDescription` | `RequestStoragePermission` and reading a saved `ph://` photo back |
+
+An app that saves only to `Directory.DOCUMENTS` needs neither Photos key.
 
 ### Desktop (JVM)
 

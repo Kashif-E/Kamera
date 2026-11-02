@@ -102,15 +102,22 @@ dependencies {
 <uses-permission android:name="android.permission.RECORD_AUDIO" /> <!-- Required for video recording with audio -->
 ```
 
-**iOS** - Add to `Info.plist`:
+**iOS** - Add to `Info.plist`. iOS terminates the app when it asks for a permission whose usage description is missing, so declare every key for the features you use:
 ```xml
+<!-- Every camera session -->
 <key>NSCameraUsageDescription</key>
 <string>Camera access required for taking photos</string>
-<key>NSPhotoLibraryAddUsageDescription</key>
-<string>Photo library access required for saving images</string>
+<!-- Video recording with audio (VideoConfiguration.enableAudio is true by default) -->
 <key>NSMicrophoneUsageDescription</key>
 <string>Microphone access required for video recording</string>
+<!-- Saving photos and videos to Photos: Directory.PICTURES (the default) or DCIM, and the image saver plugin -->
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>Photo library access required for saving images</string>
+<!-- RequestStoragePermission, which asks for read-write Photos access, and reading a saved ph:// photo back -->
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Photo library access required for showing saved images</string>
 ```
+An app that saves only to `Directory.DOCUMENTS` needs neither Photos key.
 
 **Desktop** - CameraK depends only on bytedeco's Java bindings (`javacv`, `javacpp`, `ffmpeg`, `videoinput`; the OCR plugin adds `tesseract` and `leptonica`), so your app chooses which operating systems' natives it ships. Either declare the classifier jars for each platform you ship:
 
