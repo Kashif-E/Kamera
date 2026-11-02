@@ -1,6 +1,7 @@
 package com.kashif.cameraK.controller
 
 import android.content.Context
+import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.utils.captureFileName
 import java.io.File
 import java.io.IOException
@@ -8,6 +9,7 @@ import java.io.IOException
 private const val MAX_NAME_ATTEMPTS = 16
 
 /** The name of a new capture, unique by construction (see [captureFileName]). */
+@OptIn(InternalCameraKApi::class)
 internal fun newCaptureFileName(prefix: String, extension: String): String = captureFileName(prefix, extension)
 
 /**

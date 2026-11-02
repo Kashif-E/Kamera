@@ -10,12 +10,13 @@ import coil3.PlatformContext
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
+import com.kashif.cameraK.utils.captureFileName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.random.Random
 
 /**
  * Android-specific implementation of [ImageSaverPlugin] using MediaStore.
@@ -31,6 +32,7 @@ import kotlin.random.Random
  * @param context The Android [Context] used to access ContentResolver.
  * @param config The configuration settings for the plugin.
  */
+@OptIn(InternalCameraKApi::class)
 class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverConfig) : ImageSaverPlugin(config) {
     // Android captures are always JPEG, so a mismatch repeats on every save; it is logged once.
     private val formatMismatchWarned = AtomicBoolean(false)
@@ -48,7 +50,9 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
                     "(logged once per plugin)",
             )
         }
-        val fileName = "${imageName ?: defaultImageName()}.${format.extension}"
+        // Auto-save runs one save per capture and up to three captures can be in flight, so a default
+        // name must not depend on the clock alone.
+        val fileName = imageName?.let { "$it.${format.extension}" } ?: captureFileName("IMG", format.extension)
         val directory = config.directory.publicDirectoryName
         val folder = config.customFolderName ?: DEFAULT_FOLDER
 
@@ -193,13 +197,6 @@ class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverCo
 }
 
 private const val DEFAULT_FOLDER = "CameraK"
-
-/**
- * `IMG_<epoch milliseconds>_<8 random hex digits>`: auto-save runs one save per capture, and up to
- * three captures can be in flight, so a default name must not depend on the clock alone.
- */
-private fun defaultImageName(): String =
-    "IMG_${System.currentTimeMillis()}_${Random.nextInt().toUInt().toString(16).padStart(8, '0')}"
 
 /**
  * The format [bytes] are encoded in, from their signature, or null when it is neither. Android
