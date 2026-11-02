@@ -239,7 +239,7 @@ val forbiddenOnPublishedClasspath =
             "qrScannerPlugin",
             listOf("desktopRuntimeClasspath"),
             Regex("""^com\.google\.zxing:javase$"""),
-            "zxing core's RGBLuminanceSource replaces the one javase class the desktop scanner used",
+            "the desktop scanner reads luminance through zxing core; javase is test-only",
         ),
     )
 

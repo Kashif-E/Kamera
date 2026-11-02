@@ -24,6 +24,14 @@ kotlin {
             }
         }
 
+        // javase's BufferedImageLuminanceSource is the reference QrLuminanceTest compares the scanner's
+        // own luminance against. It stays off desktopMain, where checkPublishedClasspath forbids it.
+        val desktopTest by getting {
+            dependencies {
+                implementation(libs.zxing.javase)
+            }
+        }
+
         commonMain.dependencies {
             api(projects.cameraK)
             implementation(libs.atomicfu)
