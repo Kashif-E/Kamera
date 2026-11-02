@@ -120,6 +120,47 @@ runtimeOnly("org.bytedeco:leptonica:1.85.0-1.5.12:macosx-arm64")    // ocrPlugin
 
 or depend on the `-platform` artifacts (`ffmpeg-platform`, `javacpp-platform`, ...) and narrow them with the [`org.bytedeco.gradle-javacpp-platform`](https://github.com/bytedeco/gradle-javacpp) plugin, setting `javacppPlatform` (or `-Djavacpp.platform=macosx-arm64` on the Gradle command line) to the platforms you ship. Without natives the camera does not open: the desktop controller logs an `IllegalStateException` that names the missing bytedeco natives, caused by JavaCV's `NoClassDefFoundError` ("Could not initialize class org.bytedeco.ffmpeg.global.avutil"), and the OCR plugin's calls throw `UnsatisfiedLinkError` the first time and `NoClassDefFoundError` after that. The Sample's `build.gradle.kts` adds the natives for the machine that builds it.
 
+On macOS, a packaged app (DMG or PKG) that opens the camera without a camera usage description is
+denied or killed by the system's privacy controls (TCC). `./gradlew run` does not show the
+problem, because the terminal already holds the camera permission. Add the description, and the
+camera entitlement for a signed build with the hardened runtime, to `compose.desktop`:
+
+```kotlin
+compose.desktop {
+    application {
+        nativeDistributions {
+            macOS {
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>NSCameraUsageDescription</key>
+                        <string>This app needs camera access to capture photos</string>
+                    """.trimIndent()
+                }
+                entitlementsFile.set(project.file("macos/entitlements.plist"))
+                runtimeEntitlementsFile.set(project.file("macos/runtime-entitlements.plist"))
+            }
+        }
+    }
+}
+```
+
+Both entitlements files grant `com.apple.security.device.camera`, plus what the JVM and JavaCV's
+native libraries need under the hardened runtime:
+
+```xml
+<key>com.apple.security.cs.allow-jit</key>
+<true/>
+<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+<true/>
+<key>com.apple.security.cs.disable-library-validation</key>
+<true/>
+<key>com.apple.security.device.camera</key>
+<true/>
+```
+
+The desktop backend records no audio, so it needs no microphone description. The Sample's
+`Sample/build.gradle.kts` and `Sample/macos/` show the full setup.
+
 ## Step 3: Sync Project
 
 Run Gradle sync:

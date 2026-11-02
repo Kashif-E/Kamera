@@ -134,6 +134,20 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "org.company.app"
             packageVersion = "1.0.0"
+
+            // Without a camera usage description TCC denies or kills a packaged macOS app that opens
+            // the camera; the entitlements let a signed, hardened-runtime build use it too.
+            macOS {
+                infoPlist {
+                    extraKeysRawXml =
+                        """
+                        <key>NSCameraUsageDescription</key>
+                        <string>The CameraK sample shows the camera preview and takes photos and videos.</string>
+                        """.trimIndent()
+                }
+                entitlementsFile.set(project.file("macos/entitlements.plist"))
+                runtimeEntitlementsFile.set(project.file("macos/runtime-entitlements.plist"))
+            }
         }
 
         afterEvaluate {
