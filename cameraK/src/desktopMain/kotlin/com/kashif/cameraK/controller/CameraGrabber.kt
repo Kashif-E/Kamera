@@ -282,10 +282,15 @@ class CameraGrabber(
 /**
  * The V4L2 device the default camera opens on Linux: the lowest-numbered readable `videoN` node in
  * [devDir] that captures video, or [devDir]/video0 if there is none. Nodes sort by number, so
- * video2 comes before video10. A UVC camera also exposes a metadata node, which streams no
- * pictures. The kernel gives each of a device's nodes an `index` file in its [sysDir] folder (the
- * video4linux class folder), 0 for the capture node, so a node whose index is not 0 is skipped. A
- * node with no readable index is kept. [udevDataDir] is udev's device database.
+ * video2 comes before video10.
+ *
+ * Whether a node captures comes from its device capabilities. udev's v4l_id reads them with
+ * VIDIOC_QUERYCAP and records them in udev's database ([udevDataDir], one `c<major>:<minor>` file
+ * per character device, numbered as in the node's `dev` file in [sysDir], the video4linux class
+ * folder) as `E:ID_V4L_CAPABILITIES=:capture:...`; a node is kept when that list has `capture`.
+ * Reading the record opens no device. A node without a record (no udev, as in many containers)
+ * falls back to its sysfs `index`: 0 for a camera's capture node and 1 for its UVC metadata node,
+ * which streams no pictures, so a node whose index is not 0 is skipped. A node with neither is kept.
  */
 internal fun findBestVideoDevice(devDir: File, sysDir: File, udevDataDir: File): String {
     val candidates =
@@ -298,8 +303,8 @@ internal fun findBestVideoDevice(devDir: File, sysDir: File, udevDataDir: File):
     return candidates.firstOrNull()?.path ?: File(devDir, "video0").path
 }
 
-@Suppress("UNUSED_PARAMETER")
 private fun isCaptureNode(sysNode: File, udevDataDir: File): Boolean {
+    udevCapabilities(sysNode, udevDataDir)?.let { return "capture" in it }
     val index = File(sysNode, "index")
     if (!index.canRead()) return true
     return try {
@@ -309,6 +314,28 @@ private fun isCaptureNode(sysNode: File, udevDataDir: File): Boolean {
         true
     }
 }
+
+// The capabilities udev recorded for a video node, or null if there is no readable record.
+private fun udevCapabilities(sysNode: File, udevDataDir: File): Set<String>? {
+    val devFile = File(sysNode, "dev")
+    if (!devFile.canRead()) return null
+    return try {
+        val record = File(udevDataDir, "c" + devFile.readText().trim())
+        if (!record.canRead()) return null
+        record
+            .readLines()
+            .firstOrNull { it.startsWith(UDEV_CAPABILITIES) }
+            ?.removePrefix(UDEV_CAPABILITIES)
+            ?.split(':')
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+    } catch (e: java.io.IOException) {
+        CameraKLogger.w(TAG, "Could not read udev's record of a video node; using its sysfs index", e)
+        null
+    }
+}
+
+private const val UDEV_CAPABILITIES = "E:ID_V4L_CAPABILITIES="
 
 private val VIDEO_NODE = Regex("video\\d+")
 
