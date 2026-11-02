@@ -1,7 +1,14 @@
 package com.kashif.cameraK.capabilities
 
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.FlashMode
+import com.kashif.cameraK.enums.ImageFormat
+import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.frames.FrameFormat
+import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.video.VideoQuality
 
 /**
  * Describes one physical (or logical) camera lens on the device.
@@ -36,7 +43,31 @@ data class LensInfo(
  * compose-stability.conf declares it to Compose, regardless of what the caller does with the list it
  * passed in.
  */
-class CameraCapabilities(allLenses: List<LensInfo>) {
+class CameraCapabilities @CameraKEngineApi constructor(
+    allLenses: List<LensInfo>,
+    flashModes: Map<String, Set<FlashMode>>,
+    torchModes: Map<String, Set<TorchMode>>,
+    val supportsPauseResume: Boolean,
+    supportedVideoQualities: Set<VideoQuality>,
+    val supportsVideoBitrate: Boolean,
+    supportedAspectRatios: Set<AspectRatio>,
+    supportedImageFormats: Set<ImageFormat>,
+    supportedAnalysisFormats: Set<FrameFormat>,
+    val supportsSquareCapture: Boolean,
+) {
+    @OptIn(CameraKEngineApi::class)
+    constructor(allLenses: List<LensInfo>) : this(
+        allLenses,
+        emptyMap(),
+        emptyMap(),
+        false,
+        emptySet(),
+        false,
+        emptySet(),
+        emptySet(),
+        emptySet(),
+        false,
+    )
 
     val allLenses: List<LensInfo> = allLenses.toList()
 
@@ -49,6 +80,18 @@ class CameraCapabilities(allLenses: List<LensInfo>) {
     /** Device types selectable via `setPreferredCameraDeviceType` for [lens]. */
     fun availableDeviceTypes(lens: CameraLens): Set<CameraDeviceType> =
         lenses(lens).mapTo(mutableSetOf()) { it.deviceType }
+
+    fun supportedFlashModes(cameraId: String): Set<FlashMode> = TODO("S1' stub")
+
+    fun supportedTorchModes(cameraId: String): Set<TorchMode> = TODO("S1' stub")
+
+    val supportedVideoQualities: Set<VideoQuality> get() = TODO("S1' stub")
+
+    val supportedAspectRatios: Set<AspectRatio> get() = TODO("S1' stub")
+
+    val supportedImageFormats: Set<ImageFormat> get() = TODO("S1' stub")
+
+    val supportedAnalysisFormats: Set<FrameFormat> get() = TODO("S1' stub")
 
     companion object {
         val EMPTY = CameraCapabilities(emptyList())
