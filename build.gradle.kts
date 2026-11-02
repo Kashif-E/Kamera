@@ -213,6 +213,10 @@ val bytedecoBindings =
         if (it == "ocrPlugin") coreBytedecoBindings + setOf("tesseract", "leptonica") else coreBytedecoBindings
     }
 
+// Consumers compile against what a library declares api. Core's public signatures expose javacv's
+// FrameGrabber, whose Frame is built on javacpp; no public signature exposes FFmpeg or videoInput.
+val exportedBytedeco = mapOf("cameraK" to setOf("javacv", "javacpp"))
+
 data class ClasspathRule(
     val module: String,
     val configurations: List<String>,
@@ -254,6 +258,14 @@ subprojects {
                 .artifacts.artifacts
                 .map { it.file }
         }
+    val desktopApiBytedeco =
+        provider {
+            configurations
+                .getByName("desktopApiElements")
+                .allDependencies
+                .filter { it.group == "org.bytedeco" }
+                .map { it.name }
+        }
     tasks.register("checkPublishedClasspath") {
         group = "verification"
         description = "Fails if this library hands consumers natives, umbrellas or libraries it does not import"
@@ -267,6 +279,12 @@ subprojects {
                         "desktopRuntimeClasspath -> $component: $moduleName imports only bytedeco ${allowed.sorted()}" +
                         if (artifact.endsWith("-platform")) "; a -platform umbrella ships every OS's natives" else ""
                 }
+            }
+            val exported = exportedBytedeco[moduleName].orEmpty()
+            desktopApiBytedeco.get().filter { it !in exported }.forEach {
+                problems +=
+                    "desktopApiElements -> org.bytedeco:$it: no public $moduleName signature exposes $it types; " +
+                    "declare it implementation"
             }
             val artifacts = desktopArtifacts.get()
             artifacts.filter { nativeClassifierJar.containsMatchIn(it.name) }.forEach {
