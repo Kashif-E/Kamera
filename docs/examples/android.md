@@ -16,7 +16,7 @@ Setup Kamera for Android applications.
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:1.1")
+    implementation("io.github.kashif-mehmood-km:camerak:2.0")
 }
 ```
 
@@ -26,7 +26,7 @@ dependencies {
 
 ```toml
 [versions]
-camerak = "1.0"
+camerak = "2.0"
 
 [libraries]
 camerak = { module = "io.github.kashif-mehmood-km:camerak", version.ref = "camerak" }

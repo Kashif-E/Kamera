@@ -8,9 +8,6 @@ plugins {
     alias(libs.plugins.dokka)
 }
 
-group = "com.kashif.video_recorder_plugin"
-version = "1.2"
-
 kotlin {
     jvmToolchain(17)
     androidTarget {
@@ -58,10 +55,16 @@ kotlin {
 
 android {
     namespace = "com.kashif.video_recorder_plugin"
-    compileSdk = 36
+    compileSdk =
+        libs.versions.android.compileSdk
+            .get()
+            .toInt()
 
     defaultConfig {
-        minSdk = 23
+        minSdk =
+            libs.versions.android.minSdk
+                .get()
+                .toInt()
     }
 
     testOptions {
@@ -77,42 +80,4 @@ android {
         singleVariant("debug") {
         }
     }
-}
-
-mavenPublishing {
-    coordinates(
-        groupId = "io.github.kashif-mehmood-km",
-        artifactId = "video_recorder_plugin",
-        version = "1.2",
-    )
-
-    pom {
-        name.set("VideoRecorderPlugin")
-        description.set("Video Recorder Plugin for CameraK")
-        inceptionYear.set("2024")
-        url.set("https://github.com/kashif-e/CameraK")
-
-        licenses {
-            license {
-                name.set("MIT")
-                url.set("https://opensource.org/licenses/MIT")
-            }
-        }
-
-        developers {
-            developer {
-                id.set("Kashif-E")
-                name.set("Kashif")
-                email.set("kashismails@gmail.com")
-            }
-        }
-
-        scm {
-            url.set("https://github.com/kashif-e/CameraK")
-        }
-    }
-
-    publishToMavenCentral()
-
-    signAllPublications()
 }

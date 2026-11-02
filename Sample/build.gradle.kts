@@ -89,9 +89,13 @@ kotlin {
 
 android {
     namespace = "org.company.app"
-    compileSdk = 36
+    compileSdk =
+        libs.versions.android.compileSdk
+            .get()
+            .toInt()
 
     defaultConfig {
+        // kflite, a Sample-only dependency, needs 24; the libraries need android-minSdk.
         minSdk = 24
         targetSdk = 34
 

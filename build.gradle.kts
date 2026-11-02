@@ -53,6 +53,15 @@ spotless {
 val libraryModules =
     listOf("cameraK", "ImageSaverPlugin", "qrScannerPlugin", "ocrPlugin", "videoRecorderPlugin", "analyzerPlugin")
 val screenshotModule = "cameraKScreenshotTests"
+
+// One version and group for every published module, from gradle.properties (vanniktech reads the
+// same keys for the published coordinates).
+subprojects {
+    if (name in libraryModules) {
+        group = providers.gradleProperty("GROUP").get()
+        version = providers.gradleProperty("VERSION_NAME").get()
+    }
+}
 val allVerifyTargets = listOf("desktop", "android", "ios", "screenshots", "lint", "sample")
 
 fun csvProperty(name: String): List<String>? =

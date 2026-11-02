@@ -17,10 +17,16 @@ kotlin {
 
 android {
     namespace = "com.kashif.cameraK.screenshots"
-    compileSdk = 36
+    compileSdk =
+        libs.versions.android.compileSdk
+            .get()
+            .toInt()
 
     defaultConfig {
-        minSdk = 23
+        minSdk =
+            libs.versions.android.minSdk
+                .get()
+                .toInt()
     }
 }
 

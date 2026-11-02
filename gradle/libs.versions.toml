@@ -1,5 +1,9 @@
 [versions]
 
+# Android SDK levels for every module
+android-compileSdk = "36"
+android-minSdk = "23"
+
 atomicfu = "0.33.0"
 camera-core = "1.5.3"
 camera-extensions = "1.5.3"

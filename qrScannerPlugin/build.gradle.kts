@@ -9,9 +9,6 @@ plugins {
     alias(libs.plugins.dokka)
 }
 
-group = "com.kashif.qr_scanner_plugin"
-version = "1.2"
-
 kotlin {
     jvmToolchain(17)
     androidTarget {
@@ -71,10 +68,16 @@ kotlin {
 
 android {
     namespace = "com.kashif.qr_scanner_plugin"
-    compileSdk = 36
+    compileSdk =
+        libs.versions.android.compileSdk
+            .get()
+            .toInt()
 
     defaultConfig {
-        minSdk = 23
+        minSdk =
+            libs.versions.android.minSdk
+                .get()
+                .toInt()
     }
 
     testOptions {
@@ -92,44 +95,4 @@ android {
             // Exclude Javadoc and sources JARs for debug variant
         }
     }
-}
-
-mavenPublishing {
-    coordinates(
-        groupId = "io.github.kashif-mehmood-km",
-        artifactId = "qr_scanner_plugin",
-        version = "1.2",
-    )
-
-    pom {
-        name.set("qrScannerPlugin")
-        description.set("Image Saver Plugin for CameraK")
-        inceptionYear.set("2024")
-        url.set("https://github.com/kashif-e/CameraK")
-
-        licenses {
-            license {
-                name.set("MIT")
-                url.set("https://opensource.org/licenses/MIT")
-            }
-        }
-
-        developers {
-            developer {
-                id.set("Kashif-E")
-                name.set("Kashif")
-                email.set("kashismails@gmail.com")
-            }
-        }
-
-        scm {
-            url.set("https://github.com/kashif-e/CameraK")
-        }
-    }
-
-    // Configure publishing to Maven Central
-    publishToMavenCentral()
-
-    // Enable GPG signing for all publications
-    signAllPublications()
 }
