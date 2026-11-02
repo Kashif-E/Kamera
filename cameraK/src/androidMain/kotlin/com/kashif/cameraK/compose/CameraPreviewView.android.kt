@@ -52,10 +52,7 @@ actual fun CameraPreviewView(
                 factory = { previewView },
                 modifier = Modifier.matchParentSize(),
             )
-            if (overlay != null) {
-                val scope = CameraPreviewScopeImpl(this, deviceOrientation)
-                scope.overlay()
-            }
+            if (overlay != null) CameraPreviewOverlay(deviceOrientation, overlay)
         }
     }
 }

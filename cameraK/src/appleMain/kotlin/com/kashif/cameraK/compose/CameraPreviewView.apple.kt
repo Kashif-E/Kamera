@@ -23,10 +23,7 @@ actual fun CameraPreviewView(
                 modifier = Modifier.fillMaxSize(),
                 update = {},
             )
-            if (overlay != null) {
-                val scope = CameraPreviewScopeImpl(this, deviceOrientation)
-                scope.overlay()
-            }
+            if (overlay != null) CameraPreviewOverlay(deviceOrientation, overlay)
         }
     }
 }

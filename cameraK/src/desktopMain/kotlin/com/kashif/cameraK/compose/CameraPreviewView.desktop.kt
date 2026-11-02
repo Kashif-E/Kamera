@@ -70,10 +70,7 @@ actual fun CameraPreviewView(
                 frameCount
                 renderer.drawLatest { bitmap -> drawFitted(bitmap) }
             }
-            if (overlay != null) {
-                val scope = remember(this, deviceOrientation) { CameraPreviewScopeImpl(this, deviceOrientation) }
-                scope.overlay()
-            }
+            if (overlay != null) CameraPreviewOverlay(deviceOrientation, overlay)
         }
     }
 }

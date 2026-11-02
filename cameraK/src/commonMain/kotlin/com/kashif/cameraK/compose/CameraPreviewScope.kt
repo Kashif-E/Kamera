@@ -1,6 +1,7 @@
 package com.kashif.cameraK.compose
 
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -10,6 +11,17 @@ import com.kashif.cameraK.enums.DeviceOrientation
 interface CameraPreviewScope : BoxScope {
     val deviceOrientation: DeviceOrientation
     fun Modifier.keepUpright(): Modifier
+}
+
+/** Runs [overlay] over this box with a [CameraPreviewScope]; every platform's CameraPreviewView calls it. */
+@Suppress("NOTHING_TO_INLINE")
+@Composable
+internal inline fun BoxScope.CameraPreviewOverlay(
+    deviceOrientation: DeviceOrientation,
+    noinline overlay: @Composable CameraPreviewScope.() -> Unit,
+) {
+    val scope = CameraPreviewScopeImpl(this, deviceOrientation)
+    scope.overlay()
 }
 
 internal class CameraPreviewScopeImpl(
