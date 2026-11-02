@@ -15,6 +15,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** One-shot OCR through the plugin never writes the text it read to the log: the sink may go to a crash reporter. */
@@ -55,6 +56,22 @@ class OcrExtractTextTest {
         } finally {
             scope.cancel()
         }
+    }
+
+    @Test
+    fun recognize_returnsTheRecognisedTextToTheCaller_withoutLoggingIt() = runBlocking {
+        val plugin =
+            OcrPlugin(
+                coroutineScope = this,
+                config = OcrConfig(),
+                recognizeBitmap = { _, _ -> SECRET },
+                startRecognizer = { _, _, _ -> RecognitionHandle {} },
+            )
+
+        val text = plugin.recognize(Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).asImageBitmap())
+
+        assertEquals(SECRET, text)
+        assertTrue(messages.none { SECRET_PART in it }, "log lines carrying the recognised text: $messages")
     }
 
     private companion object {
