@@ -23,4 +23,13 @@ import androidx.compose.runtime.Immutable
  *   and iOS.
  */
 @Immutable
-data class OcrConfig(val tessdataPath: String? = null)
+class OcrConfig(val tessdataPath: String? = null) {
+    // Not a data class: fields will be added, and a data class's copy and componentN would change
+    // signature with each one.
+    override fun equals(other: Any?): Boolean =
+        this === other || other is OcrConfig && tessdataPath == other.tessdataPath
+
+    override fun hashCode(): Int = tessdataPath.hashCode()
+
+    override fun toString(): String = "OcrConfig(tessdataPath=$tessdataPath)"
+}
