@@ -21,7 +21,7 @@ import kotlin.test.assertTrue
 @RunWith(RobolectricTestRunner::class)
 class QRCodeAnalyzerFrameCostTest {
     private val decoder = RecordingDecoder()
-    private val analyzer = QRCodeAnalyzer(onQrScanner = {}, decoder = decoder)
+    private val analyzer = QRCodeAnalyzer(onQrScanner = {}, decoder = decoder, scanIntervalMs = 0)
 
     @Test
     fun framesOfTheSameSize_reuseOneLumaBuffer() {

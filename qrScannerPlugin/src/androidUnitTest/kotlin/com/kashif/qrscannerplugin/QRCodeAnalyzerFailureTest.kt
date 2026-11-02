@@ -46,7 +46,7 @@ class QRCodeAnalyzerFailureTest {
     @Test
     fun anUnexpectedDecoderFailure_isLoggedWithItsThrowable_atARateLimit() {
         val failure = IllegalStateException("decoder bug")
-        val analyzer = QRCodeAnalyzer(onQrScanner = {}, decoder = { _, _, _ -> throw failure })
+        val analyzer = QRCodeAnalyzer(onQrScanner = {}, decoder = { _, _, _ -> throw failure }, scanIntervalMs = 0)
         val frames = List(10) { FakeImageProxy() }
 
         frames.forEach(analyzer::analyze)
@@ -64,7 +64,9 @@ class QRCodeAnalyzerFailureTest {
             FormatException.getFormatInstance(),
         )
         var next = 0
-        val analyzer = QRCodeAnalyzer(onQrScanner = {}, decoder = { _, _, _ -> throw noCode[next++ % noCode.size] })
+        val analyzer =
+            QRCodeAnalyzer(onQrScanner = {
+            }, decoder = { _, _, _ -> throw noCode[next++ % noCode.size] }, scanIntervalMs = 0)
 
         repeat(6) { analyzer.analyze(FakeImageProxy()) }
 
@@ -74,7 +76,8 @@ class QRCodeAnalyzerFailureTest {
     @Test
     fun anExceptionFromTheConsumersCallback_isNotSwallowed() {
         val consumerBug = IllegalArgumentException("consumer bug")
-        val analyzer = QRCodeAnalyzer(onQrScanner = { throw consumerBug }, decoder = { _, _, _ -> "HELLO" })
+        val analyzer =
+            QRCodeAnalyzer(onQrScanner = { throw consumerBug }, decoder = { _, _, _ -> "HELLO" }, scanIntervalMs = 0)
         val frame = FakeImageProxy()
 
         val thrown = assertFailsWith<IllegalArgumentException> { analyzer.analyze(frame) }
