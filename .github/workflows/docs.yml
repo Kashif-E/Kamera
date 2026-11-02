@@ -1,27 +1,70 @@
-name: Deploy Documentation
+name: Documentation
 
+# Pull requests and pushes to main build the site with --strict and check its links. The public
+# site is deployed only for a release tag (v*), from that same strict build, so it never documents
+# unreleased API. Deploying through actions/deploy-pages needs the repository's Pages source set to
+# "GitHub Actions" and a github-pages environment that allows v* tags.
 on:
+  pull_request:
   push:
     branches:
       - main
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.x
-          
+          python-version: '3.12'
+
       - name: Install dependencies
-        run: |
-          pip install mkdocs-material==9.5.18
-          
-      - name: Deploy docs
-        run: mkdocs gh-deploy --force
+        run: pip install mkdocs-material==9.5.18
+
+      - name: Build the site (strict)
+        run: mkdocs build --strict --site-dir site
+
+      # Links in code blocks are skipped. Maven Central's search answers automated clients with 403.
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          fail: true
+          args: >-
+            --no-progress
+            --max-retries 3
+            --exclude-path docs/superpowers
+            --exclude '^https://search\.maven\.org/'
+            'docs/**/*.md'
+            README.MD
+
+      - uses: actions/upload-pages-artifact@v3
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
