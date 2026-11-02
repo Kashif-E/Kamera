@@ -143,7 +143,10 @@ data class CameraUIState(
 sealed class CameraKEvent {
     /**
      * No event (initial state).
+     *
+     * Never emitted: [CameraKStateHolder.events] is a SharedFlow with no initial value.
      */
+    @Deprecated("Never emitted: events has no initial value. Will be removed in the next major release.")
     @Immutable
     data object None : CameraKEvent()
 
@@ -182,8 +185,15 @@ sealed class CameraKEvent {
     /**
      * Camera permission denied by user.
      *
+     * Never emitted: the state holder does not request permissions. Handle denial in the
+     * `onDenied` callback of [com.kashif.cameraK.permissions.Permissions.RequestCameraPermission].
+     *
      * @property permission The denied permission name.
      */
+    @Deprecated(
+        "Never emitted: the state holder does not request permissions. Handle denial in the onDenied " +
+            "callback of Permissions.RequestCameraPermission. Will be removed in the next major release.",
+    )
     @Immutable
     data class PermissionDenied(val permission: String) : CameraKEvent()
 
