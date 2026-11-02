@@ -860,6 +860,30 @@ actual class CameraController internal constructor(
         if (directory == Directory.DOCUMENTS) return result
 
         val filePath = result.filePath
+        val savedAssetId = videoLibraryImport(filePath)
+
+        // Clean up temp file after saving to Photos
+        if (savedAssetId != null) {
+            NSFileManager.defaultManager.removeItemAtPath(filePath, null)
+        }
+
+        return if (savedAssetId != null) {
+            VideoCaptureResult.Success("ph://$savedAssetId", result.durationMs)
+        } else {
+            // Still return success with temp path if Photos save failed
+            result
+        }
+    }
+
+    /**
+     * Imports the video at a path into Photos and returns the new asset's local identifier, or null
+     * when the import failed. Test seam: tests replace it, since the simulator's Photos library asks
+     * for permission no test can grant.
+     */
+    internal var videoLibraryImport: (String) -> String? = ::importVideoToPhotos
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun importVideoToPhotos(filePath: String): String? {
         var savedAssetId: String? = null
         var saveError: String? = null
 
@@ -886,17 +910,7 @@ actual class CameraController internal constructor(
 
         platform.darwin.dispatch_semaphore_wait(semaphore, platform.darwin.DISPATCH_TIME_FOREVER)
 
-        // Clean up temp file after saving to Photos
-        if (saveError == null) {
-            NSFileManager.defaultManager.removeItemAtPath(filePath, null)
-        }
-
-        return if (saveError == null && savedAssetId != null) {
-            VideoCaptureResult.Success("ph://$savedAssetId", result.durationMs)
-        } else {
-            // Still return success with temp path if Photos save failed
-            result
-        }
+        return savedAssetId.takeIf { saveError == null }
     }
 
     private fun FlashMode.toAVCaptureFlashMode(): AVCaptureFlashMode = when (this) {
