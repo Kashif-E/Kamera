@@ -29,7 +29,12 @@ kotlin {
     sourceSets {
         val desktopMain by getting {
             dependencies {
-                api(libs.javacv.platform)
+                // JavaCV's own POM pulls the bindings for a dozen native libraries; core uses only
+                // FFmpeg and videoInput. No natives: the app adds those for the OSes it ships.
+                api(libs.javacv.get().let { "${it.module}:${it.version}" }) { exclude(group = "org.bytedeco") }
+                api(libs.javacpp)
+                api(libs.ffmpeg)
+                implementation(libs.videoinput)
             }
         }
 
@@ -123,6 +128,15 @@ android {
         singleVariant("debug") {
             // Exclude Javadoc and sources JARs for debug variant
         }
+    }
+}
+
+// The desktop tests allocate real JavaCV frames and recorders, so they need this machine's natives.
+dependencies {
+    val javacppPlatform = rootProject.extra["javacppPlatform"] as String
+    val desktopTestRuntimeOnly = kotlin.sourceSets.getByName("desktopTest").runtimeOnlyConfigurationName
+    listOf(libs.javacpp, libs.ffmpeg).forEach {
+        add(desktopTestRuntimeOnly, variantOf(it) { classifier(javacppPlatform) })
     }
 }
 

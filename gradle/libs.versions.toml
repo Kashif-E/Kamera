@@ -24,10 +24,13 @@ coil-mp-version = "3.5.0"
 lucide-icons = "2.2.1"
 androidx-activityCompose = "1.13.0"
 startupRuntime = "1.2.0"
-javacvPlatform = "1.5.12"
+# The JavaCPP release train: javacv and javacpp carry its number, each preset binding its native
+# library's version before it. These are the Java bindings only; apps add the natives they ship.
 javacpp = "1.5.12"
-videoinput = "1.5.12"
-tesseractPlatform = "5.5.1-1.5.12"
+ffmpeg = "7.1.1-1.5.12"
+videoinput = "0.200-1.5.9"
+tesseract = "5.5.1-1.5.12"
+leptonica = "1.85.0-1.5.12"
 textRecognition = "16.0.1"
 
 kflite = "1.1.40"
@@ -66,10 +69,12 @@ coil3-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "co
 androidx-activityCompose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
 lucide-icons-cmp = { module = "com.composables:icons-lucide-cmp", version.ref = "lucide-icons" }
 
-javacv-platform = { module = "org.bytedeco:javacv-platform", version.ref = "javacvPlatform" }
+javacv = { module = "org.bytedeco:javacv", version.ref = "javacpp" }
 javacpp = { module = "org.bytedeco:javacpp", version.ref = "javacpp" }
+ffmpeg = { module = "org.bytedeco:ffmpeg", version.ref = "ffmpeg" }
 videoinput = { module = "org.bytedeco:videoinput", version.ref = "videoinput" }
-tesseract-platform = { module = "org.bytedeco:tesseract-platform", version.ref = "tesseractPlatform" }
+tesseract = { module = "org.bytedeco:tesseract", version.ref = "tesseract" }
+leptonica = { module = "org.bytedeco:leptonica", version.ref = "leptonica" }
 text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "textRecognition" }
 
 kflite = {module = "io.github.shadmanadman:kflite", version.ref = "kflite"}

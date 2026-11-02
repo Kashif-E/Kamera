@@ -29,8 +29,9 @@ kotlin {
     sourceSets {
         val desktopMain by getting {
             dependencies {
-                implementation(libs.javacv.platform)
-                implementation(libs.tesseract.platform)
+                // Java bindings only; the app adds the Tesseract and Leptonica natives it ships.
+                implementation(libs.tesseract)
+                implementation(libs.leptonica)
             }
         }
 
@@ -65,6 +66,15 @@ kotlin {
 //    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget> {
 //        compilations["main"].compilerOptions.options.freeCompilerArgs.add("_Xexport_kdoc")
 //    }
+}
+
+// One desktop test runs the real Tesseract, so the tests need this machine's natives.
+dependencies {
+    val javacppPlatform = rootProject.extra["javacppPlatform"] as String
+    val desktopTestRuntimeOnly = kotlin.sourceSets.getByName("desktopTest").runtimeOnlyConfigurationName
+    listOf(libs.javacpp, libs.tesseract, libs.leptonica).forEach {
+        add(desktopTestRuntimeOnly, variantOf(it) { classifier(javacppPlatform) })
+    }
 }
 
 android {

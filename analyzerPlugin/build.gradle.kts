@@ -26,13 +26,6 @@ kotlin {
     }
 
     sourceSets {
-        val desktopMain by getting {
-            dependencies {
-                implementation(libs.javacv.platform)
-                implementation(libs.tesseract.platform)
-            }
-        }
-
         commonMain.dependencies {
             api(projects.cameraK)
             implementation(libs.atomicfu)
@@ -53,10 +46,6 @@ kotlin {
             implementation(libs.junit)
             implementation(libs.robolectric)
             implementation(libs.androidx.test.core)
-        }
-
-        androidMain.dependencies {
-            implementation(libs.text.recognition)
         }
     }
 

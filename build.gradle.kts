@@ -56,6 +56,28 @@ val screenshotModule = "cameraKScreenshotTests"
 
 val bomModule = "camerak-bom"
 
+// The libraries ship only bytedeco's Java bindings. Whatever runs them here (desktop tests, the
+// Sample) adds the natives for this machine, under JavaCPP's platform name, as
+// compose.desktop.currentOs does for Skiko. Modules read it as rootProject.extra["javacppPlatform"].
+extra["javacppPlatform"] =
+    run {
+        val os = System.getProperty("os.name").lowercase()
+        val family =
+            when {
+                os.startsWith("mac") -> "macosx"
+                os.startsWith("windows") -> "windows"
+                os.startsWith("linux") -> "linux"
+                else -> throw GradleException("No bytedeco natives for os.name '$os'")
+            }
+        val arch =
+            when (val name = System.getProperty("os.arch")) {
+                "aarch64", "arm64" -> "arm64"
+                "amd64", "x86_64" -> "x86_64"
+                else -> throw GradleException("No bytedeco natives for os.arch '$name'")
+            }
+        "$family-$arch"
+    }
+
 // One version and group for every published module, from gradle.properties (vanniktech reads the
 // same keys for the published coordinates).
 subprojects {

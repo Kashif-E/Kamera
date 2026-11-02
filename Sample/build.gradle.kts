@@ -107,8 +107,16 @@ android {
     }
 }
 
-// https://developer.android.com/develop/ui/compose/testing#setup
+// The libraries ship only bytedeco's Java bindings, so the Sample adds the natives for the machine
+// building it: JavaCPP's JNI glue, FFmpeg (camera and recording), Tesseract and Leptonica (OCR), and
+// on Windows videoInput (camera capture).
 dependencies {
+    val javacppPlatform = rootProject.extra["javacppPlatform"] as String
+    val desktopRuntimeOnly = kotlin.sourceSets.getByName("desktopMain").runtimeOnlyConfigurationName
+    val natives =
+        listOf(libs.javacpp, libs.ffmpeg, libs.tesseract, libs.leptonica) +
+            if (javacppPlatform.startsWith("windows")) listOf(libs.videoinput) else emptyList()
+    natives.forEach { add(desktopRuntimeOnly, variantOf(it) { classifier(javacppPlatform) }) }
 }
 tasks.named("embedAndSignAppleFrameworkForXcode") {
     doFirst {
