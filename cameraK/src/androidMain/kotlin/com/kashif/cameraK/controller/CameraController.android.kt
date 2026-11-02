@@ -60,6 +60,7 @@ import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.update
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -151,8 +152,19 @@ actual class CameraController internal constructor(
     var imageAnalyzer: ImageAnalysis? = null
     private var previewView: PreviewView? = null
 
-    // Multiple analyzer support: plugins register their analyzers here
-    private val registeredAnalyzers = mutableListOf<ImageAnalysis.Analyzer>()
+    // Frame consumers (plugins' analyzers). The bound ImageAnalysis feeds them through one
+    // MultiplexingAnalyzer that reads this list on every frame, so registering or removing one never
+    // touches CameraX bindings.
+    private val analyzerConsumers = atomic(emptyList<ImageAnalysis.Analyzer>())
+    private val frameMultiplexer = MultiplexingAnalyzer { analyzerConsumers.value }
+
+    // Set by the first registration and kept for the controller's lifetime: from then on every bind
+    // includes one ImageAnalysis, so later consumers join without a rebind.
+    @Volatile
+    private var analysisRequested = false
+
+    // Whether frameMultiplexer is set on the current imageAnalyzer. Main thread only.
+    private var multiplexerAttached = false
 
     // Video recording
     private var videoCapture: VideoCapture<Recorder>? = null
@@ -200,7 +212,7 @@ actual class CameraController internal constructor(
     // logical multi-camera. CameraSelector.setPhysicalCameraId ALONE silently no-ops on real
     // hardware — it must be paired with Camera2Interop.Extender.setPhysicalCameraId on EVERY
     // use-case builder (verified on real hardware). Consulted by bindCamera,
-    // configureCaptureUseCase and rebuildMultiplexedAnalyzer.
+    // configureCaptureUseCase and buildImageAnalysis.
     private var pinnedPhysicalId: String? = null
 
     internal fun lensSnapshot(): List<AndroidLensDescriptor> =
@@ -260,9 +272,7 @@ actual class CameraController internal constructor(
                 // analyze frames from the wrong physical camera (or lose the pin). Constructed here
                 // (after createCameraSelector set pinnedPhysicalId, before the use-case group is
                 // assembled below) so it binds via this bindToLifecycle call, not a second nested one.
-                if (registeredAnalyzers.isNotEmpty()) {
-                    imageAnalyzer = buildMultiplexedAnalyzer()
-                }
+                imageAnalyzer = if (analysisRequested) buildImageAnalysis() else null
 
                 // Align capture rotation with the display rotation that also drives the ViewPort and
                 // the preview box, so all three agree (WYSIWYG). Relying on the accelerometer
@@ -507,58 +517,86 @@ actual class CameraController internal constructor(
     /**
      * Registers an [ImageAnalysis.Analyzer] to receive camera frames.
      * Multiple analyzers can be registered simultaneously — they share a single
-     * [ImageAnalysis] use case via ref-counted frame dispatch.
+     * [ImageAnalysis] use case via ref-counted frame dispatch. Safe to call from any thread; only the
+     * first registration binds anything.
      */
     fun registerImageAnalyzer(analyzer: ImageAnalysis.Analyzer) {
-        registeredAnalyzers.add(analyzer)
-        rebuildMultiplexedAnalyzer()
+        analyzerConsumers.update { it + analyzer }
+        analysisRequested = true
+        onMainThread {
+            if (imageAnalyzer == null) bindImageAnalysis() else applyAnalyzerConsumers()
+        }
     }
 
     /**
-     * Unregisters a previously registered analyzer.
+     * Unregisters a previously registered analyzer. It receives no frame delivered after this
+     * returns; the camera is not rebound.
      */
     fun unregisterImageAnalyzer(analyzer: ImageAnalysis.Analyzer) {
-        registeredAnalyzers.remove(analyzer)
-        rebuildMultiplexedAnalyzer()
+        analyzerConsumers.update { it - analyzer }
+        onMainThread { applyAnalyzerConsumers() }
     }
 
     /**
-     * Builds the multiplexed [ImageAnalysis] use case from [registeredAnalyzers], baking in
-     * [pinnedPhysicalId] via Camera2Interop. Construction only — does not bind. Callers that
-     * already own a bindToLifecycle call (bindCamera) apply the result to the same use-case
-     * group instead of triggering a redundant nested bind.
+     * Builds the [ImageAnalysis] use case, baking in [pinnedPhysicalId] via Camera2Interop, and
+     * attaches [frameMultiplexer] when someone is consuming. Construction only — does not bind.
+     * Callers that already own a bindToLifecycle call (bindCamera) apply the result to the same
+     * use-case group instead of triggering a redundant nested bind.
      */
     @OptIn(ExperimentalCamera2Interop::class)
-    private fun buildMultiplexedAnalyzer(): ImageAnalysis {
-        val composite = MultiplexingAnalyzer(registeredAnalyzers.toList())
-        return ImageAnalysis.Builder()
+    private fun buildImageAnalysis(): ImageAnalysis {
+        val analysis = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
             .build()
-            .apply {
-                // Run analysis off the main thread — frame work (e.g. JPEG-encoding the analyzer
-                // frame, QR/OCR) is too heavy to block the UI thread.
-                backend.setAnalyzer(this, analyzerExecutor, composite)
-            }
+        imageAnalyzer = analysis
+        multiplexerAttached = false
+        applyAnalyzerConsumers()
+        return analysis
     }
 
-    private fun rebuildMultiplexedAnalyzer() {
-        if (registeredAnalyzers.isEmpty()) {
-            if (imageAnalyzer != null) {
-                try {
-                    imageAnalyzer?.let { unbindOwn(it) }
-                } catch (_: Exception) {}
-                imageAnalyzer = null
-            }
+    /** Attaches [frameMultiplexer] while anyone consumes frames and detaches it when no one does. */
+    private fun applyAnalyzerConsumers() {
+        val analysis = imageAnalyzer ?: return
+        val wanted = analyzerConsumers.value.isNotEmpty()
+        if (wanted == multiplexerAttached) return
+        // Run analysis off the main thread — frame work (e.g. JPEG-encoding the analyzer frame,
+        // QR/OCR) is too heavy to block the UI thread.
+        if (wanted) {
+            backend.setAnalyzer(analysis, analyzerExecutor, frameMultiplexer)
+        } else {
+            backend.clearAnalyzer(analysis)
+        }
+        multiplexerAttached = wanted
+    }
+
+    /**
+     * Adds the ImageAnalysis to a running camera, once. Before the first bind there is nothing to do:
+     * that bind includes it. During a recording, rebinding the group would end the recording, so the
+     * analysis is bound alone until the next bind puts it in the group.
+     */
+    private fun bindImageAnalysis() {
+        val pv = previewView
+        if (camera == null || pv == null) return
+        if (activeRecording == null) {
+            bindCamera(pv)
             return
         }
-
-        imageAnalyzer = buildMultiplexedAnalyzer()
-
+        val analysis = buildImageAnalysis()
         try {
-            updateImageAnalyzer()
-        } catch (_: Exception) {
-            // Camera may not be initialized yet; will be bound at bindCamera time
+            // createCameraSelector() rather than a bare lens-facing selector: a pinned physical lens
+            // must carry the same selector-level pin as the main bind.
+            cameraProvider?.bindToLifecycle(lifecycleOwner, createCameraSelector(), analysis)
+            boundUseCases += analysis
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Binding image analysis during a recording failed", e)
+        }
+    }
+
+    /** Runs [block] on the main thread, where CameraX bindings change, unless the controller was released. */
+    private fun onMainThread(block: () -> Unit) {
+        ContextCompat.getMainExecutor(context).execute {
+            if (!released.value) block()
         }
     }
 
@@ -1248,7 +1286,7 @@ actual class CameraController internal constructor(
             CameraKLogger.e(TAG, "Unbinding use cases on release failed", e)
         }
 
-        registeredAnalyzers.clear()
+        analyzerConsumers.value = emptyList()
         imageCaptureListeners.clear()
         recordingOutcome?.complete(VideoCaptureResult.Error(controllerReleased()))
 
@@ -1296,12 +1334,16 @@ actual class CameraController internal constructor(
 }
 
 /**
- * Dispatches each camera frame to multiple [ImageAnalysis.Analyzer] instances.
+ * Dispatches each camera frame to the [ImageAnalysis.Analyzer] instances [consumers] returns for it.
  * Uses [RefCountedImageProxy] so each analyzer can call `close()` independently;
  * the underlying buffer is released only when all analyzers have finished.
  */
-internal class MultiplexingAnalyzer(private val analyzers: List<ImageAnalysis.Analyzer>) : ImageAnalysis.Analyzer {
+internal class MultiplexingAnalyzer(private val consumers: () -> List<ImageAnalysis.Analyzer>) :
+    ImageAnalysis.Analyzer {
+    constructor(analyzers: List<ImageAnalysis.Analyzer>) : this({ analyzers })
+
     override fun analyze(imageProxy: ImageProxy) {
+        val analyzers = consumers()
         if (analyzers.isEmpty()) {
             imageProxy.close()
             return
