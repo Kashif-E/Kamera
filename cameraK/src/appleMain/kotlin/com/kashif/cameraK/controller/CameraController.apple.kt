@@ -237,7 +237,7 @@ actual class CameraController internal constructor(
         try {
             customCameraController.setupSession(cameraDeviceType)
         } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "CameraK Error: setupSession - ${e.message}")
+            CameraKLogger.e("CameraK", "CameraK: setting up the session failed", e)
             return
         }
 
@@ -248,7 +248,7 @@ actual class CameraController internal constructor(
         }
 
         customCameraController.onError = { error ->
-            CameraKLogger.e("CameraK", "CameraK Error: $error")
+            CameraKLogger.e("CameraK", "CameraK: the camera reported an error", error)
         }
     }
 
@@ -400,9 +400,8 @@ actual class CameraController internal constructor(
         }
     }
 
-    private fun photoCaptureFailure(error: NSError?): Exception = Exception(
-        "Photo capture failed: ${error?.let { "${it.domain} ${it.code}: ${it.localizedDescription}" } ?: "no photo"}",
-    )
+    private fun photoCaptureFailure(error: NSError?): Exception =
+        Exception("Photo capture failed: ${error?.summary ?: "no photo"}", error?.let(::NSErrorException))
 
     /**
      * Writes [image] where [directory] says, tells image-capture listeners about the bytes written,
@@ -632,6 +631,8 @@ actual class CameraController internal constructor(
             throw IllegalStateException("Recording already in progress")
         }
         try {
+            // Before anything is attached, so a directory that cannot be made leaves the session as it was.
+            val filePath = createVideoTempFile(configuration)
             val output = attachMovieOutput() ?: throw IllegalStateException("Movie file output not available")
             if (movieRecorder.isRecording(output)) throw IllegalStateException("Recording already in progress")
             unclaimedRecordingResult.getAndSet(null)?.let {
@@ -645,7 +646,6 @@ actual class CameraController internal constructor(
                 addAudioInputIfNeeded()
             }
 
-            val filePath = createVideoTempFile(configuration)
             val fileURL = NSURL.fileURLWithPath(filePath)
             // Delete existing file at path if any
             NSFileManager.defaultManager.removeItemAtPath(filePath, null)
@@ -808,15 +808,7 @@ actual class CameraController internal constructor(
 
         return if (config.outputDirectory != null) {
             val dir = config.outputDirectory
-            val fileManager = NSFileManager.defaultManager
-            if (!fileManager.fileExistsAtPath(dir)) {
-                fileManager.createDirectoryAtPath(
-                    dir,
-                    withIntermediateDirectories = true,
-                    attributes = null,
-                    error = null,
-                )
-            }
+            createDirectoryIfMissing(dir, "the recording's output directory")
             "$dir/$fileName"
         } else if (directory == Directory.DOCUMENTS) {
             // Documents/CameraK, like photos: iOS purges the temporary directory.
@@ -838,16 +830,32 @@ actual class CameraController internal constructor(
         ).firstOrNull() as? String ?: platform.Foundation.NSTemporaryDirectory()
 
         val cameraKDir = "$documentsDir/CameraK"
+        createDirectoryIfMissing(cameraKDir, "Documents/CameraK")
+        return cameraKDir
+    }
+
+    /**
+     * Creates the directory at [path] when there is none; throws, with the file system's NSError as
+     * the cause, when it cannot. [what] names the directory in the message, never its path.
+     */
+    @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+    private fun createDirectoryIfMissing(path: String, what: String) = memScoped {
         val fileManager = NSFileManager.defaultManager
-        if (!fileManager.fileExistsAtPath(cameraKDir)) {
-            fileManager.createDirectoryAtPath(
-                cameraKDir,
-                withIntermediateDirectories = true,
-                attributes = null,
-                error = null,
+        if (fileManager.fileExistsAtPath(path)) return@memScoped
+        val error = alloc<ObjCObjectVar<NSError?>>()
+        val created = fileManager.createDirectoryAtPath(
+            path,
+            withIntermediateDirectories = true,
+            attributes = null,
+            error = error.ptr,
+        )
+        if (!created) {
+            val cause = error.value
+            throw IllegalStateException(
+                "Could not create $what${cause?.let { ": ${it.summary}" }.orEmpty()}",
+                cause?.let(::NSErrorException),
             )
         }
-        return cameraKDir
     }
 
     @OptIn(ExperimentalForeignApi::class)
@@ -909,14 +917,15 @@ actual class CameraController internal constructor(
             }
         }
         val failure = when {
-            outcome == null -> "Photos did not finish saving within $photosImportTimeoutMs ms"
-            outcome.first == null ->
-                "Saving to the Photos library failed: " +
-                    (outcome.second?.let { "${it.domain} ${it.code}" } ?: "Photos created no asset")
+            outcome == null -> Exception("Photos did not finish saving within $photosImportTimeoutMs ms")
+            outcome.first == null -> Exception(
+                "Saving to the Photos library failed: ${outcome.second?.summary ?: "Photos created no asset"}",
+                outcome.second?.let(::NSErrorException),
+            )
             else -> return Result.success(outcome.first!!)
         }
-        CameraKLogger.e("CameraK", "CameraK: $failure; the file stays where it was written")
-        return Result.failure(Exception(failure))
+        CameraKLogger.e("CameraK", "CameraK: ${failure.message}; the file stays where it was written", failure.cause)
+        return Result.failure(failure)
     }
 
     /** Removes the temporary file of a capture or recording Photos now holds. */

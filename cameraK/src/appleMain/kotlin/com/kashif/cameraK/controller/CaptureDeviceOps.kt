@@ -74,9 +74,8 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
         if (device.lockForConfiguration(error.ptr)) {
             null
         } else {
-            IllegalStateException(
-                "lockForConfiguration failed: ${error.value?.localizedDescription ?: "no error given"}",
-            )
+            error.value?.let(::NSErrorException)
+                ?: IllegalStateException("lockForConfiguration failed and gave no error")
         }
     }
 

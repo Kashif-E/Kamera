@@ -192,10 +192,17 @@ class CustomCameraController(
     // Configuration changes for plugin outputs (Apple WWDC pattern). Touched only on sessionQueue.
     private val pendingConfigurations = mutableListOf<() -> Unit>()
 
-    sealed class CameraException : Exception() {
-        class DeviceNotAvailable : CameraException()
-        class ConfigurationError(message: String) : CameraException()
-        class CaptureError(message: String) : CameraException()
+    /**
+     * A camera failure. [message] says what CameraK was doing; [cause], when the platform reported
+     * one, carries its error (an NSError's domain, code and description).
+     */
+    sealed class CameraException(message: String, cause: Throwable?) : Exception(message, cause) {
+        class DeviceNotAvailable(message: String = "No camera is available", cause: Throwable? = null) :
+            CameraException(message, cause)
+
+        class ConfigurationError(message: String, cause: Throwable? = null) : CameraException(message, cause)
+
+        class CaptureError(message: String, cause: Throwable? = null) : CameraException(message, cause)
     }
 
     /**
@@ -428,7 +435,7 @@ class CustomCameraController(
         requestedZoom = null
         isUsingFrontCamera = camera.isFront
 
-        val input = camera.makeInput().getOrNull() ?: return false
+        val input = camera.makeInput().getOrElse { throw cameraInputFailure(it) }
         val ops = session ?: return false
         return if (ops.canAddInput(input)) {
             ops.addInput(input)
@@ -680,7 +687,7 @@ class CustomCameraController(
         val refused = camera.lockForConfiguration()
         if (refused != null) {
             CameraKLogger.e(TAG, "CameraK: could not lock the camera to $operation", refused)
-            reportError(CameraException.ConfigurationError("Could not lock the camera to $operation"))
+            reportError(CameraException.ConfigurationError("Could not lock the camera to $operation", refused))
             return
         }
         try {
@@ -879,8 +886,7 @@ class CustomCameraController(
      * queue; returns why the swap failed, or null.
      */
     private fun swapVideoInput(ops: CaptureSessionOps, camera: CaptureDeviceOps): CameraException? {
-        val newInput = camera.makeInput().getOrNull()
-            ?: return CameraException.ConfigurationError("Failed to create input")
+        val newInput = camera.makeInput().getOrElse { return cameraInputFailure(it) }
         val previous = videoInput
         ops.beginConfiguration()
         try {
@@ -897,6 +903,12 @@ class CustomCameraController(
         } finally {
             ops.commitConfiguration()
         }
+    }
+
+    /** Why a camera's input could not be made, keeping what AVFoundation reported as the cause. */
+    private fun cameraInputFailure(cause: Throwable): CameraException.ConfigurationError {
+        val reported = (cause as? NSErrorException)?.error?.let { ": ${it.summary}" }.orEmpty()
+        return CameraException.ConfigurationError("Could not open the camera$reported", cause)
     }
 
     /** Records [camera] as the one in use after a successful swap. Runs on the session queue. */
@@ -919,8 +931,12 @@ class CustomCameraController(
         if (session?.isRunning != true) return
         photoCapturer.prepare(output, listOf(photoSettings())) { _, error ->
             if (error != null) {
-                CameraKLogger.e(TAG, "CameraK: preparing the photo output failed: ${error.domain} ${error.code}")
-                reportError(CameraException.ConfigurationError("Preparing the photo output failed"))
+                val failure = CameraException.ConfigurationError(
+                    "Preparing the photo output failed: ${error.summary}",
+                    NSErrorException(error),
+                )
+                CameraKLogger.e(TAG, "CameraK: preparing the photo output failed", failure)
+                reportError(failure)
             }
         }
     }
@@ -977,7 +993,9 @@ class CustomCameraController(
 
     private fun deliverPhoto(data: NSData?, error: NSError?) {
         if (error != null) {
-            onError?.invoke(CameraException.CaptureError(error.localizedDescription))
+            onError?.invoke(
+                CameraException.CaptureError("Photo capture failed: ${error.summary}", NSErrorException(error)),
+            )
             return
         }
         onPhotoCapture?.invoke(data)

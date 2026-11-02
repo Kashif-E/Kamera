@@ -66,9 +66,7 @@ class VideoRecordingDelegate :
             VideoCaptureResult.Success(filePath, durationMs)
         } else {
             CameraKLogger.e("CameraK", "CameraK: the recording failed: ${error.domain} ${error.code}")
-            VideoCaptureResult.Error(
-                Exception("Recording failed: ${error.domain} ${error.code}: ${error.localizedDescription}"),
-            )
+            VideoCaptureResult.Error(Exception("Recording failed: ${error.summary}", NSErrorException(error)))
         }
         if (!started.isCompleted) {
             started.completeExceptionally(IllegalStateException("The recording ended before it started"))
