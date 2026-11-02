@@ -1262,6 +1262,34 @@ fun lintTaskPaths(): List<String> =
 
 val lintChecksFile = layout.buildDirectory.file("verify/lint-checks.txt")
 
+// The lint checks that existed when lintGroup became the only list of them. Moving one out of the group
+// would silently stop it running, so the lint target fails instead. A new check needs no entry here;
+// removing a check on purpose means removing it here too. scripts/test_lint_minimum_set.sh covers this.
+val requiredLintChecks =
+    listOf(
+        ":Sample:checkMacOsCameraPackaging",
+        ":checkAgentPermissions",
+        ":checkAndroidSdkFloor",
+        ":checkAndroidSdkFloorRules",
+        ":checkBuildIntegrity",
+        ":checkCatalogHygiene",
+        ":checkComposeBaseline",
+        ":checkCredentialHygiene",
+        ":checkDocsWorkflow",
+        ":checkLicenseMetadata",
+        ":checkNativeSettings",
+        ":checkNoIntelSimulatorTarget",
+        ":checkNoLibraryFrameworks",
+        ":checkPluginSources",
+        ":checkPublishedVariants",
+        ":checkReleaseMetadata",
+        ":checkReleaseWorkflow",
+        ":checkRepositoryLinks",
+        ":checkSecurityPolicy",
+        ":checkVerifyCoverage",
+        ":spotlessCheck",
+    )
+
 tasks.register("verifyAll") {
     group = "verification"
     description = "Runs spotless, every module's tests on every target, screenshot tests and the Sample build"
@@ -1278,6 +1306,11 @@ tasks.register("verifyAll") {
 gradle.taskGraph.whenReady {
     if ("lint" !in verifyTargets || !hasTask(":verifyAll")) return@whenReady
     val checks = lintTaskPaths()
+    val left = requiredLintChecks.filterNot(checks::contains)
+    check(left.isEmpty()) {
+        "These lint checks are not in the '$lintGroup' group, so the lint target would skip them:\n" +
+            left.joinToString("\n")
+    }
     check(checks.isNotEmpty()) { "No task is in the '$lintGroup' group" }
     lintChecksFile.get().asFile.apply {
         parentFile.mkdirs()

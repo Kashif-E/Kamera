@@ -2,8 +2,9 @@
 # A check task registered in the "camerak lint" group runs under `scripts/verify.sh --only lint`, and
 # the report requires it, without being listed in the root build or in scripts/verify_report.py.
 #
-# Registers :probeLintCheck through a Gradle init script, runs the lint target, and fails unless the
-# probe ran and the report's lint evidence names it. Takes as long as `verify.sh --only lint`.
+# Registers :probeLintCheck through a Gradle init script, runs the lint target, and fails unless
+# verify.sh exits 0, the probe ran, this run wrote the lint check list and it names the probe, and the
+# summary names it. Takes as long as `verify.sh --only lint`.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,15 +26,23 @@ set +e
 verify_exit=$?
 set -e
 
-log="$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["log"])' "$ROOT/build/verify/run.json")"
+run_json="$ROOT/build/verify/run.json"
+log="$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["log"])' "$run_json")"
 problems=()
+[[ $verify_exit -eq 0 ]] || problems+=("verify.sh --only lint exited $verify_exit")
 grep -q '^> Task :probeLintCheck$' "$log" || problems+=("verify.sh --only lint did not run :probeLintCheck")
 evidence="$ROOT/build/verify/lint-checks.txt"
 if [[ ! -f "$evidence" ]]; then
     problems+=("the build wrote no lint check list at build/verify/lint-checks.txt for verify_report.py")
-elif ! grep -qx ':probeLintCheck' "$evidence"; then
-    problems+=("the lint check list verify_report.py reads does not name :probeLintCheck")
+elif python3 -I -c 'import json, os, sys; sys.exit(os.stat(sys.argv[1]).st_mtime < float(json.load(open(sys.argv[2]))["start_epoch"]))' \
+    "$evidence" "$run_json"; then
+    grep -qx ':probeLintCheck' "$evidence" || problems+=("the lint check list verify_report.py reads does not name :probeLintCheck")
+else
+    problems+=("build/verify/lint-checks.txt is older than this run's start, so it is an earlier run's list")
 fi
+python3 -I -c 'import json, sys; sys.exit(":probeLintCheck" not in json.load(open(sys.argv[1])).get("lint_checks", []))' \
+    "$ROOT/build/verify/summary.json" 2>/dev/null ||
+    problems+=("build/verify/summary.json does not name :probeLintCheck among the lint checks it required")
 
 if [[ ${#problems[@]} -gt 0 ]]; then
     echo "test_lint_self_registration: FAILED (verify.sh exited $verify_exit; log $log)"

@@ -38,9 +38,15 @@ if a requested target ran zero tests. Results left over from earlier runs are ig
 **Adding a lint check.** Register the task with `group = lintGroup` in the root build (in a
 module, `rootProject.extra["lintGroup"]`, which is `"camerak lint"`). `verifyAll` runs every task
 in that group when the lint target is selected, and writes their paths to
-`build/verify/lint-checks.txt`, which `verify_report.py` requires to have run; no list names them.
+`build/verify/lint-checks.txt`, which `verify_report.py` requires to have run and lists in the
+summary; no list is needed to add one. The checks that existed when the group became the only list
+are named in the root build's `requiredLintChecks`, so moving one out of the group fails the lint
+target instead of dropping it; remove a check from there only when deleting it.
 `scripts/test_lint_self_registration.sh` registers a probe check that way and fails unless
-`verify.sh --only lint` runs it.
+`verify.sh --only lint` exits 0, runs the probe, writes the list in that run and names the probe in
+the summary. `scripts/test_lint_self_registration_guards.sh` checks that test against stale or
+failed evidence in a second, and `scripts/test_lint_minimum_set.sh` moves every required check out
+of the group and requires the lint target to fail naming each.
 
 **Test first.** A bug fix or behaviour change starts with a test that fails without the change.
 Run the harness and see it go RED for that test, then make the change and see it go GREEN.

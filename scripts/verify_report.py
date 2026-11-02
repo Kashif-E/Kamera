@@ -281,6 +281,7 @@ def main() -> int:
     tasks = executed_tasks(log)
     task_checks: dict[str, str] = {}
     evidence_by_target = dict(TASK_EVIDENCE)
+    lint_checks: list[str] = []
     if "lint" in targets:
         lint_checks, lint_problem = lint_check_list(start)
         if lint_problem:
@@ -354,6 +355,8 @@ def main() -> int:
         md += ["## Gradle errors", "", "```", *gradle_excerpt, "```", ""]
     if paparazzi_failures or desktop_diffs:
         md += ["## Screenshot diffs", ""] + [f"- `{p}`" for p in paparazzi_failures + desktop_diffs] + [""]
+    if lint_checks:
+        md += ["## Lint checks required", ""] + [f"- `{check}`" for check in lint_checks] + [""]
 
     out_dir = ROOT / "build" / "verify"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -368,6 +371,7 @@ def main() -> int:
         "log": str(log),
         "stale_result_files_ignored": report.stale_files,
         "task_checks": task_checks,
+        "lint_checks": lint_checks,
         "totals": vars(total),
         "cells": [{"module": m, "target": t, **vars(c)} for (m, t), c in rows],
         "failures": [vars(f) for f in report.failures + report.uncaught],
