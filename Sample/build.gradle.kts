@@ -149,3 +149,35 @@ compose.desktop {
         }
     }
 }
+
+// A packaged macOS app that opens the camera without NSCameraUsageDescription in its Info.plist is
+// denied or killed by TCC, and a hardened-runtime build also needs the camera entitlement.
+// `./gradlew run` hides both, because the terminal already holds the camera permission. The lint
+// target of scripts/verify.sh runs this check.
+val macOsPackaging = compose.desktop.application.nativeDistributions.macOS
+var macOsExtraPlistKeys = ""
+macOsPackaging.infoPlist { macOsExtraPlistKeys = extraKeysRawXml.orEmpty() }
+val macOsEntitlements =
+    listOfNotNull(macOsPackaging.entitlementsFile.orNull?.asFile, macOsPackaging.runtimeEntitlementsFile.orNull?.asFile)
+tasks.register("checkMacOsCameraPackaging") {
+    group = "verification"
+    description = "Fails if the packaged macOS app lacks a camera usage description or the camera entitlement"
+    inputs.files(macOsEntitlements)
+    doLast {
+        val problems = mutableListOf<String>()
+        val usage = Regex("""<key>NSCameraUsageDescription</key>\s*<string>\s*[^<\s][^<]*</string>""")
+        if (!usage.containsMatchIn(macOsExtraPlistKeys)) {
+            problems += "macOS { infoPlist { extraKeysRawXml } } has no non-empty NSCameraUsageDescription"
+        }
+        val cameraEntitlement = Regex("""<key>com\.apple\.security\.device\.camera</key>\s*<true\s*/>""")
+        if (macOsEntitlements.size < 2) {
+            problems += "macOS { entitlementsFile / runtimeEntitlementsFile } are not both set"
+        }
+        macOsEntitlements.filterNot { it.isFile && cameraEntitlement.containsMatchIn(it.readText()) }.forEach {
+            problems += "${it.name} does not grant com.apple.security.device.camera"
+        }
+        if (problems.isNotEmpty()) {
+            throw GradleException("The macOS package cannot use the camera:\n" + problems.joinToString("\n"))
+        }
+    }
+}

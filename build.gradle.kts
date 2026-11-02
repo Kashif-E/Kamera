@@ -1195,6 +1195,7 @@ fun verifyTaskPaths(
                 ":checkCatalogHygiene",
                 ":checkNativeSettings",
                 ":checkRepositoryLinks",
+                ":Sample:checkMacOsCameraPackaging",
             )
     }
     modules.forEach { module ->
