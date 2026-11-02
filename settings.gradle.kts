@@ -29,7 +29,9 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
+include(":cameraK-core")
 include(":cameraK")
+include(":cameraK-testing")
 include(":Sample")
 include(":ImageSaverPlugin")
 include(":qrScannerPlugin")

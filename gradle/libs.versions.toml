@@ -20,7 +20,10 @@ compose-multiplatform = "1.11.1"
 compose-material3 = "1.9.0"
 coil-mp-version = "3.5.0"
 lucide-icons = "2.2.1"
-androidx-activityCompose = "1.13.0"
+androidx-activity = "1.13.0"
+# Test-only for cameraK-core, which has no Compose: the lifecycle-runtime its Android unit tests ran
+# against through activity-compose before the module split.
+androidx-lifecycle = "2.9.4"
 # The JavaCPP release train: javacv and javacpp carry its number, each preset binding its native
 # library's version before it. These are the Java bindings only; apps add the natives they ship.
 javacpp = "1.5.12"
@@ -62,7 +65,9 @@ compose-material3 = { module = "org.jetbrains.compose.material3:material3", vers
 
 coil3-core = { module = "io.coil-kt.coil3:coil-core", version.ref = "coil-mp-version" }
 coil3-compose-core = { module = "io.coil-kt.coil3:coil-compose-core", version.ref = "coil-mp-version" }
-androidx-activityCompose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
+androidx-activityCompose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
+androidx-activity = { module = "androidx.activity:activity", version.ref = "androidx-activity" }
+androidx-lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime", version.ref = "androidx-lifecycle" }
 lucide-icons-cmp = { module = "com.composables:icons-lucide-cmp", version.ref = "lucide-icons" }
 
 javacv = { module = "org.bytedeco:javacv", version.ref = "javacpp" }

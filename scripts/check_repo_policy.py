@@ -687,7 +687,16 @@ def check_build_integrity() -> List[str]:
 # ─── catalog ────────────────────────────────────────────────────────────────────────────────────
 
 CATALOG = "gradle/libs.versions.toml"
-LIBRARY_MODULES = ["cameraK", "ImageSaverPlugin", "qrScannerPlugin", "ocrPlugin", "videoRecorderPlugin", "analyzerPlugin"]
+LIBRARY_MODULES = [
+    "cameraK-core",
+    "cameraK",
+    "cameraK-testing",
+    "ImageSaverPlugin",
+    "qrScannerPlugin",
+    "ocrPlugin",
+    "videoRecorderPlugin",
+    "analyzerPlugin",
+]
 CATALOG_ENTRY = re.compile(r"^([A-Za-z0-9_.-]+)\s*=\s*(.+?)\s*$")
 INLINE_FIELD = re.compile(r'([A-Za-z.]+)\s*=\s*"([^"]*)"')
 ACCESSOR = re.compile(r"\blibs\.((?:[A-Za-z0-9]+\.)*[A-Za-z0-9]+)")
@@ -707,7 +716,13 @@ MULTIPLATFORM_PLUGIN = re.compile(r"\balias\(libs\.plugins\.multiplatform\)")
 def unlisted_library_modules(settings_text: str, scripts: Dict[str, str], listed: List[str] = LIBRARY_MODULES) -> List[str]:
     """The modules settings.gradle.kts includes that publish a multiplatform library but `listed` lacks,
     so the compose.* accessor rule never reads their build files."""
-    return []
+    unlisted = []
+    for include in SETTINGS_INCLUDE.findall(settings_text):
+        module = include.lstrip(":")
+        script = scripts.get(f"{module}/build.gradle.kts", "")
+        if PUBLISH_PLUGIN.search(script) and MULTIPLATFORM_PLUGIN.search(script) and module not in listed:
+            unlisted.append(module)
+    return unlisted
 
 
 def parse_catalog(text: str) -> Dict[str, Dict[str, Dict[str, str]]]:
@@ -825,7 +840,12 @@ def check_catalog() -> List[str]:
         path.relative_to(ROOT).as_posix(): path.read_text()
         for path in tracked("*.gradle.kts")
     }
-    return catalog_problems((ROOT / CATALOG).read_text(), scripts)
+    unlisted = [
+        f"settings.gradle.kts includes {module}, a published multiplatform library that LIBRARY_MODULES lacks, "
+        "so its build file is never checked for compose.* accessors"
+        for module in unlisted_library_modules((ROOT / "settings.gradle.kts").read_text(), scripts)
+    ]
+    return unlisted + catalog_problems((ROOT / CATALOG).read_text(), scripts)
 
 
 # ─── native-settings ────────────────────────────────────────────────────────────────────────────

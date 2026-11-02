@@ -40,10 +40,19 @@ spotless {
 // screenshots,lint,sample>; with neither property set, everything runs.
 
 val libraryModules =
-    listOf("cameraK", "ImageSaverPlugin", "qrScannerPlugin", "ocrPlugin", "videoRecorderPlugin", "analyzerPlugin")
+    listOf(
+        "cameraK-core",
+        "cameraK",
+        "ImageSaverPlugin",
+        "qrScannerPlugin",
+        "ocrPlugin",
+        "videoRecorderPlugin",
+        "analyzerPlugin",
+    )
 // Published modules that are not libraries: test fixtures, which apps add to test source sets only.
-// Every gate that holds a published module reads publishedModules. S0' green fills this list.
-val testFixtureModules = emptyList<String>()
+// Every gate that holds a published module reads publishedModules, so a fixture module is held to all
+// of them; checkTestOnlyDependencies names the one exception.
+val testFixtureModules = listOf("cameraK-testing")
 val publishedModules = libraryModules + testFixtureModules
 val screenshotModule = "cameraKScreenshotTests"
 
@@ -82,7 +91,7 @@ extra["javacppPlatform"] =
 // One version and group for every published module, from gradle.properties (vanniktech reads the
 // same keys for the published coordinates).
 subprojects {
-    if (name in libraryModules || name == bomModule) {
+    if (name in publishedModules || name == bomModule) {
         group = providers.gradleProperty("GROUP").get()
         version = providers.gradleProperty("VERSION_NAME").get()
     }
@@ -94,7 +103,7 @@ project(":$bomModule") {
     plugins.withId("java-platform") {
         dependencies {
             constraints {
-                libraryModules.forEach { add("api", project(":$it")) }
+                publishedModules.forEach { add("api", project(":$it")) }
             }
         }
     }
@@ -109,9 +118,9 @@ fun csvProperty(name: String): List<String>? =
         ?.map(String::trim)
         ?.filter(String::isNotEmpty)
 
-val verifyModules = csvProperty("camerak.verify.modules") ?: libraryModules
-(verifyModules - libraryModules).let { unknown ->
-    require(unknown.isEmpty()) { "Unknown module(s) $unknown; expected one of $libraryModules" }
+val verifyModules = csvProperty("camerak.verify.modules") ?: publishedModules
+(verifyModules - publishedModules).let { unknown ->
+    require(unknown.isEmpty()) { "Unknown module(s) $unknown; expected one of $publishedModules" }
 }
 
 // Screenshots exist only for cameraK, and the Sample build depends on every module, so those two
@@ -153,9 +162,10 @@ if (providers.gradleProperty("camerak.verify.rerunTests").orNull.toBoolean()) {
 // This fails the build if it, or any other test library, reaches what a published variant gives
 // consumers: the desktop and Android runtime classpaths (debug too, though only release is published)
 // and the klibs every iOS target compiles against.
+val coroutinesTestModule = Regex("""^org\.jetbrains\.kotlinx:kotlinx-coroutines-test""")
 val testOnlyModules =
     listOf(
-        Regex("""^org\.jetbrains\.kotlinx:kotlinx-coroutines-test"""),
+        coroutinesTestModule,
         Regex("""^org\.jetbrains\.kotlin:kotlin-test"""),
         Regex("""^junit:junit$"""),
         Regex("""^org\.junit(\.[^:]+)?:"""),
@@ -172,33 +182,23 @@ val publishedGraphs =
         "iosSimulatorArm64CompileKlibraries",
     )
 subprojects {
-    if (name !in libraryModules) return@subprojects
-    val runtimeGraphs =
-        publishedGraphs.map { configurationName ->
-            configurationName to
-                provider { configurations.getByName(configurationName) }
-                    .flatMap { it.incoming.resolutionResult.rootComponent }
+    if (name !in publishedModules) return@subprojects
+    val moduleName = name
+    val components =
+        publishedGraphs.associateWith { configurationName ->
+            provider {
+                configurations
+                    .getByName(configurationName)
+                    .incoming.resolutionResult.allComponents
+                    .mapNotNull { it.moduleVersion }
+                    .map { "${it.group}:${it.name}" }
+            }
         }
     tasks.register("checkTestOnlyDependencies") {
         group = "verification"
         description = "Fails if a test library is on a classpath a published variant hands to consumers"
         doLast {
-            val leaks =
-                runtimeGraphs.flatMap { (configurationName, root) ->
-                    val seen = mutableSetOf<ResolvedComponentResult>()
-                    val queue = ArrayDeque(listOf(root.get()))
-                    while (queue.isNotEmpty()) {
-                        val component = queue.removeFirst()
-                        if (!seen.add(component)) continue
-                        component.dependencies
-                            .filterIsInstance<ResolvedDependencyResult>()
-                            .forEach { queue.add(it.selected) }
-                    }
-                    seen.mapNotNull { component ->
-                        val id = component.moduleVersion?.let { "${it.group}:${it.name}" } ?: return@mapNotNull null
-                        if (testOnlyModules.any { it.containsMatchIn(id) }) "$configurationName -> $id" else null
-                    }
-                }
+            val leaks = testOnlyLeaks(moduleName, components.mapValues { (_, graph) -> graph.get() })
             check(leaks.isEmpty()) { "Test-only libraries on a published classpath:\n" + leaks.joinToString("\n") }
         }
     }
@@ -210,13 +210,25 @@ subprojects {
 val nativeClassifierJar = Regex("""-(linux|macosx|windows|android|ios)-[a-z0-9_]+\.jar$""")
 val coreBytedecoBindings = setOf("javacv", "javacpp", "ffmpeg", "videoinput")
 val bytedecoBindings =
-    libraryModules.associateWith {
+    publishedModules.associateWith {
         if (it == "ocrPlugin") coreBytedecoBindings + setOf("tesseract", "leptonica") else coreBytedecoBindings
     }
 
 // Consumers compile against what a library declares api. Core's public signatures expose javacv's
 // FrameGrabber, whose Frame is built on javacpp; no public signature exposes FFmpeg or videoInput.
-val exportedBytedeco = mapOf("cameraK" to setOf("javacv", "javacpp"))
+// camerak and camerak-testing reach javacv only through api(project(":cameraK-core")).
+val exportedBytedeco = mapOf("cameraK-core" to setOf("javacv", "javacpp"))
+
+// The artifacts camerak-core may not hand consumers: Compose, and the AndroidX libraries that exist
+// for it. Compose UI lives in camerak.
+val composeArtifacts =
+    listOf(
+        Regex("""^androidx\.compose\."""),
+        Regex("""^org\.jetbrains\.compose\."""),
+        Regex("""^org\.jetbrains\.skiko:"""),
+        Regex("""^androidx\.activity:activity-compose$"""),
+        Regex("""^(org\.jetbrains\.)?androidx\.lifecycle:lifecycle-[a-z-]*compose"""),
+    )
 
 data class ClasspathRule(
     val module: String,
@@ -224,6 +236,25 @@ data class ClasspathRule(
     val forbidden: Regex,
     val reason: String,
 )
+
+// The rules 1.x held cameraK to. camerak's graph contains camerak-core's, and it may not add these either.
+fun coreClasspathRules(module: String) =
+    listOf(
+        ClasspathRule(module, publishedGraphs, Regex("""^io\.coil-kt"""), "core imports no Coil"),
+        ClasspathRule(module, publishedGraphs, Regex("""^io\.ktor:"""), "core imports no Ktor"),
+        ClasspathRule(
+            module,
+            publishedGraphs,
+            Regex("""^com\.google\.zxing:"""),
+            "core imports no ZXing; qrScannerPlugin declares the ZXing it uses",
+        ),
+        ClasspathRule(
+            module,
+            publishedGraphs,
+            Regex("""^androidx\.camera:camera-extensions$"""),
+            "core imports no androidx.camera.extensions",
+        ),
+    )
 
 val forbiddenOnPublishedClasspath =
     listOf(
@@ -233,27 +264,26 @@ val forbiddenOnPublishedClasspath =
             Regex("""^com\.google\.mlkit:"""),
             "analyzerPlugin imports no ML Kit",
         ),
-        ClasspathRule("cameraK", publishedGraphs, Regex("""^io\.coil-kt"""), "core imports no Coil"),
-        ClasspathRule("cameraK", publishedGraphs, Regex("""^io\.ktor:"""), "core imports no Ktor"),
-        ClasspathRule(
-            "cameraK",
-            publishedGraphs,
-            Regex("""^com\.google\.zxing:"""),
-            "core imports no ZXing; qrScannerPlugin declares the ZXing it uses",
-        ),
-        ClasspathRule(
-            "cameraK",
-            publishedGraphs,
-            Regex("""^androidx\.camera:camera-extensions$"""),
-            "core imports no androidx.camera.extensions",
-        ),
         ClasspathRule(
             "qrScannerPlugin",
             listOf("desktopRuntimeClasspath"),
             Regex("""^com\.google\.zxing:javase$"""),
             "the desktop scanner reads luminance through zxing core; javase is test-only",
         ),
-    )
+    ) + coreClasspathRules("cameraK-core") + coreClasspathRules("cameraK") +
+        composeArtifacts.map {
+            ClasspathRule("cameraK-core", publishedGraphs, it, "camerak-core is Compose-free; Compose UI is in camerak")
+        } +
+        // camerak-testing exports kotlinx-coroutines-test, which takes over Dispatchers.Main in any app
+        // whose runtime classpath it reaches (#165), so no other published module may depend on it.
+        (publishedModules - testFixtureModules).map {
+            ClasspathRule(
+                it,
+                publishedGraphs,
+                Regex("""^io\.github\.kashif-mehmood-km:camerak-testing$""", RegexOption.IGNORE_CASE),
+                "camerak-testing is for test source sets only",
+            )
+        }
 
 // Consumers compile against every dependency a library declares api, so api is only for libraries
 // whose types its public signatures expose. A rule names a library (null for every library) and a
@@ -273,7 +303,12 @@ val forbiddenApiExports =
         ApiExportRule(
             "cameraK",
             Regex("""^androidx\.activity:activity-compose$"""),
-            "only core's internal permission launcher uses activity-compose",
+            "only camerak's 1.x permission launcher uses activity-compose",
+        ),
+        ApiExportRule(
+            "cameraK-core",
+            Regex("""^androidx\.startup:startup-runtime$"""),
+            "CameraK uses no androidx.startup; apps that need it declare it",
         ),
         ApiExportRule(
             "cameraK",
@@ -288,7 +323,7 @@ val forbiddenApiExports =
     )
 
 subprojects {
-    if (name !in libraryModules) return@subprojects
+    if (name !in publishedModules) return@subprojects
     val moduleName = name
     val components =
         publishedGraphs.associateWith { configurationName ->
@@ -329,41 +364,15 @@ subprojects {
         group = "verification"
         description = "Fails if this library hands consumers natives, umbrellas or libraries it does not import"
         doLast {
-            val allowed = bytedecoBindings.getValue(moduleName)
-            val problems = mutableListOf<String>()
-            components.getValue("desktopRuntimeClasspath").get().forEach { component ->
-                val (group, artifact) = component.split(':')
-                if (group == "org.bytedeco" && artifact !in allowed) {
-                    problems +=
-                        "desktopRuntimeClasspath -> $component: $moduleName imports only bytedeco ${allowed.sorted()}" +
-                        if (artifact.endsWith("-platform")) "; a -platform umbrella ships every OS's natives" else ""
-                }
-            }
-            val exported = exportedBytedeco[moduleName].orEmpty()
-            desktopApiBytedeco.get().filter { it !in exported }.forEach {
-                problems +=
-                    "desktopApiElements -> org.bytedeco:$it: no public $moduleName signature exposes $it types; " +
-                    "declare it implementation"
-            }
             val artifacts = desktopArtifacts.get()
-            artifacts.filter { nativeClassifierJar.containsMatchIn(it.name) }.forEach {
-                problems += "desktopRuntimeClasspath ships the native jar ${it.name}; the app chooses its natives"
-            }
-            val exports = apiExports.get()
-            forbiddenApiExports.filter { it.module == null || it.module == moduleName }.forEach { rule ->
-                exports.forEach { (configurationName, dependencies) ->
-                    dependencies.filter(rule.forbidden::containsMatchIn).forEach {
-                        problems += "$configurationName exports $it: ${rule.reason}; declare it implementation"
-                    }
-                }
-            }
-            forbiddenOnPublishedClasspath.filter { it.module == moduleName }.forEach { rule ->
-                rule.configurations.forEach { configurationName ->
-                    components.getValue(configurationName).get().filter(rule.forbidden::containsMatchIn).forEach {
-                        problems += "$configurationName -> $it: ${rule.reason}"
-                    }
-                }
-            }
+            val problems =
+                publishedClasspathProblems(
+                    moduleName,
+                    components.mapValues { (_, graph) -> graph.get() },
+                    apiExports.get(),
+                    desktopApiBytedeco.get(),
+                    artifacts.map { it.name },
+                )
             logger.lifecycle(
                 "$path desktopRuntimeClasspath: ${artifacts.size} external jars, " +
                     "%.1f MB".format(artifacts.sumOf { it.length() } / 1_048_576.0),
@@ -384,7 +393,18 @@ subprojects {
 fun testOnlyLeaks(
     module: String,
     componentsByConfiguration: Map<String, List<String>>,
-): List<String> = TODO("S0' green: extracted from checkTestOnlyDependencies")
+): List<String> {
+    // testingModuleMayExportCoroutinesTest: camerak-testing exists to hand test source sets the coroutine
+    // test helpers, so it exports kotlinx-coroutines-test. Only that library, and only that module; the
+    // reverse rule in forbiddenOnPublishedClasspath keeps camerak-testing off every other published graph.
+    val testingModuleMayExportCoroutinesTest = module in testFixtureModules
+    return componentsByConfiguration.flatMap { (configurationName, components) ->
+        components
+            .filter { id -> testOnlyModules.any { it.containsMatchIn(id) } }
+            .filterNot { testingModuleMayExportCoroutinesTest && coroutinesTestModule.containsMatchIn(it) }
+            .map { "$configurationName -> $it" }
+    }
+}
 
 // What a published module hands consumers that it should not: its published classpaths (configuration
 // name to "group:name"), what its JVM and Android *ApiElements declare (configuration name to
@@ -396,18 +416,42 @@ fun publishedClasspathProblems(
     apiExports: Map<String, List<String>>,
     desktopApiBytedeco: List<String>,
     desktopJarNames: List<String>,
-): List<String> = TODO("S0' green: extracted from checkPublishedClasspath")
-
-// The artifacts camerak-core may not hand consumers: Compose, and the AndroidX libraries that exist
-// for it. Compose UI lives in camerak.
-val composeArtifacts =
-    listOf(
-        Regex("""^androidx\.compose\."""),
-        Regex("""^org\.jetbrains\.compose\."""),
-        Regex("""^org\.jetbrains\.skiko:"""),
-        Regex("""^androidx\.activity:activity-compose$"""),
-        Regex("""^(org\.jetbrains\.)?androidx\.lifecycle:lifecycle-[a-z-]*compose"""),
-    )
+): List<String> {
+    val problems = mutableListOf<String>()
+    val allowed = bytedecoBindings.getValue(module)
+    componentsByConfiguration["desktopRuntimeClasspath"].orEmpty().forEach { component ->
+        val (group, artifact) = component.split(':')
+        if (group == "org.bytedeco" && artifact !in allowed) {
+            problems +=
+                "desktopRuntimeClasspath -> $component: $module imports only bytedeco ${allowed.sorted()}" +
+                if (artifact.endsWith("-platform")) "; a -platform umbrella ships every OS's natives" else ""
+        }
+    }
+    val exported = exportedBytedeco[module].orEmpty()
+    desktopApiBytedeco.filter { it !in exported }.forEach {
+        problems +=
+            "desktopApiElements -> org.bytedeco:$it: no public $module signature exposes $it types; " +
+            "declare it implementation"
+    }
+    desktopJarNames.filter(nativeClassifierJar::containsMatchIn).forEach {
+        problems += "desktopRuntimeClasspath ships the native jar $it; the app chooses its natives"
+    }
+    forbiddenApiExports.filter { it.module == null || it.module == module }.forEach { rule ->
+        apiExports.forEach { (configurationName, dependencies) ->
+            dependencies.filter(rule.forbidden::containsMatchIn).forEach {
+                problems += "$configurationName exports $it: ${rule.reason}; declare it implementation"
+            }
+        }
+    }
+    forbiddenOnPublishedClasspath.filter { it.module == module }.forEach { rule ->
+        rule.configurations.forEach { configurationName ->
+            componentsByConfiguration[configurationName].orEmpty().filter(rule.forbidden::containsMatchIn).forEach {
+                problems += "$configurationName -> $it: ${rule.reason}"
+            }
+        }
+    }
+    return problems.distinct()
+}
 
 // The types camerak-core no longer annotates for Compose; cameraK/compose-stability.conf lists them.
 val strippedStableTypes =
@@ -781,7 +825,7 @@ val intelSimulatorReference = Regex("ios_?x64", RegexOption.IGNORE_CASE)
 tasks.register("checkNoIntelSimulatorTarget") {
     group = lintGroup
     description = "Fails if a module declares the Intel iOS simulator target or a tracked file still refers to it"
-    val kotlinModules = libraryModules + "Sample"
+    val kotlinModules = publishedModules + "Sample"
     val intelSimulatorTargets =
         provider {
             kotlinModules.associateWith { name ->
@@ -825,7 +869,7 @@ tasks.register("checkNoIntelSimulatorTarget") {
 // minSdk with its dependencies' manifests; the merge that would only runs for apps and for unit
 // tests that include Android resources. So each module reads the manifest inside every external AAR
 // on its shipped and unit-test classpaths and fails if one needs a higher API level than it declares.
-val androidModules = libraryModules + "Sample" + screenshotModule
+val androidModules = publishedModules + "Sample" + screenshotModule
 val minSdkVersionAttribute = Regex("""android:minSdkVersion\s*=\s*"(\d+)"""")
 
 data class AndroidSettings(
@@ -918,7 +962,7 @@ subprojects {
                 }
         }
     val settings = provider { androidSettings(project) }
-    val isLibrary = name in libraryModules
+    val isLibrary = name in publishedModules
     val robolectricProperties =
         layout.projectDirectory
             .file(
@@ -1049,7 +1093,7 @@ tasks.register("checkAndroidSdkFloor") {
     val root = layout.projectDirectory.asFile
     doLast {
         val levels = declared.get()
-        val libraryLevels = levels.filterKeys { it in libraryModules }.values.toSet()
+        val libraryLevels = levels.filterKeys { it in publishedModules }.values.toSet()
         val floor = libraryLevels.singleOrNull()
         check(floor != null && (levels["Sample"] ?: 0) >= floor) {
             "Every library must declare one minSdk and the Sample no lower; found $levels"
@@ -1128,9 +1172,9 @@ fun pomField(
 tasks.register("checkReleaseMetadata") {
     group = lintGroup
     description = "Fails if published modules disagree on version, group or shared POM metadata, or the docs lag"
-    dependsOn(libraryModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
+    dependsOn(publishedModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
     val pomFiles =
-        libraryModules.associateWith {
+        publishedModules.associateWith {
             project(":$it").layout.buildDirectory.file("publications/kotlinMultiplatform/pom-default.xml")
         }
     val bomProject = findProject(":$bomModule")
@@ -1138,7 +1182,7 @@ tasks.register("checkReleaseMetadata") {
     val bomPomFile = bomProject?.layout?.buildDirectory?.file("publications/maven/pom-default.xml")
     val gradleCoordinates =
         provider {
-            (libraryModules + listOfNotNull(bomProject?.name)).associateWith {
+            (publishedModules + listOfNotNull(bomProject?.name)).associateWith {
                 project(":$it").let { p ->
                     "${p.group}:${p.version}"
                 }
@@ -1226,7 +1270,7 @@ tasks.register("checkReleaseMetadata") {
         compileSdks.get().let { levels ->
             if (levels.values.toSet().size > 1) problems += "compileSdk differs between modules: $levels"
         }
-        val version = pomField(poms.getValue("cameraK"), "version")
+        val version = pomField(poms.getValue("cameraK-core"), "version")
         val changelog = File(root, "CHANGELOG.md").readLines()
         if (changelog.none { it.startsWith("## [$version]") }) problems += "CHANGELOG.md has no '## [$version]' section"
         val artifactIds = poms.values.map { pomField(it, "artifactId") }.toSet()
@@ -1276,10 +1320,10 @@ fun licenseGrantedBy(text: String): PomLicense? =
 tasks.register("checkLicenseMetadata") {
     group = lintGroup
     description = "Fails if a published POM declares a licence other than the one LICENSE grants"
-    dependsOn(libraryModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
+    dependsOn(publishedModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
     dependsOn(":$bomModule:generatePomFileForMavenPublication")
     val pomFiles =
-        libraryModules.associateWith {
+        publishedModules.associateWith {
             project(":$it").layout.buildDirectory.file("publications/kotlinMultiplatform/pom-default.xml")
         } + (bomModule to project(":$bomModule").layout.buildDirectory.file("publications/maven/pom-default.xml"))
     val licenseFile = layout.projectDirectory.file("LICENSE").asFile
@@ -1342,7 +1386,7 @@ fun versionAtLeast(
 }
 
 subprojects {
-    if (name !in libraryModules) return@subprojects
+    if (name !in publishedModules) return@subprojects
     val resolved =
         listOf("desktopRuntimeClasspath", "releaseRuntimeClasspath").map { configurationName ->
             configurationName to
@@ -1386,7 +1430,7 @@ subprojects {
 tasks.register("checkComposeBaseline") {
     group = lintGroup
     description = "Fails if a library ships Compose or Coil off the 2.0 baseline"
-    dependsOn(libraryModules.map { ":$it:checkComposeBaseline" })
+    dependsOn(publishedModules.map { ":$it:checkComposeBaseline" })
 }
 
 // Each library publishes exactly one Android variant, the tested release. A debug publication would
@@ -1396,7 +1440,7 @@ tasks.register("checkPublishedVariants") {
     description = "Fails if a library publishes an Android variant other than release"
     val publications =
         provider {
-            libraryModules.associateWith { name ->
+            publishedModules.associateWith { name ->
                 project(":$name")
                     .extensions
                     .getByType<PublishingExtension>()
@@ -1425,7 +1469,7 @@ tasks.register("checkNoLibraryFrameworks") {
     description = "Fails if a library module declares an iOS framework binary"
     val frameworks =
         provider {
-            libraryModules.associateWith { name ->
+            publishedModules.associateWith { name ->
                 project(":$name")
                     .extensions
                     .getByType<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension>()
@@ -1507,10 +1551,10 @@ fun verifyTaskPaths(
 tasks.register("checkVerifyCoverage") {
     group = lintGroup
     description = "Fails if scripts/verify.sh --full skips Android lint or the iOS framework link"
-    val full = verifyTaskPaths(allVerifyTargets, libraryModules, record = false).toSet()
+    val full = verifyTaskPaths(allVerifyTargets, publishedModules, record = false).toSet()
     doLast {
         val required =
-            libraryModules.map { ":$it:lintRelease" } +
+            publishedModules.map { ":$it:lintRelease" } +
                 listOf(":Sample:lintDebug", ":Sample:linkDebugFrameworkIosSimulatorArm64")
         val missing = required.filterNot(full::contains)
         check(missing.isEmpty()) { "scripts/verify.sh --full does not run:\n" + missing.joinToString("\n") }

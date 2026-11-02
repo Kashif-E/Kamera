@@ -18,24 +18,12 @@ kotlin {
     iosSimulatorArm64()
 
     sourceSets {
-        val desktopMain by getting {
-            dependencies {
-                // JavaCV's own POM pulls the bindings for a dozen native libraries; core uses only
-                // FFmpeg and videoInput. No natives: the app adds those for the OSes it ships.
-                api(libs.javacv.get().let { "${it.module}:${it.version}" }) { exclude(group = "org.bytedeco") }
-                api(libs.javacpp)
-                implementation(libs.ffmpeg)
-                implementation(libs.videoinput)
-            }
-        }
-
         commonMain.dependencies {
-            api(libs.kotlinx.coroutines.core)
-            api(libs.kermit)
+            // Coroutines, kermit, CameraX and the JavaCV bindings come through camerak-core.
+            api(project(":cameraK-core"))
             api(libs.compose.ui)
             api(libs.compose.material3)
             api(libs.compose.foundation)
-            implementation(libs.atomicfu)
         }
 
         commonTest.dependencies {
@@ -63,12 +51,7 @@ kotlin {
         }
 
         androidMain.dependencies {
-            api(libs.kotlinx.coroutines.android)
-            api(libs.camera.core)
-            api(libs.camera.camera2)
-            api(libs.androidx.camera.view)
-            api(libs.camera.lifecycle)
-            api(libs.camera.video)
+            // Only the 1.x permission launcher (Permissions.android.kt) uses it.
             implementation(libs.androidx.activityCompose)
         }
     }
@@ -80,7 +63,9 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.cameraK"
+    // Not com.kashif.cameraK: that is camerak-core's, and two libraries in one app may not share a
+    // namespace. It names only the generated R class; no Kotlin package changes.
+    namespace = "com.kashif.cameraK.compose"
     compileSdk =
         libs.versions.android.compileSdk
             .get()
@@ -110,6 +95,9 @@ android {
 // compile is never taken from the cache and is out of date while its report is missing.
 val composeReports = layout.buildDirectory.dir("compose-reports")
 composeCompiler {
+    // camerak-core has no Compose annotations; this file marks its value types stable for the
+    // composables in this module (design §0.2).
+    stabilityConfigurationFiles.add(layout.projectDirectory.file("compose-stability.conf"))
     reportsDestination = composeReports
 }
 
@@ -120,6 +108,15 @@ fun composablesReports(): List<File> =
         .listFiles { file -> file.name.endsWith("-composables.txt") }
         .orEmpty()
         .toList()
+
+// The Kotlin plugin does not rerun a compile when the stability files change, so a compile would keep
+// the stability its previous configuration gave (and so would the report checkComposableStability reads).
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
+    inputs
+        .files(composeCompiler.stabilityConfigurationFiles)
+        .withPropertyName("composeStabilityConfiguration")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
 
 tasks.named("compileKotlinDesktop") {
     outputs.cacheIf("checkComposableStability reads the Compose compiler report this compile writes") { false }
@@ -193,7 +190,8 @@ tasks.register("checkComposableStability") {
     }
 }
 
-// The desktop tests allocate real JavaCV frames and recorders, so they need this machine's natives.
+// DesktopPreviewOverlayTest runs the desktop controller's grab loop on real JavaCV frames, so it needs
+// this machine's natives.
 dependencies {
     val javacppPlatform = rootProject.extra["javacppPlatform"] as String
     val desktopTestRuntimeOnly = kotlin.sourceSets.getByName("desktopTest").runtimeOnlyConfigurationName
@@ -207,13 +205,6 @@ dependencies {
 tasks.named<Test>("desktopTest") {
     val record = providers.gradleProperty("camerak.recordScreenshots").orElse("false")
     inputs.property("camerak.recordScreenshots", record)
-    // IosInstallDocsTest reads these, so a docs-only change must rerun it.
-    inputs
-        .files(
-            layout.projectDirectory.file("../README.MD"),
-            layout.projectDirectory.file("../docs/getting-started/installation.md"),
-        ).withPropertyName("iosInstallDocs")
-        .withPathSensitivity(PathSensitivity.RELATIVE)
     systemProperty("camerak.screenshots.record", record.get())
     systemProperty(
         "camerak.screenshots.goldenDir",

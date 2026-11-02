@@ -12,14 +12,14 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntRect
 import com.kashif.cameraK.controller.CameraController
-import com.kashif.cameraK.controller.FakeFrameGrabber
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import org.bytedeco.javacv.Frame
+import org.bytedeco.javacv.FrameGrabber
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 import kotlin.test.Test
@@ -39,9 +39,7 @@ class DesktopPreviewOverlayTest {
         val controller = CameraController(
             imageFormat = ImageFormat.JPEG,
             directory = Directory.PICTURES,
-            customGrabber = FakeFrameGrabber(width = 64, height = 48).apply { openGate() },
-            sessionDispatcher = Dispatchers.IO,
-            recorderFactory = { _, _ -> error("The preview test does not record") },
+            customGrabber = StillFrameGrabber(width = 64, height = 48),
         )
         val overlayBounds = AtomicReference<Rect?>(null)
         val scene = ImageComposeScene(width = 200, height = 100, density = Density(1f)) {
@@ -88,4 +86,19 @@ class DesktopPreviewOverlayTest {
     }
 
     private fun Rect.toIntRect() = IntRect(left.roundToInt(), top.roundToInt(), right.roundToInt(), bottom.roundToInt())
+}
+
+/** A camera that is always open and grabs the same opaque black frame. */
+private class StillFrameGrabber(width: Int, height: Int) : FrameGrabber() {
+    private val frame = Frame(width, height, Frame.DEPTH_UBYTE, 3)
+
+    override fun start() = Unit
+
+    override fun stop() = Unit
+
+    override fun trigger() = Unit
+
+    override fun grab(): Frame = frame
+
+    override fun release() = Unit
 }

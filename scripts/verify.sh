@@ -22,7 +22,8 @@ die() {
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ALL_TARGETS="desktop android ios screenshots lint sample"
-LIBRARY_MODULES="cameraK ImageSaverPlugin qrScannerPlugin ocrPlugin videoRecorderPlugin analyzerPlugin"
+# Every module verify.sh tests: the published libraries and the published test fixtures.
+LIBRARY_MODULES="cameraK-core cameraK cameraK-testing ImageSaverPlugin qrScannerPlugin ocrPlugin videoRecorderPlugin analyzerPlugin"
 
 mode=""
 full_flag=false

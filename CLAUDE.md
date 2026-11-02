@@ -14,19 +14,21 @@ scripts/verify.sh                        # Verification harness (CI runs this); 
 ./gradlew check                          # Full build + formatting + tests
 ./gradlew spotlessApply                  # Auto-format all Kotlin code (ktlint)
 ./gradlew spotlessCheck                  # Check formatting without fixing
-./gradlew cameraK:build                  # Build core library
+./gradlew cameraK-core:build             # Build the Compose-free core library
 ./gradlew Sample:assembleDebug           # Build Android sample APK
 ./gradlew Sample:run                     # Run desktop sample app
 ./gradlew dokkaGeneratePublicationHtml   # Generate API docs
-./gradlew cameraK:desktopTest            # Run JVM tests for a module
-./gradlew cameraK:desktopTest --tests "com.kashif.cameraK.video.VideoTypesTest"  # Single test class
+./gradlew cameraK-core:desktopTest       # Run JVM tests for a module
+./gradlew cameraK-core:desktopTest --tests "com.kashif.cameraK.video.VideoTypesTest"  # Single test class
 ```
 
-Tests live in each module's `commonTest` (e.g. `cameraK/src/commonTest`). They run per-target — `desktopTest` is the fastest loop; `iosSimulatorArm64Test` / `testDebugUnitTest` cover the other targets.
+Tests live in each module's `commonTest` (e.g. `cameraK-core/src/commonTest`). They run per-target — `desktopTest` is the fastest loop; `iosSimulatorArm64Test` / `testDebugUnitTest` cover the other targets.
 
 ## Module Structure
 
-- **cameraK/** - Core library: camera controller, state management, Compose UI, plugin interface
+- **cameraK-core/** - Core library (`camerak-core`), free of Compose: camera controller, state management, plugin interface
+- **cameraK/** - Compose UI (`camerak`): `CameraKScreen`, `CameraPreviewView`, `rememberCameraKState`, the 1.x permission API, `compose-stability.conf`; depends on `cameraK-core` as `api`
+- **cameraK-testing/** - Test fixtures (`camerak-testing`), published, for apps' test source sets only; a placeholder until the fakes land
 - **ImageSaverPlugin/** - Plugin for saving captured images to device storage
 - **qrScannerPlugin/** - Plugin for real-time QR/barcode scanning
 - **ocrPlugin/** - Plugin for text recognition (ML Kit / Vision / Tesseract)
@@ -35,7 +37,7 @@ Tests live in each module's `commonTest` (e.g. `cameraK/src/commonTest`). They r
 - **Sample/** - Multiplatform demo app (Android, iOS, Desktop)
 - **iosApp/** - iOS Xcode project for Swift integration
 
-All library modules target: `androidTarget`, `jvm("desktop")`, `iosArm64()`, `iosSimulatorArm64()`. There is no Intel-simulator target since 2.0.
+All published modules target: `androidTarget`, `jvm("desktop")`, `iosArm64()`, `iosSimulatorArm64()`. There is no Intel-simulator target since 2.0.
 
 ## Architecture
 
