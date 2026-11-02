@@ -692,6 +692,66 @@ tasks.register("checkReleaseMetadata") {
     }
 }
 
+// Licence scanners read the POM, not LICENSE, so every published POM must declare exactly the
+// licence LICENSE grants. The expected POM entry is derived from LICENSE's own text.
+data class PomLicense(
+    val name: String,
+    val url: String,
+    val distribution: String,
+)
+
+fun licenseGrantedBy(text: String): PomLicense? =
+    when {
+        text.contains("Apache License") && text.contains("Version 2.0, January 2004") ->
+            PomLicense("The Apache License, Version 2.0", "https://www.apache.org/licenses/LICENSE-2.0.txt", "repo")
+        else -> null
+    }
+
+tasks.register("checkLicenseMetadata") {
+    group = "verification"
+    description = "Fails if a published POM declares a licence other than the one LICENSE grants"
+    dependsOn(libraryModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
+    dependsOn(":$bomModule:generatePomFileForMavenPublication")
+    val pomFiles =
+        libraryModules.associateWith {
+            project(":$it").layout.buildDirectory.file("publications/kotlinMultiplatform/pom-default.xml")
+        } + (bomModule to project(":$bomModule").layout.buildDirectory.file("publications/maven/pom-default.xml"))
+    val licenseFile = layout.projectDirectory.file("LICENSE").asFile
+    doLast {
+        val expected =
+            licenseGrantedBy(licenseFile.readText())
+                ?: throw GradleException(
+                    "LICENSE is not a licence checkLicenseMetadata recognises; teach licenseGrantedBy",
+                )
+        val problems =
+            pomFiles.mapNotNull { (module, file) ->
+                val pom =
+                    javax.xml.parsers.DocumentBuilderFactory
+                        .newInstance()
+                        .newDocumentBuilder()
+                        .parse(file.get().asFile)
+                        .documentElement
+                val declared =
+                    pom.getElementsByTagName("license").let { licenses ->
+                        (0 until licenses.length).map { index ->
+                            val license = licenses.item(index) as org.w3c.dom.Element
+
+                            fun field(tag: String) =
+                                license
+                                    .getElementsByTagName(tag)
+                                    .item(0)
+                                    ?.textContent
+                                    ?.trim()
+                                    .orEmpty()
+                            PomLicense(field("name"), field("url"), field("distribution"))
+                        }
+                    }
+                if (declared == listOf(expected)) null else "$module: POM declares $declared, LICENSE grants $expected"
+            }
+        check(problems.isEmpty()) { "Published licence metadata contradicts LICENSE:\n" + problems.joinToString("\n") }
+    }
+}
+
 // Release 2.0 is built on Compose Multiplatform 1.11 and Coil 3.5. Each library's shipped desktop and
 // Android classpaths must resolve Compose's runtime, foundation and ui at exactly the Compose plugin's
 // version, on or above that baseline and stable, and Coil on or above its baseline. Resolving the
@@ -785,6 +845,7 @@ tasks.register("verifyAll") {
                 ":checkNoIntelSimulatorTarget",
                 ":checkAndroidSdkFloor",
                 ":checkReleaseMetadata",
+                ":checkLicenseMetadata",
                 ":checkComposeBaseline",
             )
     }
