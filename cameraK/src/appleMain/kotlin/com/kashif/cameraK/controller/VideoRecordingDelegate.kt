@@ -1,7 +1,9 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.CompletableDeferred
 import platform.AVFoundation.AVCaptureFileOutput
 import platform.AVFoundation.AVCaptureFileOutputRecordingDelegateProtocol
 import platform.Foundation.NSDate
@@ -20,8 +22,14 @@ class VideoRecordingDelegate :
 
     var onFinished: ((VideoCaptureResult) -> Unit)? = null
 
-    /** Runs when the recording ends for any reason, before [onFinished]. */
-    internal var onRecordingEnded: (() -> Unit)? = null
+    /** Runs with the result when the recording ends for any reason, before [onFinished]. */
+    internal var onRecordingEnded: ((VideoCaptureResult) -> Unit)? = null
+
+    /** Completes when AVFoundation reports the recording started, or fails if it ended first. */
+    internal val started = CompletableDeferred<Unit>()
+
+    /** Completes with the recording's result when AVFoundation has finished the file. */
+    internal val finished = CompletableDeferred<VideoCaptureResult>()
     private var startTimeMs: Long = 0L
 
     override fun captureOutput(
@@ -30,6 +38,7 @@ class VideoRecordingDelegate :
         fromConnections: List<*>,
     ) {
         startTimeMs = (NSDate().timeIntervalSince1970 * 1000).toLong()
+        started.complete(Unit)
     }
 
     override fun captureOutput(
@@ -38,21 +47,30 @@ class VideoRecordingDelegate :
         fromConnections: List<*>,
         error: NSError?,
     ) {
-        onRecordingEnded?.invoke()
         val filePath = didFinishRecordingToOutputFileAtURL.path ?: ""
         val durationMs = (NSDate().timeIntervalSince1970 * 1000).toLong() - startTimeMs
 
-        if (error != null) {
+        val result = if (error != null) {
             // Check if recording was stopped by user (not a real error)
             // AVFoundation sets error when recording is stopped normally in some cases
             val fileExists = platform.Foundation.NSFileManager.defaultManager.fileExistsAtPath(filePath)
             if (fileExists && durationMs > 0) {
-                onFinished?.invoke(VideoCaptureResult.Success(filePath, durationMs))
+                VideoCaptureResult.Success(filePath, durationMs)
             } else {
-                onFinished?.invoke(VideoCaptureResult.Error(Exception(error.localizedDescription)))
+                VideoCaptureResult.Error(Exception(error.localizedDescription))
             }
         } else {
-            onFinished?.invoke(VideoCaptureResult.Success(filePath, durationMs))
+            VideoCaptureResult.Success(filePath, durationMs)
+        }
+        if (!started.isCompleted) {
+            started.completeExceptionally(IllegalStateException("The recording ended before it started"))
+        }
+        finished.complete(result)
+        onRecordingEnded?.invoke(result)
+        try {
+            onFinished?.invoke(result)
+        } catch (e: Exception) {
+            CameraKLogger.e("CameraK", "CameraK: a recording-finished callback failed", e)
         }
     }
 }

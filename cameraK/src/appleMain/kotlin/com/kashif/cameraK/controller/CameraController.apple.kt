@@ -22,7 +22,14 @@ import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.autoreleasepool
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import platform.AVFoundation.AVCaptureDeviceInput
 import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCaptureFlashModeAuto
@@ -115,7 +122,6 @@ actual class CameraController internal constructor(
     // Set on the session queue when the output joins the session; read from recording calls.
     @Volatile
     private var movieFileOutput: AVCaptureMovieFileOutput? = null
-    private var videoRecordingDelegate: VideoRecordingDelegate? = null
 
     /** Test seam: the movie-file-output calls a recording makes. */
     internal var movieRecorder: MovieRecorder = AVMovieRecorder
@@ -128,7 +134,6 @@ actual class CameraController internal constructor(
 
     /** Whether the movie output can pause; AVCaptureFileOutput's pause exists from iOS 18. */
     internal var pauseSupported: () -> Boolean = { isOsAtLeast(18) }
-    private var videoOutputFilePath: String? = null
 
     init {
         // The configured modes, not CustomCameraController's defaults, are what captures and the
@@ -537,8 +542,13 @@ actual class CameraController internal constructor(
     actual fun cleanup() {
         removeOrientationObserver()
         orientationChangedCallback = null
+        // Stop a running recording so its file is finished; a stopRecording already waiting still
+        // gets the result, since the recording's delegate outlives this.
+        activeRecording?.let { recording ->
+            recording.stopRequested.value = true
+            if (movieRecorder.isRecording(recording.output)) movieRecorder.stop(recording.output)
+        }
         movieFileOutput = null
-        videoRecordingDelegate = null
         customCameraController.cleanupSession()
         memoryManager.clearBufferPools()
     }
@@ -574,19 +584,38 @@ actual class CameraController internal constructor(
         customCameraController.removeInputsMatching(isAudioInput)
     }
 
-    @OptIn(ExperimentalForeignApi::class)
-    actual suspend fun startRecording(configuration: VideoConfiguration): String {
-        val output = attachMovieOutput() ?: throw IllegalStateException("Movie file output not available")
-        return startRecordingOn(output, configuration)
+    /** A recording from startRecording until its file is finished. */
+    private class ActiveRecording(val output: AVCaptureMovieFileOutput, val delegate: VideoRecordingDelegate) {
+        /** Set once stopRecording (or cleanup) asked for the stop, so the result has a taker. */
+        val stopRequested = atomic(false)
     }
 
-    @OptIn(ExperimentalForeignApi::class)
-    private suspend fun startRecordingOn(output: AVCaptureMovieFileOutput, configuration: VideoConfiguration): String =
-        suspendCancellableCoroutine { cont ->
+    @Volatile
+    private var activeRecording: ActiveRecording? = null
 
-            if (movieRecorder.isRecording(output)) {
-                cont.resume(videoOutputFilePath ?: "")
-                return@suspendCancellableCoroutine
+    /** Held from the start of startRecording until it returns, so a second start is refused at once. */
+    private val recordingStarting = atomic(false)
+
+    /** The result of a recording that ended by itself (a limit, an interruption), for the next stopRecording. */
+    private val unclaimedRecordingResult = atomic<VideoCaptureResult?>(null)
+
+    /**
+     * Starts a recording and returns its file path once AVFoundation reports it has started. A start
+     * while a recording is active or starting fails with IllegalStateException.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    actual suspend fun startRecording(configuration: VideoConfiguration): String {
+        if (activeRecording != null || !recordingStarting.compareAndSet(expect = false, update = true)) {
+            throw IllegalStateException("Recording already in progress")
+        }
+        try {
+            val output = attachMovieOutput() ?: throw IllegalStateException("Movie file output not available")
+            if (movieRecorder.isRecording(output)) throw IllegalStateException("Recording already in progress")
+            unclaimedRecordingResult.getAndSet(null)?.let {
+                CameraKLogger.w(
+                    "CameraK",
+                    "CameraK: a new recording replaces the unclaimed result of one that ended by itself",
+                )
             }
 
             if (configuration.enableAudio) {
@@ -594,15 +623,14 @@ actual class CameraController internal constructor(
             }
 
             val filePath = createVideoTempFile(configuration)
-            videoOutputFilePath = filePath
             val fileURL = NSURL.fileURLWithPath(filePath)
-
             // Delete existing file at path if any
             NSFileManager.defaultManager.removeItemAtPath(filePath, null)
 
             val delegate = VideoRecordingDelegate()
-            delegate.onRecordingEnded = { releaseRecordingResources(output) }
-            videoRecordingDelegate = delegate
+            val recording = ActiveRecording(output, delegate)
+            delegate.onRecordingEnded = { result -> recordingEnded(recording, result) }
+            activeRecording = recording
 
             // The effective orientation, so a locked orientation (setTargetOrientation) is honored.
             val orientation = effectiveVideoOrientation()
@@ -610,42 +638,111 @@ actual class CameraController internal constructor(
                 movieRecorder.start(output, fileURL, orientation, delegate)
             }
 
-            cont.resume(filePath)
-        }
-
-    actual suspend fun stopRecording(): VideoCaptureResult = suspendCancellableCoroutine { cont ->
-        val output = movieFileOutput
-        val delegate = videoRecordingDelegate
-
-        if (output == null || delegate == null || !movieRecorder.isRecording(output)) {
-            cont.resume(VideoCaptureResult.Error(Exception("No active recording")))
-            return@suspendCancellableCoroutine
-        }
-
-        delegate.onFinished = { result ->
-            if (result is VideoCaptureResult.Success) {
-                // Save to Photos library when using default directory (PICTURES/DCIM)
-                val savedResult = saveVideoToPhotosLibrary(result)
-                cont.resume(savedResult)
-            } else {
-                cont.resume(result)
+            try {
+                withTimeout(recordingStartTimeoutMs) { delegate.started.await() }
+            } catch (e: TimeoutCancellationException) {
+                abandonStart(recording)
+                throw IllegalStateException("The recording did not start within $recordingStartTimeoutMs ms", e)
+            } catch (e: CancellationException) {
+                abandonStart(recording)
+                throw e
             }
+            return filePath
+        } finally {
+            recordingStarting.value = false
+        }
+    }
+
+    /**
+     * Stops a recording whose start was given up, so no recording runs without an owner, and frees
+     * the controller for the next start even if AVFoundation never reports this one finished.
+     */
+    private fun abandonStart(recording: ActiveRecording) {
+        recording.stopRequested.value = true
+        if (activeRecording === recording) activeRecording = null
+        dispatch_async(dispatch_get_main_queue()) {
+            if (movieRecorder.isRecording(recording.output)) movieRecorder.stop(recording.output)
+            releaseRecordingResources(recording.output)
+        }
+    }
+
+    /**
+     * Runs when [recording]'s file is finished, however it ended: detaches its movie output and
+     * microphone, and keeps the result of a recording nobody stopped for the next stopRecording.
+     */
+    private fun recordingEnded(recording: ActiveRecording, result: VideoCaptureResult) {
+        releaseRecordingResources(recording.output)
+        // Kept before the recording stops being active, so a concurrent stopRecording finds one or the
+        // other. A recording that never started belongs to its failed startRecording, not to a stop.
+        val started = recording.delegate.started.isCompleted && !recording.delegate.started.isCancelled
+        if (started && !recording.stopRequested.value) unclaimedRecordingResult.value = result
+        if (activeRecording === recording) activeRecording = null
+    }
+
+    /**
+     * Stops the recording and returns its result once AVFoundation has finished the file, or an error
+     * after [recordingFinishTimeoutMs]. A recording that already ended by itself reports its result.
+     */
+    actual suspend fun stopRecording(): VideoCaptureResult {
+        val recording = activeRecording
+        if (recording == null || !recording.stopRequested.compareAndSet(expect = false, update = true)) {
+            val unclaimed = unclaimedRecordingResult.getAndSet(null)
+                ?: return VideoCaptureResult.Error(Exception("No active recording"))
+            return savedToLibrary(unclaimed)
         }
 
         dispatch_async(dispatch_get_main_queue()) {
-            movieRecorder.stop(output)
+            movieRecorder.stop(recording.output)
+        }
+
+        val result = withTimeoutOrNull(recordingFinishTimeoutMs) { recording.delegate.finished.await() }
+        if (result == null) {
+            CameraKLogger.e("CameraK", "CameraK: the recording did not finish within $recordingFinishTimeoutMs ms")
+            // Free the controller for the next recording even if AVFoundation never reports this one.
+            if (activeRecording === recording) activeRecording = null
+            releaseRecordingResources(recording.output)
+            return VideoCaptureResult.Error(
+                IllegalStateException("The recording did not finish within $recordingFinishTimeoutMs ms"),
+            )
+        }
+        unclaimedRecordingResult.compareAndSet(result, null)
+        return savedToLibrary(result)
+    }
+
+    /** Imports a successful recording into Photos when [directory] asks for it, off the caller's thread. */
+    private suspend fun savedToLibrary(result: VideoCaptureResult): VideoCaptureResult =
+        if (result is VideoCaptureResult.Success) {
+            withContext(Dispatchers.IO) { saveVideoToPhotosLibrary(result) }
+        } else {
+            result
+        }
+
+    /**
+     * Pauses the recording. Below iOS 18 AVCaptureMovieFileOutput cannot pause, so this throws
+     * UnsupportedOperationException rather than leave the camera and microphone recording while the
+     * app shows "paused". It returns only once the movie output reports the recording paused.
+     */
+    actual suspend fun pauseRecording() {
+        val recording = activeRecording ?: throw IllegalStateException("No active recording")
+        if (!pauseSupported()) {
+            throw UnsupportedOperationException("Pausing a recording needs iOS 18 or later")
+        }
+        movieRecorder.pause(recording.output)
+        if (!movieRecorder.isPaused(recording.output)) {
+            throw IllegalStateException("The movie output did not pause the recording")
         }
     }
 
-    // Known limitation: AVCaptureMovieFileOutput does not support true pause/resume — these base
-    // AVCaptureFileOutput calls are effectively no-ops, so the file keeps recording continuously
-    // while the UI shows "paused". Real pause would require segmented recording + concatenation.
-    actual suspend fun pauseRecording() {
-        movieFileOutput?.let(movieRecorder::pause)
-    }
-
+    /** Resumes a paused recording; below iOS 18 throws UnsupportedOperationException, as pause does. */
     actual suspend fun resumeRecording() {
-        movieFileOutput?.let(movieRecorder::resume)
+        val recording = activeRecording ?: throw IllegalStateException("No active recording")
+        if (!pauseSupported()) {
+            throw UnsupportedOperationException("Resuming a recording needs iOS 18 or later")
+        }
+        movieRecorder.resume(recording.output)
+        if (movieRecorder.isPaused(recording.output)) {
+            throw IllegalStateException("The movie output did not resume the recording")
+        }
     }
 
     @OptIn(ExperimentalForeignApi::class)
