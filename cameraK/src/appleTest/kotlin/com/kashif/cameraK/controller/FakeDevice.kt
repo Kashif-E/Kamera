@@ -63,6 +63,7 @@ internal class FakeDevice(
     private val supportedTorchModes: Set<AVCaptureTorchMode> =
         setOf(AVCaptureTorchModeOff, AVCaptureTorchModeOn, AVCaptureTorchModeAuto),
     override val maxVideoZoomFactor: Double = 10.0,
+    override val supportedMaxPhotoDimensions: List<PhotoDimensions> = emptyList(),
     var lockSucceeds: Boolean = true,
     val input: AVCaptureInput? = captureInputWithoutCamera(),
 ) : CaptureDeviceOps {

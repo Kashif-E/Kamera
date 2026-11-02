@@ -21,6 +21,18 @@ internal class FakePhotoCapturer : PhotoCapturer {
 
     private val lock = NSLock()
     private val recorded = mutableListOf<Request>()
+    private val maxDimensions = mutableListOf<PhotoDimensions>()
+
+    /** Every size setMaxPhotoDimensions was given, in order. */
+    val maxPhotoDimensionsSet: List<PhotoDimensions>
+        get() {
+            lock.lock()
+            try {
+                return maxDimensions.toList()
+            } finally {
+                lock.unlock()
+            }
+        }
 
     val requests: List<Request>
         get() {
@@ -47,6 +59,15 @@ internal class FakePhotoCapturer : PhotoCapturer {
         lock.lock()
         try {
             recorded += request
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    override fun setMaxPhotoDimensions(output: AVCapturePhotoOutput, dimensions: PhotoDimensions) {
+        lock.lock()
+        try {
+            maxDimensions += dimensions
         } finally {
             lock.unlock()
         }

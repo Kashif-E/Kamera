@@ -1,29 +1,64 @@
 package com.kashif.cameraK.controller
 
+import kotlinx.cinterop.CValue
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.cValue
+import kotlinx.cinterop.useContents
 import platform.AVFoundation.AVCapturePhoto
 import platform.AVFoundation.AVCapturePhotoCaptureDelegateProtocol
 import platform.AVFoundation.AVCapturePhotoOutput
 import platform.AVFoundation.AVCapturePhotoSettings
 import platform.AVFoundation.AVCaptureResolvedPhotoSettings
 import platform.AVFoundation.fileDataRepresentation
+import platform.CoreMedia.CMVideoDimensions
 import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.darwin.NSObject
 
+/** A photo size, as AVFoundation's CMVideoDimensions gives it. */
+internal data class PhotoDimensions(val width: Int, val height: Int) {
+    val pixels: Long get() = width.toLong() * height
+}
+
 /**
- * Issues a capture on the photo output. Production calls capturePhotoWithSettings; tests substitute
- * one that records the request, since the simulator's photo output has no camera to capture from.
+ * The photo-output calls that need a camera behind the output. Production calls AVFoundation; tests
+ * substitute one that records each call, since the simulator's photo output has no camera.
  */
-internal fun interface PhotoCapturer {
+internal interface PhotoCapturer {
     fun capture(
         output: AVCapturePhotoOutput,
         settings: AVCapturePhotoSettings,
         delegate: AVCapturePhotoCaptureDelegateProtocol,
     )
+
+    /** Sets the largest photo the output may deliver; iOS 16+ only, and only a size the camera supports. */
+    fun setMaxPhotoDimensions(output: AVCapturePhotoOutput, dimensions: PhotoDimensions)
 }
 
-internal val AVPhotoCapturer = PhotoCapturer { output, settings, delegate ->
-    output.capturePhotoWithSettings(settings, delegate = delegate)
+@OptIn(ExperimentalForeignApi::class)
+internal object AVPhotoCapturer : PhotoCapturer {
+    override fun capture(
+        output: AVCapturePhotoOutput,
+        settings: AVCapturePhotoSettings,
+        delegate: AVCapturePhotoCaptureDelegateProtocol,
+    ) {
+        output.capturePhotoWithSettings(settings, delegate = delegate)
+    }
+
+    override fun setMaxPhotoDimensions(output: AVCapturePhotoOutput, dimensions: PhotoDimensions) {
+        output.maxPhotoDimensions = dimensions.toCMVideoDimensions()
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+internal fun PhotoDimensions.toCMVideoDimensions(): CValue<CMVideoDimensions> = cValue {
+    width = this@toCMVideoDimensions.width
+    height = this@toCMVideoDimensions.height
+}
+
+@OptIn(ExperimentalForeignApi::class)
+internal fun CValue<CMVideoDimensions>.toPhotoDimensions(): PhotoDimensions = useContents {
+    PhotoDimensions(width, height)
 }
 
 /**

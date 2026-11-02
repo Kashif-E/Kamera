@@ -10,6 +10,7 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
 import platform.AVFoundation.*
 import platform.Foundation.NSError
+import platform.Foundation.NSValue
 
 /**
  * The camera-device operations [CustomCameraController] performs. Production wraps an
@@ -22,6 +23,9 @@ internal interface CaptureDeviceOps {
     val torchMode: AVCaptureTorchMode
     val videoZoomFactor: Double
     val maxVideoZoomFactor: Double
+
+    /** The photo sizes the camera's active format can deliver (iOS 16+); empty below iOS 16. */
+    val supportedMaxPhotoDimensions: List<PhotoDimensions>
 
     fun isTorchModeSupported(mode: AVCaptureTorchMode): Boolean
 
@@ -51,6 +55,13 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
     override val torchMode: AVCaptureTorchMode get() = device.torchMode
     override val videoZoomFactor: Double get() = device.videoZoomFactor
     override val maxVideoZoomFactor: Double get() = device.activeFormat.videoMaxZoomFactor
+    override val supportedMaxPhotoDimensions: List<PhotoDimensions>
+        get() = if (isOsAtLeast(16)) {
+            device.activeFormat.supportedMaxPhotoDimensions
+                .mapNotNull { (it as? NSValue)?.CMVideoDimensionsValue?.toPhotoDimensions() }
+        } else {
+            emptyList()
+        }
 
     override fun isTorchModeSupported(mode: AVCaptureTorchMode): Boolean = device.isTorchModeSupported(mode)
 
