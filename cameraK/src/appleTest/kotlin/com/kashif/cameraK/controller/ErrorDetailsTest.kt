@@ -4,19 +4,35 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import platform.AVFoundation.AVCaptureMovieFileOutput
 import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVErrorApplicationIsNotAuthorizedToUseDevice
+import platform.AVFoundation.AVErrorDiskFull
+import platform.AVFoundation.AVErrorRecordingSuccessfullyFinishedKey
 import platform.AVFoundation.AVErrorSessionNotRunning
 import platform.AVFoundation.AVErrorUnknown
 import platform.AVFoundation.AVFoundationErrorDomain
+import platform.Foundation.NSCocoaErrorDomain
+import platform.Foundation.NSData
 import platform.Foundation.NSError
+import platform.Foundation.NSFileManager
 import platform.Foundation.NSLocalizedDescriptionKey
 import platform.Foundation.NSLock
+import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSURL
+import platform.Foundation.NSUUID
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -36,11 +52,18 @@ internal fun describedAVError(code: Long, description: String) = NSError.errorWi
  * reaches Exception, or an NSError dropped where the error is made, leaves the app with nothing to
  * tell a camera the user has not authorised from one that does not exist.
  */
+@OptIn(ExperimentalForeignApi::class)
 class ErrorDetailsTest {
     private val rigs = mutableListOf<CaptureRig>()
+    private val scope = MainScope()
+    private val written = mutableListOf<String>()
 
     @AfterTest
-    fun tearDown() = rigs.forEach { it.tearDown() }
+    fun tearDown() {
+        scope.cancel()
+        rigs.forEach { it.tearDown() }
+        written.forEach { NSFileManager.defaultManager.removeItemAtPath(it, null) }
+    }
 
     private class Reported {
         private val error = atomic<CustomCameraController.CameraException?>(null)
@@ -48,6 +71,8 @@ class ErrorDetailsTest {
         fun record(e: CustomCameraController.CameraException) {
             error.compareAndSet(null, e)
         }
+
+        val isSet: Boolean get() = error.value != null
 
         fun await(): CustomCameraController.CameraException {
             awaitTrue("onError") { error.value != null }
@@ -201,6 +226,97 @@ class ErrorDetailsTest {
         } finally {
             CameraKLogger.sink = previousSink
             CameraKLogger.enabled = wasEnabled
+        }
+    }
+
+    /** A recording with audio on [rig], started and reported started, while [microphone] answers for the microphone. */
+    private fun recordWithAudio(rig: CaptureRig, microphone: () -> Result<platform.AVFoundation.AVCaptureInput>) {
+        val recorder = FakeMovieRecorder()
+        rig.controller.movieRecorder = recorder
+        rig.controller.microphoneInput = microphone
+        scope.launch { rig.controller.startRecording(VideoConfiguration(enableAudio = true)) }
+        awaitTrue("the recording to start on the movie output") { recorder.starts.isNotEmpty() }
+        recorder.reportStarted(recorder.starts.single())
+    }
+
+    @Test
+    fun aMicrophoneAVFoundationWillNotOpenIsReportedAndLoggedWithAVFoundationsError() {
+        val rig = CaptureRig().also(rigs::add)
+        rig.start()
+        val reported = Reported()
+        rig.custom.onError = reported::record
+        val denied = describedAVError(AVErrorApplicationIsNotAuthorizedToUseDevice, "Cannot use Microphone")
+
+        capturingLogEntries { logs ->
+            recordWithAudio(rig) { Result.failure(NSErrorException(denied)) }
+            drainSessionThenMain(rig.custom)
+
+            assertTrue(reported.isSet, "a recording with audio lost its microphone without reporting why")
+            val error = reported.await()
+            assertIs<CustomCameraController.CameraException.ConfigurationError>(error)
+            assertSame(denied, error.platformError(), "the error does not carry AVFoundation's NSError: $error")
+            val message = error.message.orEmpty()
+            assertTrue(
+                "microphone" in message && "$AVErrorApplicationIsNotAuthorizedToUseDevice" in message,
+                "the message does not say the microphone failed, with the code: '$message'",
+            )
+            assertTrue(
+                logs().any { it.level == CameraKLogger.Level.ERROR && it.throwable?.platformError() === denied },
+                "the microphone's failure was not logged with AVFoundation's NSError: ${logs()}",
+            )
+        }
+    }
+
+    @Test
+    fun aMicrophoneTheSessionRefusesIsReported() {
+        val rig = CaptureRig().also(rigs::add)
+        rig.start()
+        val reported = Reported()
+        rig.custom.onError = reported::record
+        val microphone = captureInputWithoutCamera()
+        rig.session.refuse(microphone)
+
+        recordWithAudio(rig) { Result.success(microphone) }
+        drainSessionThenMain(rig.custom)
+
+        assertTrue(reported.isSet, "a microphone the session refused left the recording silent without a report")
+        assertIs<CustomCameraController.CameraException.ConfigurationError>(reported.await())
+    }
+
+    @Test
+    fun aFailedPhotoWriteCarriesTheFileSystemsError() {
+        val blocker = "${NSTemporaryDirectory()}cameraK-blocker-${NSUUID().UUIDString}"
+        NSFileManager.defaultManager.createFileAtPath(blocker, NSData(), null)
+        written += blocker
+
+        val failure = writeDataToFile(NSData(), "$blocker/photo.jpg").exceptionOrNull()
+
+        assertNotNull(failure, "writing under a regular file succeeded")
+        val cause = assertNotNull(failure.platformError(), "the failed write does not carry the NSError: $failure")
+        assertEquals(NSCocoaErrorDomain, cause.domain)
+        assertFalse(blocker in failure.message.orEmpty(), "the message names the file: '${failure.message}'")
+    }
+
+    @Test
+    fun aFailedRecordingIsLoggedWithAVFoundationsError() {
+        val failure = NSError.errorWithDomain(
+            AVFoundationErrorDomain,
+            AVErrorDiskFull,
+            mapOf<Any?, Any?>(AVErrorRecordingSuccessfullyFinishedKey to false),
+        )
+
+        capturingLogEntries { logs ->
+            VideoRecordingDelegate().captureOutput(
+                AVCaptureMovieFileOutput(),
+                didFinishRecordingToOutputFileAtURL = NSURL.fileURLWithPath("${NSTemporaryDirectory()}unwritten.mp4"),
+                fromConnections = emptyList<Any>(),
+                error = failure,
+            )
+
+            assertTrue(
+                logs().any { it.level == CameraKLogger.Level.ERROR && it.throwable?.platformError() === failure },
+                "the failed recording was logged without AVFoundation's NSError: ${logs()}",
+            )
         }
     }
 }

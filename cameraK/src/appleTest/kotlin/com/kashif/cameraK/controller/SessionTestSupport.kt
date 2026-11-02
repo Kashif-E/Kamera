@@ -72,3 +72,38 @@ internal fun <T> capturingLogs(block: (logs: () -> List<String>) -> T): T {
         CameraKLogger.sink = previousSink
     }
 }
+
+/** One line CameraKLogger emitted, with the throwable it was given. */
+internal class LogEntry(val level: CameraKLogger.Level, val message: String, val throwable: Throwable?) {
+    override fun toString(): String = "$level $message${throwable?.let { " ($it)" } ?: ""}"
+}
+
+/** Captures what CameraKLogger emits while [block] runs, throwables included, restoring the logger afterwards. */
+internal fun <T> capturingLogEntries(block: (entries: () -> List<LogEntry>) -> T): T {
+    val lock = NSLock()
+    val entries = mutableListOf<LogEntry>()
+    val wasEnabled = CameraKLogger.enabled
+    val previousSink = CameraKLogger.sink
+    CameraKLogger.sink = { level, _, message, throwable ->
+        lock.lock()
+        try {
+            entries += LogEntry(level, message, throwable)
+        } finally {
+            lock.unlock()
+        }
+    }
+    CameraKLogger.enabled = true
+    try {
+        return block {
+            lock.lock()
+            try {
+                entries.toList()
+            } finally {
+                lock.unlock()
+            }
+        }
+    } finally {
+        CameraKLogger.enabled = wasEnabled
+        CameraKLogger.sink = previousSink
+    }
+}
