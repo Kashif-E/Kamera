@@ -8,6 +8,10 @@
 - Source-set layout: every plugin module, ImageSaverPlugin included, keeps its code in the standard
   source sets (commonMain, androidMain, appleMain, desktopMain and their tests), under
   <sourceSet>/kotlin/ in directories that match the package.
+- The Sample's App.kt names no plugin package: each plugin's code lives in that plugin's screen file,
+  so a plugin slice or a package rename edits one Sample file and never App.kt. The plugin packages
+  are read from the plugin modules' main sources, and the rule is first run against a fixture it
+  must reject.
 
 Exits non-zero and lists each finding as path:line: reason.
 """
@@ -39,6 +43,7 @@ COMMENTED_CODE = re.compile(
     r")"
 )
 FENCE = re.compile(r"^\s*\*\s*```")
+SAMPLE_APP = pathlib.Path("Sample/src/commonMain/kotlin/org/company/app/App.kt")
 
 
 def kotlin_files(root):
@@ -98,6 +103,50 @@ def check_layout(root):
     return findings
 
 
+def plugin_packages(root):
+    packages = {}
+    for module in LAYOUT_MODULES:
+        for path in sorted((root / module / "src").glob("*Main/**/*.kt")):
+            match = PACKAGE.search(path.read_text(encoding="utf-8"))
+            if match:
+                packages.setdefault(module, set()).add(match.group(1))
+    return packages
+
+
+def plugin_package_references(text, packages):
+    """(line, package) for each line of text that imports or names a declaration in one of packages."""
+    alternatives = "|".join(re.escape(package) for package in sorted(packages, key=len, reverse=True))
+    pattern = re.compile(r"(?<![A-Za-z0-9_.])(" + alternatives + r")\.(\*|[A-Za-z_])")
+    references = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        match = pattern.search(line)
+        if match:
+            references.append((number, match.group(1)))
+    return references
+
+
+def sample_app_kt_imports_no_plugin_package(root):
+    fixture_packages = ["com.kashif.qrscannerplugin", "com.kashif.ocrPlugin"]
+    fixture = (
+        "import com.kashif.cameraK.state.CameraKState\n"
+        "import com.kashif.qrscannerpluginx.Other\n"
+        "import com.kashif.qrscannerplugin.QRScannerPlugin\n"
+        "val ocr = com.kashif.ocrPlugin.rememberOcrPlugin()\n"
+        "import com.kashif.ocrPlugin.*\n"
+    )
+    if [number for number, _ in plugin_package_references(fixture, fixture_packages)] != [3, 4, 5]:
+        return ["scripts/check_plugin_sources.py: the App.kt plugin-package rule misjudges its fixture"]
+    packages = plugin_packages(root)
+    findings = [f"{module}: no package found in its main sources" for module in LAYOUT_MODULES if module not in packages]
+    app = root / SAMPLE_APP
+    if not app.exists():
+        return findings + [f"{SAMPLE_APP}: missing, so the plugin-package rule checks nothing"]
+    names = set().union(*packages.values()) if packages else set()
+    for number, package in plugin_package_references(app.read_text(encoding="utf-8"), names):
+        findings.append(f"{SAMPLE_APP}:{number}: names plugin package {package}; move it to that plugin's screen file")
+    return findings
+
+
 def main():
     root = pathlib.Path(__file__).resolve().parent.parent
     findings = []
@@ -105,11 +154,12 @@ def main():
         if path.exists():
             findings += check(path, root)
     findings += check_layout(root)
+    findings += sample_app_kt_imports_no_plugin_package(root)
     if findings:
         print("Plugin source check failed:")
         print("\n".join(findings))
         return 1
-    print(f"Plugin source check passed ({', '.join(LAYOUT_MODULES)}).")
+    print(f"Plugin source check passed ({', '.join(LAYOUT_MODULES)}; Sample App.kt).")
     return 0
 
 
