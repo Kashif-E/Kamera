@@ -22,6 +22,18 @@ class JVMImageSaverPlugin(
     private val onImageSaved: () -> Unit,
     private val onImageSavedFailed: (String) -> Unit,
 ) : ImageSaverPlugin(config) {
+    // The folder the configured Directory resolves under: the user's home.
+    private var userHome: File = defaultUserHome()
+
+    internal constructor(
+        config: ImageSaverConfig,
+        onImageSaved: () -> Unit,
+        onImageSavedFailed: (String) -> Unit,
+        userHome: File,
+    ) : this(config, onImageSaved, onImageSavedFailed) {
+        this.userHome = userHome
+    }
+
     override suspend fun saveImage(byteArray: ByteArray, imageName: String?): String? = withContext(Dispatchers.IO) {
         try {
             val image = ImageIO.read(ByteArrayInputStream(byteArray))
@@ -50,11 +62,9 @@ class JVMImageSaverPlugin(
     // Resolve a real per-user directory (the old code wrote to a relative dir literally named
     // "PICTURES" in the process CWD and ignored customFolderName/imageFormat).
     private fun resolveOutputDirectory(): File {
-        // user.home can be null in sandboxed runtimes; fall back to the working dir.
-        val home = File(System.getProperty("user.home") ?: System.getProperty("user.dir") ?: ".")
         val base = when (config.directory) {
-            Directory.PICTURES, Directory.DCIM -> File(home, "Pictures")
-            Directory.DOCUMENTS -> File(home, "Documents")
+            Directory.PICTURES, Directory.DCIM -> File(userHome, "Pictures")
+            Directory.DOCUMENTS -> File(userHome, "Documents")
         }
         return config.customFolderName?.let { File(base, it) } ?: base
     }
@@ -69,6 +79,9 @@ class JVMImageSaverPlugin(
         throw IOException("Failed to read image from path: $path", e)
     }
 }
+
+// user.home can be null in sandboxed runtimes; fall back to the working dir.
+private fun defaultUserHome(): File = File(System.getProperty("user.home") ?: System.getProperty("user.dir") ?: ".")
 
 /**
  * Factory function to create an jvm-specific [ImageSaverPlugin].
