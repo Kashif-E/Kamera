@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+  # The publish workflow runs this same job on the release tag before it uploads anything.
+  workflow_call:
 
 permissions:
   contents: read

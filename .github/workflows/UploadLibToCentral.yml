@@ -1,15 +1,38 @@
 name: Upload Library to Maven Central
 
+# A release is a pushed tag named v<VERSION_NAME>. The tagged commit first passes the full
+# verification harness (build.yml, reused rather than copied); the upload then waits in the
+# protected maven-central environment, whose required reviewers approve it and which alone holds the
+# publishing secrets. A Central upload cannot be undone, so nothing else can start one.
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
-  build:
+  verify:
+    uses: ./.github/workflows/build.yml
+
+  publish:
+    needs: verify
     runs-on: macos-15
+    environment: maven-central
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check the tag names the version being published
+        run: scripts/check_release_tag.sh "$GITHUB_REF_NAME"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

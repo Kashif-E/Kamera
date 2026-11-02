@@ -51,6 +51,21 @@ scripts/verify.sh --record-screenshots
 When a comparison fails, the actual render and a diff are written to
 `cameraK/build/reports/screenshots-desktop/` and `cameraKScreenshotTests/build/paparazzi/failures/`.
 
+## Releasing
+
+A release is a pushed tag named `v` plus the `VERSION_NAME` in `gradle.properties` (for 2.0, `v2.0`).
+`.github/workflows/UploadLibToCentral.yml` runs only for such tags: it first runs the whole of
+`build.yml` (`scripts/verify.sh --full`) on the tagged commit, then `scripts/check_release_tag.sh`
+refuses a tag that does not match `VERSION_NAME`, and the upload job waits in the `maven-central`
+environment. Nothing can start a publish by hand or from a branch, and only one publish runs at a time.
+
+The `maven-central` environment is configured in the repository settings, not in a file: it needs
+required reviewers, a deployment rule allowing only `v*` tags, and the five publishing secrets
+(`MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `SIGNING_IN_MEMORY_KEY`, `SIGNING_KEY_ID`,
+`SIGNING_PASSWORD`) as environment secrets, deleted from the repository-level secrets.
+`scripts/verify.sh --only lint` runs `scripts/check_release_workflow.py`, which fails if the workflow loses any of these
+gates.
+
 ## Publishing credentials
 
 Credentials live only in `~/.gradle/gradle.properties` or in `ORG_GRADLE_PROJECT_*` environment
