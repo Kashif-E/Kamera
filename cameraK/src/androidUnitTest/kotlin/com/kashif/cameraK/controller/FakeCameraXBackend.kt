@@ -11,6 +11,10 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
+import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Recorder
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -36,6 +40,7 @@ import java.util.concurrent.Executors
 internal class FakeCameraXBackend : CameraXBackend {
     val binding = FakeCameraBinding()
     val captures = mutableListOf<PendingCapture>()
+    val recordings = mutableListOf<FakeRecording>()
 
     override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
         executor.execute { onResult(Result.success(binding)) }
@@ -48,6 +53,49 @@ internal class FakeCameraXBackend : CameraXBackend {
         callback: ImageCapture.OnImageSavedCallback,
     ) {
         captures += PendingCapture(options, executor, callback)
+    }
+
+    override fun startRecording(
+        videoCapture: VideoCapture<Recorder>,
+        context: Context,
+        output: FileOutputOptions,
+        withAudio: Boolean,
+        executor: Executor,
+        onFinalized: (RecordingFinalized) -> Unit,
+    ): RecordingSession = FakeRecording(output.file, executor, onFinalized).also { recordings += it }
+}
+
+/**
+ * A recording CameraX is running. It ends only when the test finalizes it, as CameraX ends a
+ * recording with a Finalize event on the callback executor, whether or not stop() was called.
+ */
+internal class FakeRecording(
+    val outputFile: File,
+    private val executor: Executor,
+    private val onFinalized: (RecordingFinalized) -> Unit,
+) : RecordingSession {
+    var stopCalls = 0
+        private set
+
+    override fun stop() {
+        stopCalls++
+    }
+
+    override fun pause() = Unit
+
+    override fun resume() = Unit
+
+    /**
+     * CameraX ends the recording with [error]. [written] is what reached the file first; null
+     * leaves no file behind.
+     */
+    fun finalize(
+        error: Int = VideoRecordEvent.Finalize.ERROR_NONE,
+        written: ByteArray? = byteArrayOf(0, 0, 0, 24),
+        recordedDurationNanos: Long = 1_500_000_000L,
+    ) {
+        if (written != null) outputFile.writeBytes(written) else outputFile.delete()
+        executor.execute { onFinalized(RecordingFinalized(error, null, recordedDurationNanos)) }
     }
 }
 

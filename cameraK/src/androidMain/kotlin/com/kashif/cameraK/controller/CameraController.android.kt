@@ -34,9 +34,7 @@ import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
-import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
-import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -157,7 +155,7 @@ actual class CameraController internal constructor(
 
     // Video recording
     private var videoCapture: VideoCapture<Recorder>? = null
-    private var activeRecording: Recording? = null
+    private var activeRecording: RecordingSession? = null
     private var recordingOutputFile: File? = null
     private val recordingFinalizeChannel = Channel<VideoCaptureResult>(Channel.CONFLATED)
 
@@ -961,7 +959,6 @@ actual class CameraController internal constructor(
         }
     }
 
-    @android.annotation.SuppressLint("MissingPermission")
     actual suspend fun startRecording(configuration: VideoConfiguration): String {
         // Reject a second start: starting again would overwrite activeRecording and orphan the
         // first recording's session (it could never be stopped/finalized).
@@ -1016,45 +1013,39 @@ actual class CameraController internal constructor(
                 android.Manifest.permission.RECORD_AUDIO,
             ) == PackageManager.PERMISSION_GRANTED
 
-            val pendingRecording = vc.output.prepareRecording(context, outputOptions).apply {
-                if (configuration.enableAudio && hasAudioPermission) {
-                    withAudioEnabled()
-                }
-            }
-
-            activeRecording = pendingRecording.start(
-                ContextCompat.getMainExecutor(context),
+            activeRecording = backend.startRecording(
+                videoCapture = vc,
+                context = context,
+                output = outputOptions,
+                withAudio = configuration.enableAudio && hasAudioPermission,
+                executor = ContextCompat.getMainExecutor(context),
             ) { event ->
-                when (event) {
-                    is VideoRecordEvent.Finalize -> {
-                        val file = recordingOutputFile
-                        if (event.hasError()) {
-                            recordingFinalizeChannel.trySend(
-                                VideoCaptureResult.Error(
-                                    Exception("Recording error code: ${event.error}"),
-                                ),
-                            )
-                        } else {
-                            // Notify MediaStore so video appears in Gallery
-                            file?.let { notifyMediaStoreVideo(it) }
-                            recordingFinalizeChannel.trySend(
-                                VideoCaptureResult.Success(
-                                    filePath = file?.absolutePath ?: "",
-                                    durationMs = event.recordingStats.recordedDurationNanos / 1_000_000,
-                                ),
-                            )
-                        }
-                        recordingOutputFile = null
-                        // Clear here too: a recording can finalize on error without stopRecording()
-                        // being called, and a stale non-null activeRecording would permanently block
-                        // ViewPort rebinds on rotation.
-                        activeRecording = null
-                        // Apply any rotation flip that was deferred while recording was in progress.
-                        if (pendingViewPortRebind && !released.value) {
-                            pendingViewPortRebind = false
-                            rebindIfViewPortOrientationChanged()
-                        }
-                    }
+                val file = recordingOutputFile
+                if (event.hasError) {
+                    recordingFinalizeChannel.trySend(
+                        VideoCaptureResult.Error(
+                            Exception("Recording error code: ${event.error}"),
+                        ),
+                    )
+                } else {
+                    // Notify MediaStore so video appears in Gallery
+                    file?.let { notifyMediaStoreVideo(it) }
+                    recordingFinalizeChannel.trySend(
+                        VideoCaptureResult.Success(
+                            filePath = file?.absolutePath ?: "",
+                            durationMs = event.recordedDurationNanos / 1_000_000,
+                        ),
+                    )
+                }
+                recordingOutputFile = null
+                // Clear here too: a recording can finalize on error without stopRecording()
+                // being called, and a stale non-null activeRecording would permanently block
+                // ViewPort rebinds on rotation.
+                activeRecording = null
+                // Apply any rotation flip that was deferred while recording was in progress.
+                if (pendingViewPortRebind && !released.value) {
+                    pendingViewPortRebind = false
+                    rebindIfViewPortOrientationChanged()
                 }
             }
 
