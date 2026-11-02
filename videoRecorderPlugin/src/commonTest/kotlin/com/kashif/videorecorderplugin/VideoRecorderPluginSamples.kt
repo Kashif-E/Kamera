@@ -1,6 +1,7 @@
 package com.kashif.videorecorderplugin
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import com.kashif.cameraK.compose.rememberCameraKState
 import com.kashif.cameraK.state.CameraKState
@@ -24,7 +25,15 @@ internal fun RecordVideoSample(recording: Boolean) {
         stateHolder.attachPlugin(videoPlugin)
     })
 
-    if (cameraState is CameraKState.Ready) {
-        if (recording) videoPlugin.startRecording() else videoPlugin.stopRecording()
+    val ready = cameraState is CameraKState.Ready
+
+    // Start and stop from an effect: composition may run any number of times and must not touch the recorder.
+    LaunchedEffect(ready, recording) {
+        if (!ready) return@LaunchedEffect
+        if (recording) {
+            videoPlugin.startRecording()
+        } else if (videoPlugin.isRecording) {
+            videoPlugin.stopRecording()
+        }
     }
 }
