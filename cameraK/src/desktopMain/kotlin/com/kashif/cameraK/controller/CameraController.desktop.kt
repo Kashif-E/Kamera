@@ -141,6 +141,7 @@ actual class CameraController(
 
     // Copy-on-write: listeners change rarely and are iterated once per capture, from the capture's
     // thread, while another thread may add or remove one. Empty means a capture reads nothing back.
+    // Delivery: on the Dispatchers.IO thread running takePictureToFile, in order, before it returns.
     private val listeners = CopyOnWriteArrayList<(ByteArray) -> Unit>()
 
     actual suspend fun takePictureToFile(): ImageCaptureResult {
@@ -176,9 +177,12 @@ actual class CameraController(
             CameraKLogger.e("CameraK", "CameraK: Error reading the capture back for its listeners", e)
             return
         }
-        for (listener in listeners) {
+        // Each listener gets its own array, so one that changes or keeps it cannot corrupt what another
+        // receives. The last one gets the array read from the file, after every copy is made from it.
+        val snapshot = listeners.toTypedArray()
+        snapshot.forEachIndexed { i, listener ->
             try {
-                listener(bytes)
+                listener(if (i == snapshot.lastIndex) bytes else bytes.copyOf())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -336,7 +340,13 @@ actual class CameraController(
     }
 
     /**
-     * Adds a listener for image capture events.
+     * Adds a listener for image capture events. Listeners are a set: adding one never removes another.
+     *
+     * Each listener is called once per successful capture, after the photo is written, on the
+     * `Dispatchers.IO` thread running [takePictureToFile] and before it returns, one listener after
+     * another. A slow listener therefore delays the capture's result; hand long work to your own
+     * dispatcher. Each listener receives its own copy of the photo's bytes, and one that throws is
+     * logged and does not stop the others.
      *
      * @param listener The listener to add, receiving image data as [ByteArray].
      */
