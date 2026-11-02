@@ -376,6 +376,11 @@ registerRepoPolicyCheck(
     "agent-permissions",
     "Fails if committed agent configuration pre-approves secret, signing, publishing or history commands",
 )
+registerRepoPolicyCheck(
+    "checkSecurityPolicy",
+    "security-policy",
+    "Fails if SECURITY.md misses the current release line or routes reports anywhere but private reporting",
+)
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
@@ -1044,6 +1049,7 @@ fun verifyTaskPaths(
                 ":checkComposeBaseline",
                 ":checkVerifyCoverage",
                 ":checkAgentPermissions",
+                ":checkSecurityPolicy",
             )
     }
     modules.forEach { module ->

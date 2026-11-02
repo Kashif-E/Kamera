@@ -7,6 +7,9 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      changes secrets, signs, publishes, commits or rewrites history, nothing that
                      edits files, and no path outside the repository; personal approvals stay in
                      the gitignored .claude/settings.local.json.
+  security-policy    .github/SECURITY.md supports the release line gradle.properties publishes and
+                     routes reports through GitHub private vulnerability reporting on the repository
+                     the POMs name, with no email address nobody has verified.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -123,8 +126,53 @@ def check_agent_permissions() -> List[str]:
     return problems
 
 
+# ─── security-policy ────────────────────────────────────────────────────────────────────────────
+
+SECURITY_POLICY = ".github/SECURITY.md"
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
+SUPPORTED = re.compile(r"✅|\byes\b", re.IGNORECASE)
+
+
+def gradle_property(name: str) -> str:
+    for line in (ROOT / "gradle.properties").read_text().splitlines():
+        if line.startswith(f"{name}="):
+            return line.split("=", 1)[1].strip()
+    raise CheckError(f"gradle.properties has no {name}")
+
+
+def security_policy_problems(text: str, version: str, repository: str) -> List[str]:
+    line = ".".join(version.split(".")[:2]) + ".x"
+    rows = [
+        [cell.strip() for cell in row.strip().strip("|").split("|")]
+        for row in text.splitlines()
+        if row.strip().startswith("|") and not re.match(r"^\|[\s:|-]+\|$", row.strip())
+    ]
+    supported = [cells[0] for cells in rows[1:] if len(cells) >= 2 and SUPPORTED.search(cells[1])]
+    problems = []
+    if line not in supported:
+        problems.append(f"the supported-versions table marks {supported or 'nothing'} supported, not {line}")
+    reporting = f"{repository}/security/advisories/new"
+    if reporting not in text:
+        problems.append(f"reports are not routed to GitHub private vulnerability reporting ({reporting})")
+    problems += [f"names the unverified address {address.group(0)}" for address in EMAIL.finditer(text)]
+    return problems
+
+
+def check_security_policy() -> List[str]:
+    version = gradle_property("VERSION_NAME")
+    repository = gradle_property("POM_URL").rstrip("/")
+    stale = "| Version | Supported |\n|---|---|\n| 0.1.x | ✅ Yes |\nEmail: security@example.invalid\n"
+    if len(security_policy_problems(stale, version, repository)) < 3:
+        raise CheckError("the security-policy rule accepts a stale fixture it must reject")
+    path = ROOT / SECURITY_POLICY
+    if not path.is_file():
+        return [f"{SECURITY_POLICY} does not exist"]
+    return [f"{SECURITY_POLICY}: {problem}" for problem in security_policy_problems(path.read_text(), version, repository)]
+
+
 POLICIES: Dict[str, Callable[[], List[str]]] = {
     "agent-permissions": check_agent_permissions,
+    "security-policy": check_security_policy,
 }
 
 
