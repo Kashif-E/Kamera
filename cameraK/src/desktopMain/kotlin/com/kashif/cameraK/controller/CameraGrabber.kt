@@ -257,7 +257,8 @@ class CameraGrabber(
         }
         OperatingSystem.LINUX -> {
             // The lowest-numbered node that captures video (#52, #53)
-            val videoDevice = findBestVideoDevice(File("/dev"), File("/sys/class/video4linux"))
+            val videoDevice =
+                findBestVideoDevice(File("/dev"), File("/sys/class/video4linux"), File("/run/udev/data"))
             CameraKLogger.d("CameraK", "Using video device: $videoDevice")
             FFmpegFrameGrabber(videoDevice)
         }
@@ -284,20 +285,21 @@ class CameraGrabber(
  * video2 comes before video10. A UVC camera also exposes a metadata node, which streams no
  * pictures. The kernel gives each of a device's nodes an `index` file in its [sysDir] folder (the
  * video4linux class folder), 0 for the capture node, so a node whose index is not 0 is skipped. A
- * node with no readable index is kept.
+ * node with no readable index is kept. [udevDataDir] is udev's device database.
  */
-internal fun findBestVideoDevice(devDir: File, sysDir: File): String {
+internal fun findBestVideoDevice(devDir: File, sysDir: File, udevDataDir: File): String {
     val candidates =
         devDir
             .listFiles { file -> VIDEO_NODE.matches(file.name) && file.canRead() }
             .orEmpty()
-            .filter { isCaptureNode(File(sysDir, it.name)) }
+            .filter { isCaptureNode(File(sysDir, it.name), udevDataDir) }
             .sortedBy { it.name.removePrefix("video").toIntOrNull() ?: Int.MAX_VALUE }
 
     return candidates.firstOrNull()?.path ?: File(devDir, "video0").path
 }
 
-private fun isCaptureNode(sysNode: File): Boolean {
+@Suppress("UNUSED_PARAMETER")
+private fun isCaptureNode(sysNode: File, udevDataDir: File): Boolean {
     val index = File(sysNode, "index")
     if (!index.canRead()) return true
     return try {

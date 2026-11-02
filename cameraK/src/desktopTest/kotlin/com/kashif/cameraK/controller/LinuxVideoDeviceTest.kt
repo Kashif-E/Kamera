@@ -17,6 +17,7 @@ class LinuxVideoDeviceTest {
     private val root: File = Files.createTempDirectory("camerak-v4l2").toFile()
     private val dev = File(root, "dev").apply { mkdirs() }
     private val sys = File(root, "sys/class/video4linux").apply { mkdirs() }
+    private val udev = File(root, "run/udev/data").apply { mkdirs() }
 
     @AfterTest
     fun tearDown() {
@@ -35,7 +36,7 @@ class LinuxVideoDeviceTest {
         node(2, index = 0)
         node(10, index = 0)
 
-        assertEquals(File(dev, "video2").path, findBestVideoDevice(dev, sys))
+        assertEquals(File(dev, "video2").path, findBestVideoDevice(dev, sys, udev))
     }
 
     @Test
@@ -45,7 +46,7 @@ class LinuxVideoDeviceTest {
         node(2, index = 0)
         node(3, index = 1)
 
-        assertEquals(File(dev, "video2").path, findBestVideoDevice(dev, sys))
+        assertEquals(File(dev, "video2").path, findBestVideoDevice(dev, sys, udev))
     }
 
     @Test
@@ -54,11 +55,11 @@ class LinuxVideoDeviceTest {
         node(1, index = 1)
         node(2, index = 0)
 
-        assertEquals(File(dev, "video0").path, findBestVideoDevice(dev, sys))
+        assertEquals(File(dev, "video0").path, findBestVideoDevice(dev, sys, udev))
     }
 
     @Test
     fun withNoNodes_itFallsBackToVideo0() {
-        assertEquals(File(dev, "video0").path, findBestVideoDevice(dev, sys))
+        assertEquals(File(dev, "video0").path, findBestVideoDevice(dev, sys, udev))
     }
 }
