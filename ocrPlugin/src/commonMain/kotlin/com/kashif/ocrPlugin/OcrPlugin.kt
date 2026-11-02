@@ -13,10 +13,12 @@ import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -33,7 +35,7 @@ import kotlinx.coroutines.launch
  * }
  *
  * LaunchedEffect(ocrPlugin) {
- *     ocrPlugin.ocrFlow.receive { text ->
+ *     ocrPlugin.textFlow.collect { text ->
  *         recognizedText = text
  *     }
  * }
@@ -56,12 +58,24 @@ class OcrPlugin internal constructor(
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
 
-    // Buffered (not rendezvous): trySend no longer silently drops when no consumer is parked.
-    // Intentionally never closed — closing a val channel would make a later re-attach throw.
-    val ocrFlow = Channel<String>(Channel.BUFFERED)
+    private val recognisedText =
+        MutableSharedFlow<String>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-    /** Text recognised in the live camera stream. */
-    val textFlow: Flow<String> = ocrFlow.receiveAsFlow()
+    /**
+     * Text recognised in the live camera stream. Every collector receives each result; a collector
+     * that falls behind gets the latest one, as with the QR and analyzer plugins.
+     */
+    val textFlow: SharedFlow<String> = recognisedText.asSharedFlow()
+
+    /**
+     * The same text as [textFlow], through a channel that any holder can send to or close and whose
+     * collectors split the results between them. It is still fed so existing code keeps working.
+     */
+    @Deprecated(
+        "A channel lets consumers send, close and split results. Collect textFlow instead.",
+        ReplaceWith("textFlow"),
+    )
+    val ocrFlow = Channel<String>(Channel.BUFFERED)
     private var isRecognising = atomic(false)
     private var collectorJob: Job? = null
     private var recognitionHandle: RecognitionHandle? = null
@@ -100,7 +114,7 @@ class OcrPlugin internal constructor(
         stopRecognition()
         collectorJob?.cancel()
         collectorJob = null
-        // Note: ocrFlow is deliberately NOT closed — the plugin instance can be re-attached.
+        // Note: the deprecated ocrFlow is deliberately NOT closed — the plugin instance can be re-attached.
         this.stateHolder = null
         this.cameraController = null
     }
@@ -133,6 +147,9 @@ class OcrPlugin internal constructor(
         isRecognising.value = true
         recognitionHandle = startRecognizer(controller, config) { text ->
             if (isRecognising.value) {
+                recognisedText.tryEmit(text)
+                // The deprecated channel may be full or closed by a consumer; textFlow has the text either way.
+                @Suppress("DEPRECATION")
                 ocrFlow.trySend(text)
                 // emitEvent is suspend → launch on the owned plugin scope (cancelled on shutdown).
                 stateHolder?.let { holder ->
