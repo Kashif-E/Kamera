@@ -21,7 +21,7 @@ internal actual fun startQrScanning(
     scanIntervalMs: Long,
     onQrScanner: (String) -> Unit,
 ): ScannerHandle {
-    val qrScanner = QRScanner()
+    val qrScanner = QRScanner(scanIntervalMs)
     val scope = CoroutineScope(Dispatchers.Default)
 
     scope.launch {

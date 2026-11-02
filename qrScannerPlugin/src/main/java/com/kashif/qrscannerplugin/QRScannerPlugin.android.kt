@@ -31,7 +31,7 @@ internal fun CameraController.enableQrCodeScanner(
 ): ImageAnalysis.Analyzer? {
     CameraKLogger.d("QRScanner", "Enabling QR code scanner")
     return try {
-        val analyzer = QRCodeAnalyzer(onQrScanner)
+        val analyzer = QRCodeAnalyzer(onQrScanner, scanIntervalMs = scanIntervalMs)
         registerImageAnalyzer(analyzer)
         analyzer
     } catch (e: Exception) {
@@ -125,13 +125,21 @@ internal class ZxingLumaDecoder : LumaDecoder {
  * duplicate detections within 1 second.
  *
  * @param onQrScanner Callback invoked when a QR code is successfully decoded
+ * @param scanIntervalMs The shortest time between two decode attempts, found or not.
  */
 internal class QRCodeAnalyzer(
     private val onQrScanner: (String) -> Unit,
     private val decoder: LumaDecoder = ZxingLumaDecoder(),
     private val clock: () -> Long = SystemClock::elapsedRealtime,
-    private val scanIntervalMs: Long = 0,
+    private val scanIntervalMs: Long = DEFAULT_QR_SCAN_INTERVAL_MS,
 ) : ImageAnalysis.Analyzer {
+    init {
+        require(scanIntervalMs >= 0) { "scanIntervalMs must not be negative" }
+    }
+
+    // When the last decode attempt started; frames that arrive sooner are closed unread.
+    private var lastAttemptTime = Long.MIN_VALUE / 2
+
     private var lastScannedCode: String? = null
     private var lastScanTime: Long = 0
     private val scanDebounceMs = 1000L
@@ -157,11 +165,20 @@ internal class QRCodeAnalyzer(
      *
      * Reads the Y plane of the YUV_420_888 frame as luma into a reused buffer, decodes inside the
      * frame's crop rect, and applies debouncing to prevent repeated detections of the same code.
-     * ZXing's TRY_HARDER pass runs on every fifth frame only.
+     * At most one frame per scan interval is decoded; the others are closed unread. ZXing's
+     * TRY_HARDER pass runs on every fifth attempt only.
      *
      * @param imageProxy The camera frame to analyze
      */
     override fun analyze(imageProxy: ImageProxy) {
+        // The throttle counts attempts, not successes, and runs before the frame is read.
+        val now = clock()
+        if (now - lastAttemptTime < scanIntervalMs) {
+            imageProxy.close()
+            return
+        }
+        lastAttemptTime = now
+
         if (imageProxy.format != ImageFormat.YUV_420_888) {
             CameraKLogger.e("QRScanner", "Unsupported image format: ${imageProxy.format}")
             imageProxy.close()

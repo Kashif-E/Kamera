@@ -6,7 +6,6 @@ import com.google.zxing.DecodeHintType
 import com.google.zxing.LuminanceSource
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
-import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.ReaderException
 import com.google.zxing.common.HybridBinarizer
 import com.kashif.cameraK.utils.CameraKLogger
@@ -104,19 +103,22 @@ internal fun interface QrFrameDecoder {
     fun decode(image: BufferedImage, tryHarder: Boolean): String
 }
 
-/** [QrFrameDecoder] over ZXing's [MultiFormatReader]. */
+/**
+ * [QrFrameDecoder] over ZXing's [MultiFormatReader]. Not thread-safe: [QRScanner] calls it under its
+ * lock, and the gray buffer it decodes from is reused on the next call.
+ */
 internal class ZxingQrFrameDecoder : QrFrameDecoder {
     private val fastReader = qrReader(tryHarder = false)
     private val slowReader = qrReader(tryHarder = true)
+    private val gray = GrayFrame()
 
     override fun decode(image: BufferedImage, tryHarder: Boolean): String {
         val bitmap = BinaryBitmap(HybridBinarizer(luminance(image)))
         return (if (tryHarder) slowReader else fastReader).decode(bitmap).text
     }
 
-    /** The 8-bit luminance ZXing decodes from [image]. */
-    internal fun luminance(image: BufferedImage): LuminanceSource =
-        RGBLuminanceSource(image.width, image.height, image.getRGB(0, 0, image.width, image.height, null, 0, image.width))
+    /** The 8-bit luminance ZXing decodes from [image], in a buffer the next call reuses. */
+    internal fun luminance(image: BufferedImage): LuminanceSource = gray.luminance(image)
 
     private fun qrReader(tryHarder: Boolean) = MultiFormatReader().apply {
         setHints(
