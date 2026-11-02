@@ -23,6 +23,7 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.ViewPort
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
@@ -138,6 +139,10 @@ actual class CameraController internal constructor(
     }
 
     private var cameraProvider: CameraBinding? = null
+
+    // Every use case this controller has bound and not yet unbound. ProcessCameraProvider is shared
+    // by the whole process, so rebinds and teardown unbind exactly these, never unbindAll().
+    private val boundUseCases = linkedSetOf<UseCase>()
     private var imageCapture: ImageCapture? = null
     private var preview: Preview? = null
     private var camera: Camera? = null
@@ -223,7 +228,7 @@ actual class CameraController internal constructor(
             }
             try {
                 cameraProvider = providerResult.getOrThrow()
-                cameraProvider?.unbindAll()
+                unbindOwnUseCases()
 
                 val resolutionSelector = createResolutionSelector()
                 // Must run before any use-case builder: it decides pinnedPhysicalId.
@@ -279,6 +284,7 @@ actual class CameraController internal constructor(
                     cameraSelector,
                     useCaseGroup,
                 )
+                boundUseCases += useCaseGroup.useCases
 
                 onCameraReady()
             } catch (exc: Exception) {
@@ -353,7 +359,7 @@ actual class CameraController internal constructor(
         if (lastViewPortPortrait == null || portrait == lastViewPortPortrait) return
 
         if (activeRecording != null) {
-            // Don't rebind mid-recording: unbindAll/rebind would tear down the VideoCapture session.
+            // Don't rebind mid-recording: unbinding to rebind would tear down the VideoCapture session.
             // Defer it — the recording's Finalize callback performs the rebind once it's safe.
             pendingViewPortRebind = true
             return
@@ -472,9 +478,9 @@ actual class CameraController internal constructor(
                     return
                 }
             }
-            // Recording is active: a full rebind (unbindAll) would tear down the live VideoCapture
+            // Recording is active: a full rebind (unbind and bind) would tear down the live VideoCapture
             // session, so fall back to solo-binding just the analyzer outside the UseCaseGroup.
-            imageAnalyzer?.let { cameraProvider?.unbind(it) }
+            imageAnalyzer?.let { unbindOwn(it) }
             imageAnalyzer?.let { analyzer ->
                 cameraProvider?.bindToLifecycle(
                     lifecycleOwner,
@@ -484,6 +490,7 @@ actual class CameraController internal constructor(
                     createCameraSelector(),
                     analyzer,
                 )
+                boundUseCases += analyzer
             }
         } ?: throw InvalidConfigurationException("Camera not initialized.")
     }
@@ -530,7 +537,7 @@ actual class CameraController internal constructor(
         if (registeredAnalyzers.isEmpty()) {
             if (imageAnalyzer != null) {
                 try {
-                    imageAnalyzer?.let { cameraProvider?.unbind(it) }
+                    imageAnalyzer?.let { unbindOwn(it) }
                 } catch (_: Exception) {}
                 imageAnalyzer = null
             }
@@ -815,7 +822,7 @@ actual class CameraController internal constructor(
     actual fun getTorchMode(): TorchMode? = torchMode
 
     actual fun toggleCameraLens() {
-        // A lens switch rebinds (unbindAll), which would tear down a live recording session.
+        // A lens switch unbinds and rebinds, which would tear down a live recording session.
         if (activeRecording != null) {
             CameraKLogger.w("CameraController", "Ignoring lens switch while recording")
             return
@@ -862,8 +869,20 @@ actual class CameraController internal constructor(
     }
 
     actual fun stopSession() {
-        cameraProvider?.unbindAll()
+        unbindOwnUseCases()
         memoryManager.clearBufferPools()
+    }
+
+    /** Unbinds every use case this controller bound, and nothing another CameraX consumer bound. */
+    private fun unbindOwnUseCases() {
+        if (boundUseCases.isEmpty()) return
+        val own = boundUseCases.toTypedArray()
+        boundUseCases.clear()
+        cameraProvider?.unbind(*own)
+    }
+
+    private fun unbindOwn(useCase: UseCase) {
+        if (boundUseCases.remove(useCase)) cameraProvider?.unbind(useCase)
     }
 
     actual fun addImageCaptureListener(listener: (ByteArray) -> Unit) {
@@ -1199,13 +1218,10 @@ actual class CameraController internal constructor(
 
         // Release this controller's own use cases (not unbindAll: the process-wide provider may hold
         // another owner's use cases).
-        val ownUseCases = listOfNotNull(preview, imageCapture, videoCapture, imageAnalyzer)
-        if (ownUseCases.isNotEmpty()) {
-            try {
-                cameraProvider?.unbind(*ownUseCases.toTypedArray())
-            } catch (e: Exception) {
-                CameraKLogger.e(TAG, "Unbinding use cases on release failed", e)
-            }
+        try {
+            unbindOwnUseCases()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Unbinding use cases on release failed", e)
         }
 
         registeredAnalyzers.clear()

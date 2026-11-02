@@ -11,11 +11,10 @@ import androidx.lifecycle.LifecycleOwner
 import java.util.concurrent.Executor
 
 /**
- * The slice of [ProcessCameraProvider] that [CameraController] binds through.
+ * The slice of [ProcessCameraProvider] that [CameraController] binds through. The provider is shared
+ * by the whole process, so it offers no unbindAll(): a controller unbinds only what it bound.
  */
 internal interface CameraBinding {
-    fun unbindAll()
-
     fun unbind(vararg useCases: UseCase)
 
     fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, useCaseGroup: UseCaseGroup): Camera
@@ -59,8 +58,6 @@ internal interface CameraXBackend {
 }
 
 private class ProcessCameraBinding(private val provider: ProcessCameraProvider) : CameraBinding {
-    override fun unbindAll() = provider.unbindAll()
-
     override fun unbind(vararg useCases: UseCase) = provider.unbind(*useCases)
 
     override fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, useCaseGroup: UseCaseGroup): Camera =

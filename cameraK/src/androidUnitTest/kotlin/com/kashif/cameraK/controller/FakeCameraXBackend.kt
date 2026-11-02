@@ -131,10 +131,6 @@ internal class FakeCameraBinding : CameraBinding {
     var bindCalls = 0
         private set
 
-    override fun unbindAll() {
-        bound.clear()
-    }
-
     override fun unbind(vararg useCases: UseCase) {
         bound.removeAll(useCases.toSet())
     }
