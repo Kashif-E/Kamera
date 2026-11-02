@@ -38,8 +38,12 @@ internal interface CaptureDeviceOps {
 
     fun setVideoZoomFactor(factor: Double)
 
-    /** A session input that captures from this device, or null when one cannot be made. */
-    fun makeInput(): AVCaptureInput?
+    /**
+     * A session input that captures from this device, or why one cannot be made: for a real device,
+     * an [NSErrorException] carrying AVFoundation's error (a camera the user has not authorised, one
+     * in use by another app).
+     */
+    fun makeInput(): Result<AVCaptureInput>
 }
 
 /** Finds the cameras [CustomCameraController] can switch between. */
@@ -86,5 +90,12 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
         device.videoZoomFactor = factor
     }
 
-    override fun makeInput(): AVCaptureInput? = AVCaptureDeviceInput.deviceInputWithDevice(device, null)
+    override fun makeInput(): Result<AVCaptureInput> = memScoped {
+        val error = alloc<ObjCObjectVar<NSError?>>()
+        AVCaptureDeviceInput.deviceInputWithDevice(device, error.ptr)?.let { Result.success(it) }
+            ?: Result.failure(
+                error.value?.let(::NSErrorException)
+                    ?: IllegalStateException("AVFoundation made no input for the camera and gave no error"),
+            )
+    }
 }

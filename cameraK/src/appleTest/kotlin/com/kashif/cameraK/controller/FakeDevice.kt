@@ -23,6 +23,7 @@ import platform.CoreMedia.kCMMetadataFormatDescriptionMetadataSpecificationKey_I
 import platform.CoreMedia.kCMMetadataFormatType_Boxed
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
+import platform.Foundation.NSError
 import platform.Foundation.NSLock
 import platform.Foundation.NSThread
 
@@ -66,6 +67,8 @@ internal class FakeDevice(
     override val supportedMaxPhotoDimensions: List<PhotoDimensions> = emptyList(),
     var lockSucceeds: Boolean = true,
     val input: AVCaptureInput? = captureInputWithoutCamera(),
+    /** The error makeInput fails with, as AVFoundation does for a camera the user has not authorised. */
+    private val inputError: NSError? = null,
 ) : CaptureDeviceOps {
     class Call(val op: String, val value: Any?, val queue: String, val onMainThread: Boolean, val locked: Boolean) {
         override fun toString(): String = "$op($value) on '$queue'${if (onMainThread) " (main thread)" else ""}" +
@@ -99,7 +102,11 @@ internal class FakeDevice(
 
     override fun setVideoZoomFactor(factor: Double) = record("setVideoZoomFactor", factor) { zoom = factor }
 
-    override fun makeInput(): AVCaptureInput? = input
+    override fun makeInput(): Result<AVCaptureInput> = when {
+        inputError != null -> Result.failure(NSErrorException(inputError))
+        input != null -> Result.success(input)
+        else -> Result.failure(IllegalStateException("this fake camera has no input"))
+    }
 
     fun callsOf(op: String): List<Call> = calls.filter { it.op == op }
 

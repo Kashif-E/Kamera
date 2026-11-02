@@ -428,7 +428,7 @@ class CustomCameraController(
         requestedZoom = null
         isUsingFrontCamera = camera.isFront
 
-        val input = camera.makeInput() ?: return false
+        val input = camera.makeInput().getOrNull() ?: return false
         val ops = session ?: return false
         return if (ops.canAddInput(input)) {
             ops.addInput(input)
@@ -879,7 +879,7 @@ class CustomCameraController(
      * queue; returns why the swap failed, or null.
      */
     private fun swapVideoInput(ops: CaptureSessionOps, camera: CaptureDeviceOps): CameraException? {
-        val newInput = camera.makeInput()
+        val newInput = camera.makeInput().getOrNull()
             ?: return CameraException.ConfigurationError("Failed to create input")
         val previous = videoInput
         ops.beginConfiguration()
