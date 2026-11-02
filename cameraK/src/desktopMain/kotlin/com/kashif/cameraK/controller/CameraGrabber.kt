@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -130,6 +131,9 @@ class CameraGrabber(
                 val converter = FrameConverter()
                 try {
                     previous?.join()
+                    // A loop cancelled before it opened the camera (a stop or cleanup right after the
+                    // start) leaves it closed.
+                    ensureActive()
                     owned = customGrabber ?: createGrabber()
                     // Set format for macOS AVFoundation before starting
                     if (owned is FFmpegFrameGrabber && getOperatingSystem() == OperatingSystem.MAC) {

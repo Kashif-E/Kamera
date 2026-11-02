@@ -19,10 +19,13 @@ import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -60,7 +63,7 @@ actual class CameraController(
     private val targetResolution: Pair<Int, Int>? = null,
     private val aspectRatio: AspectRatio = AspectRatio.RATIO_16_9,
 ) {
-    private var sessionDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private var sessionDispatcher: CoroutineDispatcher = Dispatchers.IO
     private var recorderFactory: (String, VideoConfiguration) -> FrameRecorder = ::createFrameRecorder
 
     // The folder that Directory and the default video folder resolve under: the user's home.
@@ -85,6 +88,16 @@ actual class CameraController(
         this.nanoClock = nanoClock
         this.recordingConverter = recordingConverter
     }
+
+    // The controller's own scope: the grab loop and the recording run in it, and cleanup() cancels it.
+    // Lazy because the internal constructor sets sessionDispatcher after the properties initialise.
+    private val scope: CoroutineScope by lazy {
+        CoroutineScope(
+            SupervisorJob() + sessionDispatcher +
+                CoroutineExceptionHandler { _, e -> CameraKLogger.e("CameraK", "CameraK: Camera session failed", e) },
+        )
+    }
+    private val closed = atomic(false)
 
     private val _frameFlow = MutableSharedFlow<BufferedImage>(
         replay = 0,
@@ -271,14 +284,16 @@ actual class CameraController(
     actual fun getMaxZoom(): Float = 1.0f
 
     /**
-     * Starts the camera session.
+     * Starts the camera session. The grab loop exists when this returns, so a stop or cleanup that
+     * follows always reaches it. Does nothing after [cleanup].
      */
     actual fun startSession() {
-        CoroutineScope(sessionDispatcher).launch {
-            // If there is a custom grabber, use it, else use the default camera grabber
-            // Which attempts to use the default camera
-            cameraGrabber.start(this, customGrabber)
+        if (closed.value) {
+            CameraKLogger.w("CameraK", "CameraK: startSession() after cleanup() is ignored; create a new controller")
+            return
         }
+        // Uses the custom grabber if there is one, else the default camera.
+        cameraGrabber.start(scope, customGrabber)
     }
 
     /**
@@ -314,9 +329,12 @@ actual class CameraController(
         // No-op on desktop
     }
 
+    /** Ends the controller: stops any recording and the session and cancels the controller's scope. */
     actual fun cleanup() {
+        closed.value = true
         stopVideoRecorderIfActive()
         cameraGrabber.stop()
+        scope.cancel()
     }
 
     actual suspend fun startRecording(configuration: VideoConfiguration): String = withContext(Dispatchers.IO) {
@@ -353,7 +371,7 @@ actual class CameraController(
         // stops and releases the recorder in its finally, after its last record() has returned.
         val finalized = CompletableDeferred<Exception?>()
         val frames = cameraGrabber.frames()
-        val job = CoroutineScope(Dispatchers.IO).launch(start = CoroutineStart.ATOMIC) {
+        val job = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
             val converter = recordingConverter()
             var failure: Exception? = null
             try {
