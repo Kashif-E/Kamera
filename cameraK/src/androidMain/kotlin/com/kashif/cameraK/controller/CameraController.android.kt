@@ -1142,9 +1142,7 @@ actual class CameraController internal constructor(
             }
 
             val outputFile = createVideoOutputFile(configuration)
-            recordingOutputFile = outputFile
             val outcome = CompletableDeferred<VideoCaptureResult>()
-            recordingOutcome = outcome
             val outputOptions = FileOutputOptions.Builder(outputFile).build()
 
             val hasAudioPermission = ContextCompat.checkSelfPermission(
@@ -1152,34 +1150,49 @@ actual class CameraController internal constructor(
                 android.Manifest.permission.RECORD_AUDIO,
             ) == PackageManager.PERMISSION_GRANTED
 
-            activeRecording = backend.startRecording(
-                videoCapture = vc,
-                context = context,
-                output = outputOptions,
-                withAudio = configuration.enableAudio && hasAudioPermission,
-                executor = ContextCompat.getMainExecutor(context),
-            ) { event ->
-                outcome.complete(finalizedResult(event, outputFile))
-                recordingOutputFile = null
-                // stopRecording() clears activeRecording before it waits, so a recording that is
-                // still active here was ended by CameraX, with no stop call to restore the session.
-                val endedByCameraX = activeRecording != null
-                // Clear here too: a stale non-null activeRecording would permanently block ViewPort
-                // rebinds on rotation.
-                activeRecording = null
-                if (endedByCameraX && includeVideoUseCase && !released.value) {
-                    // Drop VideoCapture so stills are full-FOV again (#136).
-                    includeVideoUseCase = false
-                    pendingViewPortRebind = false
-                    previewView?.let { bindCamera(it) }
+            // Finalize always arrives on the main executor, after the session below is assigned.
+            var session: RecordingSession? = null
+            session = try {
+                backend.startRecording(
+                    videoCapture = vc,
+                    context = context,
+                    output = outputOptions,
+                    withAudio = configuration.enableAudio && hasAudioPermission,
+                    executor = ContextCompat.getMainExecutor(context),
+                ) { event ->
+                    outcome.complete(finalizedResult(event, outputFile))
+                    if (recordingOutputFile == outputFile) recordingOutputFile = null
+                    // stopRecording() clears activeRecording before it waits, so a recording that
+                    // is still active here was ended by CameraX, with no stop call to restore the
+                    // session. A late Finalize of an earlier recording must not touch a newer one.
+                    if (activeRecording === session) {
+                        activeRecording = null
+                        if (includeVideoUseCase && !released.value) {
+                            // Drop VideoCapture so stills are full-FOV again (#136).
+                            includeVideoUseCase = false
+                            pendingViewPortRebind = false
+                            previewView?.let { bindCamera(it) }
+                        }
+                    }
+                    // Apply any rotation flip that was deferred while recording was in progress,
+                    // unless a newer recording is running.
+                    if (activeRecording == null && pendingViewPortRebind && !released.value) {
+                        pendingViewPortRebind = false
+                        rebindIfViewPortOrientationChanged()
+                    }
                 }
-                // Apply any rotation flip that was deferred while recording was in progress.
-                if (pendingViewPortRebind && !released.value) {
-                    pendingViewPortRebind = false
-                    rebindIfViewPortOrientationChanged()
-                }
+            } catch (e: Exception) {
+                // CameraX refused to start: nothing records, so nothing is left for a stop to await.
+                cont.resumeWithException(e)
+                return@suspendCancellableCoroutine
             }
 
+            if (recordingOutcome != null) {
+                CameraKLogger.w(TAG, "The last recording's outcome was never claimed by stopRecording(); discarding it")
+            }
+            recordingOutcome = outcome
+            recordingOutputFile = outputFile
+            activeRecording = session
             cont.resume(outputFile.absolutePath)
         }
 
@@ -1189,19 +1202,27 @@ actual class CameraController internal constructor(
         recordingOutcome = null
         activeRecording?.stop()
         activeRecording = null
-        // Don't wait forever: if the CameraX finalize event never arrives this would hang the
-        // caller and leave isRecording stuck true.
-        val result = withTimeoutOrNull(stopFinalizeTimeoutMs) { outcome.await() }
-            ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
-        // Drop VideoCapture and rebind back to the full-FOV photo session. Await the rebind before
-        // returning: a fire-and-forget rebind lets an immediate photo (or a quick startRecording)
-        // race the pending bind — capturing on the old UseCaseGroup, or the late rebind unbinding a
-        // freshly-started recording's use cases.
-        if (includeVideoUseCase) {
-            includeVideoUseCase = false
-            previewView?.let { rebindAndAwait(it) }
+        var claimed = false
+        try {
+            // Don't wait forever: if the CameraX finalize event never arrives this would hang the
+            // caller and leave isRecording stuck true.
+            val result = withTimeoutOrNull(stopFinalizeTimeoutMs) { outcome.await() }
+                ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
+            claimed = true
+            return result
+        } finally {
+            // A cancelled caller did not claim the outcome: keep it for the next stop, unless a new
+            // recording has already started.
+            if (!claimed && recordingOutcome == null && activeRecording == null) recordingOutcome = outcome
+            // Drop VideoCapture and rebind back to the full-FOV photo session, also when the caller
+            // was cancelled. Await the rebind before returning: a fire-and-forget rebind lets an
+            // immediate photo (or a quick startRecording) race the pending bind — capturing on the
+            // old UseCaseGroup, or the late rebind unbinding a freshly-started recording's use cases.
+            if (includeVideoUseCase) {
+                includeVideoUseCase = false
+                withContext(NonCancellable) { previewView?.let { rebindAndAwait(it) } }
+            }
         }
-        return result
     }
 
     /**
