@@ -307,21 +307,35 @@ val shippedClasspath = "releaseRuntimeClasspath"
 val unitTestClasspath = "debugUnitTestRuntimeClasspath"
 
 // What is wrong with declaring minSdk `declared` for a module whose classpaths (by configuration
-// name) hold these external AARs (component display name to file).
+// name) hold these external AARs (component display name to file). The declared value must equal the
+// shipped floor: below it the app's manifest merge fails, above it the module turns away devices its
+// dependencies support.
 fun sdkFloorProblems(
     declared: Int,
     aarsByClasspath: Map<String, List<Pair<String, File>>>,
-): List<String> =
-    aarsByClasspath
-        .flatMap { (configurationName, aars) ->
+): List<String> {
+    val floors =
+        aarsByClasspath.flatMap { (configurationName, aars) ->
             aars.map { (component, aar) -> Triple(component, manifestMinSdk(component, aar), configurationName) }
-        }.filter { (_, floor, _) -> floor > declared }
-        .groupBy(
-            { (component, floor, _) -> component to floor },
-            { (_, _, configurationName) -> configurationName },
-        ).map { (dependency, configurationNames) ->
-            "${dependency.first} needs minSdk ${dependency.second} (${configurationNames.distinct().joinToString()})"
         }
+    val tooLow =
+        floors
+            .filter { (_, floor, _) -> floor > declared }
+            .groupBy(
+                { (component, floor, _) -> component to floor },
+                { (_, _, configurationName) -> configurationName },
+            ).map { (dependency, configurationNames) ->
+                "${dependency.first} needs minSdk ${dependency.second} (${configurationNames.distinct().joinToString()})"
+            }
+    val shippedFloor = floors.filter { it.third == shippedClasspath }.maxOfOrNull { it.second }
+    val tooHigh =
+        if (shippedFloor != null && declared > shippedFloor) {
+            listOf("nothing on $shippedClasspath needs more than minSdk $shippedFloor, so $declared is not the floor")
+        } else {
+            emptyList()
+        }
+    return tooLow + tooHigh
+}
 
 subprojects {
     if (name !in androidModules) return@subprojects
