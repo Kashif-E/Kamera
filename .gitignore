@@ -10,6 +10,8 @@ captures
 .externalNativeBuild
 .cxx
 local.properties
+# Personal Claude Code approvals. The tracked .claude/settings.json is shared and read-only.
+.claude/settings.local.json
 xcuserdata/
 Pods/
 *.jks
