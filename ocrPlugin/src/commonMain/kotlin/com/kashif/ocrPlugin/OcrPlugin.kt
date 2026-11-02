@@ -11,8 +11,10 @@ import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * OCR plugin for the Compose-first camera API. On desktop, [config] says where Tesseract's language
@@ -33,6 +36,7 @@ class OcrPlugin internal constructor(
     val coroutineScope: CoroutineScope,
     val config: OcrConfig,
     private val recognizeBitmap: suspend (ImageBitmap, OcrConfig) -> String = ::extractTextFromBitmapImpl,
+    private val recognitionDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val startRecognizer: (CameraController, OcrConfig, (String) -> Unit) -> RecognitionHandle,
 ) : CameraKPlugin {
     constructor(coroutineScope: CoroutineScope, config: OcrConfig = OcrConfig()) : this(
@@ -127,12 +131,14 @@ class OcrPlugin internal constructor(
     }
 
     /**
-     * Reads the text in [bitmap] once and returns it to the caller. The text is not logged.
+     * Reads the text in [bitmap] once and returns it to the caller. The recognizer runs on
+     * [Dispatchers.Default], never on the caller's thread, so it is safe to call from Main. The
+     * text is not logged.
      *
      * @return The recognised text, or "" when there is none.
      */
     suspend fun recognize(bitmap: ImageBitmap): String {
-        val text = recognizeBitmap(bitmap, config)
+        val text = withContext(recognitionDispatcher) { recognizeBitmap(bitmap, config) }
         CameraKLogger.d("CameraK", "OcrPlugin: one-shot text recognition finished, length=${text.length}")
         return text
     }
