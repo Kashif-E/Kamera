@@ -17,6 +17,16 @@ import kotlin.concurrent.Volatile
  * ```
  *
  * When [enabled] and no [sink] is set, logs are printed to the platform console.
+ *
+ * The rule for every CameraK module that logs through this object:
+ * - A message names the operation and its outcome, never its subject: no recognised text, barcode value,
+ *   file path, URI, asset identifier or image bytes, in a log message or in an exception message.
+ * - Every catch that returns a fallback logs the operation and the throwable once, passing the throwable as
+ *   the separate `throwable` argument rather than formatting it into the message.
+ * - A platform throwable's own message may hold a path or URI, so a [sink] that forwards throwables off the
+ *   device must scrub or drop that message.
+ * - The tag is the published artifact's: `CameraK` for camerak-core and camerak, then `QRScanner`,
+ *   `TextRecognition`, `ImageSaverPlugin` and `Analyzer` for the plugins.
  */
 object CameraKLogger {
     enum class Level { DEBUG, WARN, ERROR }
