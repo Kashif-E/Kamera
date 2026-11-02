@@ -84,7 +84,7 @@ private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { conti
 internal fun CameraController.enableTextRecognition(
     maxFps: Int,
     onTextRecognized: (String) -> Unit,
-    onError: (Exception) -> Unit = logRecognitionError,
+    onError: (Exception) -> Unit = {},
 ): TextRecognitionAnalyzer {
     CameraKLogger.d("TextRecognition", "Configuring text recognition analyzer")
 
@@ -127,11 +127,13 @@ internal class MlKitLiveTextRecognizer : LiveTextRecognizer {
     override fun close() = recognizer.close()
 }
 
-private val logRecognitionError: (Exception) -> Unit = { CameraKLogger.e("TextRecognition", "Recognition error", it) }
-
+/**
+ * Live OCR on CameraX analysis frames. A failure is logged here, once, before [onError] sees it; the
+ * recognised text is never logged.
+ */
 internal class TextRecognitionAnalyzer(
     private val onTextRecognized: (String) -> Unit,
-    private val onError: (Exception) -> Unit = logRecognitionError,
+    private val onError: (Exception) -> Unit = {},
     private val recognizer: LiveTextRecognizer = MlKitLiveTextRecognizer(),
     maxFps: Int = DEFAULT_LIVE_OCR_MAX_FPS,
 ) : ImageAnalysis.Analyzer {
@@ -160,7 +162,7 @@ internal class TextRecognitionAnalyzer(
                     // Avoid duplicate emissions for same text
                     if (text.isNotEmpty() && !processedTexts.contains(text)) {
                         processedTexts.add(text)
-                        CameraKLogger.d("TextRecognition", "Text detected: ${text.take(100)}...")
+                        CameraKLogger.d("TextRecognition", "Text recognised, length=${text.length}")
                         onTextRecognized(text)
 
                         // Clear cache periodically to avoid memory buildup
