@@ -22,26 +22,7 @@ import kotlinx.coroutines.launch
  * - Auto-activation when camera becomes ready
  * - Recording event forwarding via [recordingEvents]
  *
- * Usage:
- * ```kotlin
- * val videoPlugin = rememberVideoRecorderPlugin(
- *     config = VideoConfiguration(
- *         quality = VideoQuality.FHD,
- *         enableAudio = true,
- *         maxDurationMs = 60_000L,
- *     )
- * )
- *
- * val cameraState by rememberCameraKState(setupPlugins = { stateHolder ->
- *     stateHolder.attachPlugin(videoPlugin)
- * })
- *
- * // Start recording
- * videoPlugin.startRecording()
- *
- * // Stop recording
- * videoPlugin.stopRecording()
- * ```
+ * @sample com.kashif.videorecorderplugin.RecordVideoSample
  */
 @Stable
 class VideoRecorderPlugin(val config: VideoConfiguration = VideoConfiguration()) : CameraKPlugin {

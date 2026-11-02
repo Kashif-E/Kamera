@@ -336,10 +336,6 @@ class VideoDataDelegate(private val onText: (String) -> Unit, maxFps: Int = DEFA
             return
         }
 
-        /**
-         * Collects recognized text from Vision results.
-         * Filters candidates by confidence threshold (0.3) to avoid low-confidence noise.
-         */
         val recognizedStrings = mutableListOf<String>()
 
         for (i in 0 until resultsArray.count.toInt()) {

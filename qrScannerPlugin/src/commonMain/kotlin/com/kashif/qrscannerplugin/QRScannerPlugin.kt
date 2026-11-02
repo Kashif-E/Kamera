@@ -23,21 +23,7 @@ import kotlin.jvm.JvmOverloads
 /**
  * QR Scanner plugin for the Compose-first camera API.
  *
- * ```kotlin
- * val scope = rememberCoroutineScope()
- * val qrPlugin = remember { QRScannerPlugin(scope) }
- * var detectedQR by remember { mutableStateOf<String?>(null) }
- *
- * val cameraState by rememberCameraKState { stateHolder ->
- *     qrPlugin.attachToStateHolder(stateHolder)
- * }
- *
- * LaunchedEffect(qrPlugin) {
- *     qrPlugin.getQrCodeFlow().collect { qr ->
- *         detectedQR = qr
- *     }
- * }
- * ```
+ * @sample com.kashif.qrscannerplugin.ScanQrCodesSample
  *
  * @property coroutineScope Scope for managing QR scanning operations and event emission.
  */
@@ -191,12 +177,6 @@ class QRScannerPlugin internal constructor(
 }
 
 /**
- * Platform-specific function to start scanning for QR codes.
- *
- * @param controller The CameraController to be used for scanning.
- * @param onQrScanner A callback function that is invoked when a QR code is scanned.
- */
-/**
  * Handle to active scanning. [stop] removes the underlying platform analyzer/delegate so the
  * camera stops decoding frames — the plugin keeps no other way to tear that registration down.
  */
@@ -204,6 +184,12 @@ fun interface ScannerHandle {
     fun stop()
 }
 
+/**
+ * Platform-specific function to start scanning for QR codes.
+ *
+ * @param controller The CameraController to be used for scanning.
+ * @param onQrScanner A callback function that is invoked when a QR code is scanned.
+ */
 expect fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit): ScannerHandle
 
 /** The decode-attempt interval [QRScannerPlugin] and [startScanning] use unless told otherwise. */

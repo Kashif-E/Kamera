@@ -71,3 +71,9 @@ android {
         }
     }
 }
+
+dokka {
+    dokkaSourceSets.configureEach {
+        samples.from("src/commonTest/kotlin")
+    }
+}

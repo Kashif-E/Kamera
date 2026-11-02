@@ -50,11 +50,6 @@ kotlin {
             implementation(libs.zxing.core)
         }
     }
-
-    // https://kotlinlang.org/docs/native_objc_interop.html#export_of_kdoc_comments_to_generated_objective_c_headers
-//    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget> {
-//        compilations["main"].compilerOptions.options.freeCompilerArgs.add("_Xexport_kdoc")
-//    }
 }
 
 android {
@@ -80,5 +75,11 @@ android {
             withJavadocJar()
             withSourcesJar()
         }
+    }
+}
+
+dokka {
+    dokkaSourceSets.configureEach {
+        samples.from("src/commonTest/kotlin")
     }
 }

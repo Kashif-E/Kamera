@@ -26,21 +26,7 @@ import kotlinx.coroutines.launch
  * OCR plugin for the Compose-first camera API. On desktop, [config] says where Tesseract's language
  * data is (see [OcrConfig]).
  *
- * ```kotlin
- * val scope = rememberCoroutineScope()
- * val ocrPlugin = remember { OcrPlugin(scope) }
- * var recognizedText by remember { mutableStateOf<String?>(null) }
- *
- * val cameraState by rememberCameraKState { stateHolder ->
- *     ocrPlugin.attachToStateHolder(stateHolder)
- * }
- *
- * LaunchedEffect(ocrPlugin) {
- *     ocrPlugin.textFlow.collect { text ->
- *         recognizedText = text
- *     }
- * }
- * ```
+ * @sample com.kashif.ocrPlugin.RecognizeLiveTextSample
  */
 @Stable
 class OcrPlugin internal constructor(
