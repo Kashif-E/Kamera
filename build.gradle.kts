@@ -1029,6 +1029,35 @@ tasks.register("checkComposeBaseline") {
     dependsOn(libraryModules.map { ":$it:checkComposeBaseline" })
 }
 
+// Each library publishes exactly one Android variant, the tested release. A debug publication would
+// hand consumers' debug builds an AAR no test ran against.
+tasks.register("checkPublishedVariants") {
+    group = "verification"
+    description = "Fails if a library publishes an Android variant other than release"
+    val publications =
+        provider {
+            libraryModules.associateWith { name ->
+                project(":$name")
+                    .extensions
+                    .getByType<PublishingExtension>()
+                    .publications.names
+                    .sorted()
+            }
+        }
+    doLast {
+        val problems =
+            publications.get().flatMap { (module, names) ->
+                names.filter { it.startsWith("android") && it != "androidRelease" }.map {
+                    "$module publishes $it (publications: $names)"
+                } + if ("androidRelease" in names) emptyList() else listOf("$module publishes no androidRelease")
+            }
+        check(problems.isEmpty()) {
+            "Libraries must publish only the release Android variant:\n" +
+                problems.joinToString("\n")
+        }
+    }
+}
+
 // --only screenshots runs just the screenshot classes from cameraK's desktop suite.
 if ("screenshots" in verifyTargets && "desktop" !in verifyTargets) {
     project(":cameraK").tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
@@ -1062,6 +1091,7 @@ fun verifyTaskPaths(
                 ":checkSecurityPolicy",
                 ":checkDocsWorkflow",
                 ":checkBuildIntegrity",
+                ":checkPublishedVariants",
             )
     }
     modules.forEach { module ->
