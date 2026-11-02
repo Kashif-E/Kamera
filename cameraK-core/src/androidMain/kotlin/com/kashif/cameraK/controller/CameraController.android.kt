@@ -49,6 +49,7 @@ import com.kashif.cameraK.capabilities.AndroidLensDescriptor
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensEnumerator
 import com.kashif.cameraK.capabilities.deviceTypeTarget
+import com.kashif.cameraK.capture.heicCaptureUnsupported
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -143,7 +144,7 @@ actual class CameraController internal constructor(
     private val outputFormat = ImageFormat.JPEG
 
     init {
-        if (imageFormat != outputFormat) {
+        if (imageFormat != outputFormat && imageFormat != ImageFormat.HEIC) {
             CameraKLogger.w(TAG, "ImageFormat.$imageFormat is not supported for Android captures; saving JPEG instead")
         }
     }
@@ -618,6 +619,10 @@ actual class CameraController internal constructor(
     actual suspend fun takePictureToFile(): ImageCaptureResult = suspendCancellableCoroutine { cont ->
         if (released.value) {
             cont.resume(ImageCaptureResult.Error(controllerReleased()))
+            return@suspendCancellableCoroutine
+        }
+        if (imageFormat == ImageFormat.HEIC) {
+            cont.resume(heicCaptureUnsupported(TAG))
             return@suspendCancellableCoroutine
         }
         if (!captureSlots.tryAcquire()) {

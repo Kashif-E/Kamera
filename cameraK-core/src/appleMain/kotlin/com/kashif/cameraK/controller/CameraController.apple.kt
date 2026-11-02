@@ -1,6 +1,7 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.CameraCapabilities
+import com.kashif.cameraK.capture.heicCaptureUnsupported
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -324,6 +325,7 @@ actual class CameraController internal constructor(
      * a shared slot, so session errors and other captures cannot decide it.
      */
     actual suspend fun takePictureToFile(): ImageCaptureResult {
+        if (imageFormat == ImageFormat.HEIC) return heicCaptureUnsupported("CameraK")
         val photo = suspendCancellableCoroutine { continuation ->
             if (pendingCaptures.incrementAndGet() > maxConcurrentCaptures) {
                 pendingCaptures.decrementAndGet()

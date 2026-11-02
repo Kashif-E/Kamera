@@ -2,6 +2,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capture.heicCaptureUnsupported
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -145,6 +146,7 @@ actual class CameraController(
     private val listeners = CopyOnWriteArrayList<(ByteArray) -> Unit>()
 
     actual suspend fun takePictureToFile(): ImageCaptureResult {
+        if (imageFormat == ImageFormat.HEIC) return heicCaptureUnsupported("CameraK")
         return withContext(Dispatchers.IO) {
             val currentImage = cameraGrabber.awaitSnapshot()
 
