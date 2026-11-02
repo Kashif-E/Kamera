@@ -88,7 +88,6 @@ android {
         libs.versions.android.compileSdk
             .get()
             .toInt()
-    ndkVersion = "26.3.11579264" // NDK r26b+ uses 16KB page size defaults for native binaries
 
     defaultConfig {
         minSdk =
@@ -99,12 +98,6 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
-    }
-
-    packaging {
-        jniLibs {
-            useLegacyPackaging = false // required for 16KB page-size compliant native libs in AAB/APK
-        }
     }
 
     publishing {
