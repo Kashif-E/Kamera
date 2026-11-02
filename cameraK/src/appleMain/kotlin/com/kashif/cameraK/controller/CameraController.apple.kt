@@ -49,6 +49,7 @@ import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSURL
+import platform.Foundation.NSUUID
 import platform.Foundation.timeIntervalSince1970
 import platform.Photos.PHAssetChangeRequest
 import platform.Photos.PHPhotoLibrary
@@ -63,7 +64,6 @@ import platform.darwin.dispatch_get_global_queue
 import platform.darwin.dispatch_get_main_queue
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
-import kotlin.random.Random
 
 actual class CameraController internal constructor(
     internal var flashMode: FlashMode,
@@ -688,8 +688,8 @@ actual class CameraController internal constructor(
 
     @OptIn(ExperimentalForeignApi::class)
     private fun createTempFile(): String {
-        val timestamp = Random.nextLong()
-        val fileName = "IMG_$timestamp.${imageFormat.extension}"
+        // Unique per capture: up to three are saved at once, on different threads.
+        val fileName = "IMG_${NSUUID().UUIDString}.${imageFormat.extension}"
 
         return when (directory) {
             Directory.PICTURES, Directory.DCIM -> {
