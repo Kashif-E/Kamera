@@ -3,6 +3,8 @@ package com.kashif.imagesaverplugin
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -11,6 +13,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 class JVMImageSaverPluginTest {
+    private val home: File = Files.createTempDirectory("camerak-saver-base").toFile()
+
+    @AfterTest
+    fun tearDown() {
+        home.deleteRecursively()
+    }
+
     @Test
     fun saveImage_undecodableBytes_returnsNullAndReportsTheFailure() = runTest {
         var saved = false
@@ -31,38 +40,49 @@ class JVMImageSaverPluginTest {
     @Test
     fun getByteArrayFrom_readsTheFile() {
         val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 42)
-        val file = File.createTempFile("camerak", ".jpg").apply { deleteOnExit() }
+        val file = File(home, "Pictures/camerak.jpg").apply { parentFile.mkdirs() }
         file.writeBytes(bytes)
 
         assertContentEquals(bytes, plugin().getByteArrayFrom(file.absolutePath))
     }
 
     @Test
-    fun getByteArrayFrom_missingFile_throwsIOExceptionNamingThePath() {
-        val missing = File(System.getProperty("java.io.tmpdir"), "camerak-missing-${System.nanoTime()}.jpg")
+    fun getByteArrayFrom_missingFile_throwsIOExceptionWithoutThePath() {
+        val missing = File(home, "Pictures/camerak-missing.jpg").apply { parentFile.mkdirs() }
 
         val error = assertFailsWith<IOException> { plugin().getByteArrayFrom(missing.absolutePath) }
 
-        assertEquals("Failed to read image from path: ${missing.absolutePath}", error.message)
+        assertFalse(home.name in error.message.orEmpty(), "the error message contains the path: ${error.message}")
     }
 
     @Test
     fun readBytes_readsTheFile() = runTest {
         val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 43)
-        val file = File.createTempFile("camerak", ".jpg").apply { deleteOnExit() }
+        val file = File(home, "Pictures/camerak-read.jpg").apply { parentFile.mkdirs() }
         file.writeBytes(bytes)
 
         assertContentEquals(bytes, plugin().readBytes(file.absolutePath))
     }
 
     @Test
-    fun readBytes_missingFile_throwsIOExceptionNamingThePath() = runTest {
-        val missing = File(System.getProperty("java.io.tmpdir"), "camerak-missing-${System.nanoTime()}.jpg")
+    fun readBytes_missingFile_throwsIOExceptionWithoutThePath() = runTest {
+        val missing = File(home, "Pictures/camerak-missing-${System.nanoTime()}.jpg").apply { parentFile.mkdirs() }
 
         val error = assertFailsWith<IOException> { plugin().readBytes(missing.absolutePath) }
 
-        assertEquals("Failed to read image from path: ${missing.absolutePath}", error.message)
+        assertFalse(home.name in error.message.orEmpty(), "the error message contains the path: ${error.message}")
     }
 
-    private fun plugin() = JVMImageSaverPlugin(ImageSaverConfig(), onImageSaved = {}, onImageSavedFailed = {})
+    @Test
+    fun readBytes_outsidePicturesAndDocuments_throwsIOExceptionWithoutThePath() = runTest {
+        val outside = File(home, "elsewhere/camerak.jpg").apply { parentFile.mkdirs() }
+        outside.writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 44))
+
+        val error = assertFailsWith<IOException> { plugin().readBytes(outside.absolutePath) }
+
+        assertFalse(home.name in error.message.orEmpty(), "the error message contains the path: ${error.message}")
+    }
+
+    private fun plugin() =
+        JVMImageSaverPlugin(ImageSaverConfig(), onImageSaved = {}, onImageSavedFailed = {}, userHome = home)
 }
