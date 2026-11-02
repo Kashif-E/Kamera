@@ -80,6 +80,34 @@ class AnalyzerRegistrationTest {
         assertEquals(1, second.frames, "a registered analyzer does not receive frames during a recording")
     }
 
+    @Suppress("DEPRECATION")
+    @Test
+    fun updateImageAnalyzerOnARunningCamera_doesNotRebind() {
+        controller.registerImageAnalyzer(first)
+        controller.bindCamera(PreviewView(context))
+        idleMainLooper()
+        val bindsBefore = backend.binding.bindCalls
+
+        controller.updateImageAnalyzer()
+        idleMainLooper()
+
+        assertEquals(bindsBefore, backend.binding.bindCalls, "updateImageAnalyzer rebound the camera")
+        deliverFrameToBoundAnalysis()
+        assertEquals(1, first.frames, "a registered analyzer does not receive frames")
+    }
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun updateImageAnalyzerBeforeTheCameraIsBound_isHarmless() {
+        controller.updateImageAnalyzer()
+        controller.registerImageAnalyzer(first)
+        controller.bindCamera(PreviewView(context))
+        idleMainLooper()
+
+        deliverFrameToBoundAnalysis()
+        assertEquals(1, first.frames, "a registered analyzer does not receive frames")
+    }
+
     /** One frame from the camera, through every ImageAnalysis that is bound; there must be exactly one. */
     private fun deliverFrameToBoundAnalysis() {
         val bound = backend.binding.bound.filterIsInstance<ImageAnalysis>()
