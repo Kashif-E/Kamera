@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.dataWithContentsOfFile
+import kotlin.test.fail
 
 /**
  * A CameraController on a fake session, camera and photo output, with its view loaded so the
@@ -72,7 +73,10 @@ internal class CaptureRig(
     fun capture(): Pair<Capture, FakePhotoCapturer.Request> {
         val before = capturer.requests.size
         val capture = Capture()
-        awaitTrue("the capture request to reach the photo output") { capturer.requests.size > before }
+        awaitTrue("the capture request to reach the photo output") {
+            capturer.requests.size > before || capture.result != null
+        }
+        capture.result?.let { fail("takePictureToFile returned $it without asking the photo output for a photo") }
         return capture to capturer.requests[before]
     }
 
