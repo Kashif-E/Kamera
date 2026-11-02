@@ -40,6 +40,7 @@ internal class RecordingSession : CaptureSessionOps {
     private var running = false
     private val inputList = mutableListOf<AVCaptureInput>()
     private val outputList = mutableListOf<AVCaptureOutput>()
+    private val refused = mutableSetOf<AVCaptureInput>()
 
     val calls: List<Call> get() = locked { recorded.toList() }
     val openConfigurations: Int get() = locked { depth }
@@ -59,7 +60,12 @@ internal class RecordingSession : CaptureSessionOps {
 
     override fun setSessionPreset(preset: String) = record("setSessionPreset", preset) {}
 
-    override fun canAddInput(input: AVCaptureInput): Boolean = true
+    /** Makes canAddInput refuse [input], as AVFoundation does for an input the session cannot take. */
+    fun refuse(input: AVCaptureInput) = locked { refused.add(input) }
+
+    fun allow(input: AVCaptureInput) = locked { refused.remove(input) }
+
+    override fun canAddInput(input: AVCaptureInput): Boolean = locked { input !in refused && input !in inputList }
 
     override fun addInput(input: AVCaptureInput) = record("addInput", input) { inputList += input }
 
