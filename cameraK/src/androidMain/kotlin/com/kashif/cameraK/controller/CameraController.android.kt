@@ -3,12 +3,16 @@ package com.kashif.cameraK.controller
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.Rational
 import android.util.Size
+import android.view.Display
 import android.view.OrientationEventListener
 import android.view.Surface
 import androidx.annotation.OptIn
@@ -240,6 +244,7 @@ actual class CameraController internal constructor(
             return
         }
         this.previewView = previewView
+        listenForDisplayChanges()
 
         memoryManager.initialize(context)
 
@@ -394,12 +399,46 @@ actual class CameraController internal constructor(
      * otherwise a landscape start would build the ViewPort with the wrong rotation and crop to the
      * wrong orientation until a rebind.
      */
+    private fun currentDisplayRotation(previewView: PreviewView): Int =
+        currentDisplay(previewView)?.rotation ?: Surface.ROTATION_0
+
     @Suppress("DEPRECATION")
-    private fun currentDisplayRotation(previewView: PreviewView): Int {
-        val display = previewView.display
-            ?: previewView.context.getActivityOrNull()?.windowManager?.defaultDisplay
-            ?: context.getActivityOrNull()?.windowManager?.defaultDisplay
-        return display?.rotation ?: Surface.ROTATION_0
+    private fun currentDisplay(previewView: PreviewView): Display? = previewView.display
+        ?: previewView.context.getActivityOrNull()?.windowManager?.defaultDisplay
+        ?: context.getActivityOrNull()?.windowManager?.defaultDisplay
+
+    // Display events, not the accelerometer, drive the ViewPort and the capture rotation: the
+    // accelerometer crosses a bucket hundreds of ms before the display rotates, and a host that
+    // handles orientation changes itself is never recreated, so nothing else would rebuild the crop
+    // (#136). Trade-off: in an orientation-locked host, captures follow the display orientation.
+    private var displayListener: DisplayManager.DisplayListener? = null
+
+    /** Registers [displayListener] once, on the main thread. */
+    private fun listenForDisplayChanges() {
+        if (displayListener != null) return
+        val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager ?: return
+        val listener = object : DisplayManager.DisplayListener {
+            override fun onDisplayChanged(displayId: Int) {
+                if (released.value) return
+                val pv = previewView ?: return
+                if (currentDisplay(pv)?.displayId != displayId) return
+                // Auto mode only; an explicit target orientation stays as set.
+                if (targetOrientation == null) applyCaptureRotation(pv)
+                rebindIfViewPortOrientationChanged()
+            }
+
+            override fun onDisplayAdded(displayId: Int) = Unit
+
+            override fun onDisplayRemoved(displayId: Int) = Unit
+        }
+        displayManager.registerDisplayListener(listener, Handler(Looper.getMainLooper()))
+        displayListener = listener
+    }
+
+    private fun stopListeningForDisplayChanges() {
+        val listener = displayListener ?: return
+        displayListener = null
+        (context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager)?.unregisterDisplayListener(listener)
     }
 
     /**
@@ -1247,15 +1286,8 @@ actual class CameraController internal constructor(
                         }
                         if (newOrientation != currentDeviceOrientation) {
                             currentDeviceOrientation = newOrientation
-                            // Update capture rotation from the DISPLAY rotation (not this sensor
-                            // angle) so it stays consistent with the ViewPort/preview. On an
-                            // orientation-locked screen this is a no-op; on an unlocked one it tracks
-                            // the on-screen rotation. (Auto mode only; explicit override untouched.)
-                            if (targetOrientation == null) {
-                                previewView?.let { applyCaptureRotation(it) }
-                            }
-                            // Rebuild the ViewPort if the display flipped portrait<->landscape.
-                            rebindIfViewPortOrientationChanged()
+                            // Only the device-orientation output follows the sensor; the capture
+                            // rotation and the ViewPort follow display changes (displayListener).
                             orientationChangedCallback?.invoke(newOrientation)
                         }
                     }
@@ -1317,6 +1349,7 @@ actual class CameraController internal constructor(
         orientationEventListener?.disable()
         orientationEventListener = null
         orientationChangedCallback = null
+        stopListeningForDisplayChanges()
 
         // Stop frame delivery before anything it uses goes away, and stop a recording while its
         // VideoCapture is still bound so it finalizes cleanly.
