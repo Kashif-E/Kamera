@@ -2,18 +2,21 @@
 
 ## Supported Versions
 
-We aim to support the latest minor release. Security fixes are backported when feasible.
+Security fixes go into the latest release line. Older lines do not receive fixes; upgrade to the
+latest release to get them.
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | ✅ Yes     |
-| <0.1.x  | ❌ No      |
+| 2.0.x   | ✅ Yes     |
+| < 2.0   | ❌ No      |
 
 ## Reporting a Vulnerability
 
-Please report security issues privately to:
+Report security issues privately through GitHub private vulnerability reporting:
 
-- Email: security@camerak.dev
+- https://github.com/Kashif-E/Kamera/security/advisories/new
+
+Do not open a public issue or pull request for a vulnerability.
 
 Include:
 
