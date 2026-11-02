@@ -9,4 +9,7 @@ package com.kashif.cameraK.enums
 enum class ImageFormat(val extension: String, val mimeType: String) {
     JPEG("jpg", "image/jpeg"),
     PNG("png", "image/png"),
+
+    // S1' stub: a placeholder extension and MIME type.
+    HEIC("", ""),
 }

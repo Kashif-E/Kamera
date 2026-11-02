@@ -220,6 +220,7 @@ private fun transcode(bytes: ByteArray, format: ImageFormat): ByteArray {
             throw SaveFailure("No PNG writer accepts this image")
         }
         ImageFormat.JPEG -> writeJpeg(withoutAlpha(decoded), out)
+        ImageFormat.HEIC -> throw SaveFailure("HEIC is not supported on desktop")
     }
     return out.toByteArray()
 }
