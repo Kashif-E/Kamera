@@ -1058,6 +1058,33 @@ tasks.register("checkPublishedVariants") {
     }
 }
 
+// Libraries publish klibs. A framework binary in a library is never published and only adds link
+// tasks to every build; the framework an app embeds comes from the Sample (or an umbrella module).
+tasks.register("checkNoLibraryFrameworks") {
+    group = "verification"
+    description = "Fails if a library module declares an iOS framework binary"
+    val frameworks =
+        provider {
+            libraryModules.associateWith { name ->
+                project(":$name")
+                    .extensions
+                    .getByType<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension>()
+                    .targets
+                    .withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>()
+                    .flatMap { target ->
+                        target.binaries.withType<org.jetbrains.kotlin.gradle.plugin.mpp.Framework>().map { "${target.name}.${it.name}" }
+                    }
+            }
+        }
+    doLast {
+        val declared = frameworks.get().filterValues(List<String>::isNotEmpty)
+        check(declared.isEmpty()) {
+            "Libraries publish klibs, but these declare framework binaries:\n" +
+                declared.entries.joinToString("\n") { (module, binaries) -> "$module: $binaries" }
+        }
+    }
+}
+
 // --only screenshots runs just the screenshot classes from cameraK's desktop suite.
 if ("screenshots" in verifyTargets && "desktop" !in verifyTargets) {
     project(":cameraK").tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
@@ -1092,6 +1119,7 @@ fun verifyTaskPaths(
                 ":checkDocsWorkflow",
                 ":checkBuildIntegrity",
                 ":checkPublishedVariants",
+                ":checkNoLibraryFrameworks",
             )
     }
     modules.forEach { module ->
