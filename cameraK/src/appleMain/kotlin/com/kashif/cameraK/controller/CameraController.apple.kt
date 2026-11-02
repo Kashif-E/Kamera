@@ -19,9 +19,15 @@ import com.kashif.cameraK.utils.toUIImage
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
 import kotlinx.cinterop.autoreleasepool
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readValue
+import kotlinx.cinterop.value
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -414,17 +420,16 @@ actual class CameraController internal constructor(
         } ?: return ImageCaptureResult.Error(Exception("Failed to write image to file"))
 
         return when (directory) {
-            Directory.PICTURES, Directory.DCIM -> {
-                val assetId = importIntoPhotos { completion ->
-                    photosLibrary.importImage(NSURL.fileURLWithPath(filePath), completion)
-                }
-                NSFileManager.defaultManager.removeItemAtPath(filePath, null)
-                if (assetId != null) {
+            Directory.PICTURES, Directory.DCIM -> importIntoPhotos { completion ->
+                photosLibrary.importImage(NSURL.fileURLWithPath(filePath), completion)
+            }.fold(
+                onSuccess = { assetId ->
+                    removeImportedFile(filePath)
                     ImageCaptureResult.SuccessWithFile("ph://$assetId")
-                } else {
-                    ImageCaptureResult.Error(Exception("Failed to save to Photos library"))
-                }
-            }
+                },
+                // The file is the only copy of the photo, so it stays where it was written.
+                onFailure = { ImageCaptureResult.Error(it as Exception) },
+            )
             Directory.DOCUMENTS -> ImageCaptureResult.SuccessWithFile(filePath)
         }
     }
@@ -864,15 +869,16 @@ actual class CameraController internal constructor(
         if (directory == Directory.DOCUMENTS) return result
 
         val filePath = result.filePath
-        val savedAssetId = importIntoPhotos { completion ->
+        return importIntoPhotos { completion ->
             photosLibrary.importVideo(NSURL.fileURLWithPath(filePath), completion)
-        }
-        // The video stays at its temporary path, so nothing recorded is lost.
-        savedAssetId ?: return VideoCaptureResult.Error(Exception("Saving the video to the Photos library failed"))
-
-        // Clean up temp file after saving to Photos
-        NSFileManager.defaultManager.removeItemAtPath(filePath, null)
-        return VideoCaptureResult.Success("ph://$savedAssetId", result.durationMs)
+        }.fold(
+            onSuccess = { assetId ->
+                removeImportedFile(filePath)
+                VideoCaptureResult.Success("ph://$assetId", result.durationMs)
+            },
+            // The video stays at its temporary path, so nothing recorded is lost.
+            onFailure = { VideoCaptureResult.Error(it as Exception) },
+        )
     }
 
     /** Test seam: the Photos library photos and recordings are imported into. */
@@ -882,11 +888,12 @@ actual class CameraController internal constructor(
     internal var photosImportTimeoutMs: Long = 60_000
 
     /**
-     * Runs the Photos import [start] begins and returns the new asset's identifier, or null when Photos
-     * reported a failure or did not finish within [photosImportTimeoutMs]. It suspends rather than
-     * holding a thread, so an import Photos never finishes costs nothing but the wait.
+     * Runs the Photos import [start] begins and returns the new asset's identifier, or the failure:
+     * what Photos reported (its error domain and code), or that it did not finish within
+     * [photosImportTimeoutMs]. It suspends rather than holding a thread, so an import Photos never
+     * finishes costs nothing but the wait.
      */
-    private suspend fun importIntoPhotos(start: (completion: (String?, NSError?) -> Unit) -> Unit): String? {
+    private suspend fun importIntoPhotos(start: (completion: (String?, NSError?) -> Unit) -> Unit): Result<String> {
         val outcome = withTimeoutOrNull(photosImportTimeoutMs) {
             suspendCancellableCoroutine { continuation ->
                 start { localIdentifier, error ->
@@ -898,18 +905,28 @@ actual class CameraController internal constructor(
                 }
             }
         }
-        if (outcome == null) {
-            CameraKLogger.e("CameraK", "CameraK: Photos did not finish saving within $photosImportTimeoutMs ms")
-            return null
+        val failure = when {
+            outcome == null -> "Photos did not finish saving within $photosImportTimeoutMs ms"
+            outcome.first == null ->
+                "Saving to the Photos library failed: " +
+                    (outcome.second?.let { "${it.domain} ${it.code}" } ?: "Photos created no asset")
+            else -> return Result.success(outcome.first!!)
         }
-        val (localIdentifier, error) = outcome
-        if (localIdentifier == null) {
-            CameraKLogger.e(
+        CameraKLogger.e("CameraK", "CameraK: $failure; the file stays where it was written")
+        return Result.failure(Exception(failure))
+    }
+
+    /** Removes the temporary file of a capture or recording Photos now holds. */
+    @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+    private fun removeImportedFile(path: String) = memScoped {
+        val error = alloc<ObjCObjectVar<NSError?>>()
+        if (!NSFileManager.defaultManager.removeItemAtPath(path, error.ptr)) {
+            CameraKLogger.w(
                 "CameraK",
-                "CameraK: Failed to save to Photos: ${error?.let { "${it.domain} ${it.code}" } ?: "no asset"}",
+                "CameraK: removing the temporary copy of an item saved to Photos failed: " +
+                    "${error.value?.domain} ${error.value?.code}",
             )
         }
-        return localIdentifier
     }
 
     private fun FlashMode.toAVCaptureFlashMode(): AVCaptureFlashMode = when (this) {
