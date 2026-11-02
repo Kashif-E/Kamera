@@ -2,6 +2,7 @@ package com.kashif.qrscannerplugin
 
 import android.graphics.ImageFormat
 import android.graphics.Rect
+import android.os.SystemClock
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.google.zxing.BarcodeFormat
@@ -21,7 +22,13 @@ import java.util.EnumMap
  *
  * @param onQrScanner Callback invoked when a QR code is detected with the scanned text
  */
-fun CameraController.enableQrCodeScanner(onQrScanner: (String) -> Unit): ImageAnalysis.Analyzer? {
+fun CameraController.enableQrCodeScanner(onQrScanner: (String) -> Unit): ImageAnalysis.Analyzer? =
+    enableQrCodeScanner(DEFAULT_QR_SCAN_INTERVAL_MS, onQrScanner)
+
+internal fun CameraController.enableQrCodeScanner(
+    scanIntervalMs: Long,
+    onQrScanner: (String) -> Unit,
+): ImageAnalysis.Analyzer? {
     CameraKLogger.d("QRScanner", "Enabling QR code scanner")
     return try {
         val analyzer = QRCodeAnalyzer(onQrScanner)
@@ -122,6 +129,8 @@ internal class ZxingLumaDecoder : LumaDecoder {
 internal class QRCodeAnalyzer(
     private val onQrScanner: (String) -> Unit,
     private val decoder: LumaDecoder = ZxingLumaDecoder(),
+    private val clock: () -> Long = SystemClock::elapsedRealtime,
+    private val scanIntervalMs: Long = 0,
 ) : ImageAnalysis.Analyzer {
     private var lastScannedCode: String? = null
     private var lastScanTime: Long = 0
@@ -231,8 +240,15 @@ internal class QRCodeAnalyzer(
     }
 }
 
-actual fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit): ScannerHandle {
+actual fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit): ScannerHandle =
+    startQrScanning(controller, DEFAULT_QR_SCAN_INTERVAL_MS, onQrScanner)
+
+internal actual fun startQrScanning(
+    controller: CameraController,
+    scanIntervalMs: Long,
+    onQrScanner: (String) -> Unit,
+): ScannerHandle {
     CameraKLogger.d("QRScanner", "Starting QR scanner")
-    val analyzer = controller.enableQrCodeScanner(onQrScanner)
+    val analyzer = controller.enableQrCodeScanner(scanIntervalMs, onQrScanner)
     return ScannerHandle { analyzer?.let { controller.unregisterImageAnalyzer(it) } }
 }

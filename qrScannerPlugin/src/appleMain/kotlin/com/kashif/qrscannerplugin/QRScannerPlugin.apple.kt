@@ -125,6 +125,13 @@ actual fun startScanning(controller: CameraController, onQrScanner: (String) -> 
     }
 }
 
+/** AVCaptureMetadataOutput decides how often it looks for codes, so [scanIntervalMs] does not apply. */
+internal actual fun startQrScanning(
+    controller: CameraController,
+    scanIntervalMs: Long,
+    onQrScanner: (String) -> Unit,
+): ScannerHandle = startScanning(controller, onQrScanner)
+
 /**
  * Internal iOS metadata output delegate for QR code and barcode detection.
  *

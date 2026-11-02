@@ -3,6 +3,7 @@ package com.kashif.qrscannerplugin
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
+import com.google.zxing.LuminanceSource
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.RGBLuminanceSource
@@ -109,11 +110,13 @@ internal class ZxingQrFrameDecoder : QrFrameDecoder {
     private val slowReader = qrReader(tryHarder = true)
 
     override fun decode(image: BufferedImage, tryHarder: Boolean): String {
-        val pixels = image.getRGB(0, 0, image.width, image.height, null, 0, image.width)
-        val source = RGBLuminanceSource(image.width, image.height, pixels)
-        val bitmap = BinaryBitmap(HybridBinarizer(source))
+        val bitmap = BinaryBitmap(HybridBinarizer(luminance(image)))
         return (if (tryHarder) slowReader else fastReader).decode(bitmap).text
     }
+
+    /** The 8-bit luminance ZXing decodes from [image]. */
+    internal fun luminance(image: BufferedImage): LuminanceSource =
+        RGBLuminanceSource(image.width, image.height, image.getRGB(0, 0, image.width, image.height, null, 0, image.width))
 
     private fun qrReader(tryHarder: Boolean) = MultiFormatReader().apply {
         setHints(

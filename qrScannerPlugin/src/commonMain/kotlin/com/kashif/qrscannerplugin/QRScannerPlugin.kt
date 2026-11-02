@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
+import kotlin.jvm.JvmOverloads
 
 /**
  * QR Scanner plugin for the Compose-first camera API.
@@ -44,10 +45,19 @@ class QRScannerPlugin internal constructor(
     private val coroutineScope: CoroutineScope,
     private val startScanner: (CameraController, (String) -> Unit) -> ScannerHandle,
 ) : CameraKPlugin {
-    constructor(coroutineScope: CoroutineScope) : this(
+    /**
+     * @param coroutineScope Scope for managing QR scanning operations and event emission.
+     * @param scanIntervalMs The shortest time between two decode attempts, whether or not the last
+     *   one found a code, on Android and desktop. Defaults to 200 ms. On iOS the system's metadata
+     *   output decides how often it looks for codes, and this is ignored.
+     */
+    @JvmOverloads
+    constructor(coroutineScope: CoroutineScope, scanIntervalMs: Long = DEFAULT_QR_SCAN_INTERVAL_MS) : this(
         coroutineScope,
-        { controller, onQrScanner -> com.kashif.qrscannerplugin.startScanning(controller, onQrScanner) },
-    )
+        { controller, onQrScanner -> startQrScanning(controller, scanIntervalMs, onQrScanner) },
+    ) {
+        require(scanIntervalMs >= 0) { "scanIntervalMs must not be negative" }
+    }
 
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null
@@ -176,13 +186,31 @@ fun interface ScannerHandle {
 
 expect fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit): ScannerHandle
 
+/** The decode-attempt interval [QRScannerPlugin] and [startScanning] use unless told otherwise. */
+internal const val DEFAULT_QR_SCAN_INTERVAL_MS = 200L
+
+/**
+ * Starts scanning with at most one decode attempt per [scanIntervalMs], where the platform decodes
+ * frames itself (Android and desktop).
+ */
+internal expect fun startQrScanning(
+    controller: CameraController,
+    scanIntervalMs: Long,
+    onQrScanner: (String) -> Unit,
+): ScannerHandle
+
 /**
  * Creates and remembers a QRScannerPlugin composable.
  *
- * @param onQrScanner A callback function that is invoked when a QR code is scanned.
+ * @param coroutineScope Scope for managing QR scanning operations and event emission.
+ * @param scanIntervalMs The shortest time between two decode attempts on Android and desktop; see
+ *   [QRScannerPlugin].
  * @return A remembered instance of QRScannerPlugin.
  */
 @Composable
-fun rememberQRScannerPlugin(coroutineScope: CoroutineScope = rememberCoroutineScope()): QRScannerPlugin = remember {
-    QRScannerPlugin(coroutineScope)
+fun rememberQRScannerPlugin(
+    coroutineScope: CoroutineScope = rememberCoroutineScope(),
+    scanIntervalMs: Long = DEFAULT_QR_SCAN_INTERVAL_MS,
+): QRScannerPlugin = remember(scanIntervalMs) {
+    QRScannerPlugin(coroutineScope, scanIntervalMs)
 }
