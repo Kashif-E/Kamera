@@ -28,9 +28,14 @@ import javax.imageio.ImageWriteParam
  * format. Each save creates a new file and never overwrites one: a name that is taken gets a
  * numeric suffix.
  *
- * `imageName`, [ImageSaverConfig.customFolderName] and the auto-save prefix must each be 1 to 64
- * characters from `A-Z a-z 0-9 . _ -` and not `.` or `..`; any other name fails the save with an
- * [IllegalArgumentException], so a forwarded name can never place a file outside the folder.
+ * `imageName` and [ImageSaverConfig.customFolderName] must each be 1 to 64 characters from
+ * `A-Z a-z 0-9 . _ -` and not `.` or `..`; any other name fails the save with an
+ * [IllegalArgumentException], so a forwarded name can never place a file outside the folder. An
+ * auto-save names its file `<prefix>_<epochMillis>`, which adds 14 characters, so
+ * [ImageSaverConfig.prefix] may be at most 50 of those characters.
+ *
+ * [getByteArrayFrom] reads only the library's own output: files under the user's Pictures and
+ * Documents folders, where this saver and CameraK's desktop captures write.
  *
  * @param config The configuration settings for the plugin.
  * @param onImageSaved Callback invoked when the image is successfully saved, on a `Dispatchers.IO`
@@ -109,14 +114,30 @@ class JVMImageSaverPlugin(
         return folder
     }
 
+    /**
+     * Reads an image this saver or a CameraK capture wrote. [path] must resolve, after `..` and
+     * symbolic links, to a file under the user's Pictures or Documents folder; any other path, or a
+     * file that cannot be read, throws an [IOException] whose message has no path (its cause may).
+     */
     @Deprecated(
         "Blocks the calling thread while it reads. Use readBytes, which suspends.",
         ReplaceWith("readBytes(path)"),
     )
-    override fun getByteArrayFrom(path: String): ByteArray = try {
-        File(path).readBytes()
-    } catch (e: Exception) {
-        throw IOException("Failed to read image from path: $path", e)
+    override fun getByteArrayFrom(path: String): ByteArray {
+        val file = try {
+            File(path).canonicalFile.toPath()
+        } catch (e: IOException) {
+            throw IOException("Failed to resolve the image's path", e)
+        }
+        val roots = listOf(File(userHome, "Pictures"), File(userHome, "Documents"))
+        if (roots.none { file.startsWith(it.canonicalFile.toPath()) }) {
+            throw IOException("getByteArrayFrom reads only images under the user's Pictures and Documents folders")
+        }
+        return try {
+            Files.readAllBytes(file)
+        } catch (e: Exception) {
+            throw IOException("Failed to read the image", e)
+        }
     }
 }
 
