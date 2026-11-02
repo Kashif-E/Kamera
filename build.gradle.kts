@@ -240,6 +240,35 @@ val forbiddenOnPublishedClasspath =
             Regex("""^com\.google\.zxing:"""),
             "core imports no ZXing; qrScannerPlugin declares the ZXing it uses",
         ),
+        ClasspathRule(
+            "cameraK",
+            publishedGraphs,
+            Regex("""^androidx\.camera:camera-extensions$"""),
+            "core imports no androidx.camera.extensions",
+        ),
+    )
+
+// Consumers compile against every dependency a library declares api, so api is only for libraries
+// whose types its public signatures expose. A rule names a library (null for every library) and a
+// dependency that must not be on any of its *ApiElements configurations.
+data class ApiExportRule(
+    val module: String?,
+    val forbidden: Regex,
+    val reason: String,
+)
+
+val forbiddenApiExports =
+    listOf(
+        ApiExportRule(
+            "cameraK",
+            Regex("""^androidx\.activity:activity-compose$"""),
+            "only core's internal permission launcher uses activity-compose",
+        ),
+        ApiExportRule(
+            "cameraK",
+            Regex("""^androidx\.startup:startup-runtime$"""),
+            "only core's internal AppContextInitializer uses androidx.startup",
+        ),
     )
 
 subprojects {
@@ -272,6 +301,14 @@ subprojects {
                 .filter { it.group == "org.bytedeco" }
                 .map { it.name }
         }
+    val apiExports =
+        provider {
+            configurations
+                .filter { it.isCanBeConsumed && it.name.endsWith("ApiElements") }
+                .associate { configuration ->
+                    configuration.name to configuration.allDependencies.map { "${it.group}:${it.name}" }
+                }
+        }
     tasks.register("checkPublishedClasspath") {
         group = "verification"
         description = "Fails if this library hands consumers natives, umbrellas or libraries it does not import"
@@ -295,6 +332,14 @@ subprojects {
             val artifacts = desktopArtifacts.get()
             artifacts.filter { nativeClassifierJar.containsMatchIn(it.name) }.forEach {
                 problems += "desktopRuntimeClasspath ships the native jar ${it.name}; the app chooses its natives"
+            }
+            val exports = apiExports.get()
+            forbiddenApiExports.filter { it.module == null || it.module == moduleName }.forEach { rule ->
+                exports.forEach { (configurationName, dependencies) ->
+                    dependencies.filter(rule.forbidden::containsMatchIn).forEach {
+                        problems += "$configurationName exports $it: ${rule.reason}; declare it implementation"
+                    }
+                }
             }
             forbiddenOnPublishedClasspath.filter { it.module == moduleName }.forEach { rule ->
                 rule.configurations.forEach { configurationName ->
