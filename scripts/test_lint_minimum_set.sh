@@ -23,6 +23,7 @@ checks=(
     :checkCredentialHygiene
     :checkDocsWorkflow
     :checkLicenseMetadata
+    :checkModuleSources
     :checkNativeSettings
     :checkNoIntelSimulatorTarget
     :checkNoLibraryFrameworks

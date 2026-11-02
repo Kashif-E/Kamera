@@ -20,7 +20,10 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
   build-integrity    The Gradle wrapper pins its distribution's sha256 and every workflow that runs
                      Gradle validates the wrapper jar; every action is pinned by commit SHA;
                      Dependabot updates Gradle, GitHub Actions and the docs' pip requirements; and the
-                     docs install only hash-pinned requirements.
+                     docs install only hash-pinned requirements. The pull-request workflow
+                     (build.yml) runs the lint target's self-tests, which start builds of their own and
+                     so cannot run inside verify.sh: test_lint_self_registration.sh,
+                     test_lint_self_registration_guards.sh and test_lint_minimum_set.sh.
   catalog            gradle/libs.versions.toml has no unreferenced version, library or plugin entry,
                      one version key per release train (no two keys give one Maven group the same
                      version), and every plugin it declares is applied somewhere; build scripts
@@ -33,6 +36,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
   repository-links   Every GitHub repository link in the build (POM, Dokka homepage and source
                      links) names the repository POM_URL names, and the dead convention-plugins
                      included build stays deleted.
+  module-sources     Every tracked Kotlin source file lives in a module settings.gradle.kts includes;
+                     a .kt file no build compiles is dead code that still reads as part of the library.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -664,6 +669,33 @@ def build_integrity_problems(wrapper: str, workflows: Dict[str, dict], dependabo
     return problems
 
 
+# The lint target's self-tests each start a Gradle build of their own, so verify.sh cannot run them
+# (scripts/verify.sh --only lint is the build they test); the workflow every pull request runs must.
+BUILD_WORKFLOW = f"{WORKFLOWS}/build.yml"
+LINT_SELF_TESTS = [
+    "scripts/test_lint_self_registration.sh",
+    "scripts/test_lint_self_registration_guards.sh",
+    "scripts/test_lint_minimum_set.sh",
+]
+
+
+def lint_self_test_problems(workflows: Dict[str, dict]) -> List[str]:
+    """ci_runs_lint_self_tests: the self-tests build.yml runs on pull requests that it does not."""
+    reader = workflow_yaml()
+    workflow = workflows.get(BUILD_WORKFLOW)
+    if workflow is None:
+        return [f"{BUILD_WORKFLOW} does not exist, so no pull request runs the lint self-tests"]
+    if "pull_request" not in reader.triggers(workflow):
+        return [f"{BUILD_WORKFLOW} does not run on pull_request, so no pull request runs the lint self-tests"]
+    jobs = workflow.get("jobs") if isinstance(workflow.get("jobs"), dict) else {}
+    runs = "\n".join(reader.run_text(job) for job in jobs.values() if isinstance(job, dict))
+    return [
+        f"{BUILD_WORKFLOW} does not run {script}"
+        for script in LINT_SELF_TESTS
+        if not re.search(rf"(^|[\s;&|(]|\./){re.escape(script)}(?![\w.-])", runs, re.MULTILINE)
+    ]
+
+
 def check_build_integrity() -> List[str]:
     reader = workflow_yaml()
     stale = reader.parse_yaml(
@@ -672,6 +704,16 @@ def check_build_integrity() -> List[str]:
     )
     if len(build_integrity_problems("distributionUrl=x\n", {"fixture.yml": stale}, None)) < 5:
         raise CheckError("the build-integrity rule accepts an unpinned fixture it must reject")
+    # A step that runs one self-test and names another only in an echo covers just the one it runs.
+    partial = reader.parse_yaml(
+        "on:\n  pull_request:\njobs:\n  lint:\n    steps:\n"
+        "      - run: scripts/verify.sh --full\n"
+        "      - run: scripts/test_lint_minimum_set.sh\n"
+        "      - run: echo skipped-scripts/test_lint_self_registration.sh\n"
+    )
+    found = lint_self_test_problems({BUILD_WORKFLOW: partial})
+    if len(found) != 2 or any("test_lint_minimum_set" in problem for problem in found):
+        raise CheckError(f"ci_runs_lint_self_tests misjudges a workflow that runs one self-test: {found}")
     try:
         workflows = {
             path.relative_to(ROOT).as_posix(): reader.load(path)
@@ -681,7 +723,9 @@ def check_build_integrity() -> List[str]:
         dependabot = reader.parse_yaml(dependabot_path.read_text()) if dependabot_path.is_file() else None
     except reader.CheckError as error:
         raise CheckError(str(error)) from error
-    return build_integrity_problems((ROOT / WRAPPER_PROPERTIES).read_text(), workflows, dependabot)
+    return build_integrity_problems(
+        (ROOT / WRAPPER_PROPERTIES).read_text(), workflows, dependabot
+    ) + lint_self_test_problems(workflows)
 
 
 # ─── catalog ────────────────────────────────────────────────────────────────────────────────────
@@ -918,6 +962,38 @@ def check_repository_links() -> List[str]:
     return repository_link_problems(gradle_property("POM_URL"), files)
 
 
+# ─── module-sources ─────────────────────────────────────────────────────────────────────────────
+
+
+def sources_outside_modules(settings_text: str, files: List[str]) -> List[str]:
+    """no_kotlin_source_outside_a_module: the tracked .kt files under no directory settings includes."""
+    modules = {include.lstrip(":") for include in SETTINGS_INCLUDE.findall(settings_text)}
+    return [
+        f"{name} is in no module settings.gradle.kts includes, so no build compiles it; delete it or move it into one"
+        for name in files
+        if name.endswith(".kt") and name.split("/", 1)[0] not in modules
+    ]
+
+
+def check_module_sources() -> List[str]:
+    fixture_settings = 'include(":cameraK")\ninclude("ocrPlugin")\n'
+    fixture_files = [
+        "cameraK/src/commonMain/kotlin/A.kt",
+        "ocrPlugin/src/commonMain/kotlin/B.kt",
+        "commonMain/com/composables/icons/lucide/Lucide.kt",
+        "cameraKExtras/src/C.kt",
+        "build.gradle.kts",
+    ]
+    found = sources_outside_modules(fixture_settings, fixture_files)
+    if [problem.split(" ", 1)[0] for problem in found] != [
+        "commonMain/com/composables/icons/lucide/Lucide.kt",
+        "cameraKExtras/src/C.kt",
+    ]:
+        raise CheckError(f"no_kotlin_source_outside_a_module misjudges its fixture: {found}")
+    files = [path.relative_to(ROOT).as_posix() for path in tracked("*.kt")]
+    return sources_outside_modules((ROOT / "settings.gradle.kts").read_text(), files)
+
+
 POLICIES: Dict[str, Callable[[], List[str]]] = {
     "agent-permissions": check_agent_permissions,
     "security-policy": check_security_policy,
@@ -926,6 +1002,7 @@ POLICIES: Dict[str, Callable[[], List[str]]] = {
     "catalog": check_catalog,
     "native-settings": check_native_settings,
     "repository-links": check_repository_links,
+    "module-sources": check_module_sources,
 }
 
 

@@ -255,6 +255,12 @@ fun coreClasspathRules(module: String) =
             Regex("""^androidx\.camera:camera-extensions$"""),
             "core imports no androidx.camera.extensions",
         ),
+        ClasspathRule(
+            module,
+            publishedGraphs,
+            Regex("""^co\.touchlab:kermit"""),
+            "CameraK logs through CameraKLogger",
+        ),
     )
 
 val forbiddenOnPublishedClasspath =
@@ -795,6 +801,11 @@ registerRepoPolicyCheck(
     "checkRepositoryLinks",
     "repository-links",
     "Fails if a build file links a GitHub repository other than POM_URL, or convention-plugins returns",
+)
+registerRepoPolicyCheck(
+    "checkModuleSources",
+    "module-sources",
+    "Fails if a tracked Kotlin source file lies outside every module settings.gradle.kts includes",
 )
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
@@ -1587,6 +1598,7 @@ val requiredLintChecks =
         ":checkCredentialHygiene",
         ":checkDocsWorkflow",
         ":checkLicenseMetadata",
+        ":checkModuleSources",
         ":checkNativeSettings",
         ":checkNoIntelSimulatorTarget",
         ":checkNoLibraryFrameworks",
