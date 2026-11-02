@@ -222,7 +222,7 @@ expect class CameraController {
      * Locks camera output orientation to a specific value.
      *
      * This affects image capture rotation and video recording rotation.
-     * On iOS, also updates the preview layer's video orientation.
+     * On iOS the preview is not rotated: it follows the interface orientation.
      *
      * Pass `null` to follow the device's physical orientation automatically (default).
      */
