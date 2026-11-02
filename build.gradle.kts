@@ -348,6 +348,35 @@ tasks.register("checkReleaseWorkflow") {
     }
 }
 
+// Policies kept in tracked files; scripts/check_repo_policy.py documents each one.
+fun registerRepoPolicyCheck(
+    taskName: String,
+    policy: String,
+    taskDescription: String,
+) = tasks.register(taskName) {
+    group = "verification"
+    description = taskDescription
+    val script = layout.projectDirectory.file("scripts/check_repo_policy.py").asFile
+    val root = layout.projectDirectory.asFile
+    doLast {
+        val process =
+            ProcessBuilder("python3", "-I", script.path, policy)
+                .directory(root)
+                .redirectErrorStream(true)
+                .start()
+        val output = process.inputStream.bufferedReader().readText()
+        val exit = process.waitFor()
+        if (exit != 0) throw GradleException("Repository policy '$policy' failed (exit $exit):\n$output")
+        logger.lifecycle(output.trimEnd())
+    }
+}
+
+registerRepoPolicyCheck(
+    "checkAgentPermissions",
+    "agent-permissions",
+    "Fails if committed agent configuration pre-approves secret, signing, publishing or history commands",
+)
+
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
 
@@ -999,6 +1028,7 @@ fun verifyTaskPaths(
                 ":checkLicenseMetadata",
                 ":checkComposeBaseline",
                 ":checkVerifyCoverage",
+                ":checkAgentPermissions",
             )
     }
     modules.forEach { module ->
