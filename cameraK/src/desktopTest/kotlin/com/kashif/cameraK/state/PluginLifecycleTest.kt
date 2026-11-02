@@ -26,11 +26,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Verifies the plugin lifecycle contract on the real (desktop) CameraController.
- *
- * The desktop controller's startSession() is fire-and-forget (it tries to open a webcam on a
- * background scope and the failure is caught), so initialize()/shutdown() run fine without a camera
- * and we can exercise attach/detach/shutdown/scope-cancellation deterministically.
+ * Verifies the plugin lifecycle contract on the real (desktop) CameraController, running on a fake
+ * camera so no test opens the host's webcam. initialize() starts the session on the fake grabber,
+ * and shutdown() ends it, so attach/detach/shutdown/scope-cancellation run deterministically.
  */
 class PluginLifecycleTest {
 
@@ -52,7 +50,13 @@ class PluginLifecycleTest {
         defaultCameraOverride = null
     }
 
-    private fun newController(): CameraController = CameraController(ImageFormat.JPEG, Directory.PICTURES)
+    private fun newController(): CameraController = CameraController(
+        imageFormat = ImageFormat.JPEG,
+        directory = Directory.PICTURES,
+        customGrabber = fakeCamera,
+        sessionDispatcher = Dispatchers.IO,
+        recorderFactory = { _, _ -> error("The plugin lifecycle tests do not record") },
+    )
 
     private fun holder(scope: CoroutineScope, factory: suspend () -> CameraController = { newController() }) =
         CameraKStateHolder(
