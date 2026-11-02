@@ -3,10 +3,11 @@
 
 Usage: check_repo_policy.py <policy> [<policy> ...]
 
-  agent-permissions  Committed agent configuration (.claude/) pre-approves nothing that reads or
-                     changes secrets, signs, publishes, commits or rewrites history, nothing that
-                     edits files (including git commands whose --output or -o writes one), and no
-                     path outside the repository; personal approvals stay in
+  agent-permissions  Committed agent configuration (.claude/) approves only shell commands on a
+                     read-only allowlist (git status and pwd with any arguments; git status, diff,
+                     log, show, rev-parse and ls-files exactly and without options that write files
+                     or run programs; ./gradlew with only verification tasks), no file-writing tool,
+                     and no path outside the repository; personal approvals stay in
                      the gitignored .claude/settings.local.json.
   security-policy    .github/SECURITY.md supports the release line gradle.properties publishes and
                      routes reports through GitHub private vulnerability reporting on the repository
@@ -68,22 +69,50 @@ def tracked(pattern: str) -> List[Path]:
 SHARED_AGENT_SETTINGS = ".claude/settings.json"
 LOCAL_AGENT_SETTINGS = ".claude/settings.local.json"
 
-# A rule is Tool or Tool(specifier). Commands that touch secrets, signing, publishing or history,
-# and anything that writes files, never get project-wide approval.
-FORBIDDEN_COMMANDS = [
-    (re.compile(r"\bgh\s+(secret|auth|variable|release|api)\b"), "GitHub secrets, auth, variables, releases or API"),
-    (re.compile(r"\bgit\s+(commit|push|tag|rebase|reset|filter-branch|filter-repo|update-ref|config)\b"),
-     "history- or remote-mutating git"),
-    (re.compile(r"\b(gpg|signing)\b", re.IGNORECASE), "signing"),
-    (re.compile(r"publish", re.IGNORECASE), "publishing"),
-    (re.compile(r"\bsed\s+(-\S*\s+)*-i\b|\brm\b|\bmv\b|\bchmod\b|>"), "file-mutating commands"),
-    # These write to a file named by --output or -o, so a wildcard approval of them approves that.
-    (re.compile(r"\bgit\s+(diff|log|show|whatchanged|format-patch|archive|bundle)\b.*(\*|--output|\s-o\b)"),
-     "a git command that writes files through --output or -o"),
-]
+# A rule is Tool or Tool(specifier). Shell approvals are an allowlist of commands that only read:
+# anything not listed, including every bare-prefix wildcard on git, gh, Gradle, an interpreter or a
+# file-writing utility, needs a personal approval in the gitignored local settings.
 PERSONAL_PATH = re.compile(r"(^|[(\s:=])(//|~|/Users/|/home/|[A-Za-z]:\\)")
 RULE = re.compile(r"^(?P<tool>[A-Za-z]+)(\((?P<specifier>.*)\))?$")
 FILE_WRITING_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+# A trailing ":*" or " *" approves the command with any further arguments.
+WILDCARD = re.compile(r"(:\*|\s\*)$")
+SHELL_METACHARACTERS = re.compile(r"[;&|<>`$(){}\\\n*]")
+# Commands that read and write nothing whatever arguments follow, so a wildcard may approve them.
+READ_ONLY_ANY_ARGUMENTS = {("git", "status"), ("pwd",)}
+# git subcommands that only read when none of GIT_WRITING_OPTIONS is given; approvable exactly.
+GIT_READ_SUBCOMMANDS = {"status", "diff", "log", "show", "rev-parse", "ls-files"}
+GIT_WRITING_OPTIONS = re.compile(r"^(--output|-o|--ext-diff|--textconv|--open-files-in-pager|-O)")
+# Gradle tasks that only verify: a task whose last camel-case word is Test or Check, or check and
+# verifyAll themselves. No option is approved, since --init-script, -I or -D can run any code.
+GRADLE_VERIFICATION_TASK = re.compile(r"^(:?[A-Za-z0-9_-]+:)*:?(check|verifyAll|[a-z][A-Za-z0-9]*(Test|Check))$")
+GRADLE_WRAPPERS = {"./gradlew", "gradlew"}
+
+
+def shell_rule_problem(specifier: str) -> str | None:
+    """Why the Bash(specifier) approval is not read-only, or None if it is on the allowlist."""
+    wildcard = WILDCARD.search(specifier)
+    command = specifier[: wildcard.start()] if wildcard else specifier
+    if command.strip() in ("", "*"):
+        return "approves every shell command"
+    if SHELL_METACHARACTERS.search(command):
+        return "approves a command with shell operators or a wildcard inside it"
+    words = command.split()
+    if wildcard:
+        if tuple(words) in READ_ONLY_ANY_ARGUMENTS:
+            return None
+        return f"approves '{command.strip()}' with any arguments; only {sorted(' '.join(w) for w in READ_ONLY_ANY_ARGUMENTS)} may take a wildcard"
+    if words[0] == "git" and len(words) > 1 and words[1] in GIT_READ_SUBCOMMANDS:
+        if any(GIT_WRITING_OPTIONS.match(word) for word in words[2:]):
+            return "approves a git command that writes files or runs a program through its options"
+        return None
+    if words[0] in GRADLE_WRAPPERS and len(words) > 1:
+        if all(GRADLE_VERIFICATION_TASK.match(word) and "publish" not in word.lower() for word in words[1:]):
+            return None
+        return "approves a Gradle invocation that is not only verification tasks"
+    if tuple(words) in READ_ONLY_ANY_ARGUMENTS:
+        return None
+    return f"approves '{command.strip()}', which is not on the read-only allowlist"
 
 
 def agent_rule_problems(rules: List[str]) -> List[str]:
@@ -94,14 +123,14 @@ def agent_rule_problems(rules: List[str]) -> List[str]:
             problems.append(f"'{rule}' is not a Tool(specifier) rule")
             continue
         tool, specifier = match.group("tool"), match.group("specifier")
-        if tool == "Bash" and specifier in (None, "", "*", ":*"):
-            problems.append(f"'{rule}' approves every shell command")
         if tool in FILE_WRITING_TOOLS:
             problems.append(f"'{rule}' approves writing files")
         if specifier and PERSONAL_PATH.search(specifier):
             problems.append(f"'{rule}' names a path outside the repository")
-        if tool == "Bash" and specifier:
-            problems += [f"'{rule}' approves {what}" for pattern, what in FORBIDDEN_COMMANDS if pattern.search(specifier)]
+        if tool == "Bash":
+            problem = shell_rule_problem(specifier or "")
+            if problem:
+                problems.append(f"'{rule}' {problem}")
     return problems
 
 

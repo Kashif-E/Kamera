@@ -449,7 +449,7 @@ fun registerRepoPolicyCheck(
 registerRepoPolicyCheck(
     "checkAgentPermissions",
     "agent-permissions",
-    "Fails if committed agent configuration pre-approves secret, signing, publishing or history commands",
+    "Fails if committed agent configuration pre-approves a shell command outside the read-only allowlist",
 )
 registerRepoPolicyCheck(
     "checkSecurityPolicy",
