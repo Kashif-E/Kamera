@@ -1078,6 +1078,8 @@ If you find this library useful:
 
 ## License
 
+Every CameraK release is licensed under Apache 2.0, including 1.x releases whose POMs said MIT by mistake.
+
 ```
 Apache License 2.0
 
