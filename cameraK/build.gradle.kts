@@ -143,6 +143,8 @@ tasks.named<Test>("desktopTest") {
 tasks.named<Jar>("allMetadataJar") {
     from("src/androidMain/resources")
 }
+val repositoryUrl = providers.gradleProperty("POM_URL").get()
+
 tasks.withType<org.jetbrains.dokka.gradle.DokkaTask>().configureEach {
     moduleName.set("CameraK")
     moduleVersion.set(project.version.toString())
@@ -153,7 +155,7 @@ tasks.withType<org.jetbrains.dokka.gradle.DokkaTask>().configureEach {
             "org.jetbrains.dokka.base.DokkaBase" to """{
             "customStyleSheets": ["styles/custom.css"],
             "customAssets": [],
-            "homepageLink": "https://github.com/kashif-e/CameraK",
+            "homepageLink": "$repositoryUrl",
             "footerMessage": "© 2024 CameraK - Multiplatform Camera SDK",
             "separateInheritedMembers": false,
             "mergeImplicitExpectActualDeclarations": true,
@@ -173,7 +175,7 @@ tasks.withType<org.jetbrains.dokka.gradle.DokkaTask>().configureEach {
 
             sourceLink {
                 localDirectory.set(file("src"))
-                remoteUrl.set(uri("https://github.com/kashif-e/CameraK/tree/main/cameraK/src").toURL())
+                remoteUrl.set(uri("$repositoryUrl/tree/main/cameraK/src").toURL())
                 remoteLineSuffix.set("#L")
             }
         }
