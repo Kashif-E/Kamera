@@ -144,7 +144,7 @@ class CameraGrabber(
                     // A loop cancelled before it opened the camera (a stop or cleanup right after the
                     // start) leaves it closed.
                     ensureActive()
-                    owned = customGrabber ?: createGrabber()
+                    owned = customGrabber ?: defaultCameraOverride?.invoke() ?: createGrabber()
                     // Set format for macOS AVFoundation before starting
                     if (owned is FFmpegFrameGrabber && getOperatingSystem() == OperatingSystem.MAC) {
                         owned.format = "avfoundation"
@@ -293,6 +293,13 @@ class CameraGrabber(
         }
     }
 }
+
+/**
+ * Replaces how a grab loop with no custom grabber opens the system's default camera. Null, the
+ * default, opens the real camera. Tests set it so that a test which reaches the default camera
+ * fails instead of turning on the host's webcam.
+ */
+@Volatile internal var defaultCameraOverride: (() -> FrameGrabber)? = null
 
 // One lock per camera, held by a grab loop from before it opens the camera until it has released
 // it, so a new controller's loop waits for an old controller's loop that is still inside grab().
