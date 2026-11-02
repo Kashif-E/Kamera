@@ -56,7 +56,9 @@ import javax.imageio.ImageWriteParam
 import org.bytedeco.javacv.FrameConverter as JavaCvFrameConverter
 
 /**
- * Interface defining the core functionalities of the CameraController.
+ * The desktop camera controller, backed by JavaCV. One grab loop owns the camera and feeds the
+ * preview, captures and recordings; captures are written under the user's home and recordings are
+ * H.264 MP4 files without audio.
  */
 actual class CameraController(
     private val imageFormat: ImageFormat,
@@ -601,7 +603,7 @@ internal fun createFrameRecorder(outputPath: String, configuration: VideoConfigu
         videoCodec = avcodec.AV_CODEC_ID_H264
         format = "mp4"
         // The time base for the capture-time timestamps set on each frame.
-        frameRate = 30.0
+        frameRate = RECORDING_FRAME_RATE
         videoBitrate = configuration.quality.bitrateBps
     }
 }
@@ -635,6 +637,9 @@ internal fun writeImage(image: BufferedImage, format: ImageFormat, file: File) {
         writer.dispose()
     }
 }
+
+// The encoder's frame rate: a camera faster than this is recorded at this rate.
+private const val RECORDING_FRAME_RATE = 30.0
 
 // Android compresses stills at 95 too, so a desktop JPEG matches it.
 private const val JPEG_QUALITY = 0.95f

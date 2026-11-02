@@ -262,9 +262,8 @@ class CameraGrabber(
             FFmpegFrameGrabber(videoDevice)
         }
     }.apply {
-        frameRate = 30.0
-        // Default to 720p (was 480p) to use higher resolution by default (#52)
-        val (width, height) = targetResolution ?: (1280 to 720)
+        frameRate = DEFAULT_CAMERA_FRAME_RATE
+        val (width, height) = targetResolution ?: DEFAULT_CAMERA_RESOLUTION
         imageWidth = width
         imageHeight = height
     }
@@ -332,6 +331,10 @@ private fun cameraDeviceLock(customGrabber: FrameGrabber?): Mutex =
 internal class CapturedFrame(val image: BufferedImage, val captureNanos: Long)
 
 private fun BufferedImage.copy(): BufferedImage = BufferedImage(colorModel, copyData(null), isAlphaPremultiplied, null)
+
+// The frame rate and size the default camera is asked for; 720p rather than 480p since #52.
+private const val DEFAULT_CAMERA_FRAME_RATE = 30.0
+private val DEFAULT_CAMERA_RESOLUTION = 1280 to 720
 
 private const val TAG = "CameraK"
 private const val PRODUCER_THREAD = "CameraK-grabber"
