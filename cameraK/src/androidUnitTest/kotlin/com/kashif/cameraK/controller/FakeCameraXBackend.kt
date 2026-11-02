@@ -332,6 +332,7 @@ internal fun testController(
     directory: Directory = Directory.DOCUMENTS,
     imageFormat: ImageFormat = ImageFormat.JPEG,
     torchMode: TorchMode = TorchMode.OFF,
+    qualityPriority: QualityPrioritization = QualityPrioritization.BALANCED,
 ) = CameraController(
     context = context,
     lifecycleOwner = lifecycleOwner,
@@ -339,7 +340,7 @@ internal fun testController(
     torchMode = torchMode,
     cameraLens = CameraLens.BACK,
     imageFormat = imageFormat,
-    qualityPriority = QualityPrioritization.BALANCED,
+    qualityPriority = qualityPriority,
     directory = directory,
     cameraDeviceType = CameraDeviceType.DEFAULT,
     aspectRatio = AspectRatio.RATIO_4_3,
