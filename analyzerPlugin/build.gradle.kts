@@ -1,5 +1,3 @@
-import org.jetbrains.compose.compose
-
 plugins {
     alias(libs.plugins.multiplatform)
     alias(libs.plugins.android.library)
