@@ -68,7 +68,7 @@ class QRScanner internal constructor(
 
             try {
                 decoder.decode(image, tryHarder = attempts % SLOW_PASS_EVERY == 0L)
-            } catch (_: ReaderException) {
+            } catch (expected: ReaderException) {
                 // ZXing found no readable code in the frame: the normal case while scanning.
                 null
             } catch (e: Exception) {

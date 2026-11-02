@@ -88,7 +88,7 @@ internal class ZxingLumaDecoder : LumaDecoder {
         val reader = if (tryHarder) slowReader else fastReader
         return try {
             reader.decodeWithState(BinaryBitmap(HybridBinarizer(if (inverted) source.invert() else source))).text
-        } catch (_: NotFoundException) {
+        } catch (expected: NotFoundException) {
             null
         } finally {
             reader.reset()
@@ -188,7 +188,7 @@ internal class QRCodeAnalyzer(
         val text =
             try {
                 decode(imageProxy)
-            } catch (_: ReaderException) {
+            } catch (expected: ReaderException) {
                 // ZXing found no readable code in the frame: the normal case while scanning.
                 null
             } catch (e: Exception) {
