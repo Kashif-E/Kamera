@@ -1,0 +1,20 @@
+# Weekly update PRs for the Gradle build (catalog, plugins and wrapper), the GitHub Actions pinned by
+# commit SHA, and the docs' hash-pinned pip requirements. A Gradle update must pass the full harness
+# like any other change.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: pip
+    directory: /docs
+    schedule:
+      interval: weekly

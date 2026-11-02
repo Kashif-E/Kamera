@@ -1,0 +1,3 @@
+# Docs toolchain. docs/requirements.txt is generated from this file with hashes:
+#   uv pip compile docs/requirements.in --python-version 3.12 --generate-hashes --universal -o docs/requirements.txt
+mkdocs-material==9.5.18
