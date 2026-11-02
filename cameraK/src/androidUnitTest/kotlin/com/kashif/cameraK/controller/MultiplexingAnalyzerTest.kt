@@ -4,6 +4,8 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import org.junit.Test
 import java.lang.reflect.Proxy
+import java.nio.ByteBuffer
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 
 /**
@@ -66,11 +68,75 @@ class MultiplexingAnalyzerTest {
         assertEquals(0, closesSeenBySecond, "the frame was closed while another analyzer still held it")
         assertEquals(1, frame.closes)
     }
+
+    @Test
+    fun analyzerThatReadsAPlane_leavesItsPositionAsItWasForTheNextAnalyzer() {
+        val frame = CountingFrame(luma = byteArrayOf(10, 20, 30, 40))
+        var positionSeenBySecond = -1
+        var bytesSeenBySecond = ByteArray(0)
+        val analyzer = MultiplexingAnalyzer(
+            listOf(
+                ImageAnalysis.Analyzer { proxy ->
+                    // A bulk read, as a decoder copying the Y plane does: it moves the position.
+                    proxy.planes[0].buffer.get(ByteArray(4))
+                    proxy.close()
+                },
+                ImageAnalysis.Analyzer { proxy ->
+                    val buffer = proxy.planes[0].buffer
+                    positionSeenBySecond = buffer.position()
+                    bytesSeenBySecond = ByteArray(buffer.remaining()).also { buffer.get(it) }
+                    proxy.close()
+                },
+            ),
+        )
+
+        analyzer.analyze(frame.proxy)
+
+        assertEquals(0, positionSeenBySecond, "the first analyzer's read moved the plane for the second")
+        assertContentEquals(byteArrayOf(10, 20, 30, 40), bytesSeenBySecond)
+    }
+
+    @Test
+    fun analyzerThatWritesToAPlane_cannotChangeThePixelsTheNextAnalyzerReads() {
+        val frame = CountingFrame(luma = byteArrayOf(10, 20, 30, 40))
+        var firstPixelSeenBySecond: Byte = -1
+        val analyzer = MultiplexingAnalyzer(
+            listOf(
+                ImageAnalysis.Analyzer { proxy ->
+                    try {
+                        proxy.planes[0].buffer.put(0, 99)
+                    } finally {
+                        proxy.close()
+                    }
+                },
+                ImageAnalysis.Analyzer { proxy ->
+                    firstPixelSeenBySecond = proxy.planes[0].buffer.get(0)
+                    proxy.close()
+                },
+            ),
+        )
+
+        analyzer.analyze(frame.proxy)
+
+        assertEquals(10, firstPixelSeenBySecond, "one analyzer rewrote the frame another analyzer reads")
+        assertEquals(1, frame.closes)
+    }
 }
 
-private class CountingFrame {
+private class CountingFrame(luma: ByteArray = ByteArray(0)) {
     var closes = 0
         private set
+
+    /** One Y plane over [luma], shared by every caller as CameraX's plane buffers are. */
+    private val plane: ImageProxy.PlaneProxy = object : ImageProxy.PlaneProxy {
+        private val buffer = ByteBuffer.wrap(luma)
+
+        override fun getRowStride() = luma.size
+
+        override fun getPixelStride() = 1
+
+        override fun getBuffer(): ByteBuffer = buffer
+    }
 
     val proxy: ImageProxy = Proxy.newProxyInstance(
         ImageProxy::class.java.classLoader,
@@ -82,6 +148,7 @@ private class CountingFrame {
                 null
             }
             "getWidth", "getHeight", "getFormat" -> 0
+            "getPlanes" -> arrayOf(plane)
             "hashCode" -> System.identityHashCode(self)
             "equals" -> self === args?.firstOrNull()
             "toString" -> "CountingFrame"
