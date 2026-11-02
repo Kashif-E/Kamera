@@ -19,7 +19,6 @@ import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
 import platform.UIKit.UIDevice
-import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIView
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_HIGH
 import platform.darwin.NSObject
@@ -64,6 +63,10 @@ class CustomCameraController(
     private var cameraDevices = CameraDeviceProvider(::discoverCamera)
     private var previewMirroring: (AVCaptureVideoPreviewLayer?, Boolean) -> Unit = ::mirrorPreview
     private var photoCapturer: PhotoCapturer = AVPhotoCapturer
+    private var previewOrienting: (
+        AVCaptureVideoPreviewLayer?,
+        AVCaptureVideoOrientation,
+    ) -> Unit = ::orientPreviewLayer
 
     /**
      * Test seam: [sessionFactory] supplies the session, and [inputConfigurator], when set, adds the
@@ -73,6 +76,8 @@ class CustomCameraController(
      * mirroring in place of setting it on the layer's connection. [cameraDevices], when set, finds
      * the cameras setup and the lens switches open, in place of AVCaptureDevice discovery.
      * [photoCapturer], when set, receives each capture request in place of the photo output.
+     * [previewOrienting], when set, applies the preview's orientation in place of setting it on the
+     * preview layer's connection.
      */
     internal constructor(
         qualityPrioritization: QualityPrioritization,
@@ -86,6 +91,7 @@ class CustomCameraController(
         previewMirroring: ((AVCaptureVideoPreviewLayer?, Boolean) -> Unit)? = null,
         cameraDevices: CameraDeviceProvider? = null,
         photoCapturer: PhotoCapturer? = null,
+        previewOrienting: ((AVCaptureVideoPreviewLayer?, AVCaptureVideoOrientation) -> Unit)? = null,
     ) : this(qualityPrioritization, initialCameraLens, aspectRatio, targetResolution, mirrorFrontCamera) {
         this.sessionFactory = sessionFactory
         this.inputConfigurator = inputConfigurator
@@ -93,6 +99,7 @@ class CustomCameraController(
         previewMirroring?.let { this.previewMirroring = it }
         cameraDevices?.let { this.cameraDevices = it }
         photoCapturer?.let { this.photoCapturer = it }
+        previewOrienting?.let { this.previewOrienting = it }
     }
 
     /**
@@ -590,11 +597,22 @@ class CustomCameraController(
             // ResizeAspectFill would crop the preview to fill the view, mismatching the full-frame captured photo.
             videoGravity = AVLayerVideoGravityResizeAspect
             setFrame(view.bounds)
-            connection?.videoOrientation = currentVideoOrientation()
         }
+        previewOrienting(newPreviewLayer, currentVideoOrientation())
 
         view.layer.addSublayer(newPreviewLayer)
         cameraPreviewLayer = newPreviewLayer
+    }
+
+    /** Sets the preview's orientation. Call it on main: the preview layer belongs to UIKit. */
+    internal fun orientPreview(orientation: AVCaptureVideoOrientation) {
+        previewOrienting(cameraPreviewLayer, orientation)
+    }
+
+    private fun orientPreviewLayer(layer: AVCaptureVideoPreviewLayer?, orientation: AVCaptureVideoOrientation) {
+        layer?.connection?.let { connection ->
+            if (connection.isVideoOrientationSupported()) connection.videoOrientation = orientation
+        }
     }
 
     @Volatile
@@ -605,13 +623,7 @@ class CustomCameraController(
         // Portrait snaps a landscape preview to portrait and distorts it when the device lies flat
         // (#115). Keep the last valid orientation in those cases so portrait/landscape tracking
         // stays stable as the device tilts (#109).
-        lastVideoOrientation = when (UIDevice.currentDevice.orientation) {
-            UIDeviceOrientation.UIDeviceOrientationPortrait -> AVCaptureVideoOrientationPortrait
-            UIDeviceOrientation.UIDeviceOrientationPortraitUpsideDown -> AVCaptureVideoOrientationPortraitUpsideDown
-            UIDeviceOrientation.UIDeviceOrientationLandscapeLeft -> AVCaptureVideoOrientationLandscapeRight
-            UIDeviceOrientation.UIDeviceOrientationLandscapeRight -> AVCaptureVideoOrientationLandscapeLeft
-            else -> lastVideoOrientation
-        }
+        lastVideoOrientation = UIDevice.currentDevice.orientation.toVideoOrientation() ?: lastVideoOrientation
         return lastVideoOrientation
     }
 
@@ -759,18 +771,10 @@ class CustomCameraController(
 
         val settings = photoSettings()
 
-        // Set the photo output connection orientation to match current device orientation
-        // This ensures the captured photo has the correct orientation metadata
-        output.connectionWithMediaType(AVMediaTypeVideo)?.let { connection ->
-            if (connection.isVideoOrientationSupported()) {
-                connection.videoOrientation = currentVideoOrientation()
-            }
-            // Mirror the front-camera photo to match the mirrored preview when configured (#112).
-            if (connection.isVideoMirroringSupported()) {
-                connection.automaticallyAdjustsVideoMirroring = false
-                connection.videoMirrored = mirrorFrontCamera && isUsingFrontCamera
-            }
-        }
+        // The orientation the photo's metadata records, and the front-camera photo mirrored to match
+        // the mirrored preview when configured (#112).
+        val orientation = currentVideoOrientation()
+        val mirrored = mirrorFrontCamera && isUsingFrontCamera
 
         lateinit var delegate: PhotoCaptureDelegate
         delegate = PhotoCaptureDelegate(
@@ -785,7 +789,7 @@ class CustomCameraController(
         )
         retainPhotoDelegate(delegate)
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
-            photoCapturer.capture(output, settings, delegate)
+            photoCapturer.capture(output, settings, orientation, mirrored, delegate)
         }
         return true
     }

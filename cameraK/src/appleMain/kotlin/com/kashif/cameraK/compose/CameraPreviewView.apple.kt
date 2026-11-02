@@ -27,8 +27,7 @@ actual fun CameraPreviewView(
                 null,
                 null,
             ) { _ ->
-                controller.getCameraPreviewLayer()?.connection?.videoOrientation =
-                    controller.effectiveVideoOrientation()
+                controller.refreshPreviewOrientation()
             }
 
             onDispose {

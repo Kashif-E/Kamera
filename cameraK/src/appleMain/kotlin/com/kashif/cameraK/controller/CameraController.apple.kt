@@ -38,10 +38,7 @@ import platform.AVFoundation.AVCaptureTorchModeAuto
 import platform.AVFoundation.AVCaptureTorchModeOff
 import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVCaptureVideoOrientation
-import platform.AVFoundation.AVCaptureVideoOrientationLandscapeLeft
-import platform.AVFoundation.AVCaptureVideoOrientationLandscapeRight
 import platform.AVFoundation.AVCaptureVideoOrientationPortrait
-import platform.AVFoundation.AVCaptureVideoOrientationPortraitUpsideDown
 import platform.AVFoundation.AVMediaTypeAudio
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
@@ -54,7 +51,6 @@ import platform.Foundation.timeIntervalSince1970
 import platform.Photos.PHAssetChangeRequest
 import platform.Photos.PHPhotoLibrary
 import platform.UIKit.UIDevice
-import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import platform.UIKit.UIImagePNGRepresentation
 import platform.UIKit.UIViewController
@@ -196,13 +192,7 @@ actual class CameraController internal constructor(
         // FaceUp / FaceDown / Unknown don't correspond to a video orientation; mapping them to
         // Portrait distorts a landscape preview when the device lies flat (#115). Keep the last
         // valid orientation so portrait/landscape tracking stays stable as the device tilts (#109).
-        lastVideoOrientation = when (UIDevice.currentDevice.orientation) {
-            UIDeviceOrientation.UIDeviceOrientationPortrait -> AVCaptureVideoOrientationPortrait
-            UIDeviceOrientation.UIDeviceOrientationPortraitUpsideDown -> AVCaptureVideoOrientationPortraitUpsideDown
-            UIDeviceOrientation.UIDeviceOrientationLandscapeLeft -> AVCaptureVideoOrientationLandscapeRight
-            UIDeviceOrientation.UIDeviceOrientationLandscapeRight -> AVCaptureVideoOrientationLandscapeLeft
-            else -> lastVideoOrientation
-        }
+        lastVideoOrientation = UIDevice.currentDevice.orientation.toVideoOrientation() ?: lastVideoOrientation
         return lastVideoOrientation
     }
 
@@ -840,14 +830,7 @@ actual class CameraController internal constructor(
                 null,
                 null,
             ) { _ ->
-                val uiOrientation = UIDevice.currentDevice.orientation
-                val newOrientation = when (uiOrientation) {
-                    UIDeviceOrientation.UIDeviceOrientationPortrait -> DeviceOrientation.PORTRAIT
-                    UIDeviceOrientation.UIDeviceOrientationLandscapeLeft -> DeviceOrientation.LANDSCAPE_LEFT
-                    UIDeviceOrientation.UIDeviceOrientationPortraitUpsideDown -> DeviceOrientation.PORTRAIT_UPSIDE_DOWN
-                    UIDeviceOrientation.UIDeviceOrientationLandscapeRight -> DeviceOrientation.LANDSCAPE_RIGHT
-                    else -> null
-                }
+                val newOrientation = UIDevice.currentDevice.orientation.toDeviceOrientation()
                 if (newOrientation != null && newOrientation != currentDeviceOrientation) {
                     currentDeviceOrientation = newOrientation
                     orientationChangedCallback?.invoke(newOrientation)
@@ -859,12 +842,20 @@ actual class CameraController internal constructor(
     actual fun setTargetOrientation(orientation: DeviceOrientation?) {
         targetOrientation = orientation
         val effective = orientation ?: currentDeviceOrientation
-        val avOrientation = effective.toAVCaptureVideoOrientation()
-        getCameraPreviewLayer()?.connection?.let { connection ->
-            if (connection.isVideoOrientationSupported()) {
-                connection.videoOrientation = avOrientation
-            }
-        }
+        customCameraController.orientPreview(effective.toVideoOrientation())
+    }
+
+    /** Re-applies the preview orientation after the device turns; called by CameraPreviewView. */
+    internal fun refreshPreviewOrientation() {
+        customCameraController.orientPreview(effectiveVideoOrientation())
+    }
+
+    /**
+     * The interface's current orientation as a video orientation, or null when the view has no window
+     * scene yet. Test seam: tests answer for a window the simulator does not give them.
+     */
+    internal var interfaceOrientation: () -> AVCaptureVideoOrientation? = {
+        view.window?.windowScene?.interfaceOrientation?.toVideoOrientation()
     }
 
     private fun removeOrientationObserver() {
@@ -877,17 +868,6 @@ actual class CameraController internal constructor(
 
     internal fun effectiveVideoOrientation(): AVCaptureVideoOrientation {
         val locked = targetOrientation
-        return if (locked != null) {
-            locked.toAVCaptureVideoOrientation()
-        } else {
-            currentVideoOrientation()
-        }
-    }
-
-    private fun DeviceOrientation.toAVCaptureVideoOrientation(): AVCaptureVideoOrientation = when (this) {
-        DeviceOrientation.PORTRAIT -> AVCaptureVideoOrientationPortrait
-        DeviceOrientation.LANDSCAPE_LEFT -> AVCaptureVideoOrientationLandscapeRight
-        DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> AVCaptureVideoOrientationPortraitUpsideDown
-        DeviceOrientation.LANDSCAPE_RIGHT -> AVCaptureVideoOrientationLandscapeLeft
+        return locked?.toVideoOrientation() ?: currentVideoOrientation()
     }
 }

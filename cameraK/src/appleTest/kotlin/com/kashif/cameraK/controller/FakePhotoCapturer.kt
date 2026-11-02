@@ -3,6 +3,7 @@ package com.kashif.cameraK.controller
 import platform.AVFoundation.AVCapturePhotoCaptureDelegateProtocol
 import platform.AVFoundation.AVCapturePhotoOutput
 import platform.AVFoundation.AVCapturePhotoSettings
+import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
 import platform.Foundation.NSThread
@@ -15,6 +16,8 @@ internal class FakePhotoCapturer : PhotoCapturer {
     class Request(
         val output: AVCapturePhotoOutput,
         val settings: AVCapturePhotoSettings,
+        val orientation: AVCaptureVideoOrientation,
+        val mirrored: Boolean,
         val callbacks: PhotoCaptureCallbacks,
         val queue: String,
         val onMainThread: Boolean,
@@ -60,11 +63,15 @@ internal class FakePhotoCapturer : PhotoCapturer {
     override fun capture(
         output: AVCapturePhotoOutput,
         settings: AVCapturePhotoSettings,
+        orientation: AVCaptureVideoOrientation,
+        mirrored: Boolean,
         delegate: AVCapturePhotoCaptureDelegateProtocol,
     ) {
         val request = Request(
             output,
             settings,
+            orientation,
+            mirrored,
             (delegate as PhotoCaptureDelegate).callbacks,
             currentQueueLabel(),
             NSThread.isMainThread,

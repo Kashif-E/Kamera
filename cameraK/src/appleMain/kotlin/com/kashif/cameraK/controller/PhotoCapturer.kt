@@ -9,6 +9,8 @@ import platform.AVFoundation.AVCapturePhotoCaptureDelegateProtocol
 import platform.AVFoundation.AVCapturePhotoOutput
 import platform.AVFoundation.AVCapturePhotoSettings
 import platform.AVFoundation.AVCaptureResolvedPhotoSettings
+import platform.AVFoundation.AVCaptureVideoOrientation
+import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.fileDataRepresentation
 import platform.CoreMedia.CMVideoDimensions
 import platform.Foundation.NSData
@@ -25,9 +27,12 @@ internal data class PhotoDimensions(val width: Int, val height: Int) {
  * substitute one that records each call, since the simulator's photo output has no camera.
  */
 internal interface PhotoCapturer {
+    /** Captures with [settings], the photo connection set to [orientation] and, when supported, [mirrored]. */
     fun capture(
         output: AVCapturePhotoOutput,
         settings: AVCapturePhotoSettings,
+        orientation: AVCaptureVideoOrientation,
+        mirrored: Boolean,
         delegate: AVCapturePhotoCaptureDelegateProtocol,
     )
 
@@ -47,8 +52,17 @@ internal object AVPhotoCapturer : PhotoCapturer {
     override fun capture(
         output: AVCapturePhotoOutput,
         settings: AVCapturePhotoSettings,
+        orientation: AVCaptureVideoOrientation,
+        mirrored: Boolean,
         delegate: AVCapturePhotoCaptureDelegateProtocol,
     ) {
+        output.connectionWithMediaType(AVMediaTypeVideo)?.let { connection ->
+            if (connection.isVideoOrientationSupported()) connection.videoOrientation = orientation
+            if (connection.isVideoMirroringSupported()) {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.videoMirrored = mirrored
+            }
+        }
         output.capturePhotoWithSettings(settings, delegate = delegate)
     }
 
