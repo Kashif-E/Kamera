@@ -15,6 +15,7 @@ import androidx.compose.runtime.Immutable
  *                           `Movies/CameraK` for PICTURES and DCIM; temp on iOS; `~/Movies/CameraK`
  *                           on macOS and `~/Videos/CameraK` on Linux and Windows.
  * @property filePrefix Prefix for the generated filename.
+ * @property maxFileSizeBytes Maximum size of the video file in bytes. 0 means unlimited.
  */
 @Immutable
 data class VideoConfiguration(
@@ -23,4 +24,5 @@ data class VideoConfiguration(
     val maxDurationMs: Long = 0L,
     val outputDirectory: String? = null,
     val filePrefix: String = "VID",
+    val maxFileSizeBytes: Long = 0L,
 )
