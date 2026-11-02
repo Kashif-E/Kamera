@@ -360,6 +360,7 @@ class IOSImageSaverPluginPhotosTest {
     private class FakePhotoLibrary(
         private val assetExists: Boolean = true,
         private val imageData: NSData? = null,
+        private val imageDataUTI: String = "public.jpeg",
         private val createdIdentifier: String? = ASSET_ID,
         private val createError: NSError? = null,
         private val completesCreation: Boolean = true,
@@ -401,7 +402,7 @@ class IOSImageSaverPluginPhotosTest {
         override fun requestImageData(
             localIdentifier: String,
             options: PHImageRequestOptions,
-            resultHandler: (NSData?) -> Unit,
+            resultHandler: (NSData?, String?) -> Unit,
         ): PHImageRequestID? {
             requestedIdentifier.value = localIdentifier
             if (!assetExists) return null
@@ -411,10 +412,12 @@ class IOSImageSaverPluginPhotosTest {
                 if (!answersReads) {
                     dispatch_semaphore_wait(blockedReads, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC.toLong()))
                 }
-                resultHandler(if (answersReads) imageData else null)
+                val data = if (answersReads) imageData else null
+                resultHandler(data, imageDataUTI.takeIf { data != null })
             } else if (answersReads) {
                 val data = imageData
-                dispatch_async(dispatch_get_main_queue()) { resultHandler(data) }
+                val type = imageDataUTI.takeIf { data != null }
+                dispatch_async(dispatch_get_main_queue()) { resultHandler(data, type) }
             }
             // An unanswered asynchronous read never calls back; after a cancel PhotoKit may not either.
             return requestId

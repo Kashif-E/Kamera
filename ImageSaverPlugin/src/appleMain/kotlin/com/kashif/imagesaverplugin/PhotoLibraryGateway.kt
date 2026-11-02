@@ -27,7 +27,8 @@ internal interface PhotoLibraryGateway {
 
     /**
      * Requests the image data of the asset with [localIdentifier], returning the request's ID, or
-     * null when there is no such asset. [resultHandler] follows PHImageManager's contract for
+     * null when there is no such asset. [resultHandler] gets the data and its uniform type
+     * identifier (both null when Photos has no data) and follows PHImageManager's contract for
      * [options]: with `synchronous = true` it runs once on the calling thread before this function
      * returns; otherwise it runs once, later, on the main thread, or not at all after
      * [cancelImageRequest].
@@ -35,7 +36,7 @@ internal interface PhotoLibraryGateway {
     fun requestImageData(
         localIdentifier: String,
         options: PHImageRequestOptions,
-        resultHandler: (NSData?) -> Unit,
+        resultHandler: (data: NSData?, dataUTI: String?) -> Unit,
     ): PHImageRequestID?
 
     /** Cancels an asynchronous request started by [requestImageData]. Synchronous requests cannot be cancelled. */
@@ -62,13 +63,18 @@ internal object SystemPhotoLibrary : PhotoLibraryGateway {
     override fun requestImageData(
         localIdentifier: String,
         options: PHImageRequestOptions,
-        resultHandler: (NSData?) -> Unit,
+        resultHandler: (data: NSData?, dataUTI: String?) -> Unit,
     ): PHImageRequestID? {
         val fetchResult = PHAsset.fetchAssetsWithLocalIdentifiers(listOf(localIdentifier), null)
         if (fetchResult.count.toInt() == 0) return null
         val asset = fetchResult.firstObject as PHAsset
-        return PHImageManager.defaultManager().requestImageDataAndOrientationForAsset(asset, options) { data, _, _, _ ->
-            resultHandler(data)
+        return PHImageManager.defaultManager().requestImageDataAndOrientationForAsset(asset, options) {
+                data,
+                dataUTI,
+                _,
+                _,
+            ->
+            resultHandler(data, dataUTI)
         }
     }
 

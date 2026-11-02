@@ -133,7 +133,7 @@ class IOSImageSaverPlugin internal constructor(
             }
         return withContext(Dispatchers.Default) {
             val data = suspendCancellableCoroutine { continuation ->
-                val requestId = photoLibrary.requestImageData(assetId, options) { data ->
+                val requestId = photoLibrary.requestImageData(assetId, options) { data, _ ->
                     if (data != null) {
                         continuation.resume(data)
                     } else {
@@ -172,7 +172,7 @@ class IOSImageSaverPlugin internal constructor(
         // A synchronous request runs the handler on this thread before it returns, so the data is
         // already here when requestImageData does.
         var imageData: NSData? = null
-        photoLibrary.requestImageData(assetId, options) { data -> imageData = data }
+        photoLibrary.requestImageData(assetId, options) { data, _ -> imageData = data }
             ?: throw IOException("No asset found with identifier: $path")
 
         return imageData?.toByteArray() ?: throw IOException("Failed to get image data from asset: $path")
