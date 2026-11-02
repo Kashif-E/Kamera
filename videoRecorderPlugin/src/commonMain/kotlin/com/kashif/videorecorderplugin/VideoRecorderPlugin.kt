@@ -8,6 +8,7 @@ import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -48,7 +49,10 @@ class VideoRecorderPlugin(val config: VideoConfiguration = VideoConfiguration())
     private var stateHolder: CameraKStateHolder? = null
     private var collectorJob: Job? = null
 
-    private val _recordingEvents = MutableSharedFlow<CameraKEvent>()
+    // Forwarded with tryEmit from inside the state holder's events collector, so a slow collector of
+    // recordingEvents never holds back the holder's event bus. Unbounded rather than lossy: these are
+    // a few events per recording, and RecordingStopped carries the only copy of the file's path.
+    private val _recordingEvents = MutableSharedFlow<CameraKEvent>(extraBufferCapacity = Channel.UNLIMITED)
 
     /**
      * Observable stream of recording-related events.
@@ -68,7 +72,7 @@ class VideoRecorderPlugin(val config: VideoConfiguration = VideoConfiguration())
                     is CameraKEvent.RecordingStopped,
                     is CameraKEvent.RecordingFailed,
                     is CameraKEvent.RecordingMaxDurationReached,
-                    -> _recordingEvents.emit(event)
+                    -> _recordingEvents.tryEmit(event)
 
                     else -> { /* ignore non-recording events */ }
                 }

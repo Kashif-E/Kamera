@@ -12,6 +12,7 @@ import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
@@ -78,6 +79,12 @@ class OcrPlugin internal constructor(
     )
     val ocrFlow = Channel<String>(Channel.BUFFERED)
     private var isRecognising = atomic(false)
+
+    // Texts bound for the state holder's event bus. One forwarder per attachment emits them, so a
+    // slow events collector holds back one result instead of one suspended coroutine per frame, and
+    // a collector that falls behind gets the latest one.
+    private val busTexts =
+        MutableSharedFlow<String>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     private var collectorJob: Job? = null
     private var recognitionHandle: RecognitionHandle? = null
 
@@ -93,6 +100,9 @@ class OcrPlugin internal constructor(
 
         collectorJob =
             stateHolder.pluginScope.launch {
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    busTexts.collect { stateHolder.emitEvent(CameraKEvent.TextRecognized(it)) }
+                }
                 stateHolder.cameraState
                     .filterIsInstance<CameraKState.Ready>()
                     .collect { readyState ->
@@ -162,10 +172,7 @@ class OcrPlugin internal constructor(
                 // The deprecated channel may be full or closed by a consumer; textFlow has the text either way.
                 @Suppress("DEPRECATION")
                 ocrFlow.trySend(text)
-                // emitEvent is suspend → launch on the owned plugin scope (cancelled on shutdown).
-                stateHolder?.let { holder ->
-                    holder.pluginScope.launch { holder.emitEvent(CameraKEvent.TextRecognized(text)) }
-                }
+                busTexts.tryEmit(text)
             }
         }
     }

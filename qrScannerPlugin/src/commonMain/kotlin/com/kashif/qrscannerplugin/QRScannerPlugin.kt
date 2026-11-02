@@ -11,6 +11,7 @@ import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -67,6 +68,14 @@ class QRScannerPlugin internal constructor(
     )
     private var isScanning = atomic(false)
 
+    // Codes bound for the state holder's event bus. One forwarder per attachment emits them, so a
+    // slow events collector holds back one result instead of one suspended coroutine per frame, and
+    // a collector that falls behind gets the latest one.
+    private val busCodes = MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     // What the app asked for: scanning, unless it paused. A new Ready starts a scanner only while this
     // is true, so a pause holds across camera re-initialisation until the app resumes.
     private val scanningWanted = atomic(true)
@@ -85,6 +94,9 @@ class QRScannerPlugin internal constructor(
 
         collectorJob =
             stateHolder.pluginScope.launch {
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    busCodes.collect { stateHolder.emitEvent(CameraKEvent.QRCodeScanned(it)) }
+                }
                 stateHolder.cameraState
                     .filterIsInstance<CameraKState.Ready>()
                     .collect { readyState ->
@@ -140,11 +152,7 @@ class QRScannerPlugin internal constructor(
             startScanner(controller) { qrCode ->
                 if (isScanning.value) {
                     qrCodeFlow.tryEmit(qrCode)
-                    // Also surface as a state-holder event (emitEvent is suspend → launch on the
-                    // owned plugin scope so it's cancelled on shutdown, not the plugin's own scope).
-                    stateHolder?.let { holder ->
-                        holder.pluginScope.launch { holder.emitEvent(CameraKEvent.QRCodeScanned(qrCode)) }
-                    }
+                    busCodes.tryEmit(qrCode)
                 }
             }
         } catch (e: Exception) {
