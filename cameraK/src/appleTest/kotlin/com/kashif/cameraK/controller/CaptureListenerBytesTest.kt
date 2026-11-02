@@ -8,7 +8,6 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.utils.MemoryManager
 import com.kashif.cameraK.utils.toNSData
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -47,7 +46,6 @@ class CaptureListenerBytesTest {
     fun tearDown() {
         controller.cleanup()
         drainSessionThenMain(custom)
-        MemoryManager.clearBufferPools()
     }
 
     @Test
@@ -57,8 +55,6 @@ class CaptureListenerBytesTest {
         controller.view // loads the view, which sets the session up and starts it
         awaitTrue("the session to start") { session.isRunning }
 
-        // What an earlier, larger capture leaves behind once its buffer is recycled.
-        MemoryManager.recycleBuffer(ByteArray(4096) { 0x55 })
         val photo = ByteArray(100) { it.toByte() }
 
         custom.captureImage()

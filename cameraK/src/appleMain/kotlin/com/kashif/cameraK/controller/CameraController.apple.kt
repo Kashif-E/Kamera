@@ -12,7 +12,6 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.utils.MemoryManager
 import com.kashif.cameraK.utils.toByteArray
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
@@ -154,7 +153,6 @@ actual class CameraController internal constructor(
         // for a recording: each costs memory and power and limits the formats the session can use.
     }
 
-    private val memoryManager = MemoryManager
     private val pendingCaptures = atomic(0)
 
     /** Captures AVFoundation may work on at once, as on Android; each holds a slot until its last callback. */
@@ -165,20 +163,7 @@ actual class CameraController internal constructor(
 
     override fun viewDidLoad() {
         super.viewDidLoad()
-
-        memoryManager.initialize()
         setupCamera()
-    }
-
-    override fun viewWillAppear(animated: Boolean) {
-        super.viewWillAppear(animated)
-        memoryManager.updateMemoryStatus()
-    }
-
-    override fun viewDidDisappear(animated: Boolean) {
-        super.viewDidDisappear(animated)
-
-        memoryManager.clearBufferPools()
     }
 
     fun getCameraPreviewLayer() = customCameraController.cameraPreviewLayer
@@ -258,8 +243,6 @@ actual class CameraController internal constructor(
     private fun processImageCapture(imageData: NSData) {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
             autoreleasepool {
-                memoryManager.updateMemoryStatus()
-
                 try {
                     // An array of the photo's exact size that only the listeners hold: a pooled buffer
                     // is as large as the biggest earlier photo and goes back to the pool while they read.
@@ -504,12 +487,6 @@ actual class CameraController internal constructor(
             CameraKLogger.w("CameraK", "CameraK: cannot switch the lens while recording; stop the recording first")
             return
         }
-        memoryManager.updateMemoryStatus()
-
-        if (memoryManager.isUnderMemoryPressure()) {
-            memoryManager.clearBufferPools()
-        }
-
         cameraLens = if (cameraLens == CameraLens.BACK) CameraLens.FRONT else CameraLens.BACK
         customCameraController.switchCamera()
     }
@@ -543,7 +520,6 @@ actual class CameraController internal constructor(
         // viewDidLoad() triggers setupCamera(). The session will start automatically
         // when ready, so we only need to handle the case where session IS ready.
         if (customCameraController.hasSession) {
-            memoryManager.clearBufferPools()
             customCameraController.startSession()
         }
         // If captureSession is null, onSessionReady will call startSession() when ready
@@ -572,7 +548,6 @@ actual class CameraController internal constructor(
         }
         movieFileOutput = null
         customCameraController.cleanupSession()
-        memoryManager.clearBufferPools()
     }
 
     /**
