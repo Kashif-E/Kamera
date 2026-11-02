@@ -718,6 +718,13 @@ tasks.register("checkAndroidSdkFloor") {
 // publish, so it checks what consumers get rather than what a build script says.
 val sharedPomFields = listOf("groupId", "version", "url", "inceptionYear", "licenses", "developers", "scm")
 val perModulePomFields = listOf("artifactId", "name", "description")
+
+// Where the source lives. Every POM's url and scm point here, not at the old CameraK repository name.
+// The scm children are in the order the Maven POM schema fixes.
+val repositoryUrl = "https://github.com/Kashif-E/Kamera"
+val expectedScm =
+    "{connection=scm:git:$repositoryUrl.git, " +
+        "developerConnection=scm:git:ssh://git@github.com/Kashif-E/Kamera.git, url=$repositoryUrl}"
 val installSnippet = Regex("""io\.github\.kashif-mehmood-km:([A-Za-z0-9_.-]+):([0-9][A-Za-z0-9_.-]*)""")
 val catalogVersion = Regex("""^\s*camerak\s*=\s*"([^"]+)"""")
 
@@ -815,6 +822,14 @@ tasks.register("checkReleaseMetadata") {
             if (values.values.toSet().size > 1) {
                 problems +=
                     "POM <$field> differs between modules: " + values.entries.joinToString { "${it.key}=${it.value}" }
+            }
+        }
+        poms.forEach { (module, pom) ->
+            if (pomField(pom, "url") != repositoryUrl) {
+                problems += "$module: POM <url> is ${pomField(pom, "url")}, not $repositoryUrl"
+            }
+            if (pomField(pom, "scm") != expectedScm) {
+                problems += "$module: POM <scm> is ${pomField(pom, "scm")}, not $expectedScm"
             }
         }
         perModulePomFields.forEach { field ->
