@@ -52,6 +52,11 @@ class DesktopGrabberStartRaceTest {
             scope.failure?.let { throw it }
 
             assertEquals(1, parent.children.count(), "grab loops launched by two concurrent start() calls")
+            // A loop stopped before it opens the grabber never releases it, so wait for it to open.
+            assertTrue(
+                fake.firstGrabEntered.await(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+                "the grab loop never grabbed",
+            )
         } finally {
             sut.stop()
             parent.cancel()
