@@ -48,11 +48,12 @@ Do not loosen an assertion, widen a tolerance, delete a case or add an ignore to
 test is wrong, say why in the PR.
 
 **Published classpath, and why there is no `buildHealth`.** Each library's
-`checkPublishedClasspath` (run by the lint target) fails on a `*-platform` umbrella or native
-classifier jar on `desktopRuntimeClasspath`, a bytedeco binding the library does not import, a
-bytedeco `api` dependency no public signature exposes, and the specific libraries listed in the
-root build's `ClasspathRule` and `ApiExportRule` lists on the published and `*ApiElements`
-configurations. The dependency-analysis plugin (`com.autonomousapps.dependency-analysis`) is not
+`checkPublishedClasspath` (run by `verify.sh` whenever the desktop, android or ios target is
+selected, as `--full` and `--quick` do; `--only lint` does not run it) fails on a `*-platform`
+umbrella or native classifier jar on `desktopRuntimeClasspath`, a bytedeco binding the library does
+not import, a bytedeco `api` dependency no public signature exposes, and the specific libraries
+listed in the root build's `ClasspathRule` and `ApiExportRule` lists on the published and
+`*ApiElements` configurations. The dependency-analysis plugin (`com.autonomousapps.dependency-analysis`) is not
 wired in. Its 3.x line supports Gradle 9.4.1 and AGP 8.13.2, but in a Kotlin Multiplatform module
 it analyses only the `jvm` target and the `androidLibrary` target of
 `com.android.kotlin.multiplatform.library`. These modules use `com.android.library` with
