@@ -27,6 +27,9 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
   native-settings    A module with no native code (no cpp/jni sources, CMake or ndk-build file, or
                      .so) sets no NDK version and no jniLibs packaging option, which would have no
                      effect on its artifact and would make contributors install an NDK.
+  repository-links   Every GitHub repository link in the build (POM, Dokka homepage and source
+                     links) names the repository POM_URL names, and the dead convention-plugins
+                     included build stays deleted.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -494,6 +497,47 @@ def check_native_settings() -> List[str]:
     return native_settings_problems(scripts, files)
 
 
+# ─── repository-links ───────────────────────────────────────────────────────────────────────────
+
+GITHUB_REPOSITORY = re.compile(r"github\.com[/:]([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?(?=[/\"'\s,}]|$)", re.MULTILINE)
+INCLUDED_BUILD = re.compile(r"\bincludeBuild\(\s*\"([^\"]+)\"")
+
+
+def repository_link_problems(repository: str, files: Dict[str, str]) -> List[str]:
+    expected = GITHUB_REPOSITORY.search(repository)
+    if not expected:
+        raise CheckError(f"POM_URL {repository} is not a github.com repository")
+    problems = []
+    for name, text in files.items():
+        if name.startswith("convention-plugins/"):
+            problems.append(f"{name}: convention-plugins/ was deleted; publishing is configured in one place")
+            continue
+        for build in INCLUDED_BUILD.findall(text):
+            problems.append(f"{name} includes the build {build}, which no module applies")
+        for match in GITHUB_REPOSITORY.finditer(text):
+            if match.groups() != expected.groups():
+                line = text.count("\n", 0, match.start()) + 1
+                problems.append(f"{name}:{line}: links {'/'.join(match.groups())}, not the repository {repository}")
+    return problems
+
+
+def check_repository_links() -> List[str]:
+    fixture = {
+        "settings.gradle.kts": 'includeBuild("convention-plugins")',
+        "convention-plugins/build.gradle.kts": "",
+        "lib/build.gradle.kts": '"homepageLink": "https://github.com/someone/Old"\nurl = "https://github.com/Owner/Repo"',
+    }
+    if len(repository_link_problems("https://github.com/Owner/Repo", fixture)) != 3:
+        raise CheckError("the repository-links rule misjudges its fixture")
+    names = [path.relative_to(ROOT).as_posix() for path in tracked("*")]
+    files = {
+        name: (ROOT / name).read_text()
+        for name in names
+        if name.endswith(".gradle.kts") or name.endswith("gradle.properties") or name.startswith("convention-plugins/")
+    }
+    return repository_link_problems(gradle_property("POM_URL"), files)
+
+
 POLICIES: Dict[str, Callable[[], List[str]]] = {
     "agent-permissions": check_agent_permissions,
     "security-policy": check_security_policy,
@@ -501,6 +545,7 @@ POLICIES: Dict[str, Callable[[], List[str]]] = {
     "build-integrity": check_build_integrity,
     "catalog": check_catalog,
     "native-settings": check_native_settings,
+    "repository-links": check_repository_links,
 }
 
 

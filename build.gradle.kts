@@ -456,6 +456,11 @@ registerRepoPolicyCheck(
     "native-settings",
     "Fails if a module without native code pins an NDK or sets jniLibs packaging",
 )
+registerRepoPolicyCheck(
+    "checkRepositoryLinks",
+    "repository-links",
+    "Fails if a build file links a GitHub repository other than POM_URL, or convention-plugins returns",
+)
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
@@ -1189,6 +1194,7 @@ fun verifyTaskPaths(
                 ":checkNoLibraryFrameworks",
                 ":checkCatalogHygiene",
                 ":checkNativeSettings",
+                ":checkRepositoryLinks",
             )
     }
     modules.forEach { module ->
