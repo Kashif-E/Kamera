@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
 /**
@@ -31,16 +32,20 @@ import kotlin.random.Random
  * @param config The configuration settings for the plugin.
  */
 class AndroidImageSaverPlugin(private val context: Context, config: ImageSaverConfig) : ImageSaverPlugin(config) {
+    // Android captures are always JPEG, so a mismatch repeats on every save; it is logged once.
+    private val formatMismatchWarned = AtomicBoolean(false)
+
     override suspend fun saveImage(byteArray: ByteArray, imageName: String?): String? =
         (save(byteArray, imageName) as? ImageSaveResult.Saved)?.location
 
     override suspend fun save(byteArray: ByteArray, imageName: String?): ImageSaveResult = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val format = encodedFormatOf(byteArray) ?: config.imageFormat
-        if (format != config.imageFormat) {
+        if (format != config.imageFormat && formatMismatchWarned.compareAndSet(false, true)) {
             CameraKLogger.w(
                 "CameraK",
-                "Image bytes are $format, not the configured ${config.imageFormat}; saving as $format",
+                "Image bytes are $format, not the configured ${config.imageFormat}; saving as $format " +
+                    "(logged once per plugin)",
             )
         }
         val fileName = "${imageName ?: defaultImageName()}.${format.extension}"
