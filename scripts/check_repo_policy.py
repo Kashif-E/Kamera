@@ -13,6 +13,10 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
   docs-workflow      Pull requests build the docs with mkdocs --strict and check their links; the
                      site is deployed with actions/deploy-pages only for a v* tag, after that
                      strict build, and never force-pushed with mkdocs gh-deploy.
+  build-integrity    The Gradle wrapper pins its distribution's sha256 and every workflow that runs
+                     Gradle validates the wrapper jar; every action is pinned by commit SHA;
+                     Dependabot updates Gradle, GitHub Actions and the docs' pip requirements; and the
+                     docs install only hash-pinned requirements.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -245,10 +249,97 @@ def check_docs_workflow() -> List[str]:
     return docs_workflow_problems(workflows)
 
 
+# ─── build-integrity ────────────────────────────────────────────────────────────────────────────
+
+WRAPPER_PROPERTIES = "gradle/wrapper/gradle-wrapper.properties"
+DEPENDABOT = ".github/dependabot.yml"
+DEPENDABOT_ECOSYSTEMS = {"gradle", "github-actions", "pip"}
+RUNS_GRADLE = re.compile(r"(\./gradlew|scripts/verify\.sh)\b")
+PINNED_ACTION = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
+PIP_INSTALL = re.compile(r"\bpip3?\s+install\b([^\n]*)")
+HASHED_REQUIREMENTS = re.compile(r"--require-hashes\b.*\s-r\s+(\S+)|\s-r\s+(\S+).*--require-hashes\b")
+
+
+def requirements_problems(path: Path) -> List[str]:
+    name = path.relative_to(ROOT).as_posix()
+    if not path.is_file():
+        return [f"{name} does not exist"]
+    requirements, current = [], ""
+    for line in path.read_text().splitlines():
+        line = line.split(" #", 1)[0].strip() if not line.lstrip().startswith("#") else ""
+        current = f"{current} {line}".strip()
+        if current.endswith("\\"):
+            current = current[:-1].strip()
+            continue
+        if current:
+            requirements.append(current)
+        current = ""
+    unhashed = [req.split()[0] for req in requirements if not req.startswith("-") and "--hash=sha256:" not in req]
+    unpinned = [req.split()[0] for req in requirements if not req.startswith("-") and "==" not in req.split()[0]]
+    return [f"{name}: {req} has no sha256 hash" for req in unhashed] + [
+        f"{name}: {req} is not pinned with ==" for req in unpinned
+    ]
+
+
+def build_integrity_problems(wrapper: str, workflows: Dict[str, dict], dependabot: object) -> List[str]:
+    reader = workflow_yaml()
+    problems = []
+    checksum = re.search(r"^distributionSha256Sum=([0-9a-f]{64})\s*$", wrapper, re.MULTILINE)
+    if not checksum:
+        problems.append(f"{WRAPPER_PROPERTIES} has no distributionSha256Sum, so the downloaded Gradle is not verified")
+    for name, workflow in workflows.items():
+        jobs = workflow.get("jobs") if isinstance(workflow.get("jobs"), dict) else {}
+        for job_id, job in jobs.items():
+            steps = [step for step in reader.as_list(job.get("steps")) if isinstance(step, dict)]
+            uses = [str(step.get("uses", "")).strip() for step in steps if step.get("uses")]
+            if job.get("uses"):
+                uses.append(str(job.get("uses")).strip())
+            for use in uses:
+                if not use.startswith("./") and not use.startswith("docker://") and not PINNED_ACTION.match(use):
+                    problems.append(f"{name}: job {job_id} uses {use}, not pinned by commit SHA")
+            if RUNS_GRADLE.search(reader.run_text(job)) and not any(
+                use.startswith("gradle/actions/wrapper-validation@") for use in uses
+            ):
+                problems.append(f"{name}: job {job_id} runs Gradle without gradle/actions/wrapper-validation")
+            for match in PIP_INSTALL.finditer(reader.run_text(job)):
+                hashed = HASHED_REQUIREMENTS.search(match.group(0))
+                if not hashed:
+                    problems.append(f"{name}: job {job_id} runs '{match.group(0).strip()}' without --require-hashes -r")
+                else:
+                    problems += requirements_problems(ROOT / (hashed.group(1) or hashed.group(2)))
+    updates = dependabot.get("updates") if isinstance(dependabot, dict) else None
+    ecosystems = {str(update.get("package-ecosystem")) for update in reader.as_list(updates) if isinstance(update, dict)}
+    missing = DEPENDABOT_ECOSYSTEMS - ecosystems
+    if missing:
+        problems.append(f"{DEPENDABOT} does not update {sorted(missing)}")
+    return problems
+
+
+def check_build_integrity() -> List[str]:
+    reader = workflow_yaml()
+    stale = reader.parse_yaml(
+        "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v4\n"
+        "      - run: ./gradlew check\n      - run: pip install mkdocs-material==9.5.18\n"
+    )
+    if len(build_integrity_problems("distributionUrl=x\n", {"fixture.yml": stale}, None)) < 5:
+        raise CheckError("the build-integrity rule accepts an unpinned fixture it must reject")
+    try:
+        workflows = {
+            path.relative_to(ROOT).as_posix(): reader.load(path)
+            for path in sorted((ROOT / WORKFLOWS).glob("*.y*ml"))
+        }
+        dependabot_path = ROOT / DEPENDABOT
+        dependabot = reader.parse_yaml(dependabot_path.read_text()) if dependabot_path.is_file() else None
+    except reader.CheckError as error:
+        raise CheckError(str(error)) from error
+    return build_integrity_problems((ROOT / WRAPPER_PROPERTIES).read_text(), workflows, dependabot)
+
+
 POLICIES: Dict[str, Callable[[], List[str]]] = {
     "agent-permissions": check_agent_permissions,
     "security-policy": check_security_policy,
     "docs-workflow": check_docs_workflow,
+    "build-integrity": check_build_integrity,
 }
 
 

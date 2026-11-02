@@ -386,6 +386,11 @@ registerRepoPolicyCheck(
     "docs-workflow",
     "Fails if pull requests skip the strict docs build or link check, or the site deploys from anything but a tag",
 )
+registerRepoPolicyCheck(
+    "checkBuildIntegrity",
+    "build-integrity",
+    "Fails if the wrapper, actions or docs requirements are unpinned, or Dependabot does not cover them",
+)
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
@@ -1056,6 +1061,7 @@ fun verifyTaskPaths(
                 ":checkAgentPermissions",
                 ":checkSecurityPolicy",
                 ":checkDocsWorkflow",
+                ":checkBuildIntegrity",
             )
     }
     modules.forEach { module ->
