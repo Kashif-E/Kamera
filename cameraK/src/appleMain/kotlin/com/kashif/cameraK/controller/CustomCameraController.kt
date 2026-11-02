@@ -337,11 +337,13 @@ class CustomCameraController(
         if (!usesMaxPhotoDimensions) photoOutput?.setHighResolutionCaptureEnabled(highResolution)
         avQualityPrioritization?.let { photoOutput?.setMaxPhotoQualityPrioritization(it) }
 
-        photoOutput?.setPreparedPhotoSettingsArray(emptyList<String>(), completionHandler = { settings, error ->
-            if (error != null) {
-                onError?.invoke(CameraException.ConfigurationError(error.localizedDescription))
+        photoOutput?.let { output ->
+            photoCapturer.prepare(output, emptyList()) { _, error ->
+                if (error != null) {
+                    onError?.invoke(CameraException.ConfigurationError(error.localizedDescription))
+                }
             }
-        })
+        }
 
         if (session?.canAddOutput(photoOutput!!) == true) {
             session?.addOutput(photoOutput!!)
@@ -721,20 +723,11 @@ class CustomCameraController(
     }
 
     /**
-     * Issues one capture whose photo and completion go only to [callbacks], through a delegate of its
-     * own that is kept alive until AVFoundation's last callback for it. Returns false, without calling
-     * [callbacks], when the camera is not ready.
+     * New settings for one capture: codec, size, quality prioritization and flash. AVFoundation
+     * refuses a settings object it has seen before, so every capture (and every prepare) gets its own.
      */
     @OptIn(ExperimentalForeignApi::class)
-    internal fun capturePhoto(callbacks: PhotoCaptureCallbacks): Boolean {
-        val output = photoOutput
-        if (output == null || session?.isRunning != true) return false
-
-        // Do NOT reconfigure the session preset here. Switching the preset synchronously right
-        // before capturePhotoWithSettings disrupts auto-exposure, so the still is captured
-        // mid-reconfiguration and comes out underexposed (#138). The preset is chosen once at
-        // setup; memory pressure is handled by clearing buffer pools, not by downshifting capture.
-
+    private fun photoSettings(): AVCapturePhotoSettings {
         val settings = AVCapturePhotoSettings.photoSettingsWithFormat(
             mapOf(
                 AVVideoCodecKey to AVVideoCodecJPEG,
@@ -752,6 +745,25 @@ class CustomCameraController(
         // Don't touch autoStillImageStabilizationEnabled: it's deprecated since iOS 13 and
         // setting it together with photoQualityPrioritization (set above) raises -17281
         // (invalid state). Stabilization is handled automatically by the prioritization level. (#113)
+        return settings
+    }
+
+    /**
+     * Issues one capture whose photo and completion go only to [callbacks], through a delegate of its
+     * own that is kept alive until AVFoundation's last callback for it. Returns false, without calling
+     * [callbacks], when the camera is not ready.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    internal fun capturePhoto(callbacks: PhotoCaptureCallbacks): Boolean {
+        val output = photoOutput
+        if (output == null || session?.isRunning != true) return false
+
+        // Do NOT reconfigure the session preset here. Switching the preset synchronously right
+        // before capturePhotoWithSettings disrupts auto-exposure, so the still is captured
+        // mid-reconfiguration and comes out underexposed (#138). The preset is chosen once at
+        // setup; memory pressure is handled by clearing buffer pools, not by downshifting capture.
+
+        val settings = photoSettings()
 
         // Set the photo output connection orientation to match current device orientation
         // This ensures the captured photo has the correct orientation metadata

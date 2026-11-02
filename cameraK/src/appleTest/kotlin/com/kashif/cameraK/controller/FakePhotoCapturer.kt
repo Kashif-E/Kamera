@@ -3,6 +3,7 @@ package com.kashif.cameraK.controller
 import platform.AVFoundation.AVCapturePhotoCaptureDelegateProtocol
 import platform.AVFoundation.AVCapturePhotoOutput
 import platform.AVFoundation.AVCapturePhotoSettings
+import platform.Foundation.NSError
 import platform.Foundation.NSLock
 import platform.Foundation.NSThread
 
@@ -22,6 +23,18 @@ internal class FakePhotoCapturer : PhotoCapturer {
     private val lock = NSLock()
     private val recorded = mutableListOf<Request>()
     private val maxDimensions = mutableListOf<PhotoDimensions>()
+    private val prepared = mutableListOf<List<AVCapturePhotoSettings>>()
+
+    /** The settings of every prepare call, in order. */
+    val prepareCalls: List<List<AVCapturePhotoSettings>>
+        get() {
+            lock.lock()
+            try {
+                return prepared.toList()
+            } finally {
+                lock.unlock()
+            }
+        }
 
     /** Every size setMaxPhotoDimensions was given, in order. */
     val maxPhotoDimensionsSet: List<PhotoDimensions>
@@ -68,6 +81,19 @@ internal class FakePhotoCapturer : PhotoCapturer {
         lock.lock()
         try {
             maxDimensions += dimensions
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    override fun prepare(
+        output: AVCapturePhotoOutput,
+        settings: List<AVCapturePhotoSettings>,
+        completion: (Boolean, NSError?) -> Unit,
+    ) {
+        lock.lock()
+        try {
+            prepared += settings
         } finally {
             lock.unlock()
         }

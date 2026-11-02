@@ -33,6 +33,13 @@ internal interface PhotoCapturer {
 
     /** Sets the largest photo the output may deliver; iOS 16+ only, and only a size the camera supports. */
     fun setMaxPhotoDimensions(output: AVCapturePhotoOutput, dimensions: PhotoDimensions)
+
+    /** Has the output allocate what captures with [settings] need ahead of the first shutter press. */
+    fun prepare(
+        output: AVCapturePhotoOutput,
+        settings: List<AVCapturePhotoSettings>,
+        completion: (Boolean, NSError?) -> Unit,
+    )
 }
 
 @OptIn(ExperimentalForeignApi::class)
@@ -47,6 +54,14 @@ internal object AVPhotoCapturer : PhotoCapturer {
 
     override fun setMaxPhotoDimensions(output: AVCapturePhotoOutput, dimensions: PhotoDimensions) {
         output.maxPhotoDimensions = dimensions.toCMVideoDimensions()
+    }
+
+    override fun prepare(
+        output: AVCapturePhotoOutput,
+        settings: List<AVCapturePhotoSettings>,
+        completion: (Boolean, NSError?) -> Unit,
+    ) {
+        output.setPreparedPhotoSettingsArray(settings, completionHandler = completion)
     }
 }
 
