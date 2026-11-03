@@ -611,4 +611,39 @@ class CameraKStateHolderLifecycleTest {
         val sinceClosed = s.states.drop(s.states.indexOf(CameraKState.Closed))
         assertTrue(sinceClosed.all { it == CameraKState.Closed }, "the holder left Closed: ${s.states}")
     }
+
+    // The holder's own writes, not only the engine's mapped values, keep Closed: Compose stops and
+    // disposes in one frame, and a screen can enter and leave in one. In both cases below the
+    // reconciler runs before the release, and writes Starting or Idle after close published Closed.
+
+    @Test
+    fun startAndCloseInOneFrameKeepsClosed() = runTest {
+        val fake = FakeCameraEngine()
+        val s = session(fake)
+        runCurrent()
+
+        s.holder.start()
+        s.holder.close()
+        runCurrent()
+
+        assertEquals(CameraKState.Closed, s.state)
+        val sinceClosed = s.states.drop(s.states.indexOf(CameraKState.Closed))
+        assertTrue(sinceClosed.all { it == CameraKState.Closed }, "the holder left Closed: ${s.states}")
+    }
+
+    @Test
+    fun stopAndCloseInOneFrameFromAPermissionErrorKeepsClosed() = runTest {
+        val s = session(FakeCameraEngine(), FakePermissionChecker(PermissionStatus.PermanentlyDenied))
+        s.holder.start()
+        runCurrent()
+        assertIs<CameraKError.Permission>(s.error())
+
+        s.holder.stop()
+        s.holder.close()
+        runCurrent()
+
+        assertEquals(CameraKState.Closed, s.state)
+        val sinceClosed = s.states.drop(s.states.indexOf(CameraKState.Closed))
+        assertTrue(sinceClosed.all { it == CameraKState.Closed }, "the holder left Closed: ${s.states}")
+    }
 }
