@@ -56,9 +56,12 @@ class LegacyFacadeLiveTest {
 
         val analysis = platform.backend.binding.bound.filterIsInstance<ImageAnalysis>().single()
         val dispatcher = assertNotNull(platform.backend.analyzers[analysis], "the bound ImageAnalysis feeds no one")
-        val frame = imageProxy()
-        dispatcher.analyze(frame)
-        assertEquals(listOf(frame), received, "the facade's analyzer did not get the engine's frame")
+        var released = 0
+        dispatcher.analyze(imageProxy { released++ })
+        // The 1.x multiplexer hands each analyzer its own view of the frame and releases the frame
+        // once every view is closed.
+        assertEquals(1, received.size, "the facade's analyzer did not get the engine's frame")
+        assertEquals(1, released, "the frame was not released after the analyzer closed its view")
         engine.closeAndJoin()
     }
 
@@ -101,11 +104,15 @@ class LegacyFacadeLiveTest {
         engine.closeAndJoin()
     }
 
-    private fun imageProxy(): ImageProxy = Proxy.newProxyInstance(
+    private fun imageProxy(onClose: () -> Unit): ImageProxy = Proxy.newProxyInstance(
         ImageProxy::class.java.classLoader,
         arrayOf(ImageProxy::class.java),
     ) { self, method, args ->
         when (method.name) {
+            "close" -> {
+                onClose()
+                null
+            }
             "getWidth", "getHeight", "getFormat" -> 0
             "getPlanes" -> emptyArray<ImageProxy.PlaneProxy>()
             "hashCode" -> System.identityHashCode(self)

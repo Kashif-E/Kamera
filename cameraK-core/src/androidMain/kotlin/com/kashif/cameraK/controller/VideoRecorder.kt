@@ -8,7 +8,6 @@ import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
-import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
@@ -32,11 +31,11 @@ internal const val STOP_FINALIZE_TIMEOUT_MS = 5000L
 internal interface VideoSessionHost {
     val isReleased: Boolean
 
-    /** The preview the camera is bound with, or null before the first bind. */
-    val previewView: PreviewView?
+    /** Whether a bind has given the session its camera. */
+    val isBound: Boolean
 
-    /** Rebinds with [previewView] and waits for the bind, for at most [STOP_FINALIZE_TIMEOUT_MS]. */
-    suspend fun rebindAndAwait(previewView: PreviewView)
+    /** Rebinds the bound camera and waits for the bind, for at most [STOP_FINALIZE_TIMEOUT_MS]. */
+    suspend fun rebindAndAwait()
 
     /** CameraX ended the active recording by itself and VideoCapture was dropped: rebind for full-FOV stills. */
     fun rebindAfterRecordingEndedByCameraX()
@@ -114,18 +113,16 @@ internal class VideoRecorder(
         if (activeRecording != null) throw IllegalStateException("A recording is already in progress")
         // VideoCapture is bound lazily (it isn't part of the photo session — see includeVideoUseCase).
         // Bind it now and wait for the rebind before recording.
-        val videoBind = if (videoCapture == null) {
-            val pv = host.previewView ?: throw IllegalStateException("Camera preview not ready for recording")
+        val videoBind = videoCapture == null
+        if (videoBind) {
+            if (!host.isBound) throw IllegalStateException("Camera preview not ready for recording")
             pendingVideoQuality = configuration.quality
             includeVideoUseCase = true
-            pv
-        } else {
-            null
         }
         return try {
-            // Don't hang forever if the bind fails (bindCamera only invokes onCameraReady on
-            // success). On timeout, startRecordingInternal reports a clean error.
-            videoBind?.let { host.rebindAndAwait(it) }
+            // Don't hang forever if the bind fails. On timeout, startRecordingInternal reports a
+            // clean error.
+            if (videoBind) host.rebindAndAwait()
             startRecordingInternal(configuration)
         } catch (e: Exception) {
             // Recording never started, whether it failed or the caller was cancelled during the bind:
@@ -133,7 +130,7 @@ internal class VideoRecorder(
             // later photo silently reverts to the cropped FOV (#136).
             if (includeVideoUseCase) {
                 includeVideoUseCase = false
-                withContext(NonCancellable) { host.previewView?.let { host.rebindAndAwait(it) } }
+                withContext(NonCancellable) { if (host.isBound) host.rebindAndAwait() }
             }
             throw e
         }
@@ -221,7 +218,7 @@ internal class VideoRecorder(
             // old UseCaseGroup, or the late rebind unbinding a freshly-started recording's use cases.
             if (includeVideoUseCase) {
                 includeVideoUseCase = false
-                withContext(NonCancellable) { host.previewView?.let { host.rebindAndAwait(it) } }
+                withContext(NonCancellable) { if (host.isBound) host.rebindAndAwait() }
             }
         }
     }

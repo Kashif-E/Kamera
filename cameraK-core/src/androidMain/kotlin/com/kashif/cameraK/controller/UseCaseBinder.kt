@@ -19,15 +19,14 @@ import androidx.camera.core.ViewPort
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
-import androidx.camera.view.PreviewView
 import androidx.lifecycle.LifecycleOwner
 import com.kashif.cameraK.enums.AspectRatio
-import com.kashif.cameraK.utils.getActivityOrNull
 
 /**
- * Binds this controller's use cases to the process camera provider and unbinds exactly those. Owns
- * the preview use case, the [ViewPort] built from the configured aspect ratio and the display's
- * rotation, and the display listener that rebuilds it when the display turns.
+ * Binds the engine's use cases to the process camera provider and unbinds exactly those. Owns the
+ * [ViewPort] built from the configured aspect ratio and the rotation of the display the preview is
+ * attached on ([display], else the default display), and the display listener that rebuilds it when
+ * that display turns.
  *
  * Main thread only, like every CameraX binding call.
  */
@@ -37,20 +36,19 @@ internal class UseCaseBinder(
     private val aspectRatio: AspectRatio,
     private val targetResolution: Pair<Int, Int>?,
     private val isReleased: () -> Boolean,
-    private val onDisplayChanged: (PreviewView) -> Unit,
+    private val display: () -> Display?,
+    private val onDisplayChanged: () -> Unit,
 ) {
-    /** The preview the camera is bound with, or null before the first bind. */
-    var previewView: PreviewView? = null
-        private set
-
     /** The camera the last bind returned, or null before one succeeded. */
     var camera: Camera? = null
         private set
 
-    private var cameraProvider: CameraBinding? = null
+    /** The provider of the last bind, or null before the first. */
+    var cameraProvider: CameraBinding? = null
+        private set
 
-    // Every use case this controller has bound and not yet unbound. ProcessCameraProvider is shared
-    // by the whole process, so rebinds and teardown unbind exactly these, never unbindAll().
+    // Every use case this engine has bound and not yet unbound. ProcessCameraProvider is shared by
+    // the whole process, so rebinds and teardown unbind exactly these, never unbindAll().
     private val boundUseCases = linkedSetOf<UseCase>()
 
     // Portrait/landscape category of the display rotation used to build the current ViewPort. The
@@ -64,16 +62,11 @@ internal class UseCaseBinder(
     // (#136). Trade-off: in an orientation-locked host, captures follow the display orientation.
     private var displayListener: DisplayManager.DisplayListener? = null
 
-    /** Makes [previewView] the preview of every later bind and starts following its display. */
-    fun attach(previewView: PreviewView) {
-        this.previewView = previewView
-        listenForDisplayChanges()
-    }
-
-    /** Takes the provider a bind resolved and unbinds what this controller bound before. */
+    /** Takes the provider a bind resolved and unbinds what this engine bound before. */
     fun useProvider(provider: CameraBinding) {
         cameraProvider = provider
         unbindOwnUseCases()
+        camera = null
     }
 
     /** The resolution selector for the configured aspect ratio and target resolution. */
@@ -92,37 +85,36 @@ internal class UseCaseBinder(
         return builder.build()
     }
 
-    /** The preview use case for the next bind, drawing into [previewView]. */
+    /** The preview use case for the next bind, with no surface yet; [configure] adds to its builder. */
     @OptIn(ExperimentalCamera2Interop::class)
-    fun buildPreview(resolutionSelector: ResolutionSelector, pinnedPhysicalId: String?, previewView: PreviewView) =
-        Preview.Builder()
-            .setResolutionSelector(resolutionSelector)
-            .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
-            .build()
-            .also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
+    fun buildPreview(
+        resolutionSelector: ResolutionSelector,
+        pinnedPhysicalId: String?,
+        configure: (Preview.Builder) -> Unit,
+    ): Preview = Preview.Builder()
+        .setResolutionSelector(resolutionSelector)
+        .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
+        .also(configure)
+        .build()
 
     /**
-     * Binds [useCases] as one group, cropped by a ViewPort for [previewView]'s display, and returns
-     * the camera CameraX bound them to.
+     * Binds [useCases] as one group on [resolved], cropped by a ViewPort for the current display, and
+     * returns the camera CameraX bound them to.
      */
-    fun bindGroup(resolved: ResolvedCamera, useCases: List<UseCase>, previewView: PreviewView): Camera? {
+    fun bindGroup(resolved: ResolvedCamera, useCases: List<UseCase>): Camera {
+        val provider = checkNotNull(cameraProvider) { "bind before the camera provider resolved" }
         val builder = UseCaseGroup.Builder()
         for (useCase in useCases) builder.addUseCase(useCase)
 
-        // Build the ViewPort explicitly from the configured aspect ratio rather than reading
-        // previewView.viewPort. The latter is null until the view is laid out (so the crop is
-        // often dropped at bind time) and, with a FIT_CENTER preview, reflects the full sensor
-        // buffer — which left the captured still at the sensor ratio (e.g. 16:9) even when a
-        // 4:3 preview was requested (#136). An explicit ViewPort crops preview + capture +
-        // analyzer to the same ratio, so what you see equals what you capture.
-        buildViewPort(previewView)?.let { builder.setViewPort(it) }
+        // An explicit ViewPort from the configured aspect ratio crops preview, capture and analysis
+        // to the same ratio, so what you see equals what you capture (#136).
+        builder.setViewPort(buildViewPort())
 
         val useCaseGroup = builder.build()
-        camera = cameraProvider?.bindToLifecycle(lifecycleOwner, resolved, useCaseGroup)
+        val bound = provider.bindToLifecycle(lifecycleOwner, resolved, useCaseGroup)
+        camera = bound
         boundUseCases += useCaseGroup.useCases
-        return camera
+        return bound
     }
 
     /** Binds [useCase] on its own beside the bound group, on the camera [resolved] names. */
@@ -131,7 +123,7 @@ internal class UseCaseBinder(
         boundUseCases += useCase
     }
 
-    /** Unbinds every use case this controller bound, and nothing another CameraX consumer bound. */
+    /** Unbinds every use case this engine bound, and nothing another CameraX consumer bound. */
     fun unbindOwnUseCases() {
         if (boundUseCases.isEmpty()) return
         val own = boundUseCases.toTypedArray()
@@ -145,12 +137,8 @@ internal class UseCaseBinder(
      * the display's CURRENT orientation (the convention `PreviewView.getViewPort()` uses), so it is
      * flipped for portrait — e.g. `RATIO_4_3` is `3:4` in portrait and `4:3` in landscape.
      */
-    private fun buildViewPort(previewView: PreviewView): ViewPort? {
-        val rotation = displayRotation(previewView)
-        // The ViewPort Rational is width:height in the display's CURRENT orientation. In portrait a
-        // "4:3" capture is taller than wide (3:4); only in landscape is it 4:3. Hard-coding the
-        // landscape Rational forced a landscape crop in portrait — preview and photo came out 4:3
-        // when 3:4 was expected (#136). Flip width/height for portrait.
+    private fun buildViewPort(): ViewPort {
+        val rotation = displayRotation()
         val portrait = rotation.isPortraitRotation()
         lastViewPortPortrait = portrait
         val rational = when (aspectRatio) {
@@ -171,34 +159,26 @@ internal class UseCaseBinder(
      * rotation: an activity locked to one orientation never rotates the display, so it never
      * needlessly rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
      */
-    fun viewPortOrientationChanged(previewView: PreviewView): Boolean {
-        val portrait = displayRotation(previewView).isPortraitRotation()
+    fun viewPortOrientationChanged(): Boolean {
+        val portrait = displayRotation().isPortraitRotation()
         return lastViewPortPortrait != null && portrait != lastViewPortPortrait
     }
 
-    /**
-     * Current display rotation. `previewView.display` is null until the view is attached (bindCamera
-     * runs from a DisposableEffect before layout), so fall back to the hosting activity's display —
-     * otherwise a landscape start would build the ViewPort with the wrong rotation and crop to the
-     * wrong orientation until a rebind.
-     */
-    fun displayRotation(previewView: PreviewView): Int = currentDisplay(previewView)?.rotation ?: Surface.ROTATION_0
+    /** The rotation of the display the preview is attached on, else the default display's. */
+    fun displayRotation(): Int = currentDisplay()?.rotation ?: Surface.ROTATION_0
 
-    @Suppress("DEPRECATION")
-    private fun currentDisplay(previewView: PreviewView): Display? = previewView.display
-        ?: previewView.context.getActivityOrNull()?.windowManager?.defaultDisplay
-        ?: context.getActivityOrNull()?.windowManager?.defaultDisplay
+    private fun currentDisplay(): Display? = display()
+        ?: (context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager)?.getDisplay(Display.DEFAULT_DISPLAY)
 
     /** Registers [displayListener] once, on the main thread. */
-    private fun listenForDisplayChanges() {
+    fun listenForDisplayChanges() {
         if (displayListener != null) return
         val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager ?: return
         val listener = object : DisplayManager.DisplayListener {
             override fun onDisplayChanged(displayId: Int) {
                 if (isReleased()) return
-                val pv = previewView ?: return
-                if (currentDisplay(pv)?.displayId != displayId) return
-                onDisplayChanged(pv)
+                if (currentDisplay()?.displayId != displayId) return
+                onDisplayChanged()
             }
 
             override fun onDisplayAdded(displayId: Int) = Unit

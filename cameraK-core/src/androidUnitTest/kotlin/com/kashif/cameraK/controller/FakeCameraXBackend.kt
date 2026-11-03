@@ -1,3 +1,5 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import android.content.ContentValues
@@ -30,6 +32,8 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.MutableLiveData
 import com.google.common.util.concurrent.ListenableFuture
+import com.kashif.cameraK.coroutines.CameraKDispatchers
+import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -38,6 +42,8 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.utils.CameraKEngineApi
+import kotlinx.coroutines.Dispatchers
 import java.io.File
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
@@ -441,6 +447,10 @@ internal fun testController(
     backend = backend,
     imageProcessingExecutor = imageProcessingExecutor,
     analyzerExecutor = analyzerExecutor,
+    // Every engine dispatcher on the main looper, which the tests run with idleMainLooper().
+    environment = CameraKEnvironment(
+        dispatchers = CameraKDispatchers(main = Dispatchers.Main, default = Dispatchers.Main, io = Dispatchers.Main),
+    ),
 ).also {
     // A 1.x controller opens the camera from startSession, as the 1.x holder's initialize calls it.
     if (started) it.startSession()

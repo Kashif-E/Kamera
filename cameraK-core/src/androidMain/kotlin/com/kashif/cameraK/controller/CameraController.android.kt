@@ -1,15 +1,21 @@
+@file:OptIn(CameraKEngineApi::class, InternalCameraKApi::class)
+
 package com.kashif.cameraK.controller
 
 import android.content.Context
+import android.view.Display
 import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.UseCase
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.kashif.cameraK.capabilities.CameraCapabilities
-import com.kashif.cameraK.capabilities.LensEnumerator
 import com.kashif.cameraK.capture.heicCaptureUnsupported
+import com.kashif.cameraK.engine.CameraKEnvironment
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.PreviewAttachment
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -20,40 +26,37 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
+import com.kashif.cameraK.utils.getActivityOrNull
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
-import kotlinx.atomicfu.atomic
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.ThreadFactory
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.coroutines.resume
 
 /**
- * Android-specific implementation of [CameraController] using CameraX: a facade over its
- * collaborators, [UseCaseBinder], [CameraSelectorResolver], [HardwareControls], [StillCapturer],
- * [VideoRecorder], [FramePipeline] and [OrientationTracker].
+ * The 1.x Android controller: a deprecated facade over an [AndroidCameraEngine] until 2.0's holder
+ * commands replace it. Session and binding belong to the engine; nothing here binds or opens a
+ * camera on its own. [startSession], [stopSession], [cleanup], the lens and device-type switches and
+ * the preview go through the engine; the members that act on what is bound (capture, recording,
+ * analyzers, flash, torch and zoom) keep their 1.x bodies on the engine's collaborators.
+ *
+ * A controller built with a public constructor builds and owns its engine. Its session runs while
+ * [startSession] has been called and the host's lifecycle is at least STARTED, as the 1.x camera
+ * followed the host; the host's destruction cleans it up. One the bridge built has no host lifecycle:
+ * the holder starts and stops its engine.
  */
 actual class CameraController internal constructor(
-    val context: Context,
-    val lifecycleOwner: LifecycleOwner,
-    flashMode: FlashMode,
-    torchMode: TorchMode,
-    internal var cameraLens: CameraLens,
-    internal val imageFormat: ImageFormat,
-    internal val qualityPriority: QualityPrioritization,
-    internal val directory: Directory,
-    internal var cameraDeviceType: CameraDeviceType,
-    internal val aspectRatio: AspectRatio,
-    internal val targetResolution: Pair<Int, Int>?,
-    internal val mirrorFrontCamera: Boolean,
-    private val backend: CameraXBackend,
-    private val imageProcessingExecutor: ExecutorService,
-    private val analyzerExecutor: ExecutorService,
+    /** The engine this facade runs on. */
+    internal val engine: AndroidCameraEngine,
+    hostLifecycle: LifecycleOwner?,
 ) {
+    /** The context the controller was built with. */
+    val context: Context get() = engine.context
+
+    /** The host lifecycle the controller was built with; the engine, for a controller the bridge built. */
+    val lifecycleOwner: LifecycleOwner = hostLifecycle ?: engine
 
     constructor(
         context: Context,
@@ -69,101 +72,94 @@ actual class CameraController internal constructor(
         targetResolution: Pair<Int, Int>? = null,
         mirrorFrontCamera: Boolean = false,
     ) : this(
-        context = context,
-        lifecycleOwner = lifecycleOwner,
-        flashMode = flashMode,
-        torchMode = torchMode,
-        cameraLens = cameraLens,
-        imageFormat = imageFormat,
-        qualityPriority = qualityPriority,
-        directory = directory,
-        cameraDeviceType = cameraDeviceType,
-        aspectRatio = aspectRatio,
-        targetResolution = targetResolution,
-        mirrorFrontCamera = mirrorFrontCamera,
-        backend = CameraXBackend.Default,
-        imageProcessingExecutor = Executors.newFixedThreadPool(2, cameraKThreads("CameraK-image-processing")),
-        analyzerExecutor = Executors.newSingleThreadExecutor(cameraKThreads("CameraK-analyzer")),
+        AndroidCameraEngine(
+            config = configurationOf(
+                flashMode, torchMode, cameraLens, imageFormat, qualityPriority, directory, cameraDeviceType,
+                aspectRatio, targetResolution, mirrorFrontCamera,
+            ),
+            context = context,
+            environment = CameraKEnvironment(),
+        ),
+        lifecycleOwner,
     )
 
-    // CameraX's file output always encodes JPEG, so that is what every capture file holds, whatever
-    // imageFormat asks for; its name and MIME type follow the bytes.
-    private val outputFormat = ImageFormat.JPEG
+    internal constructor(
+        context: Context,
+        lifecycleOwner: LifecycleOwner,
+        flashMode: FlashMode,
+        torchMode: TorchMode,
+        cameraLens: CameraLens,
+        imageFormat: ImageFormat,
+        qualityPriority: QualityPrioritization,
+        directory: Directory,
+        cameraDeviceType: CameraDeviceType,
+        aspectRatio: AspectRatio,
+        targetResolution: Pair<Int, Int>?,
+        mirrorFrontCamera: Boolean,
+        backend: CameraXBackend,
+        imageProcessingExecutor: ExecutorService,
+        analyzerExecutor: ExecutorService,
+        environment: CameraKEnvironment = CameraKEnvironment(),
+    ) : this(
+        AndroidCameraEngine(
+            config = configurationOf(
+                flashMode, torchMode, cameraLens, imageFormat, qualityPriority, directory, cameraDeviceType,
+                aspectRatio, targetResolution, mirrorFrontCamera,
+            ),
+            context = context,
+            environment = environment,
+            backend = backend,
+            imageProcessingExecutor = imageProcessingExecutor,
+            analyzerExecutor = analyzerExecutor,
+        ),
+        lifecycleOwner,
+    )
 
-    /** The engine this facade runs on. Red stub: A1' builds it. */
-    internal val engine: AndroidCameraEngine get() = TODO("A1'")
+    private val config: CameraConfiguration get() = engine.configuration
+
+    /** The facing the next bind or switch asks for. */
+    internal var cameraLens: CameraLens = config.cameraLens
+        private set
+
+    /** The device type the next bind or switch asks for. */
+    internal var cameraDeviceType: CameraDeviceType = config.cameraDeviceType
+        private set
+
+    internal val imageFormat: ImageFormat get() = config.imageFormat
+
+    private val hardware: HardwareControls get() = engine.hardwareControls
+    private val frames: FramePipeline get() = engine.framePipeline
+    private val stillCapturer: StillCapturer get() = engine.stillCapturer
+    private val videoRecorder: VideoRecorder get() = engine.videoRecorder
+
+    // The facade's session runs while startSession is in effect and the host is started.
+    private var sessionRequested = false
+    private var hostStarted = hostLifecycle == null
+    private var orientationListener: ((DeviceOrientation) -> Unit)? = null
+    private val host = hostLifecycle
+
+    // The attachment bindCamera made, kept so the attached surface is not collected with the view.
+    private var previewAttachment: PreviewAttachment? = null
+
+    private val hostObserver = LifecycleEventObserver { _, event ->
+        when (event) {
+            Lifecycle.Event.ON_START -> {
+                hostStarted = true
+                syncSession()
+            }
+            Lifecycle.Event.ON_STOP -> {
+                hostStarted = false
+                syncSession()
+            }
+            Lifecycle.Event.ON_DESTROY -> cleanup()
+            else -> Unit
+        }
+    }
 
     init {
-        if (imageFormat != outputFormat && imageFormat != ImageFormat.HEIC) {
-            CameraKLogger.w(TAG, "ImageFormat.$imageFormat is not supported for Android captures; saving JPEG instead")
-        }
+        engine.onOrientationChanged = { orientation -> orientationListener?.invoke(orientation) }
+        host?.let { owner -> engine.onMain { owner.lifecycle.addObserver(hostObserver) } }
     }
-
-    // Set once by cleanup(). Every main-executor callback (provider ready, capture saved, recording
-    // finalized) checks it first, so a callback that lands after release cannot rebind the camera,
-    // touch the shut-down executors or resume a capture twice.
-    private val released = atomic(false)
-
-    // Set by resolveCamera when the requested device type is a physical sub-lens of a
-    // logical multi-camera, and baked into every use-case builder of the bind (see
-    // pinnedPhysicalId on ResolvedCamera).
-    private var pinnedPhysicalId: String? = null
-
-    // Set when a portrait↔landscape flip is detected during recording (when rebinding would tear
-    // down the recording). The deferred rebind runs once the recording finalizes.
-    @Volatile
-    private var pendingViewPortRebind = false
-
-    private val selectorResolver = CameraSelectorResolver { LensEnumerator.snapshot(context) }
-    private val orientation = OrientationTracker(context)
-    private val binder = UseCaseBinder(
-        context = context,
-        lifecycleOwner = lifecycleOwner,
-        aspectRatio = aspectRatio,
-        targetResolution = targetResolution,
-        isReleased = { released.value },
-        onDisplayChanged = ::onDisplayChanged,
-    )
-    private val files = OutputFileFactory(context, directory, outputFormat)
-    private val stillCapturer = StillCapturer(
-        context = context,
-        backend = backend,
-        files = files,
-        imageProcessingExecutor = imageProcessingExecutor,
-        qualityPriority = qualityPriority,
-        isReleased = { released.value },
-        metadata = ::captureMetadata,
-    )
-    private val hardware = HardwareControls(
-        context = context,
-        flashMode = flashMode,
-        torchMode = torchMode,
-        camera = { binder.camera },
-        imageCapture = { stillCapturer.imageCapture },
-    )
-    private val frames = FramePipeline(backend, analyzerExecutor)
-    private val videoHost = object : VideoSessionHost {
-        override val isReleased: Boolean get() = released.value
-
-        override val previewView: PreviewView? get() = binder.previewView
-
-        override suspend fun rebindAndAwait(previewView: PreviewView) =
-            this@CameraController.rebindAndAwait(previewView)
-
-        override fun rebindAfterRecordingEndedByCameraX() {
-            pendingViewPortRebind = false
-            binder.previewView?.let { bindCamera(it) }
-        }
-
-        // Applies any rotation flip that was deferred while recording was in progress.
-        override fun onNoActiveRecording() {
-            if (pendingViewPortRebind && !released.value) {
-                pendingViewPortRebind = false
-                rebindIfViewPortOrientationChanged()
-            }
-        }
-    }
-    private val videoRecorder = VideoRecorder(context, backend, files, videoHost)
 
     /** The ImageAnalysis use case of the current bind, or null when no analyzer asked for one. */
     var imageAnalyzer: ImageAnalysis?
@@ -172,88 +168,32 @@ actual class CameraController internal constructor(
             frames.analysis = value
         }
 
+    /**
+     * Shows the camera in [previewView]. The camera opens from [startSession], not from here; the
+     * preview only attaches its surface, and [onCameraReady] runs once the camera is bound.
+     */
     fun bindCamera(previewView: PreviewView, onCameraReady: () -> Unit = {}) {
-        if (released.value) {
+        if (engine.isClosed) {
             CameraKLogger.w(TAG, "Ignoring bind on a released camera controller")
             return
         }
-        binder.attach(previewView)
-
-        backend.requestProvider(context, ContextCompat.getMainExecutor(context)) { providerResult ->
-            if (released.value) {
-                CameraKLogger.d(TAG, "Dropping a bind that resolved after the controller was released")
-                return@requestProvider
-            }
-            try {
-                binder.useProvider(providerResult.getOrThrow())
-
-                val resolutionSelector = binder.resolutionSelector()
-                // Must run before any use-case builder: it decides pinnedPhysicalId.
-                val camera = resolveCamera()
-
-                val preview = binder.buildPreview(resolutionSelector, pinnedPhysicalId, previewView)
-                stillCapturer.configure(resolutionSelector, hardware.flashMode, pinnedPhysicalId)
-                // Only build VideoCapture when a recording is active/about to start.
-                videoRecorder.configureForBind()
-
-                // Rebuild rather than reuse the existing instance: its baked-in Camera2Interop pin
-                // reflects the PREVIOUS lens/device type. Reusing it after a switch would silently
-                // analyze frames from the wrong physical camera (or lose the pin). Constructed here
-                // (after resolveCamera set pinnedPhysicalId, before the use-case group is
-                // assembled below) so it binds via this bind, not a second nested one.
-                frames.analysis = if (frames.analysisRequested) frames.build(pinnedPhysicalId) else null
-
-                // Align capture rotation with the display rotation that also drives the ViewPort and
-                // the preview box, so all three agree (WYSIWYG). Relying on the accelerometer
-                // OrientationEventListener for this let the crop (display-based) and the EXIF
-                // (sensor-based) disagree — producing a portrait-rotated capture of a landscape crop
-                // (and vice-versa) when the device was flat or the display was orientation-locked (#136).
-                applyCaptureRotation(previewView)
-
-                val useCases = buildList<UseCase> {
-                    add(preview)
-                    add(checkNotNull(stillCapturer.imageCapture))
-                    videoRecorder.useCaseForBind()?.let { add(it) }
-                    frames.analysis?.let { add(it) }
-                }
-                binder.bindGroup(camera, useCases, previewView)?.let(hardware::applyDesiredHardwareState)
-
-                onCameraReady()
-            } catch (exc: Exception) {
-                CameraKLogger.e(TAG, "Binding the use cases for $cameraDeviceType failed", exc)
-            }
-        }
+        previewAttachment = attachPreview(previewView)
+        engine.onMain { engine.whenBound(onCameraReady) }
     }
 
-    /** The camera for the current facing and device type; also decides [pinnedPhysicalId]. */
-    private fun resolveCamera(): ResolvedCamera {
-        val resolved = selectorResolver.resolve(cameraLens, cameraDeviceType)
-        pinnedPhysicalId = resolved.pinnedPhysicalId
-        return resolved
-    }
+    /** Attaches [previewView]'s surface to the engine's preview; closing the result detaches it. */
+    @InternalCameraKApi
+    @CameraKEngineApi
+    fun attachPreview(previewView: PreviewView): PreviewAttachment =
+        engine.preview.attach(previewView.surfaceProvider, displayOf(previewView))
 
-    private fun onDisplayChanged(previewView: PreviewView) {
-        // Auto mode only; an explicit target orientation stays as set.
-        if (orientation.targetOrientation == null) applyCaptureRotation(previewView)
-        rebindIfViewPortOrientationChanged()
-    }
-
-    /**
-     * Rebinds the camera when the display rotation flips between portrait and landscape, so the
-     * (immutable) ViewPort is rebuilt with the matching Rational.
-     */
-    private fun rebindIfViewPortOrientationChanged() {
-        val pv = binder.previewView ?: return
-        if (!binder.viewPortOrientationChanged(pv)) return
-
-        if (videoRecorder.isRecording) {
-            // Don't rebind mid-recording: unbinding to rebind would tear down the VideoCapture session.
-            // Defer it — the recording's Finalize callback performs the rebind once it's safe.
-            pendingViewPortRebind = true
-            return
-        }
-        bindCamera(pv)
-    }
+    // previewView.display is null until the view is attached (bindCamera runs from a DisposableEffect
+    // before layout), so fall back to the hosting activity's display: a landscape start would
+    // otherwise build the ViewPort with the wrong rotation until a rebind.
+    @Suppress("DEPRECATION")
+    private fun displayOf(previewView: PreviewView): Display? = previewView.display
+        ?: previewView.context.getActivityOrNull()?.windowManager?.defaultDisplay
+        ?: context.getActivityOrNull()?.windowManager?.defaultDisplay
 
     /**
      * Applies the registered analyzers to the camera. [registerImageAnalyzer] and
@@ -300,17 +240,16 @@ actual class CameraController internal constructor(
      * analysis is bound alone until the next bind puts it in the group.
      */
     private fun bindImageAnalysis() {
-        val pv = binder.previewView
-        if (binder.camera == null || pv == null) return
+        if (!engine.isBound) return
         if (!videoRecorder.isRecording) {
-            bindCamera(pv)
+            engine.launch { engine.rebind() }
             return
         }
-        val analysis = frames.build(pinnedPhysicalId)
+        val analysis = frames.build(engine.pinnedPhysicalId)
         try {
-            // resolveCamera() rather than a bare lens facing: a pinned physical lens must carry the
+            // The bound camera rather than a bare lens facing: a pinned physical lens must carry the
             // same selector-level pin as the main bind.
-            binder.bindAlone(::resolveCamera, analysis)
+            engine.binder.bindAlone({ engine.boundCameraOr(cameraLens, cameraDeviceType) }, analysis)
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Binding image analysis during a recording failed", e)
         }
@@ -319,21 +258,13 @@ actual class CameraController internal constructor(
     /** Runs [block] on the main thread, where CameraX bindings change, unless the controller was released. */
     private fun onMainThread(block: () -> Unit) {
         ContextCompat.getMainExecutor(context).execute {
-            if (!released.value) block()
+            if (!engine.isClosed) block()
         }
     }
 
     actual suspend fun takePictureToFile(): ImageCaptureResult {
-        if (!released.value && imageFormat == ImageFormat.HEIC) return heicCaptureUnsupported(TAG)
+        if (!engine.isClosed && imageFormat == ImageFormat.HEIC) return heicCaptureUnsupported(TAG)
         return stillCapturer.takePictureToFile()
-    }
-
-    /**
-     * Capture metadata: mirror the saved image horizontally for the front camera when configured,
-     * so the photo matches the mirrored preview (#112).
-     */
-    private fun captureMetadata(): ImageCapture.Metadata = ImageCapture.Metadata().apply {
-        isReversedHorizontal = mirrorFrontCamera && cameraLens == CameraLens.FRONT
     }
 
     actual fun toggleFlashMode() = hardware.toggleFlashMode()
@@ -361,16 +292,16 @@ actual class CameraController internal constructor(
             return
         }
         cameraLens = if (cameraLens == CameraLens.BACK) CameraLens.FRONT else CameraLens.BACK
-        binder.previewView?.let { bindCamera(it) }
+        switchCamera()
     }
 
     actual fun getCameraLens(): CameraLens? = cameraLens
 
     actual fun getImageFormat(): ImageFormat = imageFormat
 
-    actual fun getAspectRatio(): AspectRatio = aspectRatio
+    actual fun getAspectRatio(): AspectRatio = config.aspectRatio
 
-    actual fun getQualityPrioritization(): QualityPrioritization = qualityPriority
+    actual fun getQualityPrioritization(): QualityPrioritization = config.qualityPrioritization
 
     actual fun getPreferredCameraDeviceType(): CameraDeviceType = cameraDeviceType
 
@@ -382,24 +313,51 @@ actual class CameraController internal constructor(
             return
         }
         cameraDeviceType = deviceType
-        // Live switch: re-bind the use cases with a camera selector for the new device type
-        // (this rebind keeps the session/plugins; the field alone has no effect until a bind).
-        binder.previewView?.let { bindCamera(it) }
+        switchCamera()
     }
 
-    actual fun getCameraCapabilities(): CameraCapabilities =
-        CameraCapabilities(selectorResolver.lensSnapshot().map { it.info })
+    // The engine switches a live session; a closed one opens on the new camera at its next start.
+    private fun switchCamera() {
+        val selection = CameraSelection.ByLens(cameraLens, cameraDeviceType)
+        engine.launch { engine.selectCamera(selection) }
+    }
 
-    /** Nothing to start: the session runs from [bindCamera] until [stopSession]. */
-    actual fun startSession() = Unit
+    actual fun getCameraCapabilities(): CameraCapabilities = engine.capabilities.value
+        .takeIf { it.allLenses.isNotEmpty() }
+        ?: CameraCapabilities(engine.selectorResolver.lensSnapshot().map { it.info })
+
+    /** Opens the camera through the engine; it stays open until [stopSession] or [cleanup]. */
+    actual fun startSession() {
+        sessionRequested = true
+        syncSession()
+    }
 
     /**
-     * Unbinds the use cases this controller bound, and no other CameraX consumer's. Call on the main
-     * thread, like every other CameraX binding call: the set of bound use cases is main-thread state.
+     * Closes the camera and unbinds the use cases this controller bound, and no other CameraX
+     * consumer's. The next [startSession] binds again.
      */
     actual fun stopSession() {
-        binder.unbindOwnUseCases()
+        sessionRequested = false
+        engine.launch {
+            engine.stop()
+            engine.unbindOwnUseCases()
+        }
     }
+
+    private fun syncSession() {
+        if (engine.isClosed) return
+        val run = sessionRequested && hostStarted
+        engine.launch { if (run) engine.start(desired()) else engine.stop() }
+    }
+
+    private fun desired() = DesiredHardware(
+        selection = CameraSelection.ByLens(cameraLens, cameraDeviceType),
+        flashMode = hardware.flashMode,
+        torchMode = hardware.torchMode,
+        // The zoom the user asked for stays in HardwareControls, which applies it after every bind.
+        zoomRatio = 1f,
+        targetOrientation = engine.orientation.targetOrientation,
+    )
 
     /**
      * Adds a listener for captured images. Safe to call from any thread. On Android the listener runs
@@ -418,13 +376,6 @@ actual class CameraController internal constructor(
     actual suspend fun startRecording(configuration: VideoConfiguration): String =
         videoRecorder.startRecording(configuration)
 
-    /** Rebinds and waits for the bind to finish, for at most [STOP_FINALIZE_TIMEOUT_MS]. */
-    private suspend fun rebindAndAwait(previewView: PreviewView) {
-        withTimeoutOrNull(STOP_FINALIZE_TIMEOUT_MS) {
-            suspendCancellableCoroutine<Unit> { c -> bindCamera(previewView) { if (c.isActive) c.resume(Unit) } }
-        }
-    }
-
     actual suspend fun stopRecording(): VideoCaptureResult = videoRecorder.stopRecording()
 
     actual suspend fun pauseRecording() {
@@ -435,81 +386,63 @@ actual class CameraController internal constructor(
         videoRecorder.resumeRecording()
     }
 
-    actual fun getDeviceOrientation(): DeviceOrientation = orientation.deviceOrientation
+    actual fun getDeviceOrientation(): DeviceOrientation = engine.orientation.deviceOrientation
 
+    /** Reports orientation changes while the session runs; the sensor runs only then. */
     actual fun setOnOrientationChangedListener(callback: ((DeviceOrientation) -> Unit)?) {
-        orientation.setOnOrientationChangedListener(callback)
+        orientationListener = callback
     }
 
     actual fun setTargetOrientation(orientation: DeviceOrientation?) {
-        this.orientation.targetOrientation = orientation
+        engine.orientation.targetOrientation = orientation
         // applyCaptureRotation honors the override when set, and otherwise uses the DISPLAY rotation
         // (consistent with auto mode) — so clearing the override (null) immediately reverts to the
         // display rotation instead of a possibly-stale sensor orientation. Fall back to the sensor
-        // orientation only if there's no preview view yet.
-        binder.previewView?.let { applyCaptureRotation(it) }
-            ?: applyRotation((orientation ?: this.orientation.deviceOrientation).toSurfaceRotation())
+        // orientation only if nothing is bound yet.
+        if (engine.isBound) {
+            engine.applyCaptureRotation()
+        } else {
+            engine.applyRotation((orientation ?: engine.orientation.deviceOrientation).toSurfaceRotation())
+        }
     }
 
     /**
-     * Sets the capture rotation from the current display rotation (auto mode) or the explicit
-     * target orientation. Keeping capture rotation tied to the display — the same source as the
-     * ViewPort and the preview box — guarantees the saved photo's orientation matches what the user
-     * saw (#136).
-     */
-    private fun applyCaptureRotation(previewView: PreviewView) {
-        val override = orientation.targetOrientation
-        applyRotation(override?.toSurfaceRotation() ?: binder.displayRotation(previewView))
-    }
-
-    private fun applyRotation(rotation: Int) {
-        stillCapturer.imageCapture?.targetRotation = rotation
-        videoRecorder.videoCapture?.targetRotation = rotation
-    }
-
-    /**
-     * Releases the camera. Terminal and idempotent: afterwards no bind reaches CameraX, a capture
-     * still in flight returns [ImageCaptureResult.Error], and late CameraX callbacks are ignored.
-     * Call on the main thread, like every other CameraX binding call.
+     * Releases the camera: closes the engine. Terminal and idempotent: afterwards no bind reaches
+     * CameraX, a capture still in flight returns [ImageCaptureResult.Error], and late CameraX
+     * callbacks are ignored.
      */
     actual fun cleanup() {
-        if (!released.compareAndSet(false, true)) return
-
-        orientation.release()
-        binder.stopListeningForDisplayChanges()
-
-        // Stop frame delivery before anything it uses goes away, and stop a recording while its
-        // VideoCapture is still bound so it finalizes cleanly.
-        frames.stopDelivery()
-        videoRecorder.stopForRelease()
-
-        // Release this controller's own use cases (not unbindAll: the process-wide provider may hold
-        // another owner's use cases).
-        try {
-            binder.unbindOwnUseCases()
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Unbinding use cases on release failed", e)
-        }
-
-        frames.clearConsumers()
-        stillCapturer.clearListeners()
-        videoRecorder.failUnclaimedOutcome()
-
-        // A capture still in flight would otherwise wait for a callback that is now ignored.
-        stillCapturer.failInFlight()
-
-        imageProcessingExecutor.shutdown()
-        analyzerExecutor.shutdown()
+        if (engine.isClosed) return
+        host?.let { owner -> engine.onMain { owner.lifecycle.removeObserver(hostObserver) } }
+        previewAttachment = null
+        engine.close()
     }
 
     private companion object {
         const val TAG = "CameraK"
 
-        fun cameraKThreads(name: String): ThreadFactory {
-            val count = AtomicInteger()
-            return ThreadFactory { runnable ->
-                Thread(runnable, "$name-${count.incrementAndGet()}").apply { isDaemon = true }
-            }
-        }
+        fun configurationOf(
+            flashMode: FlashMode,
+            torchMode: TorchMode,
+            cameraLens: CameraLens,
+            imageFormat: ImageFormat,
+            qualityPriority: QualityPrioritization,
+            directory: Directory,
+            cameraDeviceType: CameraDeviceType,
+            aspectRatio: AspectRatio,
+            targetResolution: Pair<Int, Int>?,
+            mirrorFrontCamera: Boolean,
+        ) = CameraConfiguration(
+            flashMode = flashMode,
+            torchMode = torchMode,
+            cameraLens = cameraLens,
+            imageFormat = imageFormat,
+            qualityPrioritization = qualityPriority,
+            cameraDeviceType = cameraDeviceType,
+            aspectRatio = aspectRatio,
+            targetResolution = targetResolution,
+            directory = directory,
+            mirrorFrontCamera = mirrorFrontCamera,
+        )
     }
 }

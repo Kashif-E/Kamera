@@ -61,6 +61,27 @@ internal class CameraSelectorResolver(private val enumerate: () -> List<AndroidL
             ResolvedCamera.TopLevel(lens, target.info.id)
         }
     }
+
+    /**
+     * [resolve], or null when the snapshot lists cameras and none faces [lens]: no camera, decided
+     * before binding. An empty snapshot (the camera service failed) leaves the choice to CameraX.
+     */
+    fun resolveFacing(lens: CameraLens, deviceType: CameraDeviceType): ResolvedCamera? {
+        val snapshot = lensSnapshot()
+        if (snapshot.isNotEmpty() && snapshot.none { it.info.lens == lens && !it.info.isExternal }) return null
+        return resolve(lens, deviceType)
+    }
+
+    /** The camera whose `LensInfo.id` is [id], or null when the snapshot has none. */
+    fun resolveId(id: String): ResolvedCamera? {
+        val descriptor = lensSnapshot().firstOrNull { it.info.id == id } ?: return null
+        val lens = descriptor.info.lens
+        return if (descriptor.isPhysicalChild) {
+            ResolvedCamera.PhysicalLens(lens, id, descriptor.parentLogicalId)
+        } else {
+            ResolvedCamera.TopLevel(lens, id)
+        }
+    }
 }
 
 /**

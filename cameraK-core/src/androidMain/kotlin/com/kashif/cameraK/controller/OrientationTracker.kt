@@ -8,7 +8,8 @@ import com.kashif.cameraK.enums.DeviceOrientation
 /**
  * The device orientation the accelerometer reports, and the app's explicit target orientation.
  * Only the device-orientation output follows the sensor; the capture rotation and the ViewPort follow
- * display changes ([UseCaseBinder]).
+ * display changes ([UseCaseBinder]). The sensor runs only between [start] and [stop]: a reading that
+ * arrives after [stop] changes nothing. Main thread.
  */
 internal class OrientationTracker(private val context: Context) {
     @Volatile
@@ -19,37 +20,37 @@ internal class OrientationTracker(private val context: Context) {
     @Volatile
     var targetOrientation: DeviceOrientation? = null
 
+    // Set between start and stop; a reading the sensor delivers outside that window is dropped.
     @Volatile
-    private var callback: ((DeviceOrientation) -> Unit)? = null
+    private var onChange: ((DeviceOrientation) -> Unit)? = null
     private var listener: OrientationEventListener? = null
 
-    /** Reports orientation changes to [callback] while it is set; null stops the sensor. */
-    fun setOnOrientationChangedListener(callback: ((DeviceOrientation) -> Unit)?) {
-        this.callback = callback
-        if (callback != null) {
-            if (listener == null) {
-                listener = object : OrientationEventListener(context) {
-                    override fun onOrientationChanged(angle: Int) {
-                        val newOrientation = orientationForSensorAngle(angle) ?: return
-                        if (newOrientation != deviceOrientation) {
-                            deviceOrientation = newOrientation
-                            this@OrientationTracker.callback?.invoke(newOrientation)
-                        }
-                    }
+    /** Starts the sensor, reporting each change of bucket to [onChange] until [stop]. */
+    fun start(onChange: (DeviceOrientation) -> Unit) {
+        this.onChange = onChange
+        val sensor = listener ?: object : OrientationEventListener(context) {
+            override fun onOrientationChanged(angle: Int) {
+                val report = this@OrientationTracker.onChange ?: return
+                val newOrientation = orientationForSensorAngle(angle) ?: return
+                if (newOrientation != deviceOrientation) {
+                    deviceOrientation = newOrientation
+                    report(newOrientation)
                 }
             }
-            listener?.enable()
-        } else {
-            listener?.disable()
-            listener = null
-        }
+        }.also { listener = it }
+        sensor.enable()
     }
 
-    /** Stops the sensor and drops the callback. */
-    fun release() {
+    /** Stops the sensor; nothing is reported until the next [start]. */
+    fun stop() {
+        onChange = null
         listener?.disable()
+    }
+
+    /** Stops the sensor for good. */
+    fun release() {
+        stop()
         listener = null
-        callback = null
     }
 }
 

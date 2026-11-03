@@ -1,3 +1,5 @@
+@file:OptIn(InternalCameraKApi::class, CameraKEngineApi::class)
+
 package com.kashif.cameraK.compose
 
 import android.content.Context
@@ -16,6 +18,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.previewAspectRatio
+import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.InternalCameraKApi
 
 @Composable
 actual fun CameraPreviewView(
@@ -27,9 +31,11 @@ actual fun CameraPreviewView(
     val context = LocalContext.current
     val previewView = remember { fitCenterPreviewView(context) }
 
+    // The camera opens from the session, not from the preview: the preview attaches its surface on
+    // enter and detaches it on dispose, which leaves an incoming preview's surface in place.
     DisposableEffect(controller, previewView) {
-        controller.bindCamera(previewView) {}
-        onDispose {}
+        val attachment = controller.attachPreview(previewView)
+        onDispose { attachment.close() }
     }
 
     // Size the preview to the configured aspect ratio so it matches the capture. Drive portrait vs
