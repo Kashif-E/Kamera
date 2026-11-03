@@ -37,7 +37,7 @@ kotlin {
 
         commonTest {
             // The engine contract kit: never published, compiled into this module's tests on every
-            // target. It is empty until the engine SPI lands (design §0).
+            // target. Each engine's test source set runs it through its own driver (design §11.2).
             kotlin.srcDir("src/engineContract/kotlin")
             dependencies {
                 implementation(kotlin("test"))
@@ -56,10 +56,9 @@ kotlin {
             implementation(libs.junit)
             implementation(libs.robolectric)
             implementation(libs.androidx.test.core)
-            // The tests host CameraX in a ComponentActivity and drive a LifecycleRegistry. Both came
-            // through activity-compose before the split; pinned to the versions they resolved to then.
+            // The tests host CameraX in a ComponentActivity, which came through activity-compose
+            // before the split; pinned to the version it resolved to then.
             implementation(libs.androidx.activity)
-            implementation(libs.androidx.lifecycle.runtime)
         }
 
         androidMain.dependencies {
@@ -69,6 +68,9 @@ kotlin {
             api(libs.androidx.camera.view)
             api(libs.camera.lifecycle)
             api(libs.camera.video)
+            // The 1.x bridge drives the controller through its own LifecycleRegistry. No public
+            // signature names a registry, so it is not api.
+            implementation(libs.androidx.lifecycle.runtime)
         }
     }
 }

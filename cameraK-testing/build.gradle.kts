@@ -1,5 +1,5 @@
 // camerak-testing: fakes and coroutine test helpers for apps' tests. Published, and meant for test
-// source sets only. Until the engine SPI lands it holds one placeholder declaration (design §0.3).
+// source sets only: FakeCameraEngine, FakeFrameSource, FakePermissionChecker and the TestScope helpers.
 plugins {
     alias(libs.plugins.multiplatform)
     alias(libs.plugins.android.library)

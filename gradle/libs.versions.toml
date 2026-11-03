@@ -20,8 +20,8 @@ compose-material3 = "1.9.0"
 coil-mp-version = "3.5.0"
 lucide-icons = "2.2.1"
 androidx-activity = "1.13.0"
-# Test-only for cameraK-core, which has no Compose: the lifecycle-runtime its Android unit tests ran
-# against through activity-compose before the module split.
+# cameraK-core's lifecycle-runtime, which has no Compose: its Android 1.x bridge drives a
+# LifecycleRegistry. The version is the one activity-compose brought before the module split.
 androidx-lifecycle = "2.9.4"
 # The JavaCPP release train: javacv and javacpp carry its number, each preset binding its native
 # library's version before it. These are the Java bindings only; apps add the natives they ship.

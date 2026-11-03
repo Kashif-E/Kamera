@@ -367,11 +367,13 @@ internal class ContractCases(
 
             engine.close()
             driver.settle()
+            assertEquals(0, driver.releaseCount(), "close released the camera before the recording was finalized")
             recording.deliverRecordingFinalized()
             driver.settle()
 
             assertFinalizedWithShutdown(events, path)
             engine.closeAndJoin()
+            assertEquals(1, driver.releaseCount(), "native releases after the recording was finalized")
         }
     }
 
@@ -384,6 +386,7 @@ internal class ContractCases(
 
             val stop = scope.async { engine.stop() }
             driver.settle()
+            assertFalse(stop.isCompleted, "stop returned before the recording was finalized")
             recording.deliverRecordingFinalized()
             driver.settle()
             stop.await()

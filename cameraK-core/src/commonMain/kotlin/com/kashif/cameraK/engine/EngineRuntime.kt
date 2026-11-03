@@ -1,7 +1,11 @@
 package com.kashif.cameraK.engine
 
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.newSingleThreadContext
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The engine's platform-free collaborators. Each member has a default that needs no platform code,
@@ -33,7 +37,12 @@ internal class WorkerDispatcher(val dispatcher: CoroutineDispatcher, private val
     override fun close() = release()
 }
 
-internal fun newDedicatedWorker(name: String): WorkerDispatcher = TODO("S2' red: dedicated worker for $name")
+// kotlinx-coroutines' own single-thread dispatcher: one daemon thread named [name], ended by close().
+@OptIn(DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
+internal fun newDedicatedWorker(name: String): WorkerDispatcher {
+    val dispatcher = newSingleThreadContext(name)
+    return WorkerDispatcher(dispatcher) { dispatcher.close() }
+}
 
 internal fun interface BackoffPolicy {
     /** [attempt] counts from 1. */
@@ -44,7 +53,8 @@ internal fun interface BackoffPolicy {
          * 250 ms, doubling, capped at 4 s. The engine waits with delay() on its own dispatcher, so
          * tests run it on virtual time; the recovery timeout, not the policy, decides when it gives up.
          */
-        val Default: BackoffPolicy = BackoffPolicy { TODO("S2' red: default backoff") }
+        val Default: BackoffPolicy =
+            BackoffPolicy { attempt -> 250.milliseconds * (1 shl (attempt - 1).coerceIn(0, 4)) }
     }
 }
 

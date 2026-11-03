@@ -7,16 +7,33 @@ import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.coroutines.suspendRunCatching
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.ZoomState
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** Migration only, until C1': the channel that carries the 1.x facade to `Ready.controller`. */
 internal interface LegacyControllerAccess {
@@ -36,7 +53,14 @@ internal interface LegacySession {
     suspend fun <T> onSessionThread(block: () -> T): T
 }
 
-/** S2' red: the declaration only. */
+/**
+ * The engine every platform bridge returns until its real engine lands: a 1.x controller behind
+ * the engine interface, reporting what the 1.x holder reported. It publishes Open once the
+ * session's start call returns, because the 1.x controllers report no state of their own, and it
+ * never reports Interrupted or a runtime Failed: their runtime errors stay log-only, as in 1.x.
+ * Commands are refused with `InvalidState`; until the platform engines land, plugins and the
+ * Sample issue them on `Ready.controller`. Exempt from the contract kit.
+ */
 internal class LegacyControllerEngine(
     override val legacyController: CameraController,
     override val preview: PlatformPreviewSource,
@@ -44,41 +68,182 @@ internal class LegacyControllerEngine(
     private val environment: CameraKEnvironment,
 ) : CameraEngine,
     LegacyControllerAccess {
-    override val state: StateFlow<EngineState> get() = TODO("S2' red")
-    override val hardware: StateFlow<HardwareState> get() = TODO("S2' red")
-    override val zoom: StateFlow<ZoomState> get() = TODO("S2' red")
-    override val deviceOrientation: StateFlow<DeviceOrientation> get() = TODO("S2' red")
-    override val capabilities: StateFlow<CameraCapabilities> get() = TODO("S2' red")
-    override val recordingEvents: Flow<EngineRecordingEvent> get() = TODO("S2' red")
-    override val frames: FrameSource get() = TODO("S2' red")
+    private val _state = MutableStateFlow<EngineState>(EngineState.Closed)
+    override val state: StateFlow<EngineState> = _state.asStateFlow()
 
-    override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> = TODO("S2' red")
+    private val _hardware = MutableStateFlow(HardwareState(FlashMode.OFF, TorchMode.OFF, null, null))
+    override val hardware: StateFlow<HardwareState> = _hardware.asStateFlow()
 
-    override suspend fun stop(): Unit = TODO("S2' red")
+    private val _zoom = MutableStateFlow(ZoomState(1f, 1f, 1f))
+    override val zoom: StateFlow<ZoomState> = _zoom.asStateFlow()
 
-    override suspend fun capture(): CameraKResult<CapturedImage> = TODO("S2' red")
+    private val _deviceOrientation = MutableStateFlow(DeviceOrientation.PORTRAIT)
+    override val deviceOrientation: StateFlow<DeviceOrientation> = _deviceOrientation.asStateFlow()
 
-    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = TODO("S2' red")
+    private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
+    override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
 
-    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = TODO("S2' red")
+    override val recordingEvents: Flow<EngineRecordingEvent> = emptyFlow()
+    override val frames: FrameSource = InactiveFrameSource()
 
-    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = TODO("S2' red")
+    // Start, stop and the session close run one at a time, so no session call overlaps another.
+    private val sessionLock = Mutex()
+    private val closed = atomic(false)
+    private val closeDone = Job()
+    private var listeningForOrientation = false
 
-    override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> = TODO("S2' red")
+    override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> {
+        if (closed.value) return CameraKResult.Failure(CameraKError.Closed)
+        return sessionLock.withLock {
+            when {
+                closed.value -> CameraKResult.Failure(CameraKError.Closed)
+                _state.value == EngineState.Open -> CameraKResult.Success(Unit)
+                else -> open()
+            }
+        }
+    }
 
-    override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> = TODO("S2' red")
+    private suspend fun open(): CameraKResult<Unit> {
+        publish(EngineState.Opening)
+        val started = try {
+            suspendRunCatching { session.start() }
+        } catch (e: CancellationException) {
+            // The session call may have run before the cancellation landed; a cancelled start leaves the camera closed.
+            withContext(NonCancellable) { stopSession() }
+            publish(EngineState.Closed)
+            throw e
+        }
+        started.exceptionOrNull()?.let { e ->
+            CameraKLogger.e(TAG, "Starting the 1.x camera session failed", e)
+            val error = CameraKError.Internal(e)
+            publish(EngineState.Failed(error))
+            return CameraKResult.Failure(error)
+        }
+        readBack()
+        if (closed.value) return CameraKResult.Failure(CameraKError.Closed)
+        publish(EngineState.Open)
+        return CameraKResult.Success(Unit)
+    }
 
-    override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> = TODO("S2' red")
+    // The 1.x getters, read once per start, the way the 1.x holder read them for its UI state.
+    private suspend fun readBack() {
+        val read = suspendRunCatching {
+            session.onSessionThread {
+                val capabilities = legacyController.getCameraCapabilities()
+                val camera = legacyController.getCameraLens()?.let { capabilities.lenses(it).firstOrNull() }
+                    ?: capabilities.allLenses.firstOrNull()
+                val values = ReadBack(
+                    capabilities = capabilities,
+                    hardware = HardwareState(
+                        flashMode = legacyController.getFlashMode() ?: FlashMode.OFF,
+                        torchMode = legacyController.getTorchMode() ?: TorchMode.OFF,
+                        camera = camera,
+                        targetOrientation = null,
+                    ),
+                    zoom = ZoomState(legacyController.getZoom(), 1f, legacyController.getMaxZoom()),
+                    orientation = legacyController.getDeviceOrientation(),
+                )
+                if (!listeningForOrientation) {
+                    legacyController.setOnOrientationChangedListener { _deviceOrientation.value = it }
+                    listeningForOrientation = true
+                }
+                values
+            }
+        }
+        read.onFailure {
+            CameraKLogger.e(TAG, "Reading the 1.x controller's hardware failed; keeping the last values", it)
+        }
+        read.getOrNull()?.let {
+            _capabilities.value = it.capabilities
+            _hardware.value = it.hardware
+            _zoom.value = it.zoom
+            _deviceOrientation.value = it.orientation
+        }
+    }
 
-    override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> = TODO("S2' red")
+    override suspend fun stop() {
+        if (closed.value) return
+        sessionLock.withLock {
+            if (closed.value || _state.value == EngineState.Closed) return
+            try {
+                stopSession()
+            } finally {
+                publish(EngineState.Closed)
+            }
+        }
+    }
 
-    override suspend fun stopRecording(): CameraKResult<RecordedVideo> = TODO("S2' red")
+    private suspend fun stopSession() {
+        suspendRunCatching { session.stop() }
+            .onFailure { CameraKLogger.e(TAG, "Stopping the 1.x camera session failed", it) }
+    }
 
-    override suspend fun pauseRecording(): CameraKResult<Unit> = TODO("S2' red")
+    override fun close() {
+        if (!closed.compareAndSet(expect = false, update = true)) return
+        _state.value = EngineState.Closed
+        // Not a child of the environment's job: the session must close even when the holder's scope is already cancelled.
+        CoroutineScope(environment.dispatchers.default).launch(NonCancellable) {
+            try {
+                sessionLock.withLock {
+                    suspendRunCatching { session.close() }
+                        .onFailure { CameraKLogger.e(TAG, "Closing the 1.x camera session failed", it) }
+                }
+            } finally {
+                closeDone.complete()
+            }
+        }
+    }
 
-    override suspend fun resumeRecording(): CameraKResult<Unit> = TODO("S2' red")
+    override suspend fun closeAndJoin() {
+        close()
+        closeDone.join()
+    }
 
-    override fun close(): Unit = TODO("S2' red")
+    // A state write after close leaves Closed, whichever of the two lands first.
+    private fun publish(next: EngineState) {
+        _state.update { if (closed.value) EngineState.Closed else next }
+    }
 
-    override suspend fun closeAndJoin(): Unit = TODO("S2' red")
+    override suspend fun capture(): CameraKResult<CapturedImage> = refuse(CameraOperation.CAPTURE)
+
+    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = refuse(CameraOperation.ZOOM)
+
+    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = refuse(CameraOperation.FLASH)
+
+    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = refuse(CameraOperation.TORCH)
+
+    override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> =
+        refuse(CameraOperation.LENS)
+
+    override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> =
+        refuse(CameraOperation.ORIENTATION)
+
+    override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> =
+        refuse(CameraOperation.RECORD_PREPARE)
+
+    override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> =
+        refuse(CameraOperation.RECORD_START)
+
+    override suspend fun stopRecording(): CameraKResult<RecordedVideo> = refuse(CameraOperation.RECORD_STOP)
+
+    override suspend fun pauseRecording(): CameraKResult<Unit> = refuse(CameraOperation.RECORD_PAUSE)
+
+    override suspend fun resumeRecording(): CameraKResult<Unit> = refuse(CameraOperation.RECORD_RESUME)
+
+    private fun refuse(operation: CameraOperation): CameraKResult<Nothing> {
+        if (closed.value) return CameraKResult.Failure(CameraKError.Closed)
+        CameraKLogger.w(TAG, "The 1.x bridge refuses the $operation command; issue it on Ready.controller")
+        return CameraKResult.Failure(CameraKError.InvalidState(operation))
+    }
+
+    private class ReadBack(
+        val capabilities: CameraCapabilities,
+        val hardware: HardwareState,
+        val zoom: ZoomState,
+        val orientation: DeviceOrientation,
+    )
+
+    private companion object {
+        const val TAG = "CameraK"
+    }
 }

@@ -1,7 +1,7 @@
 package com.kashif.cameraK.testing
 
 import kotlin.test.Test
-import kotlin.test.assertContains
+import kotlin.test.assertEquals
 
 /**
  * camerak-core's own tests depend on camerak-testing, which depends on camerak-core. This compiles
@@ -10,6 +10,6 @@ import kotlin.test.assertContains
 class TestingBackEdgeTest {
     @Test
     fun commonTestSeesCameraKTesting() {
-        assertContains(setOf("android", "apple", "desktop"), testingPlatform)
+        assertEquals(emptyList(), FakeCameraEngine().calls)
     }
 }
