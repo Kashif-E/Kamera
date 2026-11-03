@@ -2,29 +2,30 @@ package com.kashif.cameraK.state
 
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.video.VideoCaptureResult
 
 /**
- * One-shot events emitted by the camera system.
- * Unlike state, events are not persisted and should be handled once.
+ * An unsolicited notice from the camera, such as a plugin that failed. Events are lossy and not
+ * replayed; the authoritative value is always a state flow, and a command's outcome is its result,
+ * never an event.
  *
- * Use SharedFlow to collect these events.
+ * Open: new event classes can be added in a minor release, so a `when` over an event needs an
+ * `else` branch. Only CameraK creates events.
  *
  * @example
  * ```kotlin
- * LaunchedEffect(stateHolder) {
- *     stateHolder.events.collect { event ->
+ * LaunchedEffect(holder) {
+ *     holder.events.collect { event ->
  *         when (event) {
- *             is CameraKEvent.ImageCaptured -> showSuccessToast(event.result)
- *             is CameraKEvent.CaptureFailed -> showErrorDialog(event.exception)
- *             is CameraKEvent.QRCodeScanned -> navigateToDetails(event.qrCode)
- *             else -> {}
+ *             is CameraKEvent.PluginFailed -> showPluginError(event.pluginId)
+ *             else -> Unit
  *         }
  *     }
  * }
  * ```
  */
-sealed class CameraKEvent {
+abstract class CameraKEvent internal constructor() {
     /**
      * No event (initial state).
      *
@@ -38,6 +39,7 @@ sealed class CameraKEvent {
      *
      * @property result The captured image result (file path or byte array).
      */
+    @Deprecated("Emitted only by the 1.x captureImage(). Use the result of capture(), or collect captures.")
     data class ImageCaptured(val result: ImageCaptureResult) : CameraKEvent()
 
     /**
@@ -45,6 +47,7 @@ sealed class CameraKEvent {
      *
      * @property exception The exception that caused the failure.
      */
+    @Deprecated("Emitted only by the 1.x captureImage(). A failed capture is the Failure that capture() returns.")
     data class CaptureFailed(val exception: Exception) : CameraKEvent()
 
     /**
@@ -52,6 +55,7 @@ sealed class CameraKEvent {
      *
      * @property qrCode The decoded QR code content.
      */
+    @Deprecated("Collect the codes from the QR scanner plugin's own flow.")
     data class QRCodeScanned(val qrCode: String) : CameraKEvent()
 
     /**
@@ -59,6 +63,7 @@ sealed class CameraKEvent {
      *
      * @property text The recognized text.
      */
+    @Deprecated("Collect the text from the OCR plugin's own flow.")
     data class TextRecognized(val text: String) : CameraKEvent()
 
     /**
@@ -80,6 +85,7 @@ sealed class CameraKEvent {
      *
      * @property filePath The output file path where the video is being recorded.
      */
+    @Deprecated("Emitted only by the 1.x recording calls, which the 2.0 recording commands replace.")
     data class RecordingStarted(val filePath: String) : CameraKEvent()
 
     /**
@@ -87,6 +93,7 @@ sealed class CameraKEvent {
      *
      * @property result The result of the recording with file path and duration.
      */
+    @Deprecated("Emitted only by the 1.x recording calls, which the 2.0 recording commands replace.")
     data class RecordingStopped(val result: VideoCaptureResult) : CameraKEvent()
 
     /**
@@ -94,6 +101,7 @@ sealed class CameraKEvent {
      *
      * @property exception The exception that caused the failure.
      */
+    @Deprecated("Emitted only by the 1.x recording calls, which the 2.0 recording commands replace.")
     data class RecordingFailed(val exception: Exception) : CameraKEvent()
 
     /**
@@ -102,10 +110,23 @@ sealed class CameraKEvent {
      * @property filePath The output file path.
      * @property durationMs The actual duration in milliseconds.
      */
+    @Deprecated("Emitted only by the 1.x recording calls, which the 2.0 recording commands replace.")
     data class RecordingMaxDurationReached(val filePath: String, val durationMs: Long) : CameraKEvent()
 
-    /** Red stub: the 2.0 shape with a placeholder id. */
-    class PluginFailed(val pluginId: String, val error: CameraKError) : CameraKEvent() {
-        constructor(error: Throwable) : this("", CameraKError.Internal(error))
+    /**
+     * A plugin failed. The failure is contained: the camera and the other plugins keep running. A
+     * thrown exception arrives as [CameraKError.Internal] with the throwable as its cause, whose
+     * message may contain paths or URIs.
+     *
+     * The constructor is public only so CameraK's own plugins can build the event.
+     *
+     * @property pluginId Which plugin failed: the plugin's class name. A failure in a coroutine
+     *   launched in the shared [CameraKStateHolder.pluginScope] has the fixed id `"pluginScope"`,
+     *   because that scope is shared by every plugin and cannot tell which one launched it.
+     * @property error What failed.
+     */
+    class PluginFailed @InternalCameraKApi constructor(val pluginId: String, val error: CameraKError) :
+        CameraKEvent() {
+        override fun toString(): String = "PluginFailed(pluginId=$pluginId, error=${error::class.simpleName})"
     }
 }

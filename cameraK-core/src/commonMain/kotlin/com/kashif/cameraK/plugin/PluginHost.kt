@@ -1,11 +1,13 @@
 package com.kashif.cameraK.plugin
 
 import com.kashif.cameraK.coroutines.isFatal
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -13,7 +15,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.job
-import kotlinx.coroutines.launch
 
 /**
  * The configuration the holder gives its engine factory, derived from the plugins present at
@@ -28,20 +29,22 @@ internal fun effectiveConfig(config: CameraConfiguration, plugins: List<CameraKP
  * holder cannot stall or deadlock another thread.
  *
  * A plugin that throws from `onAttach` or `onDetach` is logged and reported as
- * [CameraKEvent.PluginFailed]; the camera and the other plugins carry on. That holds for any
+ * [CameraKEvent.PluginFailed] with the plugin's class name as its id; the camera and the other
+ * plugins carry on. That holds for any
  * throwable but a fatal one ([isFatal]): a `TODO()` body's NotImplementedError and a missing
  * native library's LinkageError are a plugin's failure, not the camera's.
  */
 internal class PluginHost(
     private val holder: CameraKStateHolder,
     private val holderScope: CoroutineScope,
-    private val emit: suspend (CameraKEvent) -> Unit,
+    private val emit: (CameraKEvent) -> Unit,
 ) {
     // A plugin coroutine that throws must not reach the platform's uncaught-exception handler, which
     // kills the host app on Android and iOS.
     private val failureHandler = CoroutineExceptionHandler { _, error ->
         CameraKLogger.e(TAG, "A plugin coroutine failed", error)
-        report(error)
+        // The scope is shared by every plugin, so it cannot tell which one launched the coroutine.
+        report(SHARED_SCOPE_ID, error)
     }
 
     /** A SupervisorJob child of the holder's scope: one plugin's failure cancels nothing else. */
@@ -94,7 +97,7 @@ internal class PluginHost(
         } catch (e: Throwable) {
             if (e.isFatal()) throw e
             CameraKLogger.e(TAG, "Attaching a plugin failed; the camera carries on without it", e)
-            report(e)
+            report(idOf(plugin), e)
         }
     }
 
@@ -104,15 +107,20 @@ internal class PluginHost(
         } catch (e: Throwable) {
             if (e.isFatal()) throw e
             CameraKLogger.e(TAG, "Detaching a plugin failed", e)
-            report(e)
+            report(idOf(plugin), e)
         }
     }
 
-    private fun report(error: Throwable) {
-        holderScope.launch { emit(CameraKEvent.PluginFailed(error)) }
+    @OptIn(InternalCameraKApi::class)
+    private fun report(pluginId: String, error: Throwable) {
+        emit(CameraKEvent.PluginFailed(pluginId, CameraKError.Internal(error)))
     }
+
+    // An anonymous plugin class has no name.
+    private fun idOf(plugin: CameraKPlugin): String = plugin::class.simpleName ?: "plugin"
 
     private companion object {
         const val TAG = "CameraK"
+        const val SHARED_SCOPE_ID = "pluginScope"
     }
 }

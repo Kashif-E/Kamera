@@ -9,11 +9,13 @@ import coil3.compose.LocalPlatformContext
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
@@ -108,7 +110,13 @@ abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
             val result = save(byteArray, imageName)
             if (result is ImageSaveResult.Failed) {
                 CameraKLogger.e("ImageSaverPlugin", "Auto-save failed", result.error)
-                holder.emitEvent(CameraKEvent.PluginFailed(result.error))
+                holder.emitEvent(
+                    @OptIn(InternalCameraKApi::class)
+                    CameraKEvent.PluginFailed(
+                        this@ImageSaverPlugin::class.simpleName ?: "ImageSaverPlugin",
+                        CameraKError.Internal(result.error),
+                    ),
+                )
             }
         }
     }

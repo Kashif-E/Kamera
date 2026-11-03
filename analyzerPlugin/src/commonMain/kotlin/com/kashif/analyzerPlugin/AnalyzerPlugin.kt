@@ -3,11 +3,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -80,7 +82,13 @@ class AnalyzerPlugin internal constructor(
                         startAnalyzer()
                     } catch (e: Exception) {
                         CameraKLogger.e("CameraK", "Analyzer: Failed to start analyzer", e)
-                        stateHolder.emitEvent(CameraKEvent.PluginFailed(e))
+                        stateHolder.emitEvent(
+                            @OptIn(InternalCameraKApi::class)
+                            CameraKEvent.PluginFailed(
+                                this@AnalyzerPlugin::class.simpleName ?: "AnalyzerPlugin",
+                                CameraKError.Internal(e),
+                            ),
+                        )
                     }
                 }
         }

@@ -4,11 +4,13 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -144,7 +146,13 @@ class QRScannerPlugin internal constructor(
         } catch (e: Exception) {
             CameraKLogger.e("CameraK", "QRScannerPlugin: Failed to start scanning", e)
             isScanning.value = false
-            stateHolder?.let { holder -> holder.pluginScope.launch { holder.emitEvent(CameraKEvent.PluginFailed(e)) } }
+            val failure =
+                @OptIn(InternalCameraKApi::class)
+                CameraKEvent.PluginFailed(
+                    this::class.simpleName ?: "QRScannerPlugin",
+                    CameraKError.Internal(e),
+                )
+            stateHolder?.let { holder -> holder.pluginScope.launch { holder.emitEvent(failure) } }
             null
         }
     }

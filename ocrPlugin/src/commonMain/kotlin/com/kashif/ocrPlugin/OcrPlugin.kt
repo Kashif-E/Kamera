@@ -5,11 +5,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.ImageBitmap
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -101,7 +103,13 @@ class OcrPlugin internal constructor(
                             startRecognition()
                         } catch (e: Exception) {
                             CameraKLogger.e("CameraK", "OcrPlugin: Failed to start recognition", e)
-                            stateHolder.emitEvent(CameraKEvent.PluginFailed(e))
+                            stateHolder.emitEvent(
+                                @OptIn(InternalCameraKApi::class)
+                                CameraKEvent.PluginFailed(
+                                    this@OcrPlugin::class.simpleName ?: "OcrPlugin",
+                                    CameraKError.Internal(e),
+                                ),
+                            )
                         }
                     }
             }
