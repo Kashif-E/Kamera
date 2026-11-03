@@ -47,6 +47,10 @@ class AppleTracerTest {
         engine.close()
     }
 
+    /**
+     * Shows only that the os_signpost cinterop calls run without crashing: os_signpost has no
+     * in-process read-back, so what reaches Instruments is checked on a device (B1).
+     */
     @Test
     fun theSignpostTracerOpensAndClosesIntervalsAndMarks() {
         val tracer = signpostTracer()

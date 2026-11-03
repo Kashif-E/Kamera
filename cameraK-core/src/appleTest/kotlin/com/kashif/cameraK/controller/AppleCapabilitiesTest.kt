@@ -15,7 +15,8 @@ import kotlin.test.assertTrue
 /**
  * The engine enumerates its cameras on its own scope after construction, never inside the
  * constructor, and fills the first real capabilities: the 1.x enumerator's lenses, flash and torch
- * from hasFlash, and pause and resume from iOS 18, where AVCaptureMovieFileOutput can pause.
+ * modes per camera (a camera with neither lists only OFF), and pause and resume from iOS 18, where
+ * AVCaptureMovieFileOutput can pause.
  */
 class AppleCapabilitiesTest {
     @Test
@@ -52,6 +53,30 @@ class AppleCapabilitiesTest {
                 }
                 engine.close()
             }
+        }
+    }
+
+    @Test
+    fun aLensWithAFlashAndATorchListsItsModesAndOneWithoutListsOnlyOff() {
+        val driver = AppleEngineDriver(adjustableBack = true)
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+
+            val capabilities = engine.capabilities.value
+            assertEquals(
+                setOf(FlashMode.OFF, FlashMode.AUTO, FlashMode.ON),
+                capabilities.supportedFlashModes(AppleEngineDriver.BACK_ID),
+                "flash modes of the camera with a flash",
+            )
+            assertEquals(
+                setOf(TorchMode.OFF, TorchMode.ON),
+                capabilities.supportedTorchModes(AppleEngineDriver.BACK_ID),
+                "torch modes of the camera with a torch",
+            )
+            assertEquals(setOf(FlashMode.OFF), capabilities.supportedFlashModes(AppleEngineDriver.FRONT_ID))
+            assertEquals(setOf(TorchMode.OFF), capabilities.supportedTorchModes(AppleEngineDriver.FRONT_ID))
+            engine.close()
         }
     }
 }

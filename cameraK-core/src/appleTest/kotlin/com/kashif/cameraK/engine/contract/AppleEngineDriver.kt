@@ -38,6 +38,7 @@ import platform.AVFoundation.AVCaptureSessionInterruptionReasonVideoDeviceInUseB
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonVideoDeviceNotAvailableDueToSystemPressure
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonVideoDeviceNotAvailableInBackground
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonVideoDeviceNotAvailableWithMultipleForegroundApps
+import platform.AVFoundation.AVCaptureTorchModeOff
 import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVErrorDeviceAlreadyUsedByAnotherSession
 import platform.AVFoundation.AVErrorDeviceWasDisconnected
@@ -51,12 +52,25 @@ import platform.AVFoundation.AVErrorDeviceWasDisconnected
  * queue; [settle] drains the session queue and the main queue, then runs the scheduler's current
  * tasks, three times over, so every hop between them has landed.
  */
-internal class AppleEngineDriver(private val osVersion: Int = 18, private val tracer: Tracer? = null) :
-    ThrowingCallbackDriver,
+internal class AppleEngineDriver(
+    private val osVersion: Int = 18,
+    private val tracer: Tracer? = null,
+    /** The back camera has a flash and a torch (off and on); the front camera has neither. */
+    adjustableBack: Boolean = false,
+) : ThrowingCallbackDriver,
     PreOpenInterruptionDriver {
-    val back = FakeDevice(isFront = false, uniqueId = BACK_ID, hasTorch = false, maxVideoZoomFactor = 1.0)
+    val back = FakeDevice(
+        isFront = false,
+        uniqueId = BACK_ID,
+        hasTorch = adjustableBack,
+        supportedTorchModes = setOf(AVCaptureTorchModeOff, AVCaptureTorchModeOn),
+        maxVideoZoomFactor = 1.0,
+    )
     val front = FakeDevice(isFront = true, uniqueId = FRONT_ID, hasTorch = false, maxVideoZoomFactor = 1.0)
-    val lenses = listOf(lensInfo(BACK_ID, CameraLens.BACK), lensInfo(FRONT_ID, CameraLens.FRONT))
+    val lenses = listOf(
+        lensInfo(BACK_ID, CameraLens.BACK, hasFlash = adjustableBack),
+        lensInfo(FRONT_ID, CameraLens.FRONT),
+    )
 
     private val sessions = atomic(0)
     private val enumerations = atomic(0)
@@ -162,13 +176,13 @@ internal class AppleEngineDriver(private val osVersion: Int = 18, private val tr
         const val BACK_ID = "back"
         const val FRONT_ID = "front"
 
-        fun lensInfo(id: String, lens: CameraLens) = LensInfo(
+        fun lensInfo(id: String, lens: CameraLens, hasFlash: Boolean = false) = LensInfo(
             id = id,
             deviceType = CameraDeviceType.WIDE_ANGLE,
             lens = lens,
             minZoom = 1f,
             maxZoom = 1f,
-            hasFlash = false,
+            hasFlash = hasFlash,
             isLogical = false,
         )
 

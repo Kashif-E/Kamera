@@ -37,6 +37,7 @@ private typealias RemoveObserver = CFunction<(COpaquePointer?, COpaquePointer?, 
 private val counterLock = NSLock()
 private var watchedName: String? = null
 private val liveTokens = mutableSetOf<Long>()
+private val givenQueues = mutableListOf<Long>()
 
 private var originalAdd: CPointer<AddObserver>? = null
 
@@ -62,7 +63,12 @@ private val addHook = staticCFunction {
     val token = originalAdd!!(center, sel, name, obj, queue, block)
     val observedName = name?.let { interpretObjCPointerOrNull<NSString>(it.rawValue)?.toString() }
     if (token != null && observedName != null) {
-        counting { if (observedName == watchedName) liveTokens += token.toLong() }
+        counting {
+            if (observedName == watchedName) {
+                liveTokens += token.toLong()
+                givenQueues += queue.toLong()
+            }
+        }
     }
     token
 }
@@ -79,7 +85,16 @@ private val removeHook = staticCFunction { center: COpaquePointer?, sel: COpaque
  * addObserverForName:object:queue:usingBlock: and removeObserver: for ones that record the tokens
  * and call through to the originals.
  */
-internal fun blockObserversLeftBehind(name: String, block: () -> Unit): Int {
+internal fun blockObserversLeftBehind(name: String, block: () -> Unit): Int = blockObservers(name, block).leftBehind
+
+/**
+ * The block-based observers registered for [name] while [block] ran: how many were not removed by
+ * the time it returned, and the queue each was registered with (0 for a null queue, which runs the
+ * block on the posting thread).
+ */
+internal class BlockObservers(val leftBehind: Int, val queues: List<Long>)
+
+internal fun blockObservers(name: String, block: () -> Unit): BlockObservers {
     val cls = objc_getClass("NSNotificationCenter") as ObjCClass?
     val add = class_getInstanceMethod(cls, sel_registerName("addObserverForName:object:queue:usingBlock:"))
     val remove = class_getInstanceMethod(cls, sel_registerName("removeObserver:"))
@@ -87,6 +102,7 @@ internal fun blockObserversLeftBehind(name: String, block: () -> Unit): Int {
     counting {
         watchedName = name
         liveTokens.clear()
+        givenQueues.clear()
     }
     // The originals are known before the hooks can run.
     originalAdd = method_getImplementation(add)?.reinterpret()
@@ -101,6 +117,9 @@ internal fun blockObserversLeftBehind(name: String, block: () -> Unit): Int {
     }
     return counting {
         watchedName = null
-        liveTokens.size.also { liveTokens.clear() }
+        BlockObservers(liveTokens.size, givenQueues.toList()).also {
+            liveTokens.clear()
+            givenQueues.clear()
+        }
     }
 }

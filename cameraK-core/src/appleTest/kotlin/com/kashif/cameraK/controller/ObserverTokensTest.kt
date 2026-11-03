@@ -19,8 +19,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 /**
- * The engine observes its own session only (object = the session), and removes every observer it
- * added when it closes, so a closed engine leaves no block running on another session's events.
+ * The engine observes its own session only (object = the session), with no queue, so each block runs
+ * on the posting thread and hops to the session queue itself, and removes every observer it added
+ * when it closes, so a closed engine leaves no block running on another session's events.
  */
 class ObserverTokensTest {
     private val names = listOf(
@@ -34,14 +35,15 @@ class ObserverTokensTest {
     fun observersUseSessionObjectAndAreRemovedOnClose() {
         for (name in names) {
             val driver = AppleEngineDriver()
-            val whileOpen = blockObserversLeftBehind(name) {
+            val whileOpen = blockObservers(name) {
                 driver.runCase {
                     driver.createEngine()
                     driver.settle()
                     assertEquals(CameraKResult.Success(Unit), driver.engine.start(backCamera()))
                 }
             }
-            assertEquals(1, whileOpen, "observers of $name while the engine is open")
+            assertEquals(1, whileOpen.leftBehind, "observers of $name while the engine is open")
+            assertEquals(listOf(0L), whileOpen.queues, "the queue the observer of $name was registered with")
             driver.engine.close()
 
             val afterClose = blockObserversLeftBehind(name) {
