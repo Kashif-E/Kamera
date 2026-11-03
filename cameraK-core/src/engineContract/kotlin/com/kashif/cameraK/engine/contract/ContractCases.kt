@@ -286,7 +286,8 @@ internal class ContractCases(
         }
     }
 
-    // Rule 5: a command reaches the platform, and hardware and zoom move only when the platform reports.
+    // Rule 5: a command reaches the platform, and hardware and zoom move only when the platform reports; on a
+    // read-back engine, flash moves to the platform's read-back before setFlashMode returns.
     suspend fun commandsLeaveHardwareUntilThePlatformReports() {
         val case = "commandsLeaveHardwareUntilThePlatformReports"
         withEngine { engine ->
@@ -300,8 +301,7 @@ internal class ContractCases(
             val reported = engine.hardware.value.flashMode
             val toReported = "setFlashMode to the reported mode"
             steps.step(toReported, skipIf = noLens(lens)) {
-                val change = HardwareChange(flashMode = reported)
-                commandThenReport(engine, toReported, change, reported, { it.flashMode }) {
+                flashCommand(engine, toReported, reported) {
                     assertEquals(CameraKResult.Success(reported), engine.setFlashMode(reported), toReported)
                 }
                 assertEquals(reported, engine.hardware.value.flashMode, "hardware follows the platform's flash report")
@@ -322,8 +322,8 @@ internal class ContractCases(
             }
             val flash = lens?.let { reportedFlashTarget(engine, it) }
             steps.step("setFlashMode", skipIf = skipReason(lens, flash) { onlyFlash(engine, it) }) {
-                commandThenReport(engine, "setFlashMode", HardwareChange(flashMode = flash), flash, { it.flashMode }) {
-                    assertEquals(CameraKResult.Success(flash!!), engine.setFlashMode(flash))
+                flashCommand(engine, "setFlashMode", flash!!) {
+                    assertEquals(CameraKResult.Success(flash), engine.setFlashMode(flash))
                 }
                 assertEquals(flash, engine.hardware.value.flashMode, "hardware follows the platform's flash report")
             }
@@ -351,6 +351,38 @@ internal class ContractCases(
 
         driver.changeHardware(change)
         driver.settle()
+    }
+
+    // Flash has no observer on a read-back engine: the platform's value is published before the command returns,
+    // and nothing reports it afterwards. Every other engine takes it as a platform observer report.
+    private suspend fun flashCommand(engine: CameraEngine, name: String, mode: FlashMode, command: suspend () -> Unit) {
+        if (driver is ReadBackFlashDriver) {
+            commandThenReadBack(engine, name, mode, command)
+        } else {
+            commandThenReport(engine, name, HardwareChange(flashMode = mode), mode, { it.flashMode }, command)
+        }
+    }
+
+    // Issues the flash [command] and checks that it reached the platform as [applied], that hardware already holds
+    // the platform's read-back, and that torch, zoom and camera did not move.
+    private suspend fun commandThenReadBack(
+        engine: CameraEngine,
+        name: String,
+        applied: FlashMode,
+        command: suspend () -> Unit,
+    ) {
+        val hardware = engine.hardware.value
+        val zoom = engine.zoom.value
+        command()
+        driver.settle()
+        val platform = driver.boundSettings().flashMode
+        assertEquals(applied, platform, "$name did not reach the platform")
+        val after = engine.hardware.value
+        assertEquals(platform, after.flashMode, "$name: hardware is the platform's flash read-back")
+        assertEquals(hardware.torchMode, after.torchMode, "$name moved the torch")
+        assertEquals(hardware.camera, after.camera, "$name moved the camera")
+        assertEquals(hardware.targetOrientation, after.targetOrientation, "$name moved the target orientation")
+        assertEquals(zoom, engine.zoom.value, "$name changed zoom")
     }
 
     // HardwareState: no camera before the first bind, then the camera the engine opened on or switched to.

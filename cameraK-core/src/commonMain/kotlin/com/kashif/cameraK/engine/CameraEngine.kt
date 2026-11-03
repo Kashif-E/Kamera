@@ -43,7 +43,14 @@ import kotlinx.coroutines.flow.StateFlow
  *    completes with `Failure(Closed)` at once. Native resources are released once, by their owner.
  * 4. Every platform callback that could throw is wrapped: no exception crosses a GCD block, an
  *    executor or a JNI callback.
- * 5. [hardware] and [zoom] change only from platform observers, never from the requested value.
+ * 5. [hardware] and [zoom] change only from what the platform reports, never from the requested
+ *    value. Every value comes from platform observers, except flash on Android and iOS: it has no
+ *    observer there, because it is a capture parameter only the engine writes. Its report is a
+ *    read-back of the platform object right after the platform call returns (Android's
+ *    `ImageCapture.flashMode`; on iOS the mode the session-queue block stored after validating it
+ *    against `photoOutput.supportedFlashModes`), published before [setFlashMode] returns, and
+ *    [setFlashMode] returns that read-back. What is published is the platform's value, never the
+ *    request.
  * 6. Desired hardware is re-applied after every bind, camera switch and restart.
  * 7. **[stop] or [close] during a recording finalizes the recording before the camera closes**,
  *    and the recording ends `Finalized(Success, SHUTDOWN)` with a complete file.
@@ -58,7 +65,11 @@ import kotlinx.coroutines.flow.StateFlow
 public interface CameraEngine {
     public val state: StateFlow<EngineState>
 
-    /** Low-rate hardware values read back from platform observers. */
+    /**
+     * Low-rate hardware values as the platform reports them: from platform observers, and flash on
+     * Android and iOS from a read-back of the platform object published before [setFlashMode]
+     * returns (rule 5).
+     */
     public val hardware: StateFlow<HardwareState>
 
     /** Gesture-rate zoom, on its own stream. */
