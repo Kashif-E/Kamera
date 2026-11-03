@@ -17,11 +17,17 @@ internal class FramePipeline(private val backend: CameraXBackend, private val an
     private val consumers = atomic(emptyList<ImageAnalysis.Analyzer>())
     private val multiplexer = MultiplexingAnalyzer { consumers.value }
 
-    // Set by the first registration and kept for the controller's lifetime: from then on every bind
-    // includes one ImageAnalysis, so later consumers join without a rebind.
+    // Set by the configuration's frameAnalysis or by the first registration, and kept for the
+    // engine's lifetime: from then on every bind includes one ImageAnalysis, so later consumers join
+    // without a rebind.
     @Volatile
     var analysisRequested = false
         private set
+
+    /** Asks every bind from now on for an ImageAnalysis, before anyone consumes frames (Decision 14). */
+    fun requestAnalysis() {
+        analysisRequested = true
+    }
 
     /** The ImageAnalysis use case of the current bind, or null when none was built. */
     var analysis: ImageAnalysis? = null

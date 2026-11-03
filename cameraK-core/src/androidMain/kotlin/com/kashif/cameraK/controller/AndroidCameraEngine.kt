@@ -240,6 +240,9 @@ internal class AndroidCameraEngine(
     private val awaitingFirstFrame = AtomicBoolean(false)
 
     init {
+        // Declared up front, so the first bind includes the ImageAnalysis and a plugin that registers
+        // later only joins it (Decision 14).
+        if (config.frameAnalysis) framePipeline.requestAnalysis()
         if (config.imageFormat != outputFormat && config.imageFormat != ImageFormat.HEIC) {
             CameraKLogger.w(
                 TAG,
