@@ -22,8 +22,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,8 +42,11 @@ import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.X
 import com.kashif.cameraK.compose.CameraKScreen
-import com.kashif.cameraK.compose.rememberCameraKState
+import com.kashif.cameraK.compose.rememberCameraKStateHolder
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.controls.cycleFlashMode
+import com.kashif.cameraK.controls.toggleLens
+import com.kashif.cameraK.controls.toggleTorch
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -57,6 +60,7 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKState
+import com.kashif.cameraK.state.CameraKStateHolder
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.ExperimentalResourceApi
@@ -82,10 +86,10 @@ internal fun CameraContent(
     var qualityPrioritization by remember { mutableStateOf(QualityPrioritization.BALANCED) }
     // Device type is applied with the runtime setter (live re-bind), so it's NOT part of the
     // re-init config; the initial value seeds the first bind and CameraScreen re-applies the
-    // current selection whenever the controller is (re)created.
+    // current selection whenever the holder is (re)created.
     var cameraDeviceType by remember { mutableStateOf(CameraDeviceType.WIDE_ANGLE) }
 
-    val cameraState by rememberCameraKState(
+    val holder = rememberCameraKStateHolder(
         config = CameraConfiguration(
             cameraLens = CameraLens.BACK,
             flashMode = FlashMode.OFF,
@@ -97,15 +101,19 @@ internal fun CameraContent(
             cameraDeviceType = CameraDeviceType.WIDE_ANGLE,
             aspectRatio = aspectRatio,
             targetResolution = resolution,
+            // The frame plugins attach below, after the holder exists, so the holder cannot derive
+            // the flag from them: declared here, ImageAnalysis is in the first bind.
+            frameAnalysis = true,
         ),
-        setupPlugins = { stateHolder ->
-            stateHolder.attachPlugin(analyzer.plugin)
-            stateHolder.attachPlugin(imageSaver.plugin)
-            stateHolder.attachPlugin(qrScanner.plugin)
-            stateHolder.attachPlugin(ocr.plugin)
-            stateHolder.attachPlugin(recording.plugin)
-        },
     )
+    LaunchedEffect(holder) {
+        holder.attachPlugin(analyzer.plugin)
+        holder.attachPlugin(imageSaver.plugin)
+        holder.attachPlugin(qrScanner.plugin)
+        holder.attachPlugin(ocr.plugin)
+        holder.attachPlugin(recording.plugin)
+    }
+    val cameraState by holder.cameraState.collectAsState()
 
     CameraKScreen(
         cameraState = cameraState,
@@ -149,6 +157,7 @@ internal fun CameraContent(
         },
     ) { state ->
         CameraScreen(
+            holder = holder,
             cameraState = state,
             imageSaver = imageSaver,
             qrScanner = qrScanner,
@@ -177,6 +186,7 @@ internal enum class CameraMode { Photo, Video }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CameraScreen(
+    holder: CameraKStateHolder,
     cameraState: CameraKState.Ready,
     imageSaver: ImageSaverFeature,
     qrScanner: QrScannerFeature,
@@ -199,40 +209,30 @@ private fun CameraScreen(
     onCameraDeviceTypeChange: (CameraDeviceType) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    // The capture button stays on the 1.x controller until the engines capture (A3', I3', D3').
     val cameraController = cameraState.controller
     var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
+    val uiState by holder.uiState.collectAsState()
+    val zoom by holder.zoom.collectAsState()
+    val deviceOrientation by holder.deviceOrientation.collectAsState()
 
-    // Re-apply the selected camera device type whenever the controller is (re)created — config
+    // Re-apply the selected camera device type whenever the holder is (re)created — config
     // re-inits (aspect ratio, etc.) start from the default, so this preserves the user's choice.
-    LaunchedEffect(cameraController) {
-        cameraController.setPreferredCameraDeviceType(cameraDeviceType)
+    LaunchedEffect(holder) {
+        holder.selectCamera(uiState.cameraLens ?: CameraLens.BACK, cameraDeviceType)
     }
 
     var cameraMode by remember { mutableStateOf(CameraMode.Photo) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingDurationMs by remember { mutableStateOf(0L) }
 
-    var flashMode by remember { mutableStateOf(FlashMode.OFF) }
-    var torchMode by remember { mutableStateOf(TorchMode.OFF) }
-    var zoomLevel by remember { mutableFloatStateOf(1f) }
-    var maxZoom by remember { mutableFloatStateOf(1f) }
-
     var isQRScanningEnabled by remember { mutableStateOf(true) }
     var isOCREnabled by remember { mutableStateOf(true) }
     var isDetectionEnabled by remember { mutableStateOf(true) }
 
     var showSettings by remember { mutableStateOf(false) }
-    var deviceOrientation by remember { mutableStateOf(DeviceOrientation.PORTRAIT) }
     var lockedOrientation by remember { mutableStateOf<DeviceOrientation?>(null) }
-
-    LaunchedEffect(cameraController) {
-        maxZoom = cameraController.getMaxZoom()
-        deviceOrientation = cameraController.getDeviceOrientation()
-        cameraController.setOnOrientationChangedListener { orientation ->
-            deviceOrientation = orientation
-        }
-    }
 
     RecordingEffects(
         recording = recording,
@@ -247,9 +247,9 @@ private fun CameraScreen(
 
     AnalyzerEffect(analyzer, isDetectionEnabled)
 
+    // Latest wins in the holder, and the engine clamps into the camera's range.
     fun setCameraZoom(newLevel: Float) {
-        cameraController.setZoom(newLevel)
-        zoomLevel = cameraController.getZoom()
+        scope.launch { holder.setZoom(newLevel) }
     }
 
     ObjectDetectionEffect(latestFrame, scope)
@@ -257,29 +257,23 @@ private fun CameraScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
+            .pointerInput(holder) {
                 detectTransformGestures { _, _, zoomChange, _ ->
                     if (zoomChange != 1f) {
-                        setCameraZoom(zoomLevel * zoomChange)
+                        setCameraZoom(zoom.ratio * zoomChange)
                     }
                 }
             },
     ) {
         TopBar(
             modifier = Modifier.align(Alignment.TopCenter),
-            flashMode = flashMode,
-            torchMode = torchMode,
+            flashMode = uiState.flashMode ?: FlashMode.OFF,
+            torchMode = uiState.torchMode ?: TorchMode.OFF,
             aspectRatio = aspectRatio,
             isRecording = isRecording,
             recordingDurationMs = recordingDurationMs,
-            onFlashToggle = {
-                cameraController.toggleFlashMode()
-                flashMode = cameraController.getFlashMode() ?: FlashMode.OFF
-            },
-            onTorchToggle = {
-                cameraController.toggleTorchMode()
-                torchMode = cameraController.getTorchMode() ?: TorchMode.OFF
-            },
+            onFlashToggle = { scope.launch { holder.cycleFlashMode() } },
+            onTorchToggle = { scope.launch { holder.toggleTorch() } },
             onAspectRatioCycle = {
                 if (!isRecording) {
                     val entries = AspectRatio.entries
@@ -305,10 +299,10 @@ private fun CameraScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Zoom chips
-            if (maxZoom > 1f) {
+            if (zoom.maxRatio > 1f) {
                 ZoomChips(
-                    zoomLevel = zoomLevel,
-                    maxZoom = maxZoom,
+                    zoomLevel = zoom.ratio,
+                    maxZoom = zoom.maxRatio,
                     onZoomChange = { setCameraZoom(it) },
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -336,11 +330,7 @@ private fun CameraScreen(
 
                 Box(modifier = Modifier.graphicsLayer { rotationZ = orientationRotation }) {
                     CameraFlipButton(
-                        onClick = {
-                            cameraController.toggleCameraLens()
-                            maxZoom = cameraController.getMaxZoom()
-                            zoomLevel = 1f
-                        },
+                        onClick = { scope.launch { holder.toggleLens() } },
                         enabled = !isRecording,
                     )
                 }
@@ -394,14 +384,15 @@ private fun CameraScreen(
                 onCameraDeviceTypeChange = {
                     if (!isRecording) {
                         onCameraDeviceTypeChange(it)
-                        cameraController.setPreferredCameraDeviceType(it) // live re-bind
+                        // Live re-bind, on the camera facing the same way.
+                        scope.launch { holder.selectCamera(uiState.cameraLens ?: CameraLens.BACK, it) }
                     }
                 },
                 onQRScanningToggle = { isQRScanningEnabled = it },
                 onOCRToggle = { isOCREnabled = it },
                 onOrientationLockChange = { orientation ->
                     lockedOrientation = orientation
-                    cameraController.setTargetOrientation(orientation)
+                    scope.launch { holder.setTargetOrientation(orientation) }
                 },
                 onDismiss = { showSettings = false },
             )
