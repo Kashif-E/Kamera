@@ -48,7 +48,12 @@ internal interface EngineContractDriver {
      */
     fun releaseCount(): Int
 
-    /** Per-platform quiescence: drain the session queue, the main looper, the producer. Never a sleep. */
+    /**
+     * Per-platform quiescence: drain the engine's scheduler or looper (the session queue, the main
+     * looper, the producer), including the capability enumeration the engine launched after
+     * construction. The kit settles once after [createEngine], before any case reads
+     * `engine.capabilities`. Never a sleep.
+     */
     suspend fun settle()
 
     /**

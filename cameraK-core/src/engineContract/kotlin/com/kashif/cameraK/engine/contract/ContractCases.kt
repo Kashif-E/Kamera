@@ -591,6 +591,8 @@ internal class ContractCases(
     ) {
         val engine = driver.createEngine(config)
         try {
+            // A platform engine enumerates its cameras after construction; no case reads capabilities before that.
+            driver.settle()
             body(engine)
         } finally {
             engine.close()
