@@ -4,6 +4,7 @@ import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runInterruptible
+import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
 
 /** Where a grab loop gets its grabber for a device. */
@@ -25,31 +26,45 @@ internal class OpenedDevice(val grabber: FrameGrabber, val relaxed: Boolean)
  * Opens [device] at CameraK's size and frame rate and, if that fails and the source allows it,
  * once more at the camera's own mode (§4.1 row 3: CameraGrabber set both on every open, so a camera
  * without that mode never opened). [own] is told which grabber the caller must release if this
- * throws or is cancelled; the first grabber of a retried open is released here. Each `start()`
- * runs interruptibly, so cancelling the open interrupts it. Missing natives are not retried.
+ * throws or is cancelled, as `start()` is called on it: an open cancelled before that leaves nothing
+ * to release. The first grabber of a retried open is released here. Each `start()` runs
+ * interruptibly, so cancelling the open interrupts it. Missing natives are not retried.
  */
 internal suspend fun GrabberSource.open(
     device: LensInfo,
     own: (FrameGrabber?) -> Unit,
     release: (FrameGrabber) -> Unit,
 ): OpenedDevice {
-    val constrained = create(device, constrained = true).also(own)
+    val constrained = create(device, constrained = true).also(::prepare)
     try {
-        blockingCall { constrained.start() }
+        blockingCall {
+            own(constrained)
+            constrained.start()
+        }
         return OpenedDevice(constrained, relaxed = false)
     } catch (e: Exception) {
         if (e is CancellationException || !canRelax || JavaCvErrorMapper.isNativeLibraryMissing(e)) throw e
         CameraKLogger.w(TAG, "Opening the camera at CameraK's size and frame rate failed; retrying at its own mode", e)
         own(null)
         release(constrained)
-        val relaxed = create(device, constrained = false).also(own)
+        val relaxed = create(device, constrained = false).also(::prepare)
         try {
-            blockingCall { relaxed.start() }
+            blockingCall {
+                own(relaxed)
+                relaxed.start()
+            }
         } catch (retry: Exception) {
             if (retry !is CancellationException) retry.addSuppressed(e)
             throw retry
         }
         return OpenedDevice(relaxed, relaxed = true)
+    }
+}
+
+// FFmpeg reads macOS cameras through AVFoundation; the 1.x loop set the format on every FFmpeg grabber.
+private fun prepare(grabber: FrameGrabber) {
+    if (grabber is FFmpegFrameGrabber && currentOperatingSystem() == OperatingSystem.MAC) {
+        grabber.format = "avfoundation"
     }
 }
 
@@ -71,18 +86,30 @@ internal suspend fun <T> blockingCall(call: () -> T): T = runInterruptible {
 
 private const val TAG = "CameraK"
 
-/** A grabber the app built itself (the 1.x `customGrabber`): its own device, opened as it is. */
+/**
+ * A grabber the app built itself (the 1.x `customGrabber`): its own device, opened as it is, with
+ * no CameraK size or frame rate to drop on a retry.
+ */
 internal class CustomGrabberSource(private val grabber: FrameGrabber) : GrabberSource {
-    override val deviceKey: Any get() = TODO("D1'")
-    override val canRelax: Boolean get() = TODO("D1'")
+    override val deviceKey: Any get() = grabber
+    override val canRelax: Boolean get() = false
 
-    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = TODO("D1'")
+    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = grabber
 }
 
-/** The system's default camera, opened as the 1.x controller opened it. */
+/**
+ * The system's default camera, opened as the 1.x controller opened it: at [targetResolution] (720p
+ * when null) and CameraK's frame rate, or at the camera's own mode on the retry. Every grabber of
+ * it shares one device lock. Tests replace it through [defaultCameraOverride]. D2' selects among
+ * enumerated devices instead.
+ */
 internal class DefaultDeviceSource(private val targetResolution: Pair<Int, Int>?) : GrabberSource {
-    override val deviceKey: Any get() = TODO("D1'")
-    override val canRelax: Boolean get() = TODO("D1'")
+    override val deviceKey: Any get() = defaultCamera
+    override val canRelax: Boolean get() = true
 
-    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = TODO("D1'")
+    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = defaultCameraOverride?.invoke()
+        ?: createDefaultGrabber(
+            currentOperatingSystem(),
+            if (constrained) targetResolution ?: DEFAULT_CAMERA_RESOLUTION else null,
+        )
 }

@@ -1,5 +1,8 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.engine.WorkerDispatcher
+import com.kashif.cameraK.engine.newDedicatedWorker
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
@@ -7,7 +10,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -27,7 +29,6 @@ import org.bytedeco.javacv.VideoInputFrameGrabber
 import java.awt.image.BufferedImage
 import java.io.File
 import java.util.WeakHashMap
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
@@ -125,84 +126,130 @@ class CameraGrabber(
      * loop on the same camera to release it. A start while a loop runs does nothing.
      */
     fun start(coroutineScope: CoroutineScope, customGrabber: FrameGrabber? = null): Unit = synchronized(startLock) {
+        if (job.value?.isActive == true) return
+        val source = customGrabber?.let(::CustomGrabberSource) ?: DefaultDeviceSource(targetResolution)
+        launchRun(coroutineScope, source, desktopLensInfo(), ::newDedicatedWorker, legacyListener)
+    }
+
+    /**
+     * Starts one run of the grab loop for the desktop engine, after the previous run has released
+     * the camera: the engine cancels a run it replaces before it starts the next. The run reports
+     * to [listener] on [newWorker]'s thread, one worker per run (§2.4 desktop).
+     */
+    internal fun startRun(
+        scope: CoroutineScope,
+        source: GrabberSource,
+        device: LensInfo,
+        newWorker: (String) -> WorkerDispatcher,
+        listener: GrabLoopListener,
+    ): Job = synchronized(startLock) { launchRun(scope, source, device, newWorker, listener) }
+
+    private fun launchRun(
+        scope: CoroutineScope,
+        source: GrabberSource,
+        device: LensInfo,
+        newWorker: (String) -> WorkerDispatcher,
+        listener: GrabLoopListener,
+    ): Job {
         val previous = job.value
-        if (previous?.isActive == true) return
-        val device = cameraDeviceLock(customGrabber)
-
-        val producer =
-            Executors
-                .newSingleThreadExecutor { runnable -> Thread(runnable, PRODUCER_THREAD).apply { isDaemon = true } }
-                .asCoroutineDispatcher()
-        val loop =
-            coroutineScope.launch(producer, start = CoroutineStart.ATOMIC) {
-                var owned: FrameGrabber? = null
-                var holdsDevice = false
-                val converter = FrameConverter()
-                try {
-                    previous?.join()
-                    device.lock()
-                    holdsDevice = true
-                    // A loop cancelled before it opened the camera (a stop or cleanup right after the
-                    // start) leaves it closed.
-                    ensureActive()
-                    owned = customGrabber ?: defaultCameraOverride?.invoke() ?: createGrabber()
-                    // Set format for macOS AVFoundation before starting
-                    if (owned is FFmpegFrameGrabber && getOperatingSystem() == OperatingSystem.MAC) {
-                        owned.format = "avfoundation"
-                    }
-                    owned.start()
-
-                    // grab() blocks until the camera delivers the next frame, which paces the loop. A
-                    // grabber that returns at once without an image would not pace it, so the run
-                    // ends rather than spin.
-                    var framesWithoutImage = 0
-                    while (isActive) {
-                        val frame = owned.grab()
-                        val captureNanos = nanoClock()
-                        if (frame == null) {
-                            if (isActive) {
-                                throw IllegalStateException(
-                                    "The camera stopped delivering frames",
-                                )
-                            } else {
-                                break
-                            }
-                        }
-                        if (frame.image == null) {
-                            if (++framesWithoutImage >= MAX_FRAMES_WITHOUT_IMAGE) {
-                                throw IllegalStateException(
-                                    "The camera delivered no image in $MAX_FRAMES_WITHOUT_IMAGE frames",
-                                )
-                            }
-                            continue
-                        }
-                        framesWithoutImage = 0
-                        converter.setHorizontalFlip(isHorizontallyFlipped)
-                        val image = converter.convert(frame) ?: continue
-                        val size = frameSize
-                        if (size == null || size.first != image.width || size.second != image.height) {
-                            frameSize = image.width to image.height
-                        }
-                        frameFlow.tryEmit(image)
-                        if (snapshots.subscriptionCount.value > 0) {
-                            snapshots.tryEmit(CapturedFrame(image.copy(), captureNanos))
-                        }
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    errorHandler(e)
-                } catch (e: LinkageError) {
-                    errorHandler(missingNatives(e))
-                } finally {
-                    owned?.let { release(it, converter) }
-                    if (holdsDevice) device.unlock()
-                    snapshots.tryEmit(null)
-                }
-            }
+        val deviceLock = cameraDeviceLock(source.deviceKey)
+        val producer = newWorker(PRODUCER_THREAD)
+        val loop = scope.launch(producer.dispatcher, start = CoroutineStart.ATOMIC) {
+            runLoop(previous, deviceLock, source, device, listener)
+        }
         loop.invokeOnCompletion { producer.close() }
         job.value = loop
-        ownerScope.value = coroutineScope
+        ownerScope.value = scope
+        return loop
+    }
+
+    private suspend fun CoroutineScope.runLoop(
+        previous: Job?,
+        deviceLock: Mutex,
+        source: GrabberSource,
+        device: LensInfo,
+        listener: GrabLoopListener,
+    ) {
+        var owned: FrameGrabber? = null
+        var holdsDevice = false
+        var opened = false
+        val converter = FrameConverter()
+        try {
+            previous?.join()
+            deviceLock.lock()
+            holdsDevice = true
+            // A loop cancelled before it opened the camera (a stop or cleanup right after the
+            // start) leaves it closed.
+            ensureActive()
+            val grabber = source.open(device, own = { owned = it }, release = { release(it, listener) }).let {
+                opened = true
+                guarded(listener, "open") { listener.onOpened(it.relaxed) }
+                it.grabber
+            }
+
+            // grab() blocks until the camera delivers the next frame, which paces the loop. It runs
+            // interruptibly: a camera that stopped delivering leaves FFmpeg sleeping and retrying on
+            // EAGAIN until the thread is interrupted, so cancelling the loop interrupts it. A grabber
+            // that returns at once without an image would not pace the loop, so the run ends rather
+            // than spin.
+            var framesWithoutImage = 0
+            while (isActive) {
+                val frame = blockingCall { grabber.grab() }
+                val captureNanos = nanoClock()
+                if (frame == null) {
+                    if (isActive) {
+                        throw IllegalStateException(
+                            "The camera stopped delivering frames",
+                        )
+                    } else {
+                        break
+                    }
+                }
+                if (frame.image == null) {
+                    if (++framesWithoutImage >= MAX_FRAMES_WITHOUT_IMAGE) {
+                        throw IllegalStateException(
+                            "The camera delivered no image in $MAX_FRAMES_WITHOUT_IMAGE frames",
+                        )
+                    }
+                    continue
+                }
+                framesWithoutImage = 0
+                converter.setHorizontalFlip(isHorizontallyFlipped)
+                val image = converter.convert(frame) ?: continue
+                val size = frameSize
+                if (size == null || size.first != image.width || size.second != image.height) {
+                    frameSize = image.width to image.height
+                }
+                guarded(listener, "frame") { listener.onFrame(image, captureNanos) }
+                if (snapshots.subscriptionCount.value > 0) {
+                    snapshots.tryEmit(CapturedFrame(image.copy(), captureNanos))
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            guarded(listener, "failure") { listener.onFailure(e, opened) }
+        } catch (e: LinkageError) {
+            guarded(listener, "failure") { listener.onFailure(missingNatives(e), opened) }
+        } finally {
+            // runInterruptible clears its own interrupt; a stray one must not reach the native release.
+            Thread.interrupted()
+            owned?.let { release(it, listener) }
+            releaseConverter(converter, listener)
+            if (holdsDevice) deviceLock.unlock()
+            snapshots.tryEmit(null)
+        }
+    }
+
+    // The 1.x callers' listener: frames to frameFlow, every failure to errorHandler.
+    private val legacyListener = object : GrabLoopListener {
+        override fun onFrame(image: BufferedImage, captureNanos: Long) {
+            frameFlow.tryEmit(image)
+        }
+
+        override fun onFailure(failure: Throwable, opened: Boolean) = errorHandler(failure)
+
+        override fun onReleaseFailure(failure: Throwable) = errorHandler(failure)
     }
 
     /**
@@ -213,27 +260,41 @@ class CameraGrabber(
         synchronized(startLock) { job.value }?.cancel()
     }
 
-    private fun release(owned: FrameGrabber, converter: FrameConverter) {
+    // A listener is the engine's or a 1.x caller's code: what it throws is logged and that event dropped.
+    private inline fun guarded(listener: GrabLoopListener, event: String, report: () -> Unit) {
+        try {
+            report()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "A grab-loop listener failed on its $event event; the event is dropped", e)
+        }
+    }
+
+    private fun release(owned: FrameGrabber, listener: GrabLoopListener) {
         try {
             owned.stop()
         } catch (e: Exception) {
-            errorHandler(e)
+            listener.onReleaseFailure(e)
         } catch (e: LinkageError) {
-            errorHandler(missingNatives(e))
+            listener.onReleaseFailure(missingNatives(e))
         }
         try {
             owned.release()
         } catch (e: Exception) {
-            errorHandler(e)
+            listener.onReleaseFailure(e)
         } catch (e: LinkageError) {
-            errorHandler(missingNatives(e))
+            listener.onReleaseFailure(missingNatives(e))
         }
+    }
+
+    private fun releaseConverter(converter: FrameConverter, listener: GrabLoopListener) {
         try {
             converter.release()
         } catch (e: Exception) {
-            errorHandler(e)
+            listener.onReleaseFailure(e)
         } catch (e: LinkageError) {
-            errorHandler(missingNatives(e))
+            listener.onReleaseFailure(missingNatives(e))
         }
     }
 
@@ -246,36 +307,45 @@ class CameraGrabber(
             "artifacts. See docs/getting-started/installation.md.",
         e,
     )
+}
 
-    private fun createGrabber(): FrameGrabber = when (getOperatingSystem()) {
-        OperatingSystem.MAC -> {
-            // On macOS, use AVFoundation with device index as string
-            FFmpegFrameGrabber("0")
-        }
-        OperatingSystem.WINDOWS -> {
-            VideoInputFrameGrabber(0)
-        }
-        OperatingSystem.LINUX -> {
-            // The lowest-numbered node that captures video (#52, #53)
-            val videoDevice =
-                findBestVideoDevice(File("/dev"), File("/sys/class/video4linux"), File("/run/udev/data"))
-            CameraKLogger.d("CameraK", "Using video device: $videoDevice")
-            FFmpegFrameGrabber(videoDevice)
-        }
-    }.apply {
-        frameRate = DEFAULT_CAMERA_FRAME_RATE
-        val (width, height) = targetResolution ?: DEFAULT_CAMERA_RESOLUTION
-        imageWidth = width
-        imageHeight = height
+/**
+ * The system's default camera as a new grabber: device "0" through AVFoundation on macOS, device 0
+ * through videoInput on Windows, the best V4L2 node on Linux. [size] asks for that size at
+ * CameraK's frame rate; null leaves the camera at its own mode.
+ */
+internal fun createDefaultGrabber(os: OperatingSystem, size: Pair<Int, Int>?): FrameGrabber = when (os) {
+    OperatingSystem.MAC -> {
+        // On macOS, use AVFoundation with device index as string
+        FFmpegFrameGrabber("0")
     }
+    OperatingSystem.WINDOWS -> {
+        VideoInputFrameGrabber(0)
+    }
+    OperatingSystem.LINUX -> {
+        // The lowest-numbered node that captures video (#52, #53)
+        val videoDevice =
+            findBestVideoDevice(File("/dev"), File("/sys/class/video4linux"), File("/run/udev/data"))
+        CameraKLogger.d("CameraK", "Using video device: $videoDevice")
+        FFmpegFrameGrabber(videoDevice)
+    }
+}.apply {
+    if (size != null) {
+        frameRate = DEFAULT_CAMERA_FRAME_RATE
+        imageWidth = size.first
+        imageHeight = size.second
+    }
+}
 
-    private fun getOperatingSystem(): OperatingSystem {
-        val os = System.getProperty("os.name").lowercase()
-        return when {
-            os.contains("mac") -> OperatingSystem.MAC
-            os.contains("windows") -> OperatingSystem.WINDOWS
-            else -> OperatingSystem.LINUX
-        }
+/** The size the default camera is asked for when the configuration names none; 720p since #52. */
+internal val DEFAULT_CAMERA_RESOLUTION: Pair<Int, Int> = 1280 to 720
+
+internal fun currentOperatingSystem(): OperatingSystem {
+    val os = System.getProperty("os.name").orEmpty().lowercase()
+    return when {
+        os.contains("mac") -> OperatingSystem.MAC
+        os.contains("windows") -> OperatingSystem.WINDOWS
+        else -> OperatingSystem.LINUX
     }
 }
 
@@ -351,19 +421,20 @@ private val VIDEO_NODE = Regex("video\\d+")
 // Every default grabber opens the system's first camera; a custom grabber is its own device. Weak
 // keys let a custom grabber be collected once no loop uses it.
 private val cameraDeviceLocks = WeakHashMap<Any, Mutex>()
-private val defaultCamera = Any()
 
-private fun cameraDeviceLock(customGrabber: FrameGrabber?): Mutex =
-    synchronized(cameraDeviceLocks) { cameraDeviceLocks.getOrPut(customGrabber ?: defaultCamera) { Mutex() } }
+/** The device key every grabber of the system's default camera shares. */
+internal val defaultCamera = Any()
+
+private fun cameraDeviceLock(deviceKey: Any): Mutex =
+    synchronized(cameraDeviceLocks) { cameraDeviceLocks.getOrPut(deviceKey) { Mutex() } }
 
 /** A copy of one of the grab loop's frames, which its receiver may keep, and when it was grabbed. */
 internal class CapturedFrame(val image: BufferedImage, val captureNanos: Long)
 
 private fun BufferedImage.copy(): BufferedImage = BufferedImage(colorModel, copyData(null), isAlphaPremultiplied, null)
 
-// The frame rate and size the default camera is asked for; 720p rather than 480p since #52.
+// The frame rate the default camera is asked for.
 private const val DEFAULT_CAMERA_FRAME_RATE = 30.0
-private val DEFAULT_CAMERA_RESOLUTION = 1280 to 720
 
 private const val TAG = "CameraK"
 private const val PRODUCER_THREAD = "CameraK-grabber"

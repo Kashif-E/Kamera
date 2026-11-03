@@ -182,7 +182,7 @@ internal class ScriptedFrameGrabber(private val workers: TrackedWorkers) : Frame
     private val frame = Frame(64, 48, Frame.DEPTH_UBYTE, 3)
     private var permits = 0
     private var failure: Throwable? = null
-    private var waiting = 0
+    private var waiter: Thread? = null
 
     @Volatile var holdOpen = false
 
@@ -214,12 +214,12 @@ internal class ScriptedFrameGrabber(private val workers: TrackedWorkers) : Frame
 
     override fun grab(): Frame {
         lock.withLock {
-            waiting++
+            waiter = Thread.currentThread()
             workers.bump()
             try {
                 while (permits == 0 && failure == null) available.await()
             } finally {
-                waiting--
+                waiter = null
             }
             failure?.let {
                 failure = null
@@ -245,8 +245,14 @@ internal class ScriptedFrameGrabber(private val workers: TrackedWorkers) : Frame
 
     fun failGrab(throwable: Throwable) = signal { failure = throwable }
 
-    /** Grabs waiting with nothing to deliver: 0 or 1. */
-    fun parkedGrabs(): Int = lock.withLock { if (permits == 0 && failure == null) waiting else 0 }
+    /**
+     * Grabs waiting with nothing to deliver: 0 or 1. A waiter whose thread was interrupted (the
+     * engine cancelled its grab loop) is about to wake, so it is not parked.
+     */
+    fun parkedGrabs(): Int = lock.withLock {
+        val parked = waiter?.takeIf { !it.isInterrupted }
+        if (parked != null && permits == 0 && failure == null) 1 else 0
+    }
 
     private inline fun signal(update: () -> Unit) {
         lock.withLock {

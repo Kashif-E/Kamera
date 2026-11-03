@@ -1,8 +1,13 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.CameraCapabilities
-import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.heicCaptureUnsupported
+import com.kashif.cameraK.coroutines.CameraKDispatchers
+import com.kashif.cameraK.engine.CameraKEnvironment
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -14,6 +19,7 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
@@ -29,9 +35,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -58,27 +64,46 @@ import javax.imageio.ImageWriteParam
 import org.bytedeco.javacv.FrameConverter as JavaCvFrameConverter
 
 /**
- * The desktop camera controller, backed by JavaCV. One grab loop owns the camera and feeds the
- * preview, captures and recordings; captures are written under the user's home and recordings are
- * H.264 MP4 files without audio.
+ * The desktop camera controller, backed by JavaCV. Until C1' it is a facade over a desktop engine
+ * (§12.1): the engine owns the session and its one grab loop, which feeds the preview, captures
+ * and recordings; captures are written under the user's home and recordings are H.264 MP4 files
+ * without audio. A controller built with a public constructor builds and owns its own engine;
+ * `Ready.controller` is the facade the bridge's engine built over itself.
  */
-actual class CameraController(
+actual class CameraController internal constructor(
     private val imageFormat: ImageFormat,
     private val directory: Directory,
-    private val horizontalFlip: Boolean = false,
-    private val customGrabber: FrameGrabber? = null,
-    private val targetResolution: Pair<Int, Int>? = null,
-    private val aspectRatio: AspectRatio = AspectRatio.RATIO_16_9,
-) {
-    private var sessionDispatcher: CoroutineDispatcher = Dispatchers.IO
-    private var recorderFactory: (String, VideoConfiguration) -> FrameRecorder = ::createFrameRecorder
-
+    private val aspectRatio: AspectRatio,
+    sessionDispatcher: CoroutineDispatcher,
+    private val recorderFactory: (String, VideoConfiguration) -> FrameRecorder,
     // The folder that Directory and the default video folder resolve under: the user's home.
-    private var userHome: File = defaultUserHome()
-    private var nanoClock: () -> Long = System::nanoTime
-    private var recordingConverter: () -> JavaCvFrameConverter<BufferedImage> = ::Java2DFrameConverter
-    private var writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage
-    private var readCapture: (File) -> ByteArray = File::readBytes
+    private val userHome: File,
+    private val nanoClock: () -> Long,
+    private val recordingConverter: () -> JavaCvFrameConverter<BufferedImage>,
+    private val writeCapture: (BufferedImage, ImageFormat, File) -> Unit,
+    private val readCapture: (File) -> ByteArray,
+    engine: (CameraController) -> DesktopCameraEngine,
+) {
+    constructor(
+        imageFormat: ImageFormat,
+        directory: Directory,
+        horizontalFlip: Boolean = false,
+        customGrabber: FrameGrabber? = null,
+        targetResolution: Pair<Int, Int>? = null,
+        aspectRatio: AspectRatio = AspectRatio.RATIO_16_9,
+    ) : this(
+        imageFormat = imageFormat,
+        directory = directory,
+        aspectRatio = aspectRatio,
+        sessionDispatcher = Dispatchers.IO,
+        recorderFactory = ::createFrameRecorder,
+        userHome = defaultUserHome(),
+        nanoClock = System::nanoTime,
+        recordingConverter = ::Java2DFrameConverter,
+        writeCapture = ::writeImage,
+        readCapture = File::readBytes,
+        engine = { facade -> ownEngine(facade, customGrabber, targetResolution, horizontalFlip, System::nanoTime) },
+    )
 
     internal constructor(
         imageFormat: ImageFormat,
@@ -92,58 +117,59 @@ actual class CameraController(
         recordingConverter: () -> JavaCvFrameConverter<BufferedImage> = ::Java2DFrameConverter,
         writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage,
         readCapture: (File) -> ByteArray = File::readBytes,
-    ) : this(imageFormat, directory, horizontalFlip = horizontalFlip, customGrabber = customGrabber) {
-        this.sessionDispatcher = sessionDispatcher
-        this.recorderFactory = recorderFactory
-        this.userHome = userHome
-        this.nanoClock = nanoClock
-        this.recordingConverter = recordingConverter
-        this.writeCapture = writeCapture
-        this.readCapture = readCapture
-    }
+    ) : this(
+        imageFormat = imageFormat,
+        directory = directory,
+        aspectRatio = AspectRatio.RATIO_16_9,
+        sessionDispatcher = sessionDispatcher,
+        recorderFactory = recorderFactory,
+        userHome = userHome,
+        nanoClock = nanoClock,
+        recordingConverter = recordingConverter,
+        writeCapture = writeCapture,
+        readCapture = readCapture,
+        engine = { facade -> ownEngine(facade, customGrabber, null, horizontalFlip, nanoClock) },
+    )
 
-    /** The engine this controller is a facade over (§12.1). */
-    internal val engine: DesktopCameraEngine get() = TODO("D1'")
-
-    /** The facade an engine builds over itself. */
+    /** The facade an engine builds over itself: the bridge's, read through `Ready.controller`. */
     internal constructor(
         engine: DesktopCameraEngine,
         config: CameraConfiguration,
         userHome: File = defaultUserHome(),
-    ) : this(config.imageFormat, config.directory) {
-        TODO("D1'")
-    }
-
-    // The controller's own scope: the grab loop and the recording run in it, and cleanup() cancels it.
-    // Lazy because the internal constructor sets sessionDispatcher after the properties initialise.
-    private val scope: CoroutineScope by lazy {
-        CoroutineScope(
-            SupervisorJob() + sessionDispatcher +
-                CoroutineExceptionHandler { _, e -> CameraKLogger.e("CameraK", "CameraK: Camera session failed", e) },
-        )
-    }
-    private val closed = atomic(false)
-
-    private val _frameFlow = MutableSharedFlow<BufferedImage>(
-        replay = 0,
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    ) : this(
+        imageFormat = config.imageFormat,
+        directory = config.directory,
+        aspectRatio = config.aspectRatio,
+        sessionDispatcher = Dispatchers.IO,
+        recorderFactory = ::createFrameRecorder,
+        userHome = userHome,
+        nanoClock = System::nanoTime,
+        recordingConverter = ::Java2DFrameConverter,
+        writeCapture = ::writeImage,
+        readCapture = File::readBytes,
+        engine = { engine },
     )
 
-    // One grabber for the controller's whole life, so a restart waits for the previous grab loop to
-    // release the camera before the next one opens it.
-    private val cameraGrabber = CameraGrabber(_frameFlow, {
-        CameraKLogger.e("CameraK", "CameraK: Camera error: ${it.message}")
-        CameraKLogger.e("CameraK", "Unhandled exception", it)
-    }, targetResolution, { nanoClock() }).apply { setHorizontalFlip(horizontalFlip) }
+    /** The engine this controller is a facade over (§12.1). */
+    internal val engine: DesktopCameraEngine = engine(this)
+
+    // The engine's producer: captures and recordings read copies of its frames.
+    private val cameraGrabber: CameraGrabber get() = engine.grabber
+
+    // The controller's own scope: the session calls and the recording run in it, and cleanup() cancels it.
+    private val scope = CoroutineScope(
+        SupervisorJob() + sessionDispatcher +
+            CoroutineExceptionHandler { _, e -> CameraKLogger.e("CameraK", "CameraK: Camera session failed", e) },
+    )
+    private val closed = atomic(false)
 
     /**
-     * The camera's frames, latest first, as opaque `TYPE_3BYTE_BGR` images. Each image comes from a
-     * small ring the producer reuses: it is never written while it is the latest frame or the next
-     * one is published, but it is overwritten after that. Read it before the next frame and do not
-     * keep it; copy it to keep it.
+     * The camera's frames, latest first, as opaque `TYPE_3BYTE_BGR` images: the engine's preview
+     * frames. Each image comes from a small ring the producer reuses: it is never written while it
+     * is the latest frame or the next one is published, but it is overwritten after that. Read it
+     * before the next frame and do not keep it; copy it to keep it.
      */
-    val frameFlow: Flow<BufferedImage> get() = _frameFlow
+    val frameFlow: Flow<BufferedImage> = this.engine.preview.frames.filterNotNull().map { it.image }
     private val qualityPriority: QualityPrioritization = QualityPrioritization.NONE
 
     // Video recording
@@ -297,19 +323,7 @@ actual class CameraController(
         // No-op on desktop — single camera
     }
 
-    actual fun getCameraCapabilities(): CameraCapabilities = CameraCapabilities(
-        listOf(
-            LensInfo(
-                id = "",
-                deviceType = CameraDeviceType.DEFAULT,
-                lens = CameraLens.BACK,
-                minZoom = 1f,
-                maxZoom = 1f,
-                hasFlash = false,
-                isLogical = false,
-            ),
-        ),
-    )
+    actual fun getCameraCapabilities(): CameraCapabilities = CameraCapabilities(listOf(desktopLensInfo()))
 
     /**
      * Sets the zoom level.
@@ -335,23 +349,25 @@ actual class CameraController(
     actual fun getMaxZoom(): Float = 1.0f
 
     /**
-     * Starts the camera session. The grab loop exists when this returns, so a stop or cleanup that
-     * follows always reaches it. Does nothing after [cleanup].
+     * Starts the camera session on the engine. The engine has begun the session when this returns
+     * (its grab loop exists), so a stop or cleanup that follows always reaches it, and a capture or
+     * recording right after it reads its frames. Does nothing after [cleanup].
      */
     actual fun startSession() {
         if (closed.value) {
             CameraKLogger.w("CameraK", "CameraK: startSession() after cleanup() is ignored; create a new controller")
             return
         }
-        // Uses the custom grabber if there is one, else the default camera.
-        cameraGrabber.start(scope, customGrabber)
+        // Undispatched: the engine begins the session on this thread, before the call returns.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { engine.start(FACADE_DESIRED) }
     }
 
     /**
-     * Stops the camera session.
+     * Stops the camera session on the engine. The engine has ended the session when this returns;
+     * the grab loop releases the camera once it leaves the native call it is in.
      */
     actual fun stopSession() {
-        cameraGrabber.stop()
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { engine.stop() }
     }
 
     /**
@@ -383,11 +399,14 @@ actual class CameraController(
         // No-op on desktop
     }
 
-    /** Ends the controller: stops any recording and the session and cancels the controller's scope. */
+    /**
+     * Ends the controller: stops any recording, closes the engine and cancels the controller's
+     * scope. A controller is one with its engine, so this ends `Ready.controller`'s engine too.
+     */
     actual fun cleanup() {
         closed.value = true
         stopVideoRecorderIfActive()
-        cameraGrabber.stop()
+        engine.close()
         scope.cancel()
     }
 
@@ -398,6 +417,7 @@ actual class CameraController(
     suspend fun closeAndJoin() {
         cleanup()
         scope.coroutineContext.job.join()
+        engine.closeAndJoin()
     }
 
     actual suspend fun startRecording(configuration: VideoConfiguration): String = withContext(Dispatchers.IO) {
@@ -556,6 +576,35 @@ actual class CameraController(
         Directory.DOCUMENTS -> File(userHome, "Documents")
     }
 }
+
+private val FACADE_DESIRED = DesiredHardware(
+    selection = CameraSelection.ByLens(CameraLens.BACK, CameraDeviceType.DEFAULT),
+    flashMode = FlashMode.OFF,
+    torchMode = TorchMode.OFF,
+    zoomRatio = 1f,
+    targetOrientation = null,
+)
+
+/**
+ * The engine a controller built with a public constructor owns: over [customGrabber], or the
+ * default camera at [targetResolution], on the default dispatchers. It never touches Main.
+ */
+private fun ownEngine(
+    facade: CameraController,
+    customGrabber: FrameGrabber?,
+    targetResolution: Pair<Int, Int>?,
+    horizontalFlip: Boolean,
+    nanoClock: () -> Long,
+): DesktopCameraEngine = DesktopCameraEngine(
+    config = CameraConfiguration(targetResolution = targetResolution),
+    environment = CameraKEnvironment(
+        CameraKDispatchers(main = Dispatchers.Default, default = Dispatchers.Default, io = Dispatchers.IO),
+    ),
+    source = customGrabber?.let(::CustomGrabberSource) ?: DefaultDeviceSource(targetResolution),
+    nanoClock = nanoClock,
+    horizontalFlip = horizontalFlip,
+    facade = { facade },
+)
 
 // user.home can be missing in sandboxed runtimes; fall back to the working directory, as the desktop
 // image saver does.
