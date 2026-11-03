@@ -20,6 +20,7 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.getAndUpdate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -62,7 +63,8 @@ internal interface LegacySession {
  * the engine interface, reporting what the 1.x holder reported. It publishes Open once the
  * session's start call returns, because the 1.x controllers report no state of their own, and it
  * never reports Interrupted or a runtime Failed: their runtime errors stay log-only, as in 1.x.
- * Commands are refused with `InvalidState`; until the platform engines land, plugins and the
+ * Commands are refused with `InvalidState`, logged at warning the first time each kind is refused
+ * on this engine; until the platform engines land, plugins and the
  * Sample issue them on `Ready.controller`. Exempt from the contract kit.
  */
 internal class LegacyControllerEngine(
@@ -101,6 +103,9 @@ internal class LegacyControllerEngine(
     private val closed = atomic(false)
     private val closeDone = Job()
     private var listeningForOrientation = false
+
+    // The command kinds this engine has refused so far; each is logged the first time only.
+    private val refusedOperations = atomic(emptySet<CameraOperation>())
 
     override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> {
         if (closed.value) return CameraKResult.Failure(CameraKError.Closed)
@@ -257,7 +262,9 @@ internal class LegacyControllerEngine(
 
     private fun refuse(operation: CameraOperation): CameraKResult<Nothing> {
         if (closed.value) return CameraKResult.Failure(CameraKError.Closed)
-        CameraKLogger.w(TAG, "The 1.x bridge refuses the $operation command; issue it on Ready.controller")
+        if (operation !in refusedOperations.getAndUpdate { it + operation }) {
+            CameraKLogger.w(TAG, "The 1.x bridge refuses the $operation command; issue it on Ready.controller")
+        }
         return CameraKResult.Failure(CameraKError.InvalidState(operation))
     }
 
