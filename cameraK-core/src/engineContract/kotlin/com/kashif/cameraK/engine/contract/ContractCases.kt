@@ -276,6 +276,53 @@ internal class ContractCases(
 
     // Rule 5: a command reaches the platform, and hardware and zoom move only when the platform reports.
     suspend fun commandsLeaveHardwareUntilThePlatformReports() {
+        val case = "commandsLeaveHardwareUntilThePlatformReports"
+        withEngine { engine ->
+            open(engine)
+            val lens = currentLens(engine)
+            val steps = Steps(case)
+
+            val torch = torchTarget(engine, lens)
+            steps.step("setTorchMode", skipIf = skipReason(lens, torch) { onlyTorch(engine, it) }) {
+                commandThenReport(engine, "setTorchMode", HardwareChange(torchMode = torch)) {
+                    assertEquals(CameraKResult.Success(torch!!), engine.setTorchMode(torch))
+                }
+                assertEquals(torch, engine.hardware.value.torchMode, "hardware follows the platform's torch report")
+            }
+            val zoom = zoomTarget(engine, lens)
+            steps.step("setZoom", skipIf = skipReason(lens, zoom) { fixedZoom(it) }) {
+                commandThenReport(engine, "setZoom", HardwareChange(zoomRatio = zoom)) {
+                    assertIs<CameraKResult.Success<*>>(engine.setZoom(zoom!!), "setZoom")
+                }
+                assertEquals(zoom, engine.zoom.value.ratio, "zoom follows the platform's zoom report")
+            }
+            val flash = lens?.let { reportedFlashTarget(engine, it) }
+            steps.step("setFlashMode", skipIf = skipReason(lens, flash) { onlyFlash(engine, it) }) {
+                commandThenReport(engine, "setFlashMode", HardwareChange(flashMode = flash)) {
+                    assertEquals(CameraKResult.Success(flash!!), engine.setFlashMode(flash))
+                }
+                assertEquals(flash, engine.hardware.value.flashMode, "hardware follows the platform's flash report")
+            }
+            steps.requireSomethingRan()
+        }
+    }
+
+    // Issues [command], checks that hardware and zoom stay where the platform last put them, then reports [change].
+    private suspend fun commandThenReport(
+        engine: CameraEngine,
+        name: String,
+        change: HardwareChange,
+        command: suspend () -> Unit,
+    ) {
+        val hardware = engine.hardware.value
+        val zoom = engine.zoom.value
+        command()
+        driver.settle()
+        assertEquals(hardware, engine.hardware.value, "$name changed hardware before the platform reported it")
+        assertEquals(zoom, engine.zoom.value, "$name changed zoom before the platform reported it")
+
+        driver.changeHardware(change)
+        driver.settle()
     }
 
     // HardwareState: no camera before the first bind, then the camera the engine opened on or switched to.
@@ -580,6 +627,13 @@ internal class ContractCases(
             .filter { it != desired.flashMode && it in capabilities.supportedFlashModes(lens.id) }
         return candidates.firstOrNull { other != null && it in capabilities.supportedFlashModes(other.id) }
             ?: candidates.firstOrNull()
+    }
+
+    // A flash mode the bound camera takes other than the one the platform reports now.
+    private fun reportedFlashTarget(engine: CameraEngine, lens: LensInfo): FlashMode? {
+        val current = engine.hardware.value.flashMode
+        return listOf(FlashMode.ON, FlashMode.AUTO, FlashMode.OFF)
+            .firstOrNull { it != current && it in engine.capabilities.value.supportedFlashModes(lens.id) }
     }
 
     private fun torchTarget(engine: CameraEngine, lens: LensInfo?, other: LensInfo? = null): TorchMode? {

@@ -59,7 +59,11 @@ internal interface EngineContractDriver {
 }
 
 /** A platform observer report. Null leaves that value alone. */
-internal class HardwareChange(val torchMode: TorchMode? = null, val zoomRatio: Float? = null)
+internal class HardwareChange(
+    val torchMode: TorchMode? = null,
+    val zoomRatio: Float? = null,
+    val flashMode: FlashMode? = null,
+)
 
 /** What the fake platform last received. [cameraId] is a `LensInfo.id`; null before the first open. */
 internal data class BoundSettings(

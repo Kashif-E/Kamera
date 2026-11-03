@@ -53,6 +53,7 @@ internal open class FakeEngineDriver(
     override fun changeHardware(change: HardwareChange) {
         change.torchMode?.let(fake::reportTorch)
         change.zoomRatio?.let { fake.reportZoom(it, fake.zoom.value.minRatio, fake.zoom.value.maxRatio) }
+        change.flashMode?.let(fake::reportFlash)
     }
 
     override fun boundSettings(): BoundSettings =
