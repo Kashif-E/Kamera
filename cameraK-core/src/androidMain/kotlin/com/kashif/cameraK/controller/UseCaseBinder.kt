@@ -12,7 +12,6 @@ import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
-import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
@@ -108,7 +107,7 @@ internal class UseCaseBinder(
      * Binds [useCases] as one group, cropped by a ViewPort for [previewView]'s display, and returns
      * the camera CameraX bound them to.
      */
-    fun bindGroup(selector: CameraSelector, useCases: List<UseCase>, previewView: PreviewView): Camera? {
+    fun bindGroup(resolved: ResolvedCamera, useCases: List<UseCase>, previewView: PreviewView): Camera? {
         val builder = UseCaseGroup.Builder()
         for (useCase in useCases) builder.addUseCase(useCase)
 
@@ -121,14 +120,14 @@ internal class UseCaseBinder(
         buildViewPort(previewView)?.let { builder.setViewPort(it) }
 
         val useCaseGroup = builder.build()
-        camera = cameraProvider?.bindToLifecycle(lifecycleOwner, selector, useCaseGroup)
+        camera = cameraProvider?.bindToLifecycle(lifecycleOwner, resolved, useCaseGroup)
         boundUseCases += useCaseGroup.useCases
         return camera
     }
 
-    /** Binds [useCase] on its own beside the bound group, with the camera [selector] picks. */
-    fun bindAlone(selector: () -> CameraSelector, useCase: UseCase) {
-        cameraProvider?.bindToLifecycle(lifecycleOwner, selector(), useCase)
+    /** Binds [useCase] on its own beside the bound group, on the camera [resolved] names. */
+    fun bindAlone(resolved: () -> ResolvedCamera, useCase: UseCase) {
+        cameraProvider?.bindToLifecycle(lifecycleOwner, resolved(), useCase)
         boundUseCases += useCase
     }
 

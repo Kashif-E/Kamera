@@ -9,9 +9,11 @@ import androidx.camera.core.Camera
 import androidx.camera.core.CameraControl
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.CameraState
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
 import androidx.camera.core.TorchState
 import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
@@ -23,6 +25,7 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.concurrent.futures.ResolvableFuture
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.MutableLiveData
@@ -58,6 +61,12 @@ internal class FakeCameraXBackend : CameraXBackend {
     /** When set, CameraX refuses to start a recording with this, as Recorder does when it is in use. */
     var startFailure: RuntimeException? = null
 
+    /** The per-frame callback of each preview built, oldest first. */
+    val previewFrameCallbacks = mutableListOf<() -> Unit>()
+
+    /** The preview of the latest bind produces a frame, reported on the calling thread. */
+    fun deliverPreviewFrame() = previewFrameCallbacks.last().invoke()
+
     override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
         executor.execute { onResult(Result.success(binding)) }
     }
@@ -77,6 +86,10 @@ internal class FakeCameraXBackend : CameraXBackend {
 
     override fun clearAnalyzer(analysis: ImageAnalysis) {
         analyzers -= analysis
+    }
+
+    override fun onPreviewFrame(previewBuilder: Preview.Builder, onFrame: () -> Unit) {
+        previewFrameCallbacks += onFrame
     }
 
     override fun startRecording(
@@ -212,29 +225,64 @@ internal class FakeCameraBinding : CameraBinding {
     /** The camera each bind returned, oldest first. Each starts as CameraX opens one: torch off, zoom 1x. */
     val cameras = mutableListOf<FakeCamera>()
 
+    /** The camera each bind asked for, oldest first. */
+    val requested = mutableListOf<ResolvedCamera>()
+
+    /** The thread each bind ran on, oldest first. */
+    val bindThreads = mutableListOf<Thread>()
+
     /** The ViewPort of each use-case group bound, oldest first (null when the group had none). */
     val viewPorts = mutableListOf<ViewPort?>()
 
     /** Makes the camera each bind returns; a test swaps it for a camera with other hardware. */
     var newCamera: () -> FakeCamera = { FakeCamera() }
 
+    /** When set, makes the camera a bind returns for the camera it asks for, in place of [newCamera]. */
+    var cameraFor: ((ResolvedCamera) -> FakeCamera)? = null
+
+    /** The next camera to open stays OPENING until the test reports it open. */
+    var holdNextOpen = false
+
+    /** Unbinds of use cases whose owner was already destroyed: an owner's final release of its camera. */
+    var releaseCount = 0
+        private set
+
+    private val owners = mutableMapOf<UseCase, LifecycleOwner>()
+
     override fun unbind(vararg useCases: UseCase) {
+        if (useCases.any { owners[it]?.lifecycle?.currentState == Lifecycle.State.DESTROYED }) releaseCount++
+        useCases.forEach { owners -= it }
         bound.removeAll(useCases.toSet())
+        cameras.filter { camera -> camera.useCases.isNotEmpty() && camera.useCases.none { it in bound } }
+            .forEach { it.closeForUnbind() }
     }
 
-    override fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, useCaseGroup: UseCaseGroup): Camera =
-        bind(owner, useCaseGroup.useCases).also { viewPorts += useCaseGroup.viewPort }
+    override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, useCaseGroup: UseCaseGroup): Camera =
+        bind(owner, camera, useCaseGroup.useCases).also { viewPorts += useCaseGroup.viewPort }
 
-    override fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, vararg useCases: UseCase): Camera =
-        bind(owner, useCases.toList())
+    override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, vararg useCases: UseCase): Camera =
+        bind(owner, camera, useCases.toList())
 
-    private fun bind(owner: LifecycleOwner, useCases: List<UseCase>): Camera {
+    /** Binds as another CameraX consumer in the process would, through a selector of its own. */
+    fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, vararg useCases: UseCase): Camera =
+        bind(owner, ResolvedCamera.FacingDefault(CameraLens.BACK), useCases.toList())
+
+    override fun cameraIdOf(camera: Camera): String = cameras.last { it.camera === camera }.id
+
+    private fun bind(owner: LifecycleOwner, resolved: ResolvedCamera, useCases: List<UseCase>): Camera {
         require(owner.lifecycle.currentState != Lifecycle.State.DESTROYED) {
             "Trying to create use case mediator with destroyed lifecycle."
         }
         bindCalls++
+        requested += resolved
+        bindThreads += Thread.currentThread()
         bound += useCases
-        return newCamera().also { cameras += it }.camera
+        useCases.forEach { owners[it] = owner }
+        val camera = cameraFor?.invoke(resolved) ?: newCamera()
+        cameras += camera
+        camera.useCases += useCases
+        camera.follow(owner) { holdNextOpen.also { holdNextOpen = false } }
+        return camera.camera
     }
 }
 
@@ -242,9 +290,12 @@ internal class FakeCameraBinding : CameraBinding {
  * A bound camera. Its control records what the controller asks of the hardware and, like CameraX,
  * reports the result through the camera info's torch and zoom state. [minZoom] below 1 is a logical
  * camera that can switch to its ultra-wide lens. With [torchFailure] set, every torch request fails
- * through its future, as CameraX fails it when the camera is closed or has no flash unit.
+ * through its future, as CameraX fails it when the camera is closed or has no flash unit. Its camera
+ * state follows the lifecycle it is bound to, as CameraX opens a camera while that lifecycle is
+ * started: OPENING, then OPEN unless the binding holds the open.
  */
 internal class FakeCamera(
+    val id: String = "0",
     private val maxZoom: Float = 8f,
     private val minZoom: Float = 1f,
     private val hasFlashUnit: Boolean = true,
@@ -254,6 +305,40 @@ internal class FakeCamera(
     val zoomRequests = mutableListOf<Float>()
     val torchState = MutableLiveData(TorchState.OFF)
     val zoomState = MutableLiveData<ZoomState>(FakeZoomState(1f, minZoom, maxZoom))
+    val cameraState = MutableLiveData(CameraState.create(CameraState.Type.CLOSED))
+
+    /** The use cases bound to this camera. */
+    val useCases = mutableListOf<UseCase>()
+
+    private var opened = false
+
+    /** Reports [state] to the camera state's observers, on the calling thread. */
+    fun report(state: CameraState) {
+        cameraState.value = state
+    }
+
+    /** Opens the camera while [owner] is started; [holdOpen] says whether this open waits for the test. */
+    fun follow(owner: LifecycleOwner, holdOpen: () -> Boolean) {
+        owner.lifecycle.addObserver(
+            LifecycleEventObserver { source, _ ->
+                val started = source.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                if (started && !opened) {
+                    opened = true
+                    report(CameraState.create(CameraState.Type.OPENING))
+                    if (!holdOpen()) report(CameraState.create(CameraState.Type.OPEN))
+                } else if (!started && opened) {
+                    opened = false
+                    report(CameraState.create(CameraState.Type.CLOSED))
+                }
+            },
+        )
+    }
+
+    fun closeForUnbind() {
+        if (!opened) return
+        opened = false
+        report(CameraState.create(CameraState.Type.CLOSED))
+    }
 
     private val control = proxy<CameraControl> { method, args ->
         when (method.name) {
@@ -282,6 +367,7 @@ internal class FakeCamera(
             "hasFlashUnit" -> hasFlashUnit
             "getTorchState" -> torchState
             "getZoomState" -> zoomState
+            "getCameraState" -> cameraState
             else -> null
         }
     }

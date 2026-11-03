@@ -2,10 +2,17 @@ package com.kashif.cameraK.controller
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.TotalCaptureResult
+import androidx.annotation.OptIn
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
-import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
+import androidx.camera.core.Preview
 import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -18,14 +25,18 @@ import java.util.concurrent.Executor
 
 /**
  * The slice of [ProcessCameraProvider] that [CameraController] binds through. The provider is shared
- * by the whole process, so it offers no unbindAll(): a controller unbinds only what it bound.
+ * by the whole process, so it offers no unbindAll(): a controller unbinds only what it bound. A bind
+ * names the [ResolvedCamera]; the binding turns it into CameraX's selector.
  */
 internal interface CameraBinding {
     fun unbind(vararg useCases: UseCase)
 
-    fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, useCaseGroup: UseCaseGroup): Camera
+    fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, useCaseGroup: UseCaseGroup): Camera
 
-    fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, vararg useCases: UseCase): Camera
+    fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, vararg useCases: UseCase): Camera
+
+    /** The camera id of [camera], one a bind returned. */
+    fun cameraIdOf(camera: Camera): String
 }
 
 /** A recording CameraX is running. */
@@ -82,6 +93,12 @@ internal interface CameraXBackend {
     /** Stops delivering [analysis]'s frames to any consumer. */
     fun clearAnalyzer(analysis: ImageAnalysis)
 
+    /**
+     * Runs [onFrame] on the camera's thread for each frame the preview built from [previewBuilder]
+     * produces, from the first one on.
+     */
+    fun onPreviewFrame(previewBuilder: Preview.Builder, onFrame: () -> Unit)
+
     object Default : CameraXBackend {
         override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
             val future = ProcessCameraProvider.getInstance(context)
@@ -102,6 +119,19 @@ internal interface CameraXBackend {
         }
 
         override fun clearAnalyzer(analysis: ImageAnalysis) = analysis.clearAnalyzer()
+
+        @OptIn(ExperimentalCamera2Interop::class)
+        override fun onPreviewFrame(previewBuilder: Preview.Builder, onFrame: () -> Unit) {
+            Camera2Interop.Extender(previewBuilder).setSessionCaptureCallback(
+                object : CameraCaptureSession.CaptureCallback() {
+                    override fun onCaptureCompleted(
+                        session: CameraCaptureSession,
+                        request: CaptureRequest,
+                        result: TotalCaptureResult,
+                    ) = onFrame()
+                },
+            )
+        }
 
         @SuppressLint("MissingPermission") // The caller asks for audio only when RECORD_AUDIO is granted.
         override fun startRecording(
@@ -135,9 +165,12 @@ internal interface CameraXBackend {
 private class ProcessCameraBinding(private val provider: ProcessCameraProvider) : CameraBinding {
     override fun unbind(vararg useCases: UseCase) = provider.unbind(*useCases)
 
-    override fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, useCaseGroup: UseCaseGroup): Camera =
-        provider.bindToLifecycle(owner, selector, useCaseGroup)
+    override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, useCaseGroup: UseCaseGroup): Camera =
+        provider.bindToLifecycle(owner, camera.toCameraSelector(), useCaseGroup)
 
-    override fun bindToLifecycle(owner: LifecycleOwner, selector: CameraSelector, vararg useCases: UseCase): Camera =
-        provider.bindToLifecycle(owner, selector, *useCases)
+    override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, vararg useCases: UseCase): Camera =
+        provider.bindToLifecycle(owner, camera.toCameraSelector(), *useCases)
+
+    @OptIn(ExperimentalCamera2Interop::class)
+    override fun cameraIdOf(camera: Camera): String = Camera2CameraInfo.from(camera.cameraInfo).cameraId
 }

@@ -1,7 +1,6 @@
 package com.kashif.cameraK.controller
 
 import android.content.Context
-import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.UseCase
@@ -102,7 +101,7 @@ actual class CameraController internal constructor(
     // touch the shut-down executors or resume a capture twice.
     private val released = atomic(false)
 
-    // Set by createCameraSelector when the requested device type is a physical sub-lens of a
+    // Set by resolveCamera when the requested device type is a physical sub-lens of a
     // logical multi-camera, and baked into every use-case builder of the bind (see
     // pinnedPhysicalId on ResolvedCamera).
     private var pinnedPhysicalId: String? = null
@@ -187,7 +186,7 @@ actual class CameraController internal constructor(
 
                 val resolutionSelector = binder.resolutionSelector()
                 // Must run before any use-case builder: it decides pinnedPhysicalId.
-                val cameraSelector = createCameraSelector()
+                val camera = resolveCamera()
 
                 val preview = binder.buildPreview(resolutionSelector, pinnedPhysicalId, previewView)
                 stillCapturer.configure(resolutionSelector, hardware.flashMode, pinnedPhysicalId)
@@ -197,7 +196,7 @@ actual class CameraController internal constructor(
                 // Rebuild rather than reuse the existing instance: its baked-in Camera2Interop pin
                 // reflects the PREVIOUS lens/device type. Reusing it after a switch would silently
                 // analyze frames from the wrong physical camera (or lose the pin). Constructed here
-                // (after createCameraSelector set pinnedPhysicalId, before the use-case group is
+                // (after resolveCamera set pinnedPhysicalId, before the use-case group is
                 // assembled below) so it binds via this bind, not a second nested one.
                 frames.analysis = if (frames.analysisRequested) frames.build(pinnedPhysicalId) else null
 
@@ -214,7 +213,7 @@ actual class CameraController internal constructor(
                     videoRecorder.useCaseForBind()?.let { add(it) }
                     frames.analysis?.let { add(it) }
                 }
-                binder.bindGroup(cameraSelector, useCases, previewView)?.let(hardware::applyDesiredHardwareState)
+                binder.bindGroup(camera, useCases, previewView)?.let(hardware::applyDesiredHardwareState)
 
                 onCameraReady()
             } catch (exc: Exception) {
@@ -223,11 +222,11 @@ actual class CameraController internal constructor(
         }
     }
 
-    /** The selector for the current facing and device type; also decides [pinnedPhysicalId]. */
-    private fun createCameraSelector(): CameraSelector {
+    /** The camera for the current facing and device type; also decides [pinnedPhysicalId]. */
+    private fun resolveCamera(): ResolvedCamera {
         val resolved = selectorResolver.resolve(cameraLens, cameraDeviceType)
         pinnedPhysicalId = resolved.pinnedPhysicalId
-        return resolved.toCameraSelector()
+        return resolved
     }
 
     private fun onDisplayChanged(previewView: PreviewView) {
@@ -306,9 +305,9 @@ actual class CameraController internal constructor(
         }
         val analysis = frames.build(pinnedPhysicalId)
         try {
-            // createCameraSelector() rather than a bare lens-facing selector: a pinned physical lens
-            // must carry the same selector-level pin as the main bind.
-            binder.bindAlone(::createCameraSelector, analysis)
+            // resolveCamera() rather than a bare lens facing: a pinned physical lens must carry the
+            // same selector-level pin as the main bind.
+            binder.bindAlone(::resolveCamera, analysis)
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Binding image analysis during a recording failed", e)
         }
