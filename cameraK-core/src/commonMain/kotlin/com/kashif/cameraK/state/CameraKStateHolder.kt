@@ -13,6 +13,7 @@ import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.LegacyControllerEngine
+import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.createPlatformEngine
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
@@ -23,6 +24,7 @@ import com.kashif.cameraK.plugin.PluginHost
 import com.kashif.cameraK.plugin.effectiveConfig
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineDispatcher
@@ -175,6 +177,15 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
 
     /** The device's physical orientation, as the engine reports it. */
     public val deviceOrientation: StateFlow<DeviceOrientation> = engine.deviceOrientation
+
+    /**
+     * The engine's preview, for `:cameraK`'s `CameraPreview(holder)` to attach to. Public only because
+     * `:cameraK` is another module.
+     */
+    @InternalCameraKApi
+    @CameraKEngineApi
+    public val previewSource: PlatformPreviewSource
+        get() = TODO("K2")
 
     init {
         plugins.forEach(pluginHost::add)
