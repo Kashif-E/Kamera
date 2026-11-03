@@ -11,6 +11,8 @@ import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.ZoomState
@@ -92,6 +94,25 @@ class ContractKitMutationTest {
             cases(::BindsTheFrontReportsTheBack).hardwareChangesOnlyFromPlatformObserver()
         }
         assertContains(failure.message.orEmpty(), "the platform bound another camera than the one the case selected")
+    }
+
+    @Test
+    fun flashCommandRefusedWhileOpenFailsTheFlashStep() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(::RefusesFlashWhileOpen).commandsLeaveHardwareUntilThePlatformReports()
+        }
+        assertContains(failure.message.orEmpty(), "setFlashMode to the reported mode")
+    }
+
+    @Test
+    fun flashCommandMirroredIntoStateFailsTheFlashStep() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(::MirrorsAnotherFlashMode).commandsLeaveHardwareUntilThePlatformReports()
+        }
+        assertContains(
+            failure.message.orEmpty(),
+            "setFlashMode to the reported mode changed hardware before the platform reported it",
+        )
     }
 
     private fun cases(breakIt: (FakeCameraEngine) -> BrokenEngine) =
@@ -219,6 +240,44 @@ class ContractKitMutationTest {
     // Rule 5 broken: setTorchMode reports success without passing the command to the platform.
     private class SwallowsTorchCommands(fake: FakeCameraEngine) : BrokenEngine(fake) {
         override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = CameraKResult.Success(mode)
+    }
+
+    // Rule 5 broken the other way: setFlashMode is refused while Open, so a camera with one flash mode never takes it.
+    private class RefusesFlashWhileOpen(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> =
+            if (fake.state.value == EngineState.Open) {
+                CameraKResult.Failure(CameraKError.InvalidState(CameraOperation.FLASH))
+            } else {
+                fake.setFlashMode(mode)
+            }
+    }
+
+    // Rule 5 broken: a successful setFlashMode writes a mode into hardware, and not the one it was given, so even
+    // a command that asks for the mode the platform already holds moves hardware before a report.
+    private class MirrorsAnotherFlashMode(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        private val _hardware = MutableStateFlow(fake.hardware.value)
+        override val hardware: StateFlow<HardwareState> = _hardware.asStateFlow()
+        private var written: FlashMode? = null
+
+        override fun sync() {
+            val reported = fake.hardware.value
+            _hardware.value =
+                HardwareState(
+                    written ?: reported.flashMode,
+                    reported.torchMode,
+                    reported.camera,
+                    reported.targetOrientation,
+                )
+        }
+
+        override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> = fake.start(desired).also { sync() }
+
+        override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> {
+            val result = fake.setFlashMode(mode)
+            if (result is CameraKResult.Success) written = FlashMode.entries.first { it != mode }
+            sync()
+            return result
+        }
     }
 
     // Selection broken: the platform binds the front camera whatever was selected, while hardware reports the

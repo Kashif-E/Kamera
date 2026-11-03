@@ -4,14 +4,22 @@ package com.kashif.cameraK.engine.contract
 
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.engine.CameraEngine
+import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.frames.FrameFormat
+import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.utils.CameraKEngineApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -136,8 +144,130 @@ class ContractKitCapabilitiesTest {
         assertEquals(3, skips.skipped.size, "every step is listed: ${skips.skipped}")
     }
 
+    @Test
+    fun commandsCaseRunsTheFlashStepOnAnEngineWithNothingAdjustable() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(FakeEngineDriver(oneFixedCamera), requires = emptySet(), skips = skips)
+
+        cases.commandsLeaveHardwareUntilThePlatformReports()
+
+        assertEquals(
+            listOf(
+                "commandsLeaveHardwareUntilThePlatformReports: setTorchMode",
+                "commandsLeaveHardwareUntilThePlatformReports: setZoom",
+                "commandsLeaveHardwareUntilThePlatformReports: setFlashMode",
+            ),
+            skips.skipped.map { it.substringBefore(" skipped (") },
+        )
+    }
+
+    @Test
+    fun commandsCaseWithNoBoundCameraSkipsTheFlashStepAndFailsWithNothingToVerify() = runTest {
+        val skips = ContractSkips()
+        val cases =
+            ContractCases(NoBoundCameraDriver(FakeEngineDriver(oneFixedCamera)), requires = emptySet(), skips = skips)
+
+        val failure = assertFailsWith<AssertionError> { cases.commandsLeaveHardwareUntilThePlatformReports() }
+
+        assertContains(failure.message.orEmpty(), "nothing to verify on this engine")
+        assertContains(
+            skips.skipped.map { it.substringBefore(" skipped (") },
+            "commandsLeaveHardwareUntilThePlatformReports: setFlashMode to the reported mode",
+        )
+    }
+
+    @Test
+    fun preOpenInterruptionCaseIsSkippedAndListedForAnEngineWithoutIt() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(InterruptsOnlyWhenOpenDriver(), requires = emptySet(), skips = skips)
+
+        cases.interruptBeforeOpenThenEndInterruptionReachesOpenWithOneStartCall(this)
+
+        assertEquals(
+            listOf(
+                "interruptBeforeOpenThenEndInterruptionReachesOpenWithOneStartCall: every step skipped " +
+                    "(the engine has no interruption before Open)",
+            ),
+            skips.skipped,
+        )
+    }
+
+    @Test
+    fun preOpenInterruptionCaseTakesThePlatformsOwnReason() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(OwnInterruptionReasonDriver(), requires = emptySet(), skips = skips)
+
+        cases.interruptBeforeOpenThenEndInterruptionReachesOpenWithOneStartCall(this)
+
+        assertEquals(emptyList(), skips.skipped, "the case ran over a driver with interruption before Open")
+    }
+
+    @Test
+    fun cameraCaseReadsCapabilitiesTheEngineEnumeratesAfterConstruction() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(EnumeratesOnSettleDriver(), requires = emptySet(), skips = skips)
+
+        cases.reportedCameraIsTheOneTheEngineOpenedOn()
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun observerCaseReadsCapabilitiesTheEngineEnumeratesAfterConstruction() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(EnumeratesOnSettleDriver(), requires = emptySet(), skips = skips)
+
+        cases.hardwareChangesOnlyFromPlatformObserver()
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
     // A platform that never says which camera it bound gives the hardware cases nothing to compare against.
     private class NoBoundCameraDriver(private val delegate: FakeEngineDriver) : EngineContractDriver by delegate {
         override fun boundSettings(): BoundSettings = delegate.boundSettings().copy(cameraId = null)
+    }
+
+    // The desktop engine's driver: the platform interrupts an open session only, never a start it holds.
+    private class InterruptsOnlyWhenOpenDriver(private val delegate: FakeEngineDriver = FakeEngineDriver()) :
+        EngineContractDriver by delegate {
+        private lateinit var engine: CameraEngine
+
+        override fun createEngine(config: CameraConfiguration): CameraEngine =
+            delegate.createEngine(config).also { engine = it }
+
+        override fun interrupt(reason: InterruptionReason) {
+            check(engine.state.value == EngineState.Open) {
+                "this engine has no interruption before Open"
+            }
+            delegate.interrupt(reason)
+        }
+    }
+
+    // A platform that maps every interruption to a reason of its own, as CameraX and AVFoundation do.
+    private class OwnInterruptionReasonDriver : FakeEngineDriver() {
+        override fun interrupt(reason: InterruptionReason) = super.interrupt(InterruptionReason.SYSTEM_PRESSURE)
+    }
+
+    // An engine that enumerates its cameras after construction, on its scheduler: until the first settle its
+    // capabilities are EMPTY, as a platform engine's are while the enumeration it launched is still queued.
+    private class EnumeratesOnSettleDriver : FakeEngineDriver() {
+        private lateinit var engine: EnumeratesAfterConstruction
+
+        override fun createEngine(config: CameraConfiguration): CameraEngine =
+            EnumeratesAfterConstruction(super.createEngine(config) as FakeCameraEngine).also { engine = it }
+
+        override suspend fun settle() {
+            super.settle()
+            engine.enumerate()
+        }
+    }
+
+    private class EnumeratesAfterConstruction(private val fake: FakeCameraEngine) : CameraEngine by fake {
+        private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
+        override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
+
+        fun enumerate() {
+            _capabilities.value = fake.capabilities.value
+        }
     }
 }
