@@ -72,4 +72,16 @@ class MinimumOsTest {
         assertEquals(0, driver.sessionsCreated, "sessions created below iOS 16")
         engine.close()
     }
+
+    @Test
+    fun belowIos16CallsAfterCloseReturnClosed() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+
+        engine.close()
+
+        assertEquals(CameraKResult.Failure(CameraKError.Closed), engine.start(backCamera()), "start after close")
+        assertEquals(CameraKResult.Failure(CameraKError.Closed), engine.capture(), "capture after close")
+        assertEquals(EngineState.Closed, engine.state.value, "the state after close")
+    }
 }
