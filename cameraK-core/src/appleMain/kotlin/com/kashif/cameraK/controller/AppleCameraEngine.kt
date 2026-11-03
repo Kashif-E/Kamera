@@ -31,6 +31,7 @@ import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.START_TIMEOUT
 import com.kashif.cameraK.state.ZoomState
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
@@ -47,6 +48,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -87,7 +89,8 @@ import kotlin.coroutines.resume
  * - Those notifications are observed with the session as their object and no queue, then hop to the
  *   session queue and apply only to the start generation they arrived in. [close] removes them.
  * - A runtime error ends its generation with Failed, except a media-services reset, which interrupts
- *   the session and restarts it once.
+ *   the session and restarts it. A second failure before the restart ran, or a restart that does not
+ *   run within the start timeout, gives Failed(Hardware).
  * - Below iOS 16 it makes no session, enumerates nothing and every call fails with
  *   `Unsupported(PLATFORM_VERSION)`: a Kotlin/Native library cannot raise its consumer's deployment
  *   target, and every iOS 16 call lives behind this check.
@@ -140,7 +143,10 @@ internal class AppleCameraEngine(
     private var closed = false
     private var pendingStart: PendingStart? = null
     private var firstFrame: AutoCloseable? = null
+
+    /** Set by a media-services reset's restart, cleared when the session runs again. */
     private var restartedAfterReset = false
+    private var resetRestarts = 0
 
     /** The reason of the latest interruption, recorded when AVFoundation posts it, before the hop to the queue. */
     private val lastInterruption = atomic<InterruptionReason?>(null)
@@ -396,11 +402,34 @@ internal class AppleCameraEngine(
         }
         val next = sessionErrorState(error)
         if (next is EngineState.Failed) return fail(generation, next.error)
-        val restart = locked { !restartedAfterReset.also { restartedAfterReset = true } }
-        if (!restart) return fail(generation, CameraKError.Hardware(error.code.toInt(), NSErrorException(error)))
+        val hardware = CameraKError.Hardware(error.code.toInt(), NSErrorException(error))
+        // A reset restarts the session once; a second failure in a row, before the restart ran, ends the generation.
+        val restart = locked {
+            if (restartedAfterReset) return@locked null
+            restartedAfterReset = true
+            ++resetRestarts
+        } ?: return fail(generation, hardware)
         becomeLive(generation, next)
         custom.startRunningOnQueue()
         confirm(generation)
+        failUnlessRunningWithinTheStartTimeout(generation, restart, hardware)
+    }
+
+    /**
+     * A restart that leaves the session neither running nor interrupted may still run on its own, so the
+     * engine waits for did-start-running as a start does, for [START_TIMEOUT], and then fails with [error].
+     */
+    private fun failUnlessRunningWithinTheStartTimeout(generation: Int, restart: Int, error: CameraKError) {
+        scope.launch {
+            delay(START_TIMEOUT)
+            custom.afterQueuedSessionWork {
+                platformCallback("a restart after a media-services reset") {
+                    val pending = locked { restartedAfterReset && resetRestarts == restart }
+                    val ops = session
+                    if (pending && ops != null && !ops.isRunning && !ops.isInterrupted) fail(generation, error)
+                }
+            }
+        }
     }
 
     /**
@@ -423,7 +452,10 @@ internal class AppleCameraEngine(
             if (phase != Phase.STARTING && phase != Phase.LIVE) return
             phase = Phase.LIVE
             _state.value = next
-            if (next == EngineState.Open) endFirstFrame()
+            if (next == EngineState.Open) {
+                endFirstFrame()
+                restartedAfterReset = false
+            }
             pendingStart.also { pendingStart = null }
         }
         started?.continuation?.resume(CameraKResult.Success(Unit))
