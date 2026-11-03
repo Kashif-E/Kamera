@@ -331,8 +331,12 @@ class CameraKStateHolderLifecycleTest {
         assertEquals(CameraKState.Closed, s.state)
         val children = s.environment.parentJob!!.children.toList()
         assertTrue(children.none(), "coroutines left after closeAndJoin: $children")
+        // Coroutines' stack-trace recovery may log a copy whose cause is the engine's own throwable.
         assertTrue(
-            logged.any { it.level == CameraKLogger.Level.ERROR && it.throwable === failure },
+            logged.any { log ->
+                log.level == CameraKLogger.Level.ERROR &&
+                    generateSequence(log.throwable) { it.cause }.any { it === failure }
+            },
             "the failed engine close was not logged with its throwable: ${logged.map { it.message }}",
         )
     }

@@ -5,6 +5,7 @@ package com.kashif.cameraK.state
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.coroutines.CameraKDispatchers
+import com.kashif.cameraK.coroutines.isFatal
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraEngineFactory
 import com.kashif.cameraK.engine.CameraKEnvironment
@@ -212,17 +213,35 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         if (!closing.compareAndSet(expect = false, update = true)) return
         lifecycle.enterClosed()
         scope.launch(start = CoroutineStart.ATOMIC) {
-            withContext(NonCancellable) {
-                lifecycle.shutDown()
-                pluginHost.detachAll()
-                withTimeoutOrNull(ENGINE_CLOSE_TIMEOUT) { engine.closeAndJoin() }
-                    ?: CameraKLogger.e(
-                        TAG,
-                        "Closing the camera engine timed out; the holder closed without waiting for it",
-                        EngineCloseTimeoutException(ENGINE_CLOSE_TIMEOUT),
-                    )
+            // The scope ends whatever a step does, so closeAndJoin returns and no coroutine outlives the holder.
+            try {
+                withContext(NonCancellable) {
+                    lifecycle.shutDown()
+                    pluginHost.detachAll()
+                    closeEngine()
+                }
+            } finally {
+                scope.cancel()
             }
-            scope.cancel()
+        }
+    }
+
+    // Bounded, and never thrown out of the release: an engine that breaks its contract by throwing
+    // from closeAndJoin is logged, and the holder closes without it.
+    private suspend fun closeEngine() {
+        val closed = try {
+            withTimeoutOrNull(ENGINE_CLOSE_TIMEOUT) { engine.closeAndJoin() }
+        } catch (e: Throwable) {
+            if (e.isFatal()) throw e
+            CameraKLogger.e(TAG, "Closing the camera engine failed; the holder closed without it", e)
+            return
+        }
+        if (closed == null) {
+            CameraKLogger.e(
+                TAG,
+                "Closing the camera engine timed out; the holder closed without waiting for it",
+                EngineCloseTimeoutException(ENGINE_CLOSE_TIMEOUT),
+            )
         }
     }
 

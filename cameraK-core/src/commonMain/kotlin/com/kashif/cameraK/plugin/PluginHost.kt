@@ -1,5 +1,6 @@
 package com.kashif.cameraK.plugin
 
+import com.kashif.cameraK.coroutines.isFatal
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
@@ -27,7 +28,9 @@ internal fun effectiveConfig(config: CameraConfiguration, plugins: List<CameraKP
  * holder cannot stall or deadlock another thread.
  *
  * A plugin that throws from `onAttach` or `onDetach` is logged and reported as
- * [CameraKEvent.PluginFailed]; the camera and the other plugins carry on.
+ * [CameraKEvent.PluginFailed]; the camera and the other plugins carry on. That holds for any
+ * throwable but a fatal one ([isFatal]): a `TODO()` body's NotImplementedError and a missing
+ * native library's LinkageError are a plugin's failure, not the camera's.
  */
 internal class PluginHost(
     private val holder: CameraKStateHolder,
@@ -88,7 +91,8 @@ internal class PluginHost(
     private fun attach(plugin: CameraKPlugin) {
         try {
             plugin.onAttach(holder)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            if (e.isFatal()) throw e
             CameraKLogger.e(TAG, "Attaching a plugin failed; the camera carries on without it", e)
             report(e)
         }
@@ -97,7 +101,8 @@ internal class PluginHost(
     private fun detach(plugin: CameraKPlugin) {
         try {
             plugin.onDetach()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            if (e.isFatal()) throw e
             CameraKLogger.e(TAG, "Detaching a plugin failed", e)
             report(e)
         }
