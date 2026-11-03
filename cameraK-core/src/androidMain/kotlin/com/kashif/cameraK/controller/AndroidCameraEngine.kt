@@ -51,10 +51,12 @@ import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.getAndUpdate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainCoroutineDispatcher
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.async
@@ -123,6 +125,12 @@ internal class AndroidCameraEngine(
     private val mainImmediate: CoroutineDispatcher = immediateFormOf(main)
 
     private val scope = CoroutineScope(SupervisorJob(environment.parentJob) + main)
+
+    // Runs the release, which outlives the engine's scope: the release cancels that scope last.
+    private val teardownScope = CoroutineScope(
+        SupervisorJob() + main +
+            CoroutineExceptionHandler { _, e -> CameraKLogger.e(TAG, "Releasing the camera failed", e) },
+    )
 
     /** The tracer the engine writes its start and first-frame intervals to. */
     internal val tracer: Tracer = environment.runtime.tracer ?: AndroidTracer
@@ -377,8 +385,7 @@ internal class AndroidCameraEngine(
         if (!closed.compareAndSet(false, true)) return
         session?.opened?.complete(CLOSED)
         _state.value = EngineState.Closed
-        // Not a child of the engine's scope, which the teardown cancels last.
-        teardown = CoroutineScope(main).launch { release() }
+        teardown = teardownScope.launch(NonCancellable) { release() }
     }
 
     override suspend fun closeAndJoin() {
@@ -702,32 +709,39 @@ internal class AndroidCameraEngine(
     // ── Close ──────────────────────────────────────────────────────────────────────────────────
 
     // Main thread. Releases everything once: the sensor, frame delivery and a recording first, then
-    // the registry and this engine's use cases, then what the 1.x callers were waiting on.
+    // the registry and this engine's use cases, then what the 1.x callers were waiting on. A step that
+    // throws is logged and the steps after it still run.
     private fun release() {
-        session?.let(::endSession)
-        stopObserving()
-        orientation.release()
-        binder.stopListeningForDisplayChanges()
+        releaseStep("Ending the session") { session?.let(::endSession) }
+        releaseStep("Removing the camera observers") { stopObserving() }
+        releaseStep("Releasing the orientation sensor") { orientation.release() }
+        releaseStep("Removing the display listener") { binder.stopListeningForDisplayChanges() }
         // Stop frame delivery before anything it uses goes away, and stop a recording while its
         // VideoCapture is still bound so it finalizes cleanly.
-        framePipeline.stopDelivery()
-        videoRecorder.stopForRelease()
-        if (registry.currentState == Lifecycle.State.INITIALIZED) registry.currentState = Lifecycle.State.CREATED
-        registry.currentState = Lifecycle.State.DESTROYED
-        try {
-            binder.unbindOwnUseCases()
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Unbinding use cases on release failed", e)
+        releaseStep("Stopping frame delivery on release") { framePipeline.stopDelivery() }
+        releaseStep("Stopping the recording on release") { videoRecorder.stopForRelease() }
+        releaseStep("Destroying the engine lifecycle") {
+            if (registry.currentState == Lifecycle.State.INITIALIZED) registry.currentState = Lifecycle.State.CREATED
+            registry.currentState = Lifecycle.State.DESTROYED
         }
-        framePipeline.clearConsumers()
-        stillCapturer.clearListeners()
-        videoRecorder.failUnclaimedOutcome()
+        releaseStep("Unbinding use cases on release") { binder.unbindOwnUseCases() }
+        releaseStep("Dropping the frame consumers") { framePipeline.clearConsumers() }
+        releaseStep("Dropping the capture listeners") { stillCapturer.clearListeners() }
+        releaseStep("Failing the unclaimed recording outcome") { videoRecorder.failUnclaimedOutcome() }
         // A capture still in flight would otherwise wait for a callback that is now ignored.
-        stillCapturer.failInFlight()
+        releaseStep("Failing the captures in flight") { stillCapturer.failInFlight() }
         bindListeners.clear()
-        imageProcessingExecutor.shutdown()
-        analyzerExecutor.shutdown()
+        releaseStep("Shutting down the image-processing executor") { imageProcessingExecutor.shutdown() }
+        releaseStep("Shutting down the analyzer executor") { analyzerExecutor.shutdown() }
         scope.cancel()
+    }
+
+    private inline fun releaseStep(operation: String, step: () -> Unit) {
+        try {
+            step()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "$operation failed", e)
+        }
     }
 
     private fun <T> refuse(operation: CameraOperation): CameraKResult<T> {
