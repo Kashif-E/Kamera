@@ -24,15 +24,15 @@ import kotlin.test.fail
  * requests that answer [grant] from a background queue, as the system's completion handlers do.
  */
 internal class FakeApplePermissionPlatform(
-    val capture: MutableMap<AVMediaType?, AVAuthorizationStatus> = mutableMapOf(),
+    val capture: MutableMap<AVMediaType, AVAuthorizationStatus> = mutableMapOf(),
     var photo: PHAuthorizationStatus = PHAuthorizationStatusNotDetermined,
     private val grant: Boolean = true,
 ) : ApplePermissionPlatform {
-    val captureReads = mutableListOf<AVMediaType?>()
+    val captureReads = mutableListOf<AVMediaType>()
     val photoReads = mutableListOf<PHAccessLevel>()
-    val captureRequests = mutableListOf<AVMediaType?>()
+    val captureRequests = mutableListOf<AVMediaType>()
 
-    override fun captureStatus(mediaType: AVMediaType?): AVAuthorizationStatus {
+    override fun captureStatus(mediaType: AVMediaType): AVAuthorizationStatus {
         captureReads += mediaType
         return capture[mediaType] ?: AVAuthorizationStatusNotDetermined
     }
@@ -42,7 +42,7 @@ internal class FakeApplePermissionPlatform(
         return photo
     }
 
-    override fun requestCapture(mediaType: AVMediaType?, completion: (granted: Boolean) -> Unit) {
+    override fun requestCapture(mediaType: AVMediaType, completion: (granted: Boolean) -> Unit) {
         captureRequests += mediaType
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.toLong(), 0u)) {
             capture[mediaType] = if (grant) AVAuthorizationStatusAuthorized else AVAuthorizationStatusDenied
