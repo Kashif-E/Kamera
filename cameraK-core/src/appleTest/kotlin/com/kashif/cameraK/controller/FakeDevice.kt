@@ -60,6 +60,7 @@ internal fun captureInputWithoutCamera(): AVCaptureInput = memScoped {
  */
 internal class FakeDevice(
     override val isFront: Boolean = false,
+    override val uniqueId: String = "fake-camera",
     override val hasTorch: Boolean = true,
     private val supportedTorchModes: Set<AVCaptureTorchMode> =
         setOf(AVCaptureTorchModeOff, AVCaptureTorchModeOn, AVCaptureTorchModeAuto),

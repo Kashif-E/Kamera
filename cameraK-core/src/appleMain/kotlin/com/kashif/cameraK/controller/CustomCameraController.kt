@@ -181,6 +181,12 @@ class CustomCameraController(
     var onError: ((CameraException) -> Unit)? = null
     var onSessionReady: (() -> Unit)? = null
 
+    /** The camera in use: the one the session's video input captures from. */
+    internal val currentDevice: CaptureDeviceOps? get() = currentCamera
+
+    /** The flash mode a capture's settings carry now: [flashMode], or off when the photo output lacks it. */
+    internal val captureFlashMode: AVCaptureFlashMode get() = supportedFlashMode(flashMode)
+
     /** The flash mode captures request; a mode the photo output lacks is turned off at capture time. */
     @Volatile
     var flashMode: AVCaptureFlashMode = AVCaptureFlashModeAuto

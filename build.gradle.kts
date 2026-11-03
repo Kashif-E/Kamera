@@ -460,6 +460,15 @@ fun publishedClasspathProblems(
     return problems.distinct()
 }
 
+// The iOS deployment targets an Xcode project's text sets below iOS [minimumMajor], one line each; a
+// project that sets none is reported too, since then nothing holds the app at the minimum. CameraK's
+// engine needs iOS 16 (design §2.4): a Kotlin/Native library cannot raise its consumer's target, so the
+// Sample's project keeps it.
+fun iosDeploymentTargetsBelow(
+    pbxproj: String,
+    minimumMajor: Int,
+): List<String> = emptyList()
+
 // The types camerak-core no longer annotates for Compose; cameraK/compose-stability.conf lists them.
 val strippedStableTypes =
     listOf(
@@ -513,6 +522,7 @@ tasks.register("checkBuildGateRules") {
                 .orEmpty()
         }
     val stabilityConfig = layout.projectDirectory.file("cameraK/compose-stability.conf").asFile
+    val sampleXcodeProject = layout.projectDirectory.file("iosApp/iosApp.xcodeproj/project.pbxproj").asFile
     doLast {
         fun graphs(vararg entries: Pair<String, List<String>>) =
             publishedGraphs.associateWith { emptyList<String>() } + entries
@@ -652,6 +662,19 @@ tasks.register("checkBuildGateRules") {
                                     .filterNot(full::contains)
                                     .map { "scripts/verify.sh --full does not run $it" }
                         }
+                },
+                "ios_sample_deployment_target_at_least_16" to {
+                    fun target(version: String) = "\t\t\t\tIPHONEOS_DEPLOYMENT_TARGET = $version;\n"
+                    listOfNotNull(
+                        "a project with a 15.0 target is accepted"
+                            .takeIf { iosDeploymentTargetsBelow(target("16.2") + target("15.0"), 16).isEmpty() },
+                        "a project with no deployment target is accepted"
+                            .takeIf { iosDeploymentTargetsBelow("// no build settings\n", 16).isEmpty() },
+                        "a project with 16.0 and 17.4 targets is rejected"
+                            .takeIf { iosDeploymentTargetsBelow(target("16.0") + target("17.4"), 16).isNotEmpty() },
+                    ) +
+                        iosDeploymentTargetsBelow(sampleXcodeProject.readText(), 16)
+                            .map { "${sampleXcodeProject.relativeTo(rootDir)}: $it" }
                 },
                 "stability_config_lists_every_stripped_type" to {
                     if (!stabilityConfig.isFile) {

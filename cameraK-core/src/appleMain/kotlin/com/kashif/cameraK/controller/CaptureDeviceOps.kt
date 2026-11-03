@@ -18,6 +18,8 @@ import platform.Foundation.NSValue
  * camera.
  */
 internal interface CaptureDeviceOps {
+    /** AVFoundation's uniqueID, which is the camera's `LensInfo.id`. */
+    val uniqueId: String
     val isFront: Boolean
     val hasTorch: Boolean
     val torchMode: AVCaptureTorchMode
@@ -50,10 +52,14 @@ internal interface CaptureDeviceOps {
 internal fun interface CameraDeviceProvider {
     /** A camera of [type] facing [lens], or facing either way when [lens] is null; null when there is none. */
     fun find(lens: CameraLens?, type: CameraDeviceType): CaptureDeviceOps?
+
+    /** The camera whose uniqueID is [id]; null when there is none. */
+    fun findById(id: String): CaptureDeviceOps? = null
 }
 
 @OptIn(ExperimentalForeignApi::class)
 internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOps {
+    override val uniqueId: String get() = device.uniqueID
     override val isFront: Boolean get() = device.position == AVCaptureDevicePositionFront
     override val hasTorch: Boolean get() = device.hasTorch
     override val torchMode: AVCaptureTorchMode get() = device.torchMode

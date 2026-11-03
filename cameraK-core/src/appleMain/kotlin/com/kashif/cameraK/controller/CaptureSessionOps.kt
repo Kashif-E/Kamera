@@ -14,6 +14,10 @@ internal interface CaptureSessionOps {
     val avSession: AVCaptureSession?
 
     val isRunning: Boolean
+
+    /** Whether the system holds the session interrupted: a phone call, another app on the camera. */
+    val isInterrupted: Boolean get() = false
+
     val inputs: List<AVCaptureInput>
     val outputs: List<AVCaptureOutput>
 
@@ -40,10 +44,16 @@ internal interface CaptureSessionOps {
     fun startRunning()
 
     fun stopRunning()
+
+    /** Releases the session for good: the engine calls it once, when it closes. */
+    fun tearDown() {
+        if (isRunning) stopRunning()
+    }
 }
 
 internal class AVCaptureSessionOps(override val avSession: AVCaptureSession = AVCaptureSession()) : CaptureSessionOps {
     override val isRunning: Boolean get() = avSession.isRunning()
+    override val isInterrupted: Boolean get() = avSession.isInterrupted()
     override val inputs: List<AVCaptureInput> get() = avSession.inputs.filterIsInstance<AVCaptureInput>()
     override val outputs: List<AVCaptureOutput> get() = avSession.outputs.filterIsInstance<AVCaptureOutput>()
 
