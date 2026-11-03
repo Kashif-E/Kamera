@@ -191,11 +191,11 @@ internal class AppleCameraEngine(
     // ─── Lifecycle ──────────────────────────────────────────────────────────────────────────────
 
     override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> {
+        if (isClosed) return CLOSED
         unsupported?.let { error ->
             locked { if (!closed) _state.value = EngineState.Failed(error) }
             return failure(error)
         }
-        if (isClosed) return CLOSED
         enumerated.await()
         return starts.withLock {
             when {
