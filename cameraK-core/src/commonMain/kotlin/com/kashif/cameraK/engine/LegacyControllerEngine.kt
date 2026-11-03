@@ -21,9 +21,13 @@ import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -86,6 +90,12 @@ internal class LegacyControllerEngine(
     override val recordingEvents: Flow<EngineRecordingEvent> = emptyFlow()
     override val frames: FrameSource = InactiveFrameSource()
 
+    // The engine's own scope, under the environment's job. Only the release runs in it.
+    private val scope = CoroutineScope(
+        SupervisorJob(environment.parentJob) + environment.dispatchers.default +
+            CoroutineExceptionHandler { _, e -> CameraKLogger.e(TAG, "Releasing the 1.x camera session failed", e) },
+    )
+
     // Start, stop and the session close run one at a time, so no session call overlaps another.
     private val sessionLock = Mutex()
     private val closed = atomic(false)
@@ -105,15 +115,18 @@ internal class LegacyControllerEngine(
 
     private suspend fun open(): CameraKResult<Unit> {
         publish(EngineState.Opening)
-        val started = try {
-            suspendRunCatching { session.start() }
+        return try {
+            startAndReadBack()
         } catch (e: CancellationException) {
-            // The session call may have run before the cancellation landed; a cancelled start leaves the camera closed.
+            // The session may be running when the cancellation lands; a cancelled start leaves the camera closed.
             withContext(NonCancellable) { stopSession() }
             publish(EngineState.Closed)
             throw e
         }
-        started.exceptionOrNull()?.let { e ->
+    }
+
+    private suspend fun startAndReadBack(): CameraKResult<Unit> {
+        suspendRunCatching { session.start() }.exceptionOrNull()?.let { e ->
             CameraKLogger.e(TAG, "Starting the 1.x camera session failed", e)
             val error = CameraKError.Internal(e)
             publish(EngineState.Failed(error))
@@ -144,7 +157,9 @@ internal class LegacyControllerEngine(
                     orientation = legacyController.getDeviceOrientation(),
                 )
                 if (!listeningForOrientation) {
-                    legacyController.setOnOrientationChangedListener { _deviceOrientation.value = it }
+                    legacyController.setOnOrientationChangedListener {
+                        if (!closed.value) _deviceOrientation.value = it
+                    }
                     listeningForOrientation = true
                 }
                 values
@@ -181,17 +196,27 @@ internal class LegacyControllerEngine(
     override fun close() {
         if (!closed.compareAndSet(expect = false, update = true)) return
         _state.value = EngineState.Closed
-        // Not a child of the environment's job: the session must close even when the holder's scope is already cancelled.
-        CoroutineScope(environment.dispatchers.default).launch(NonCancellable) {
-            try {
-                sessionLock.withLock {
-                    suspendRunCatching { session.close() }
-                        .onFailure { CameraKLogger.e(TAG, "Closing the 1.x camera session failed", it) }
+        // ATOMIC and NonCancellable: the session closes even when the environment's job is already cancelled.
+        scope.launch(start = CoroutineStart.ATOMIC) {
+            withContext(NonCancellable) {
+                try {
+                    sessionLock.withLock { release() }
+                } finally {
+                    closeDone.complete()
                 }
-            } finally {
-                closeDone.complete()
             }
         }
+        scope.cancel()
+    }
+
+    private suspend fun release() {
+        if (listeningForOrientation) {
+            suspendRunCatching { session.onSessionThread { legacyController.setOnOrientationChangedListener(null) } }
+                .onFailure { CameraKLogger.e(TAG, "Removing the 1.x orientation listener failed", it) }
+            listeningForOrientation = false
+        }
+        suspendRunCatching { session.close() }
+            .onFailure { CameraKLogger.e(TAG, "Closing the 1.x camera session failed", it) }
     }
 
     override suspend fun closeAndJoin() {
