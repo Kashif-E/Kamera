@@ -279,9 +279,10 @@ internal class ContractCases(
             open(engine)
             val lens = currentLens(engine)
             val capabilities = engine.capabilities.value
-            val flash = lens?.let { flashTarget(engine, it) }
-            val torch = torchTarget(engine, lens)
-            val zoom = zoomTarget(engine, lens)
+            val other = lens?.let { current -> capabilities.allLenses.firstOrNull { it.id != current.id } }
+            val flash = lens?.let { flashTarget(engine, it, other) }
+            val torch = torchTarget(engine, lens, other)
+            val zoom = zoomTarget(engine, lens, other)
             val restarted = DesiredHardware(
                 selection = desired.selection,
                 flashMode = flash ?: desired.flashMode,
@@ -307,7 +308,6 @@ internal class ContractCases(
             steps.step("zoom after restart", skipIf = skipReason(lens, zoom) { fixedZoom(it) }) {
                 assertEquals(zoom, driver.boundSettings().zoomRatio)
             }
-            val other = lens?.let { current -> capabilities.allLenses.firstOrNull { it.id != current.id } }
             steps.step("camera switch", skipIf = if (other == null) "the engine has fewer than two cameras" else null) {
                 val target = other!!
                 val selected = engine.selectCamera(CameraSelection.ById(target.id))
@@ -315,13 +315,22 @@ internal class ContractCases(
                 driver.settle()
                 val bound = driver.boundSettings()
                 assertEquals(target.id, bound.cameraId)
-                if (flash != null && flash in capabilities.supportedFlashModes(target.id)) {
+
+                val flashTaken = flash != null && flash in capabilities.supportedFlashModes(target.id)
+                val flashSkip =
+                    skipReason(lens, flash) { onlyFlash(engine, it) } ?: notTaken(target, "flash $flash", flashTaken)
+                steps.step("flash after the switch", skipIf = flashSkip) {
                     assertEquals(flash, bound.flashMode, "flash after the switch")
                 }
-                if (torch != null && torch in capabilities.supportedTorchModes(target.id)) {
+                val torchTaken = torch != null && torch in capabilities.supportedTorchModes(target.id)
+                val torchSkip =
+                    skipReason(lens, torch) { onlyTorch(engine, it) } ?: notTaken(target, "torch $torch", torchTaken)
+                steps.step("torch after the switch", skipIf = torchSkip) {
                     assertEquals(torch, bound.torchMode, "torch after the switch")
                 }
-                if (zoom != null && zoom in target.minZoom..target.maxZoom) {
+                val zoomTaken = zoom != null && zoom in target.minZoom..target.maxZoom
+                val zoomSkip = skipReason(lens, zoom) { fixedZoom(it) } ?: notTaken(target, "zoom $zoom", zoomTaken)
+                steps.step("zoom after the switch", skipIf = zoomSkip) {
                     assertEquals(zoom, bound.zoomRatio, "zoom after the switch")
                 }
             }
@@ -483,28 +492,43 @@ internal class ContractCases(
         return engine.capabilities.value.allLenses.firstOrNull { it.id == id }
     }
 
-    private fun flashTarget(engine: CameraEngine, lens: LensInfo): FlashMode? {
-        val supported = engine.capabilities.value.supportedFlashModes(lens.id)
-        return listOf(FlashMode.ON, FlashMode.AUTO, FlashMode.OFF).firstOrNull {
-            it != desired.flashMode &&
-                it in supported
-        }
+    // Each target is a value the bound camera takes, preferring one the [other] camera takes as well, so a
+    // camera switch can check that it is re-applied.
+    private fun flashTarget(engine: CameraEngine, lens: LensInfo, other: LensInfo? = null): FlashMode? {
+        val capabilities = engine.capabilities.value
+        val candidates = listOf(FlashMode.ON, FlashMode.AUTO, FlashMode.OFF)
+            .filter { it != desired.flashMode && it in capabilities.supportedFlashModes(lens.id) }
+        return candidates.firstOrNull { other != null && it in capabilities.supportedFlashModes(other.id) }
+            ?: candidates.firstOrNull()
     }
 
-    private fun torchTarget(engine: CameraEngine, lens: LensInfo?): TorchMode? {
+    private fun torchTarget(engine: CameraEngine, lens: LensInfo?, other: LensInfo? = null): TorchMode? {
         lens ?: return null
+        val capabilities = engine.capabilities.value
         val current = engine.hardware.value.torchMode
-        val supported = engine.capabilities.value.supportedTorchModes(lens.id)
-        return listOf(TorchMode.ON, TorchMode.AUTO, TorchMode.OFF).firstOrNull { it != current && it in supported }
+        val candidates = listOf(TorchMode.ON, TorchMode.AUTO, TorchMode.OFF)
+            .filter { it != current && it in capabilities.supportedTorchModes(lens.id) }
+        return candidates.firstOrNull { other != null && it in capabilities.supportedTorchModes(other.id) }
+            ?: candidates.firstOrNull()
     }
 
-    private fun zoomTarget(engine: CameraEngine, lens: LensInfo?): Float? {
+    private fun zoomTarget(engine: CameraEngine, lens: LensInfo?, other: LensInfo? = null): Float? {
         lens ?: return null
-        if (lens.maxZoom <= lens.minZoom) return null
         val current = engine.zoom.value.ratio
-        val middle = (lens.minZoom + lens.maxZoom) / 2
-        return if (middle != current) middle else lens.minZoom + (lens.maxZoom - lens.minZoom) / 4
+        val shared =
+            other?.let { zoomInside(maxOf(lens.minZoom, it.minZoom), minOf(lens.maxZoom, it.maxZoom), current) }
+        return shared ?: zoomInside(lens.minZoom, lens.maxZoom, current)
     }
+
+    // A ratio inside [min, max] other than [current], or null when the range is a single value.
+    private fun zoomInside(min: Float, max: Float, current: Float): Float? {
+        if (max <= min) return null
+        val middle = (min + max) / 2
+        return if (middle != current) middle else min + (max - min) / 4
+    }
+
+    private fun notTaken(target: LensInfo, value: String, taken: Boolean): String? =
+        if (taken) null else "camera '${target.id}' does not take $value"
 
     private fun noLens(lens: LensInfo?): String? = if (lens == null) NO_LENS else null
 
