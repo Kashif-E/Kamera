@@ -13,6 +13,7 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
@@ -99,6 +100,18 @@ actual class CameraController(
         this.recordingConverter = recordingConverter
         this.writeCapture = writeCapture
         this.readCapture = readCapture
+    }
+
+    /** The engine this controller is a facade over (§12.1). */
+    internal val engine: DesktopCameraEngine get() = TODO("D1'")
+
+    /** The facade an engine builds over itself. */
+    internal constructor(
+        engine: DesktopCameraEngine,
+        config: CameraConfiguration,
+        userHome: File = defaultUserHome(),
+    ) : this(config.imageFormat, config.directory) {
+        TODO("D1'")
     }
 
     // The controller's own scope: the grab loop and the recording run in it, and cleanup() cancels it.

@@ -27,3 +27,19 @@ internal suspend fun GrabberSource.open(
     own: (FrameGrabber?) -> Unit,
     release: (FrameGrabber) -> Unit,
 ): OpenedDevice = TODO("D1'")
+
+/** A grabber the app built itself (the 1.x `customGrabber`): its own device, opened as it is. */
+internal class CustomGrabberSource(private val grabber: FrameGrabber) : GrabberSource {
+    override val deviceKey: Any get() = TODO("D1'")
+    override val canRelax: Boolean get() = TODO("D1'")
+
+    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = TODO("D1'")
+}
+
+/** The system's default camera, opened as the 1.x controller opened it. */
+internal class DefaultDeviceSource(private val targetResolution: Pair<Int, Int>?) : GrabberSource {
+    override val deviceKey: Any get() = TODO("D1'")
+    override val canRelax: Boolean get() = TODO("D1'")
+
+    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = TODO("D1'")
+}

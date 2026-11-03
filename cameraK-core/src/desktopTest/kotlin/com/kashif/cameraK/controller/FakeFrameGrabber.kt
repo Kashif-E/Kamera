@@ -18,9 +18,17 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * While the gate is closed, `grab()` blocks the way a real grabber blocks until the camera delivers
  * its next frame. [openGate] lets every pending and later `grab()` return at once.
+ *
+ * With [spinUntilInterrupted], a closed gate is FFmpeg's AVERROR(EAGAIN) instead: `grab()` sleeps 10
+ * ms and tries again, and on an interrupt sets the flag again and returns null, as javacv 1.5.12's
+ * `FFmpegFrameGrabber.grabFrame` does. Nothing but an interrupt or a frame ends that loop.
  */
-internal class FakeFrameGrabber(width: Int = 64, height: Int = 48, private val nextFrame: (Frame) -> Frame? = { it }) :
-    FrameGrabber() {
+internal class FakeFrameGrabber(
+    width: Int = 64,
+    height: Int = 48,
+    private val spinUntilInterrupted: Boolean = false,
+    private val nextFrame: (Frame) -> Frame? = { it },
+) : FrameGrabber() {
     private val frame = Frame(width, height, Frame.DEPTH_UBYTE, 3)
     private val gate = Semaphore(0)
     private val releases = Semaphore(0)
@@ -44,6 +52,9 @@ internal class FakeFrameGrabber(width: Int = 64, height: Int = 48, private val n
 
     /** Counted down by the first `grab()` that follows a second `start()`. */
     val grabbedAfterRestart = CountDownLatch(1)
+
+    /** Counted down once a [spinUntilInterrupted] `grab()` has slept for want of a frame. */
+    val spinning = CountDownLatch(1)
 
     fun openGate() {
         gateOpen = true
@@ -77,12 +88,32 @@ internal class FakeFrameGrabber(width: Int = 64, height: Int = 48, private val n
         firstGrabEntered.countDown()
         if (startCount.get() > 1) grabbedAfterRestart.countDown()
         try {
-            if (!gateOpen) gate.tryAcquire(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            if (!gateOpen) {
+                if (spinUntilInterrupted) {
+                    if (!spinForAFrame()) return null
+                } else {
+                    gate.tryAcquire(GATE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                }
+            }
             grabCount.incrementAndGet()
             return nextFrame(frame)
         } finally {
             inFlight.decrementAndGet()
         }
+    }
+
+    // FFmpegFrameGrabber.grabFrame on AVERROR(EAGAIN): sleep and retry; an interrupt is re-set and ends it.
+    private fun spinForAFrame(): Boolean {
+        while (!gateOpen && !gate.tryAcquire()) {
+            spinning.countDown()
+            try {
+                Thread.sleep(EAGAIN_RETRY_MS)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+        return true
     }
 
     override fun release() {
@@ -96,5 +127,6 @@ internal class FakeFrameGrabber(width: Int = 64, height: Int = 48, private val n
     private companion object {
         // Upper bound so a broken test cannot hang the suite; tests open the gate long before this.
         const val GATE_TIMEOUT_SECONDS = 10L
+        const val EAGAIN_RETRY_MS = 10L
     }
 }
