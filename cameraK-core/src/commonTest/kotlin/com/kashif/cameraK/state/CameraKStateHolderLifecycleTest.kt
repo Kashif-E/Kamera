@@ -88,11 +88,15 @@ class CameraKStateHolderLifecycleTest {
         return Session(holder, environment, states)
     }
 
-    /** The fake with knobs a platform can turn: a stop that waits, a stop that does nothing, a close that never returns. */
+    /**
+     * The fake with knobs a platform can turn: a stop that waits, a stop that does nothing, a close
+     * that never returns, a close that throws once the camera is closed.
+     */
     private class ScriptedEngine(val fake: FakeCameraEngine) : CameraEngine by fake {
         var stopGate: CompletableDeferred<Unit>? = null
         var stopLeavesStateAlone = false
         var closeHangs = false
+        var closeFailure: Throwable? = null
 
         override suspend fun stop() {
             stopGate?.await()
@@ -100,13 +104,20 @@ class CameraKStateHolderLifecycleTest {
         }
 
         override suspend fun closeAndJoin() {
+            closeFailure?.let {
+                fake.closeAndJoin()
+                throw it
+            }
             if (!closeHangs) return fake.closeAndJoin()
             fake.close()
             awaitCancellation()
         }
     }
 
-    private class CountingPlugin(private val onAttached: (CameraKStateHolder) -> Unit = {}) : CameraKPlugin {
+    private class CountingPlugin(
+        private val onDetached: () -> Unit = {},
+        private val onAttached: (CameraKStateHolder) -> Unit = {},
+    ) : CameraKPlugin {
         var attaches = 0
         var detaches = 0
 
@@ -117,6 +128,7 @@ class CameraKStateHolderLifecycleTest {
 
         override fun onDetach() {
             detaches++
+            onDetached()
         }
     }
 
@@ -263,6 +275,66 @@ class CameraKStateHolderLifecycleTest {
         s.ready()
         assertEquals(1, throwing.attaches)
         assertEquals(1, healthy.attaches, "a plugin after the throwing one was not attached")
+    }
+
+    // A plugin's onAttach and onDetach are wrapped for every throwable a process can survive (CC-01),
+    // not only Exceptions: a TODO() body throws NotImplementedError, a missing native library a LinkageError.
+
+    @Test
+    fun onAttachThrowingAnErrorLeavesCameraReady() = runTest {
+        val throwing = CountingPlugin { throw NotImplementedError("plugin attach not written") }
+        val healthy = CountingPlugin()
+        val s = session(FakeCameraEngine(), plugins = listOf(throwing, healthy))
+
+        s.holder.start()
+        runCurrent()
+
+        s.ready()
+        assertEquals(1, throwing.attaches)
+        assertEquals(1, healthy.attaches, "a plugin after the throwing one was not attached")
+    }
+
+    @Test
+    fun onDetachThrowingAnErrorStillDetachesTheRestClosesTheEngineAndEndsCloseAndJoin() = runTest {
+        val fake = FakeCameraEngine()
+        val throwing = CountingPlugin(onDetached = { throw NotImplementedError("plugin detach not written") })
+        val healthy = CountingPlugin()
+        val s = session(fake, plugins = listOf(throwing, healthy))
+        s.holder.start()
+        runCurrent()
+        s.ready()
+
+        val closing = backgroundScope.launch { s.holder.closeAndJoin() }
+        advanceTimeBy(ENGINE_CLOSE_TIMEOUT + 1.milliseconds)
+        runCurrent()
+
+        assertEquals(1, healthy.detaches, "a plugin after the throwing one was not detached")
+        assertEquals(1, fake.closeCalls, "engine closes: ${fake.calls}")
+        assertTrue(closing.isCompleted, "closeAndJoin never returned")
+        assertEquals(CameraKState.Closed, s.state)
+    }
+
+    @Test
+    fun throwingEngineCloseIsLoggedAndCloseAndJoinStillReturns() = runTest {
+        captureLogs()
+        val failure = IllegalStateException("platform close failed")
+        val engine = ScriptedEngine(FakeCameraEngine()).apply { closeFailure = failure }
+        val s = session(engine)
+        s.holder.start()
+        runCurrent()
+        s.ready()
+
+        val closing = backgroundScope.launch { s.holder.closeAndJoin() }
+        runCurrent()
+
+        assertTrue(closing.isCompleted, "closeAndJoin never returned after the engine's close threw")
+        assertEquals(CameraKState.Closed, s.state)
+        val children = s.environment.parentJob!!.children.toList()
+        assertTrue(children.none(), "coroutines left after closeAndJoin: $children")
+        assertTrue(
+            logged.any { it.level == CameraKLogger.Level.ERROR && it.throwable === failure },
+            "the failed engine close was not logged with its throwable: ${logged.map { it.message }}",
+        )
     }
 
     @Test
