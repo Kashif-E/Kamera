@@ -1,6 +1,7 @@
 package com.kashif.cameraK.frames
 
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 
@@ -25,7 +26,8 @@ import kotlinx.atomicfu.locks.synchronized
  *   call does nothing. `onReleased` runs once per lease, when the callback has returned and every
  *   retain is released, even when the analyzer throws.
  * - **A throwing analyzer** is caught by [AnalyzerLease.deliver], logged with its throwable and
- *   counted in [failures]; the next frame is delivered as usual.
+ *   counted in [failures]; the next frame is delivered as usual. A fatal throwable
+ *   ([isFatalAnalyzerFailure], the plugin host's rule) propagates instead, after the entry is released.
  *
  * [nanoTime] is a monotonic clock in nanoseconds. Thread-safe: a source calls [tryEnter] on its
  * producer thread while the analyzer releases on its own.
@@ -132,13 +134,16 @@ internal class AnalyzerLease internal constructor(private val gate: AnalyzerGate
     }
 
     /**
-     * Runs the analyzer's callback once, catches and logs whatever it throws, and then releases the
-     * entry, so the analyzer is idle again and the frame is released unless it was retained.
+     * Runs the analyzer's callback once, catches and logs what it throws unless that is fatal
+     * ([isFatalAnalyzerFailure]), and then releases the entry, so the analyzer is idle again and the
+     * frame is released unless it was retained. A fatal throwable propagates.
      */
+    @OptIn(InternalCameraKApi::class)
     fun deliver(analyze: () -> Unit) {
         try {
             analyze()
         } catch (failure: Throwable) {
+            if (failure.isFatalAnalyzerFailure()) throw failure
             gate.recordFailure(failure)
         } finally {
             release()

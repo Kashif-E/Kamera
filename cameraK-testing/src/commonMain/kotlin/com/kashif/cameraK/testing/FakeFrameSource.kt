@@ -8,7 +8,9 @@ import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FrameRegistration
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.frames.FrameSpec
+import com.kashif.cameraK.frames.isFatalAnalyzerFailure
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,9 +41,10 @@ public class FakeFrameSource internal constructor(
 
     /**
      * Delivers [frame] to every active registration, in registration order, while the session is
-     * open; while it is not, the frame reaches nobody. An analyzer that throws an exception is
-     * logged and the others still receive the frame. An [Error], such as a failed assertion inside
-     * an analyzer, is not caught, so it fails the test that emitted the frame.
+     * open; while it is not, the frame reaches nobody. What an analyzer throws is caught and logged,
+     * and the others still receive the frame, as the production frame sources do: a failed
+     * assertion inside an analyzer is logged too, so a test asserts on what the analyzer recorded,
+     * after [emit] returns. A fatal throwable, such as an OutOfMemoryError, propagates.
      *
      * @throws IllegalArgumentException when [frame] is not in the session's format: a session
      *   delivers frames in its own format only.
@@ -70,11 +73,13 @@ public class FakeFrameSource internal constructor(
         private val _active = MutableStateFlow(rejection == null)
         override val active: StateFlow<Boolean> = _active.asStateFlow()
 
+        @OptIn(InternalCameraKApi::class)
         fun deliver(frame: CameraFrame) {
             if (!_active.value) return
             try {
                 analyzer.analyze(frame)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                if (e.isFatalAnalyzerFailure()) throw e
                 CameraKLogger.w(TAG, "Frame analyzer threw; the other analyzers still receive the frame", e)
             }
         }
