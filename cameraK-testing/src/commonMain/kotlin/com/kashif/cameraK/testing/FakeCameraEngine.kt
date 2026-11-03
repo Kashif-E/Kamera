@@ -66,11 +66,12 @@ public class FakeCameraEngine(
     private val _capabilities = MutableStateFlow(capabilities)
     override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
 
-    // Before the first open the platform reports its default camera, the first back one.
+    // The zoom range reported before the first open: the default camera's, the first back one.
     private val defaultCamera: LensInfo? = capabilities.lenses(CameraLens.BACK).firstOrNull()
         ?: capabilities.allLenses.firstOrNull()
 
-    private val _hardware = MutableStateFlow(HardwareState(initialFlash, initialTorch, defaultCamera, null))
+    // No camera until the first bind reports one.
+    private val _hardware = MutableStateFlow(HardwareState(initialFlash, initialTorch, null, null))
     override val hardware: StateFlow<HardwareState> = _hardware.asStateFlow()
 
     private val _zoom = MutableStateFlow(
@@ -153,7 +154,6 @@ public class FakeCameraEngine(
     private var desired: DesiredHardware? = null
     private var selectedCamera: LensInfo? = null
     private var pendingStart: CompletableDeferred<CameraKResult<Unit>>? = null
-    private var pendingInterruption: InterruptionReason? = null
     private var pendingOpenFailure: CameraKError? = null
     private var unpublishedStartFailure: CameraKError? = null
     private var throwFromNext = false
@@ -183,12 +183,6 @@ public class FakeCameraEngine(
             pendingOpenFailure = null
             return failStart(it)
         }
-        pendingInterruption?.let {
-            pendingInterruption = null
-            applyDesired()
-            _state.value = EngineState.Interrupted(it)
-            return CameraKResult.Success(Unit)
-        }
         if (autoOpen) {
             applyDesired()
             _state.value = EngineState.Open
@@ -217,7 +211,6 @@ public class FakeCameraEngine(
         callLog += "stop"
         if (closed) return
         completePendingStart(CameraKResult.Failure(CameraKError.Closed))
-        pendingInterruption = null
         recording?.let { endForShutdown(it).await() }
         _state.value = EngineState.Closed
     }
@@ -395,7 +388,10 @@ public class FakeCameraEngine(
         unpublishedStartFailure = error
     }
 
-    /** While open, the platform holds the session. Before the open, the start succeeds with Interrupted. */
+    /**
+     * While open, the platform holds the session. During a held start, the start succeeds with
+     * Interrupted. While Closed it is dropped: it belongs to no live generation.
+     */
     public fun interrupt(reason: InterruptionReason) {
         callback("interrupt") {
             val gate = pendingStart
@@ -407,7 +403,6 @@ public class FakeCameraEngine(
                     gate.complete(CameraKResult.Success(Unit))
                 }
                 _state.value == EngineState.Open -> _state.value = EngineState.Interrupted(reason)
-                _state.value == EngineState.Closed -> pendingInterruption = reason
             }
         }
     }
@@ -415,7 +410,6 @@ public class FakeCameraEngine(
     public fun endInterruption() {
         callback("endInterruption") {
             if (_state.value is EngineState.Interrupted) _state.value = EngineState.Open
-            pendingInterruption = null
         }
     }
 
@@ -534,12 +528,14 @@ public class FakeCameraEngine(
         gate.complete(result)
     }
 
+    // A bind: the platform receives the desired hardware, and its observer reports the bound camera.
     private fun applyDesired() {
         val wanted = desired ?: return
         appliedFlashMode = wanted.flashMode
         appliedTorchMode = wanted.torchMode
         appliedZoomRatio = wanted.zoomRatio
         appliedCameraId = selectedCamera?.id
+        _hardware.value = _hardware.value.with(camera = selectedCamera)
     }
 
     private fun updateDesired(
