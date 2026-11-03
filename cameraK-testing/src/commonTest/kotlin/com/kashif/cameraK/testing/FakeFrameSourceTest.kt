@@ -116,4 +116,56 @@ class FakeFrameSourceTest {
             CameraKLogger.enabled = false
         }
     }
+
+    @Test
+    fun aNonFatalFailureIsLoggedAndTheNextFrameIsDelivered() {
+        val failure = IllegalStateException("decoder failed")
+        val logged = mutableListOf<Throwable?>()
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { _, _, _, throwable -> logged += throwable }
+        try {
+            val source = FakeFrameSource()
+            val received = mutableListOf<CameraFrame>()
+            var calls = 0
+            source.register(FrameSpec()) {
+                calls++
+                if (calls == 1) throw failure
+                received += it
+            }
+            val next = yuvFrame()
+
+            source.emit(yuvFrame())
+            source.emit(next)
+
+            assertEquals(listOf<CameraFrame>(next), received, "the frame after a non-fatal failure")
+            assertSame(failure, logged.single())
+        } finally {
+            CameraKLogger.sink = null
+            CameraKLogger.enabled = false
+        }
+    }
+
+    @Test
+    fun anAssertionErrorInAnAnalyzerIsCaughtAndLogged() {
+        val failure = AssertionError("expected a decoded code")
+        val logged = mutableListOf<Throwable?>()
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { _, _, _, throwable -> logged += throwable }
+        try {
+            val source = FakeFrameSource()
+            val received = mutableListOf<CameraFrame>()
+            source.register(FrameSpec()) { throw failure }
+            source.register(FrameSpec()) { received += it }
+            val frame = yuvFrame()
+
+            val escaped = runCatching { source.emit(frame) }.exceptionOrNull()
+
+            assertNull(escaped, "emit let a non-fatal AssertionError through")
+            assertEquals(listOf<CameraFrame>(frame), received, "the analyzer after the throwing one")
+            assertSame(failure, logged.single())
+        } finally {
+            CameraKLogger.sink = null
+            CameraKLogger.enabled = false
+        }
+    }
 }

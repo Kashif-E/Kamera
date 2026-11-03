@@ -196,4 +196,25 @@ class AnalyzerGateTest {
             CameraKLogger.enabled = false
         }
     }
+
+    @Test
+    fun aNonFatalFailureIsLoggedAndTheNextFrameIsDelivered() {
+        val failure = IllegalStateException("decoder failed")
+        val logged = mutableListOf<Throwable?>()
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { _, _, _, throwable -> logged += throwable }
+        try {
+            val source = Source(AnalyzerGate(maxFps = null, nanoTime = { now }))
+            val analyzed = mutableListOf<Int>()
+
+            source.offer(1) { throw failure }
+            assertNotNull(source.offer(2) { analyzed += 2 }, "the frame after a non-fatal failure")
+
+            assertEquals(listOf(2), analyzed)
+            assertSame(failure, logged.single())
+        } finally {
+            CameraKLogger.sink = null
+            CameraKLogger.enabled = false
+        }
+    }
 }
