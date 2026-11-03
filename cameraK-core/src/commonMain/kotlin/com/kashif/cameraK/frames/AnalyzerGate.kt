@@ -80,10 +80,11 @@ internal class AnalyzerGate(maxFps: Float?, private val nanoTime: () -> Long, ma
         }
     }
 
-    internal fun retain(lease: AnalyzerLease): Unit = synchronized(lock) {
+    internal fun retain(lease: AnalyzerLease): AnalyzerRetain = synchronized(lock) {
         check(!lease.finished) { "retain() after the frame was released" }
         lease.retains++
         retained++
+        AnalyzerRetain(lease)
     }
 
     internal fun exitCallback(lease: AnalyzerLease): Boolean = synchronized(lock) {
@@ -124,8 +125,8 @@ internal class AnalyzerLease internal constructor(private val gate: AnalyzerGate
     internal var retains = 0
     internal var finished = false
 
-    /** The analyzer keeps the frame past its callback; each retain needs its own [release]. */
-    fun retain() = gate.retain(this)
+    /** The analyzer keeps the frame past its callback; each retain needs its own [AnalyzerRetain.release]. */
+    fun retain(): AnalyzerRetain = gate.retain(this)
 
     /**
      * Releases one retain or, with none outstanding, the entry. Calls beyond the entry and every
@@ -149,4 +150,9 @@ internal class AnalyzerLease internal constructor(private val gate: AnalyzerGate
             if (gate.exitCallback(this)) onReleased()
         }
     }
+}
+
+/** One retain of an [AnalyzerLease]: the frame stays held until [release]. */
+internal class AnalyzerRetain internal constructor(private val lease: AnalyzerLease) {
+    fun release() = lease.release()
 }

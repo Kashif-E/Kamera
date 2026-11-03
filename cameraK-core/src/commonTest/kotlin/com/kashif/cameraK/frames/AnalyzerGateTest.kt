@@ -80,7 +80,8 @@ class AnalyzerGateTest {
         val other = Source(AnalyzerGate(maxFps = null, nanoTime = { now }))
         val roomForTwo = Source(AnalyzerGate(maxFps = null, nanoTime = { now }, maxRetained = 2))
 
-        val kept = assertNotNull(holding.offer(1) { it.retain() })
+        var kept: AnalyzerRetain? = null
+        assertNotNull(holding.offer(1) { kept = it.retain() })
         assertNotNull(roomForTwo.offer(1) { it.retain() })
         assertEquals(emptyList(), holding.released, "a retained frame was released when its callback returned")
 
@@ -89,7 +90,7 @@ class AnalyzerGateTest {
         assertNotNull(roomForTwo.offer(2) { it.retain() }, "one retained frame of two allowed")
         assertNull(roomForTwo.offer(3), "two retained frames of two allowed")
 
-        kept.release()
+        assertNotNull(kept).release()
         assertEquals(listOf(1), holding.released)
         assertNotNull(holding.offer(4), "after the retained frame was released")
     }
@@ -105,15 +106,16 @@ class AnalyzerGateTest {
         assertEquals(listOf(1), source.released, "released more than once")
         assertNotNull(source.offer(2), "the analyzer is idle again")
 
+        var retained: AnalyzerRetain? = null
         val kept = assertNotNull(
             source.offer(3) {
-                it.retain()
+                retained = it.retain()
                 throw IllegalStateException("analysis failed after retaining")
             },
         )
         assertEquals(listOf(1, 2), source.released, "a frame retained before the throw is still held")
-        kept.release()
-        kept.release()
+        assertNotNull(retained).release()
+        assertNotNull(retained).release()
         assertEquals(listOf(1, 2, 3), source.released)
         assertFailsWith<IllegalStateException>("retain after release") { kept.retain() }
     }
