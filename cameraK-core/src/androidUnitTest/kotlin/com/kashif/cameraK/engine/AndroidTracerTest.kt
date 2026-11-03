@@ -11,12 +11,17 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowTrace
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 /**
  * The start interval runs from start until CameraX reports the camera open; the first-frame interval
- * from start until the preview's first frame, once per start.
+ * from start until the preview's first frame, once per start. The Android tracer's sections reach
+ * androidx.tracing, which writes them to android.os.Trace (shadowed by Robolectric from API 29, where
+ * async sections exist).
  */
 @RunWith(RobolectricTestRunner::class)
 class AndroidTracerTest {
@@ -54,6 +59,31 @@ class AndroidTracerTest {
         AndroidTracer.beginInterval(START).close()
         AndroidTracer.marker(START)
         engine.closeAndJoin()
+    }
+
+    @Config(sdk = [35])
+    @Test
+    fun intervalsAndMarkersReachAndroidxTracingWithMatchingNamesAndCookies() {
+        ShadowTrace.reset()
+
+        val first = AndroidTracer.beginInterval(START)
+        val second = AndroidTracer.beginInterval(FIRST_FRAME)
+        val open = ShadowTrace.getCurrentAsyncSections().map { it.sectionName to it.cookie }
+        assertEquals(setOf(START, FIRST_FRAME), open.map { it.first }.toSet(), "the async sections begun")
+        assertEquals(2, open.map { it.second }.toSet().size, "two open intervals share a cookie: $open")
+
+        second.close()
+        first.close()
+        assertTrue(ShadowTrace.getCurrentAsyncSections().isEmpty(), "an interval was left open")
+        assertEquals(
+            open.toSet(),
+            ShadowTrace.getPreviousAsyncSections().map { it.sectionName to it.cookie }.toSet(),
+            "each interval ended under the name and cookie it began with",
+        )
+
+        AndroidTracer.marker(TraceNames.LENS_SWITCH)
+        assertTrue(ShadowTrace.getCurrentSections().isEmpty(), "the marker's section was left open")
+        assertEquals(listOf(TraceNames.LENS_SWITCH), ShadowTrace.getPreviousSections().toList())
     }
 
     private fun begin(name: String) = "begin $name"

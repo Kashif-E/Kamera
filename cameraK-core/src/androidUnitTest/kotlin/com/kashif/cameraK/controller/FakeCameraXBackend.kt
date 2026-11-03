@@ -126,8 +126,12 @@ internal class FakeRecording(
     var stopCalls = 0
         private set
 
+    /** When set, stop() throws this, as Recording.stop() can once CameraX has torn the recorder down. */
+    var stopFailure: RuntimeException? = null
+
     override fun stop() {
         stopCalls++
+        stopFailure?.let { throw it }
     }
 
     override fun pause() = Unit
