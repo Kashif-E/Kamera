@@ -47,15 +47,60 @@ class ContractKitCapabilitiesTest {
         supportsSquareCapture = false,
     )
 
+    // Two cameras that both take every flash and torch mode and share a zoom range, so a camera switch
+    // can re-apply everything the first camera was given.
+    private val twoFullCameras = CameraCapabilities(
+        allLenses = listOf(
+            fullLens("wide", CameraLens.BACK, maxZoom = 10f),
+            fullLens("selfie", CameraLens.FRONT, maxZoom = 4f),
+        ),
+        flashModes = mapOf("wide" to FlashMode.entries.toSet(), "selfie" to FlashMode.entries.toSet()),
+        torchModes = mapOf("wide" to TorchMode.entries.toSet(), "selfie" to TorchMode.entries.toSet()),
+        supportsPauseResume = true,
+        supportedVideoQualities = emptySet(),
+        supportsVideoBitrate = false,
+        supportedAspectRatios = AspectRatio.entries.toSet(),
+        supportedImageFormats = setOf(ImageFormat.JPEG),
+        supportedAnalysisFormats = setOf(FrameFormat.YUV_420),
+        supportsSquareCapture = false,
+    )
+
+    private fun fullLens(id: String, lens: CameraLens, maxZoom: Float) = LensInfo(
+        id = id,
+        deviceType = CameraDeviceType.WIDE_ANGLE,
+        lens = lens,
+        minZoom = 1f,
+        maxZoom = maxZoom,
+        hasFlash = true,
+        isLogical = false,
+    )
+
     @Test
     fun everyHardwareStepRunsWhenTheCamerasAllowIt() = runTest {
         val skips = ContractSkips()
-        val cases = ContractCases(FakeEngineDriver(), requires = emptySet(), skips = skips)
+        val cases = ContractCases(FakeEngineDriver(twoFullCameras), requires = emptySet(), skips = skips)
 
         cases.hardwareChangesOnlyFromPlatformObserver()
         cases.desiredHardwareReappliedAfterRestartAndCameraSwitch()
 
         assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun cameraSwitchListsTheReappliedValuesTheOtherCameraCannotTake() = runTest {
+        // The back camera takes flash ON and torch ON; the front one supports OFF only and a narrower zoom range.
+        val skips = ContractSkips()
+        val cases = ContractCases(FakeEngineDriver(), requires = emptySet(), skips = skips)
+
+        cases.desiredHardwareReappliedAfterRestartAndCameraSwitch()
+
+        assertEquals(
+            listOf(
+                "desiredHardwareReappliedAfterRestartAndCameraSwitch: flash after the switch",
+                "desiredHardwareReappliedAfterRestartAndCameraSwitch: torch after the switch",
+            ),
+            skips.skipped.map { it.substringBefore(" skipped (") },
+        )
     }
 
     @Test

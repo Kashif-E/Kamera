@@ -16,9 +16,14 @@ import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicInteger
@@ -70,6 +75,42 @@ class LegacyControllerEngineTest {
         }
 
         override suspend fun <T> onSessionThread(block: () -> T): T = delegate.onSessionThread(block)
+    }
+
+    // A session whose start, read-back of the 1.x getters, or close waits until the test opens its gate.
+    private class GatedSession(holdStart: Boolean = false, holdReadBack: Boolean = false, holdClose: Boolean = false) :
+        LegacySession {
+        val startEntered = CompletableDeferred<Unit>()
+        val readBackEntered = CompletableDeferred<Unit>()
+        val closeEntered = CompletableDeferred<Unit>()
+        val closeGate = gate(open = !holdClose)
+        private val startGate = gate(open = !holdStart)
+        private val readBackGate = gate(open = !holdReadBack)
+        val stops = AtomicInteger()
+        val closes = AtomicInteger()
+
+        override suspend fun start() {
+            startEntered.complete(Unit)
+            startGate.await()
+        }
+
+        override suspend fun stop() {
+            stops.incrementAndGet()
+        }
+
+        override suspend fun close() {
+            closes.incrementAndGet()
+            closeEntered.complete(Unit)
+            closeGate.await()
+        }
+
+        override suspend fun <T> onSessionThread(block: () -> T): T {
+            readBackEntered.complete(Unit)
+            readBackGate.await()
+            return block()
+        }
+
+        private fun gate(open: Boolean) = CompletableDeferred<Unit>().apply { if (open) complete(Unit) }
     }
 
     private fun controller(grabber: FakeFrameGrabber) =
@@ -181,6 +222,90 @@ class LegacyControllerEngineTest {
             withTimeout(TIMEOUT_MS) { sut.closeAndJoin() }
         }
     }
+
+    @Test
+    fun startCancelledDuringTheSessionStartStopsTheSessionAndPublishesClosed() = runBlocking {
+        val controller = controller(FakeFrameGrabber())
+        val session = GatedSession(holdStart = true)
+        val sut = engine(controller, session)
+        try {
+            val start = launch { sut.start(desired) }
+            withTimeout(TIMEOUT_MS) { session.startEntered.await() }
+            assertEquals(EngineState.Opening, sut.state.value, "inside the session start")
+
+            start.cancelAndJoin()
+
+            assertEquals(EngineState.Closed, sut.state.value, "after a start cancelled inside the session start")
+            assertEquals(1, session.stops.get(), "the session the cancelled start may have started was not stopped")
+        } finally {
+            withTimeout(TIMEOUT_MS) { sut.closeAndJoin() }
+            controller.cleanup()
+        }
+    }
+
+    @Test
+    fun startCancelledDuringTheReadBackStopsTheSessionAndPublishesClosed() = runBlocking {
+        val controller = controller(FakeFrameGrabber())
+        val session = GatedSession(holdReadBack = true)
+        val sut = engine(controller, session)
+        try {
+            val start = launch { sut.start(desired) }
+            withTimeout(TIMEOUT_MS) { session.readBackEntered.await() }
+            assertEquals(EngineState.Opening, sut.state.value, "inside the read-back")
+
+            start.cancelAndJoin()
+
+            assertEquals(EngineState.Closed, sut.state.value, "after a start cancelled inside the read-back")
+            assertEquals(1, session.stops.get(), "the session the cancelled start started was not stopped")
+        } finally {
+            withTimeout(TIMEOUT_MS) { sut.closeAndJoin() }
+            controller.cleanup()
+        }
+    }
+
+    @Test
+    fun closeRunsUnderTheEnvironmentsParentJob() = runBlocking {
+        val parent = Job()
+        val controller = controller(FakeFrameGrabber())
+        val session = GatedSession(holdClose = true)
+        val sut = LegacyControllerEngine(controller, InertPreview, session, environment(parent))
+        try {
+            sut.close()
+            withTimeout(TIMEOUT_MS) { session.closeEntered.await() }
+            assertEquals(1, parent.children.count(), "the session close does not run under the environment's job")
+
+            session.closeGate.complete(Unit)
+            withTimeout(TIMEOUT_MS) {
+                sut.closeAndJoin()
+                parent.children.toList().joinAll()
+            }
+            assertEquals(1, session.closes.get())
+        } finally {
+            session.closeGate.complete(Unit)
+            controller.cleanup()
+            parent.cancel()
+        }
+    }
+
+    @Test
+    fun closeStillClosesTheSessionWhenTheParentJobIsCancelled() = runBlocking {
+        val parent = Job()
+        val controller = controller(FakeFrameGrabber())
+        val session = GatedSession()
+        val sut = LegacyControllerEngine(controller, InertPreview, session, environment(parent))
+        try {
+            parent.cancel()
+
+            withTimeout(TIMEOUT_MS) { sut.closeAndJoin() }
+
+            assertEquals(1, session.closes.get(), "the session was not closed under a cancelled parent job")
+            assertEquals(EngineState.Closed, sut.state.value)
+        } finally {
+            controller.cleanup()
+        }
+    }
+
+    private fun environment(parent: Job) = CameraKEnvironment(dispatchers = environment.dispatchers, parentJob = parent)
 
     private fun assertRefused(operation: CameraOperation, result: CameraKResult<*>) {
         val error = assertIs<CameraKError.InvalidState>(assertIs<CameraKResult.Failure>(result, "$operation").error)
