@@ -121,6 +121,59 @@ class AnalyzerGateTest {
     }
 
     @Test
+    fun aRetainReleasedTwiceInsideTheCallbackLeavesTheAnalyzerBusy() {
+        val gate = AnalyzerGate(maxFps = null, nanoTime = { now }, maxRetained = 2)
+        val released = mutableListOf<Int>()
+        // Read inside the callback and asserted after it: deliver catches what the callback throws.
+        var releasedInCallback: List<Int>? = null
+        var admittedInCallback: AnalyzerLease? = null
+
+        val lease = assertNotNull(gate.tryEnter(onReleased = { released += 1 }))
+        lease.deliver {
+            val handle = lease.retain()
+            handle.release()
+            handle.release()
+            releasedInCallback = released.toList()
+            admittedInCallback = gate.tryEnter(onReleased = { released += 2 })
+        }
+
+        assertEquals(0, gate.failures, "the callback threw")
+        assertEquals(emptyList(), releasedInCallback, "the frame was released while its callback was still running")
+        assertNull(admittedInCallback, "a frame was admitted while the callback was still running")
+        assertEquals(listOf(1), released, "after the callback returned")
+    }
+
+    @Test
+    fun aRetainReleasedTwiceLeavesTheOtherRetainHeld() {
+        val gate = AnalyzerGate(maxFps = null, nanoTime = { now }, maxRetained = 2)
+        val released = mutableListOf<Int>()
+        val logged = mutableListOf<String>()
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { _, _, message, _ -> logged += message }
+        try {
+            val lease = assertNotNull(gate.tryEnter(onReleased = { released += 1 }))
+            lateinit var first: AnalyzerRetain
+            lateinit var second: AnalyzerRetain
+            lease.deliver {
+                first = lease.retain()
+                second = lease.retain()
+            }
+
+            first.release()
+            first.release()
+            assertEquals(emptyList(), released, "the frame was released while its second retain was still open")
+            assertEquals(emptyList(), logged, "a second release of one retain was logged")
+
+            second.release()
+            assertEquals(listOf(1), released, "after both retains were released")
+            assertNotNull(gate.tryEnter(), "the analyzer after both retains were released")
+        } finally {
+            CameraKLogger.sink = null
+            CameraKLogger.enabled = false
+        }
+    }
+
+    @Test
     fun throwingAnalyzerIsCountedAndLogged() {
         val failure = IllegalStateException("analysis failed")
         val logged = mutableListOf<Pair<CameraKLogger.Level, Throwable?>>()
