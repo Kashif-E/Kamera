@@ -254,16 +254,24 @@ public class FakeCameraEngine(
         return captureResult()
     }
 
+    /**
+     * Clamps [ratio] into the bound camera's zoom range, sends the clamped value to the fake platform
+     * and returns it, as every engine does: a pinch overshoots its ends, and a clamp is what it
+     * expects. A camera with a fixed zoom takes only its one ratio and refuses any other with
+     * `Unsupported(ZOOM)`. The [zoom] flow still changes only through [reportZoom].
+     */
     override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> {
         callLog += "setZoom"
         refusal()?.let { return it }
         val camera = selectedCamera ?: return CameraKResult.Failure(CameraKError.NotReady)
-        if (ratio !in camera.minZoom..camera.maxZoom) {
-            return CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.ZOOM))
+        val applied = when {
+            camera.minZoom < camera.maxZoom -> ratio.coerceIn(camera.minZoom, camera.maxZoom)
+            ratio == camera.minZoom -> ratio
+            else -> return CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.ZOOM))
         }
-        appliedZoomRatio = ratio
-        updateDesired(zoomRatio = ratio)
-        return CameraKResult.Success(ZoomState(ratio, camera.minZoom, camera.maxZoom))
+        appliedZoomRatio = applied
+        updateDesired(zoomRatio = applied)
+        return CameraKResult.Success(ZoomState(applied, camera.minZoom, camera.maxZoom))
     }
 
     override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> {
