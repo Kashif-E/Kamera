@@ -4,6 +4,7 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.kashif.cameraK.compose.CameraKScreen
 import com.kashif.cameraK.compose.DefaultErrorScreen
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.state.CameraKState
 import org.junit.Rule
 import org.junit.Test
@@ -29,7 +30,7 @@ class CameraKScreenPaparazziTest {
     @Test
     fun initializing_showsDefaultLoadingScreen() {
         paparazzi.snapshot {
-            CameraKScreen(cameraState = CameraKState.Initializing) {}
+            CameraKScreen(cameraState = CameraKState.Starting) {}
         }
     }
 
@@ -43,14 +44,9 @@ class CameraKScreenPaparazziTest {
     @Test
     fun error_notRetryable_hidesRetryHint() {
         paparazzi.snapshot {
-            DefaultErrorScreen(retryableError.copy(isRetryable = false))
+            DefaultErrorScreen(CameraKState.Error(CameraKError.CameraDisabled()))
         }
     }
 
-    private val retryableError =
-        CameraKState.Error(
-            exception = IllegalStateException("camera in use"),
-            message = "Failed to initialize camera: camera in use",
-            isRetryable = true,
-        )
+    private val retryableError = CameraKState.Error(CameraKError.CameraInUse(IllegalStateException("camera in use")))
 }

@@ -14,6 +14,7 @@ import com.kashif.cameraK.compose.CameraKScreen
 import com.kashif.cameraK.compose.CameraPreviewScopeImpl
 import com.kashif.cameraK.compose.DefaultErrorScreen
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.state.CameraKState
 import kotlin.test.Test
 
@@ -24,16 +25,11 @@ import kotlin.test.Test
  * draws frames grabbed from a webcam by a running CameraController.
  */
 class CameraKScreenScreenshotTest {
-    private val error =
-        CameraKState.Error(
-            exception = IllegalStateException("camera in use"),
-            message = "Failed to initialize camera: camera in use",
-            isRetryable = true,
-        )
+    private val error = CameraKState.Error(CameraKError.CameraInUse(IllegalStateException("camera in use")))
 
     @Test
     fun initializing_showsDefaultLoadingScreen() = Goldens.assertMatches("camerakscreen_initializing", 320, 240) {
-        CameraKScreen(modifier = Modifier.fillMaxSize(), cameraState = CameraKState.Initializing) {}
+        CameraKScreen(modifier = Modifier.fillMaxSize(), cameraState = CameraKState.Starting) {}
     }
 
     @Test
@@ -43,7 +39,7 @@ class CameraKScreenScreenshotTest {
 
     @Test
     fun error_notRetryable_hidesRetryHint() = Goldens.assertMatches("defaulterrorscreen_not_retryable", 320, 240) {
-        DefaultErrorScreen(error.copy(isRetryable = false))
+        DefaultErrorScreen(CameraKState.Error(CameraKError.CameraDisabled()))
     }
 
     @Test

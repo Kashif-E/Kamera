@@ -53,6 +53,7 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKState
@@ -138,7 +139,7 @@ internal fun CameraContent(
                         modifier = Modifier.size(48.dp),
                     )
                     Text(
-                        error.message,
+                        error.error.displayText(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
                         textAlign = TextAlign.Center,
@@ -469,4 +470,23 @@ private fun CapturedImagePreview(imageBitmap: ImageBitmap?, onDismiss: () -> Uni
             onDismiss()
         }
     }
+}
+
+// A fixed text per kind of error: an error's cause may carry a platform message with a file path in it.
+private fun CameraKError.displayText(): String = when (this) {
+    is CameraKError.Permission -> if (needsSettings) "Allow camera access in Settings" else "Camera access is needed"
+    is CameraKError.CameraInUse -> "Another app is using the camera"
+    is CameraKError.CameraDisabled -> "The camera is turned off on this device"
+    is CameraKError.NoCamera -> "No camera found"
+    is CameraKError.Disconnected -> "The camera was disconnected"
+    is CameraKError.Storage -> "Could not save to storage"
+    is CameraKError.Unsupported -> "This camera setting is not supported"
+    is CameraKError.NativeLibraryMissing -> "A camera library is missing"
+    is CameraKError.Hardware -> "The camera reported a hardware error"
+    is CameraKError.Timeout -> "The camera took too long to start"
+    is CameraKError.Busy -> "The camera is busy"
+    is CameraKError.InvalidState -> "The camera cannot do that now"
+    CameraKError.NotReady -> "The camera is not ready"
+    CameraKError.Closed -> "The camera is closed"
+    is CameraKError.Internal -> "Something went wrong with the camera"
 }

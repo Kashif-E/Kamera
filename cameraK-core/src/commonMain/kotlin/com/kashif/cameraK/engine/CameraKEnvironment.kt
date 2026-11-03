@@ -12,7 +12,9 @@ import kotlin.time.TimeSource
  * `cameraKTestEnvironment()`, which puts all of it on the test scheduler.
  *
  * @property parentJob The parent of the holder's and the engine's scopes; null makes them roots.
- * @property permissionChecker Null uses the platform checker.
+ * @property permissionChecker What the holder checks the camera permission with before it opens. Null
+ *   means no check: every permission counts as Granted, and an open the platform refuses is reported
+ *   by the engine. The holder's production constructor passes the platform's checker.
  */
 @CameraKEngineApi
 public class CameraKEnvironment(

@@ -22,6 +22,7 @@ import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.getAndUpdate
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -39,10 +40,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.Volatile
 
 /** Migration only, until C1': the channel that carries the 1.x facade to `Ready.controller`. */
 internal interface LegacyControllerAccess {
-    /** One facade per engine, created with it. */
+    /**
+     * One facade per engine. Read only through `Ready.controller`, so once the engine has published
+     * Open: the 1.x holder constructor's engine creates its controller in its first start and throws
+     * [IllegalStateException] before it.
+     */
     val legacyController: CameraController
 }
 
@@ -67,13 +73,47 @@ internal interface LegacySession {
  * on this engine; until the platform engines land, plugins and the
  * Sample issue them on `Ready.controller`. Exempt from the contract kit.
  */
-internal class LegacyControllerEngine(
-    override val legacyController: CameraController,
-    override val preview: PlatformPreviewSource,
-    private val session: LegacySession,
+internal class LegacyControllerEngine private constructor(
+    controller: CameraController?,
+    session: LegacySession?,
+    private val controllerFactory: (suspend () -> CameraController)?,
+    private val factoryDispatcher: CoroutineDispatcher?,
+    private val previewSource: PlatformPreviewSource?,
     private val environment: CameraKEnvironment,
 ) : CameraEngine,
     LegacyControllerAccess {
+    /** A bridge's engine, over a controller the bridge built; [session] makes its calls on the threads they need. */
+    constructor(
+        legacyController: CameraController,
+        preview: PlatformPreviewSource,
+        session: LegacySession,
+        environment: CameraKEnvironment,
+    ) : this(legacyController, session, null, null, preview, environment)
+
+    /**
+     * The 1.x holder constructor's engine: it runs [controllerFactory] in its first start and drives
+     * that controller through a [DirectLegacySession], both on [dispatcher], where the 1.x holder's
+     * initialize and shutdown ran. A factory that throws fails that start with `Internal`; the next
+     * start runs it again. Its [preview] is never read: the 1.x preview takes `Ready.controller`.
+     */
+    constructor(
+        controllerFactory: suspend () -> CameraController,
+        dispatcher: CoroutineDispatcher,
+        environment: CameraKEnvironment,
+    ) : this(null, null, controllerFactory, dispatcher, null, environment)
+
+    // Written once, by the first start that creates the controller; read from any thread.
+    @Volatile
+    private var controller: CameraController? = controller
+
+    @Volatile
+    private var session: LegacySession? = session
+
+    override val legacyController: CameraController
+        get() = controller ?: throw IllegalStateException("The 1.x controller is created by the engine's first start")
+
+    override val preview: PlatformPreviewSource
+        get() = previewSource ?: throw IllegalStateException("The 1.x holder's engine has no preview source")
     private val _state = MutableStateFlow<EngineState>(EngineState.Closed)
     override val state: StateFlow<EngineState> = _state.asStateFlow()
 
@@ -121,7 +161,7 @@ internal class LegacyControllerEngine(
     private suspend fun open(): CameraKResult<Unit> {
         publish(EngineState.Opening)
         return try {
-            startAndReadBack()
+            createController() ?: startAndReadBack()
         } catch (e: CancellationException) {
             // The session may be running when the cancellation lands; a cancelled start leaves the camera closed.
             withContext(NonCancellable) { stopSession() }
@@ -130,21 +170,41 @@ internal class LegacyControllerEngine(
         }
     }
 
+    // The factory-backed engine's first start creates its controller; null once there is one.
+    private suspend fun createController(): CameraKResult<Unit>? {
+        if (session != null) return null
+        val factory = checkNotNull(controllerFactory) { "An engine without a session has a controller factory" }
+        val dispatcher = checkNotNull(factoryDispatcher) { "An engine without a session has a factory dispatcher" }
+        // Caught on the factory's own dispatcher, so the throwable reaches the error as it was thrown.
+        val created = withContext(dispatcher) { suspendRunCatching { factory() } }
+        created.exceptionOrNull()?.let { e ->
+            CameraKLogger.e(TAG, "Creating the 1.x camera controller failed", e)
+            val error = CameraKError.Internal(e)
+            publish(EngineState.Failed(error))
+            return CameraKResult.Failure(error)
+        }
+        val newController = created.getOrThrow()
+        controller = newController
+        session = DirectLegacySession(newController, dispatcher)
+        return null
+    }
+
     private suspend fun startAndReadBack(): CameraKResult<Unit> {
+        val session = checkNotNull(session) { "The engine starts a session only once it has one" }
         suspendRunCatching { session.start() }.exceptionOrNull()?.let { e ->
             CameraKLogger.e(TAG, "Starting the 1.x camera session failed", e)
             val error = CameraKError.Internal(e)
             publish(EngineState.Failed(error))
             return CameraKResult.Failure(error)
         }
-        readBack()
+        readBack(session, legacyController)
         if (closed.value) return CameraKResult.Failure(CameraKError.Closed)
         publish(EngineState.Open)
         return CameraKResult.Success(Unit)
     }
 
     // The 1.x getters, read once per start, the way the 1.x holder read them for its UI state.
-    private suspend fun readBack() {
+    private suspend fun readBack(session: LegacySession, legacyController: CameraController) {
         val read = suspendRunCatching {
             session.onSessionThread {
                 val capabilities = legacyController.getCameraCapabilities()
@@ -194,6 +254,7 @@ internal class LegacyControllerEngine(
     }
 
     private suspend fun stopSession() {
+        val session = session ?: return
         suspendRunCatching { session.stop() }
             .onFailure { CameraKLogger.e(TAG, "Stopping the 1.x camera session failed", it) }
     }
@@ -215,6 +276,7 @@ internal class LegacyControllerEngine(
     }
 
     private suspend fun release() {
+        val session = session ?: return
         if (listeningForOrientation) {
             suspendRunCatching { session.onSessionThread { legacyController.setOnOrientationChangedListener(null) } }
                 .onFailure { CameraKLogger.e(TAG, "Removing the 1.x orientation listener failed", it) }
@@ -278,4 +340,30 @@ internal class LegacyControllerEngine(
     private companion object {
         const val TAG = "CameraK"
     }
+}
+
+/**
+ * The 1.x holder constructor's session: the controller's own calls, each on [dispatcher], the host
+ * scope's dispatcher, as the 1.x holder made them. Close stops the session, then cleans up, as 1.x
+ * `shutdown()` did. A call that throws rethrows the controller's own throwable, as the 1.x holder's
+ * initialize did.
+ */
+internal class DirectLegacySession(
+    private val controller: CameraController,
+    private val dispatcher: CoroutineDispatcher,
+) : LegacySession {
+    override suspend fun start() = onDispatcher { controller.startSession() }
+
+    override suspend fun stop() = onDispatcher { controller.stopSession() }
+
+    override suspend fun close() = onDispatcher {
+        controller.stopSession()
+        controller.cleanup()
+    }
+
+    override suspend fun <T> onSessionThread(block: () -> T): T = onDispatcher(block)
+
+    // Caught on the dispatcher and rethrown here: a throwable that crosses withContext may arrive as a copy.
+    private suspend fun <T> onDispatcher(block: () -> T): T =
+        withContext(dispatcher) { suspendRunCatching { block() } }.getOrThrow()
 }

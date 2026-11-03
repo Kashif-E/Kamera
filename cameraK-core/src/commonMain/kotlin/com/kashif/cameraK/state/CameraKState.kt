@@ -4,61 +4,68 @@ import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.InterruptionReason
+import dev.drewhamilton.poko.Poko
 
 /**
- * Represents the lifecycle state of the camera system.
- * This sealed class provides compile-time type safety for handling different camera states.
- *
- * Use this in Compose to react to camera initialization status without callbacks.
+ * The camera's lifecycle, as [CameraKStateHolder.cameraState] publishes it. Closed hierarchy: new
+ * subtypes come only in a major release, so an exhaustive `when` over it is safe.
  *
  * @example
  * ```kotlin
- * val cameraState by rememberCameraKState(configuration)
- * when (cameraState) {
- *     is CameraKState.Loading -> LoadingIndicator()
- *     is CameraKState.Ready -> CameraPreviewUI(cameraState.controller)
- *     is CameraKState.Error -> ErrorScreen(cameraState.exception)
+ * when (val state = holder.cameraState.collectAsState().value) {
+ *     CameraKState.Idle, CameraKState.Starting -> LoadingIndicator()
+ *     is CameraKState.Ready, is CameraKState.Interrupted -> CameraControls(holder)
+ *     is CameraKState.Error -> ErrorMessage(state.error, onRetry = { holder.retry() })
+ *     CameraKState.Closed -> Unit
  * }
  * ```
  */
-sealed class CameraKState {
-    /**
-     * Camera is initializing. No controller available yet.
-     * Show loading UI or progress indicator in this state.
-     */
-    data object Initializing : CameraKState()
+public sealed interface CameraKState {
+    /** Not started, or stopped because the host left STARTED. The camera is closed. */
+    public data object Idle : CameraKState
+
+    /** A start is in progress: the permission check, then the platform opening the camera. */
+    public data object Starting : CameraKState
 
     /**
-     * Camera is ready for use. Controller is available.
-     *
-     * @property controller The initialized [CameraController] instance.
-     * @property uiState Current UI state of the camera (zoom, flash, lens, etc.).
+     * The platform confirmed the camera is open and streaming. A holder publishes one Ready value
+     * every time the camera reaches Ready.
      */
-    data class Ready(val controller: CameraController, val uiState: CameraUIState) : CameraKState() {
-        internal constructor(
-            legacy: LegacyControllerAccess?,
-        ) : this(TODO("H1' red stub: Ready(legacy)"), CameraUIState())
+    public class Ready internal constructor(private val legacy: LegacyControllerAccess?) : CameraKState {
+        /**
+         * The 1.x controller over this holder's engine, read when called. It throws over an engine
+         * that has none, such as camerak-testing's FakeCameraEngine.
+         */
+        @Deprecated("Issue commands on CameraKStateHolder. The 1.x controller is removed in CameraK 2.0.")
+        public val controller: CameraController
+            get() = legacy?.legacyController
+                ?: throw IllegalStateException("This holder's engine has no 1.x controller")
+
+        override fun equals(other: Any?): Boolean = other is Ready && other.legacy === legacy
+
+        override fun hashCode(): Int = legacy?.hashCode() ?: 0
+
+        override fun toString(): String = "Ready"
     }
 
     /**
-     * Camera initialization or operation failed.
-     *
-     * @property exception The exception that caused the failure.
-     * @property message User-friendly error message.
-     * @property isRetryable Whether the operation can be retried.
+     * The platform accepted the session but is holding it and resumes it on its own: a phone call,
+     * multitasking, another app holding the camera for now. Entered from Starting as well as from
+     * Ready; the holder returns to Ready when the platform resumes. Compares by value.
      */
-    data class Error(val exception: Exception, val message: String, val isRetryable: Boolean = true) : CameraKState() {
-        constructor(error: CameraKError) : this(TODO("H1' red stub: Error(error)"), "")
+    @Poko
+    public class Interrupted(public val reason: InterruptionReason) : CameraKState
 
-        val error: CameraKError get() = TODO("H1' red stub: Error.error")
+    /**
+     * A start failed or the session died. `retry()` restarts it when [isRetryable]. An
+     * `Error(Permission)` whose status is not Restricted is left on its own when the host resumes
+     * and the permission is now granted. Compares by value.
+     */
+    @Poko
+    public class Error(public val error: CameraKError) : CameraKState {
+        public val isRetryable: Boolean get() = error.isRetryable
     }
 
-    // H1' red stubs: the 2.0 subtypes, declared so the H1' tests compile on the 1.x holder.
-    data object Idle : CameraKState()
-
-    data object Starting : CameraKState()
-
-    class Interrupted(val reason: InterruptionReason) : CameraKState()
-
-    data object Closed : CameraKState()
+    /** Terminal. Entered by `close()`; nothing leaves it. */
+    public data object Closed : CameraKState
 }

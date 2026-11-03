@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 
@@ -38,7 +39,7 @@ val LocalCameraKStateHolder = compositionLocalOf<CameraKStateHolder?> { null }
  *
  * @param modifier Modifier for the root container.
  * @param cameraState The current camera state from [rememberCameraKState].
- * @param loadingContent Composable to show during initialization (default: loading indicator).
+ * @param loadingContent Composable to show while the camera is idle, starting or interrupted (default: loading indicator).
  * @param errorContent Composable to show on error (default: error message).
  * @param showPreview Whether to automatically show the camera preview (default: true).
  * @param content Main content to display when camera is ready. Receives the Ready state.
@@ -58,7 +59,7 @@ val LocalCameraKStateHolder = compositionLocalOf<CameraKStateHolder?> { null }
  *         // Add controls overlay here
  *         Box(modifier = Modifier.fillMaxSize()) {
  *             CameraControls(
- *                 uiState = state.uiState,
+ *                 uiState = holder.uiState.collectAsState().value,
  *                 modifier = Modifier.align(Alignment.BottomCenter)
  *             )
  *         }
@@ -79,9 +80,10 @@ fun CameraKScreen(
 ) {
     Box(modifier = modifier) {
         when (cameraState) {
-            is CameraKState.Initializing -> loadingContent()
+            CameraKState.Idle, CameraKState.Starting, is CameraKState.Interrupted -> loadingContent()
             is CameraKState.Ready -> {
                 if (showPreview) {
+                    @Suppress("DEPRECATION")
                     CameraPreviewView(
                         controller = cameraState.controller,
                         modifier = Modifier.fillMaxSize(),
@@ -92,8 +94,6 @@ fun CameraKScreen(
                 content(cameraState)
             }
             is CameraKState.Error -> errorContent(cameraState)
-            // H1' red stub: the 2.0 subtypes, so the 1.x screen compiles over them.
-            CameraKState.Idle, CameraKState.Starting, is CameraKState.Interrupted -> loadingContent()
             CameraKState.Closed -> Unit
         }
     }
@@ -124,9 +124,10 @@ fun DefaultLoadingScreen() {
 }
 
 /**
- * Default error screen shown when camera initialization fails.
+ * Default error screen shown when camera initialization fails: a fixed text for the kind of
+ * error, never one built from a platform message.
  *
- * @param errorState The error state containing exception and message.
+ * @param errorState The error state.
  */
 @Composable
 fun DefaultErrorScreen(errorState: CameraKState.Error) {
@@ -146,7 +147,7 @@ fun DefaultErrorScreen(errorState: CameraKState.Error) {
                 color = Color.Red,
             )
             Text(
-                text = errorState.message,
+                text = errorState.error.defaultText(),
                 color = Color.White,
             )
             if (errorState.isRetryable) {
@@ -157,4 +158,23 @@ fun DefaultErrorScreen(errorState: CameraKState.Error) {
             }
         }
     }
+}
+
+// A fixed text per kind of error. CameraKError's messages are not API and a cause's message may hold a path.
+internal fun CameraKError.defaultText(): String = when (this) {
+    is CameraKError.Permission -> if (needsSettings) "Allow camera access in Settings" else "Camera access is needed"
+    is CameraKError.CameraInUse -> "The camera is in use by another app"
+    is CameraKError.CameraDisabled -> "The camera is turned off on this device"
+    is CameraKError.NoCamera -> "No camera was found"
+    is CameraKError.Disconnected -> "The camera was disconnected"
+    is CameraKError.Storage -> "The photo or video could not be saved"
+    is CameraKError.Unsupported -> "This camera setting is not supported"
+    is CameraKError.NativeLibraryMissing -> "A camera library is missing"
+    is CameraKError.Hardware -> "The camera reported a hardware error"
+    is CameraKError.Timeout -> "The camera took too long to respond"
+    is CameraKError.Busy -> "The camera is busy"
+    is CameraKError.InvalidState -> "The camera cannot do that now"
+    CameraKError.NotReady -> "The camera is not ready"
+    CameraKError.Closed -> "The camera is closed"
+    is CameraKError.Internal -> "Something went wrong with the camera"
 }

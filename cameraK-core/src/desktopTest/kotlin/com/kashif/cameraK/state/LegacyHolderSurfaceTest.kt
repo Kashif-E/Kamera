@@ -89,10 +89,11 @@ class LegacyHolderSurfaceTest {
     fun legacyConstructorRunsTheFactoryOnFirstStartOnTheHostDispatcher() = runBlocking {
         val executor = Executors.newSingleThreadExecutor { Thread(it, HOST_THREAD) }
         val scope = CoroutineScope(Job() + executor.asCoroutineDispatcher())
-        val factoryThreads = CopyOnWriteArrayList<String>()
+        val hostThread = executor.submit<Thread> { Thread.currentThread() }.get()
+        val factoryThreads = CopyOnWriteArrayList<Thread>()
         try {
             val sut = holder(scope) {
-                factoryThreads += Thread.currentThread().name
+                factoryThreads += Thread.currentThread()
                 controller()
             }
             assertEquals(emptyList(), factoryThreads.toList(), "the factory ran at construction")
@@ -101,7 +102,7 @@ class LegacyHolderSurfaceTest {
             val state = sut.awaitState { it is CameraKState.Ready || it is CameraKState.Error }
 
             assertIs<CameraKState.Ready>(state, "state is $state")
-            assertEquals(listOf(HOST_THREAD), factoryThreads.toList(), "the threads the factory ran on")
+            assertEquals(listOf(hostThread), factoryThreads.toList(), "the threads the factory ran on")
             sut.closeAndJoin()
         } finally {
             scope.cancel()

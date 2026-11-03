@@ -5,6 +5,16 @@ package com.kashif.cameraK.state
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.utils.CameraKEngineApi
 
-/** H1' red stub: the holder's mapping of the engine's own state. */
-internal fun EngineState.toCameraKState(current: CameraKState, ready: CameraKState.Ready): CameraKState =
-    TODO("H1' red stub: toCameraKState")
+/**
+ * The holder's state for this engine state, given the holder's [current] state and its one [ready]
+ * value. Closed and Opening leave [current] as it is: the holder writes Idle and Starting itself, so
+ * neither the Closed an engine replays to a new session nor a stop's Closed can overwrite them.
+ * Nothing leaves Closed.
+ */
+internal fun EngineState.toCameraKState(current: CameraKState, ready: CameraKState.Ready): CameraKState = when {
+    current is CameraKState.Closed -> current
+    this is EngineState.Open -> ready
+    this is EngineState.Interrupted -> CameraKState.Interrupted(reason)
+    this is EngineState.Failed -> CameraKState.Error(error)
+    else -> current
+}

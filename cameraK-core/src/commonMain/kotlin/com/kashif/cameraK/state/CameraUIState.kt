@@ -27,13 +27,13 @@ import com.kashif.cameraK.enums.TorchMode
  *
  * @example
  * ```kotlin
- * val cameraState by rememberCameraKState()
- * when (val state = cameraState) {
+ * val holder = rememberCameraKStateHolder()
+ * val uiState by holder.uiState.collectAsState()
+ * when (holder.cameraState.collectAsState().value) {
  *     is CameraKState.Ready -> {
- *         val uiState = state.uiState
  *         Text("Zoom: ${uiState.zoomLevel}x / ${uiState.maxZoom}x")
  *         IconButton(
- *             onClick = { state.controller.toggleFlashMode() },
+ *             onClick = { holder.toggleFlashMode() },
  *             enabled = !uiState.isCapturing
  *         ) {
  *             Icon(
