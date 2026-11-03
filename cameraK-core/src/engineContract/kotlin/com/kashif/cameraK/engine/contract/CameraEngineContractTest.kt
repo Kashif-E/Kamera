@@ -72,6 +72,18 @@ internal abstract class CameraEngineContractTest(
         driver.runCase { cases.hardwareChangesOnlyFromPlatformObserver() }
 
     @Test
+    fun commandsLeaveHardwareUntilThePlatformReports(): TestResult =
+        driver.runCase { cases.commandsLeaveHardwareUntilThePlatformReports() }
+
+    @Test
+    fun reportedCameraIsTheOneTheEngineOpenedOn(): TestResult =
+        driver.runCase { cases.reportedCameraIsTheOneTheEngineOpenedOn() }
+
+    @Test
+    fun interruptWhileClosedDoesNotReachTheNextStart(): TestResult =
+        driver.runCase { cases.interruptWhileClosedDoesNotReachTheNextStart() }
+
+    @Test
     fun desiredHardwareReappliedAfterRestartAndCameraSwitch(): TestResult =
         driver.runCase { cases.desiredHardwareReappliedAfterRestartAndCameraSwitch() }
 

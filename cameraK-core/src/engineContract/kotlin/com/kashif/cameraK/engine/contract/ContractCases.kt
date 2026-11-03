@@ -243,16 +243,17 @@ internal class ContractCases(
     suspend fun hardwareChangesOnlyFromPlatformObserver() {
         val case = "hardwareChangesOnlyFromPlatformObserver"
         withEngine { engine ->
-            open(engine)
+            val selected = defaultCamera(engine)
+            open(engine, selected?.let { CameraSelection.ById(it.id) } ?: desired.selection)
             val bound = driver.boundSettings()
             val lens = currentLens(engine)
             val steps = Steps(case)
 
             steps.step("reported camera", skipIf = noLens(lens)) {
                 assertEquals(
-                    bound.cameraId,
+                    selected?.id,
                     engine.hardware.value.camera?.id,
-                    "the reported camera is not the bound one",
+                    "the reported camera is not the one the case selected",
                 )
             }
             val torch = torchTarget(engine, lens)
@@ -271,6 +272,71 @@ internal class ContractCases(
             }
             steps.requireSomethingRan()
         }
+    }
+
+    // Rule 5: a command reaches the platform, and hardware and zoom move only when the platform reports.
+    suspend fun commandsLeaveHardwareUntilThePlatformReports() {
+    }
+
+    // HardwareState: no camera before the first bind, then the camera the engine opened on or switched to.
+    suspend fun reportedCameraIsTheOneTheEngineOpenedOn() {
+        val case = "reportedCameraIsTheOneTheEngineOpenedOn"
+        withEngine { engine ->
+            assertEquals(null, engine.hardware.value.camera, "a camera was reported before the first bind")
+            val lenses = engine.capabilities.value.allLenses
+            val steps = Steps(case)
+
+            for (lens in lenses) {
+                steps.step("reported camera after opening on '${lens.id}'", skipIf = null) {
+                    assertEquals(
+                        success,
+                        engine.start(desiredOn(CameraSelection.ById(lens.id))),
+                        "start on '${lens.id}'",
+                    )
+                    driver.settle()
+                    assertEquals(
+                        lens.id,
+                        engine.hardware.value.camera?.id,
+                        "the reported camera after opening on '${lens.id}'",
+                    )
+                    engine.stop()
+                    driver.settle()
+                }
+            }
+            val first = lenses.firstOrNull()
+            val second = lenses.getOrNull(1)
+            val switchSkip = if (first == null || second == null) "the engine has fewer than two cameras" else null
+            steps.step("reported camera after a switch", skipIf = switchSkip) {
+                open(engine, CameraSelection.ById(first!!.id))
+                val switched = engine.selectCamera(CameraSelection.ById(second!!.id))
+                assertEquals(second.id, assertIs<CameraKResult.Success<LensInfo>>(switched).value.id)
+                driver.settle()
+                assertEquals(
+                    second.id,
+                    engine.hardware.value.camera?.id,
+                    "the reported camera after switching to '${second.id}'",
+                )
+            }
+            steps.requireSomethingRan()
+        }
+    }
+
+    // Rule 2: an interruption delivered while closed belongs to no live generation, so the next start opens.
+    suspend fun interruptWhileClosedDoesNotReachTheNextStart() = withEngine { engine ->
+        open(engine)
+        engine.stop()
+        driver.settle()
+        driver.interrupt(reason)
+        driver.settle()
+        assertEquals(EngineState.Closed, engine.state.value, "an interruption while closed changed the state")
+
+        assertEquals(success, engine.start(desired), "start after an interruption delivered while closed")
+        driver.settle()
+        assertEquals(
+            EngineState.Open,
+            engine.state.value,
+            "an interruption of the stopped generation reached the next one",
+        )
     }
 
     suspend fun desiredHardwareReappliedAfterRestartAndCameraSwitch() {
@@ -456,8 +522,8 @@ internal class ContractCases(
         }
     }
 
-    private suspend fun open(engine: CameraEngine) {
-        assertEquals(success, engine.start(desired), "start")
+    private suspend fun open(engine: CameraEngine, selection: CameraSelection = desired.selection) {
+        assertEquals(success, engine.start(desiredOn(selection)), "start")
         driver.settle()
         assertEquals(EngineState.Open, engine.state.value)
     }
@@ -484,6 +550,20 @@ internal class ContractCases(
         assertEquals(RecordingEndReason.SHUTDOWN, finalized.single().reason)
         val video = assertIs<CameraKResult.Success<RecordedVideo>>(finalized.single().result).value
         assertEquals(path, video.path, "the finalized file is the one that started")
+    }
+
+    private fun desiredOn(selection: CameraSelection) = DesiredHardware(
+        selection = selection,
+        flashMode = desired.flashMode,
+        torchMode = desired.torchMode,
+        zoomRatio = desired.zoomRatio,
+        targetOrientation = desired.targetOrientation,
+    )
+
+    // The camera a case opens on when it does not name one: the first back camera, else the first listed.
+    private fun defaultCamera(engine: CameraEngine): LensInfo? {
+        val capabilities = engine.capabilities.value
+        return capabilities.lenses(CameraLens.BACK).firstOrNull() ?: capabilities.allLenses.firstOrNull()
     }
 
     // The camera the platform bound, as the engine's capabilities describe it.

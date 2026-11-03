@@ -15,6 +15,7 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -26,8 +27,10 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertSame
@@ -220,6 +223,37 @@ class LegacyControllerEngineTest {
             assertRefused(CameraOperation.RECORD_RESUME, sut.resumeRecording())
         } finally {
             withTimeout(TIMEOUT_MS) { sut.closeAndJoin() }
+        }
+    }
+
+    @Test
+    fun refusedCommandIsLoggedOnceAtWarningPerKind() = runBlocking {
+        val logged = CopyOnWriteArrayList<Pair<CameraKLogger.Level, String>>()
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { level, _, message, _ -> if ("refuses" in message) logged += level to message }
+        val controller = controller(FakeFrameGrabber())
+        val first = engine(controller, GatedSession())
+        val second = engine(controller, GatedSession())
+        try {
+            repeat(3) { first.setZoom(1f) }
+            repeat(2) { first.capture() }
+            first.setZoom(1f)
+            assertEquals(2, logged.size, "refusals logged by one engine: $logged")
+            assertTrue(logged.all { it.first == CameraKLogger.Level.WARN }, "refusals are warnings: $logged")
+            assertContains(logged[0].second, "${CameraOperation.ZOOM}")
+            assertContains(logged[1].second, "${CameraOperation.CAPTURE}")
+
+            second.setZoom(1f)
+            second.setZoom(1f)
+            assertEquals(3, logged.size, "another engine logs its own first refusal: $logged")
+        } finally {
+            CameraKLogger.sink = null
+            CameraKLogger.enabled = false
+            withTimeout(TIMEOUT_MS) {
+                first.closeAndJoin()
+                second.closeAndJoin()
+            }
+            controller.cleanup()
         }
     }
 
