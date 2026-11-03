@@ -1,6 +1,7 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.utils.InternalCameraKApi
 import platform.AVFoundation.AVCaptureVideoOrientationLandscapeLeft
 import platform.AVFoundation.AVCaptureVideoOrientationLandscapeRight
 import platform.AVFoundation.AVCaptureVideoOrientationPortrait
@@ -50,12 +51,14 @@ class OrientationTest {
     }
 
     @Test
+    @OptIn(InternalCameraKApi::class)
     fun thePreviewFollowsTheInterfaceOrientationNotTheTarget() {
         rig.controller.interfaceOrientation = { AVCaptureVideoOrientationLandscapeLeft }
         rig.start()
 
         rig.controller.setTargetOrientation(DeviceOrientation.PORTRAIT)
-        rig.controller.viewDidLayoutSubviews()
+        // The host view laid out again, before it has a window scene: the seam answers for the interface.
+        rig.controller.previewLayoutChanged(null)
         drainSessionThenMain(rig.custom)
 
         assertTrue(rig.previewOrientations.isNotEmpty(), "the preview was never oriented to the interface")

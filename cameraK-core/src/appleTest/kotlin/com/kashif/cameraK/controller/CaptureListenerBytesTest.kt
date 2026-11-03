@@ -52,7 +52,7 @@ class CaptureListenerBytesTest {
     fun listenersReceiveExactlyTheCapturedBytes() {
         val received = mutableListOf<ByteArray>() // listeners run on main, as does this test
         controller.addImageCaptureListener { received += it }
-        controller.view // loads the view, which sets the session up and starts it
+        controller.startSession() // its own engine sets the session up and starts it, with no view
         awaitTrue("the session to start") { session.isRunning }
 
         val photo = ByteArray(100) { it.toByte() }

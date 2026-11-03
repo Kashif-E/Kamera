@@ -22,8 +22,8 @@ import platform.Foundation.dataWithContentsOfFile
 import kotlin.test.fail
 
 /**
- * A CameraController on a fake session, camera and photo output, with its view loaded so the
- * session is set up and running, and helpers to run takePictureToFile on main and finish its request.
+ * A CameraController on a fake session, camera and photo output, started so its engine has the
+ * session set up and running, and helpers to run takePictureToFile on main and finish its request.
  */
 internal class CaptureRig(
     val device: FakeDevice = FakeDevice(),
@@ -60,7 +60,7 @@ internal class CaptureRig(
     private val savedFiles = mutableListOf<String>()
 
     fun start() {
-        controller.view // loads the view, which sets the session up and starts it
+        controller.startSession() // its own engine sets the session up and starts it, with no view
         awaitTrue("the session to start") { session.isRunning }
     }
 

@@ -18,6 +18,7 @@ import platform.AVFoundation.*
 import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
+import platform.Foundation.NSThread
 import platform.UIKit.UIDevice
 import platform.UIKit.UIView
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_HIGH
@@ -60,7 +61,12 @@ class CustomCameraController(
     private var sessionFactory: () -> CaptureSessionOps = { AVCaptureSessionOps() }
     private var inputConfigurator: ((CaptureSessionOps, CameraDeviceType) -> Boolean)? = null
     private var lensSwitcher: ((CaptureSessionOps, Boolean) -> Unit)? = null
-    private var cameraDevices = CameraDeviceProvider(::discoverCamera)
+    private var cameraDevices: CameraDeviceProvider = object : CameraDeviceProvider {
+        override fun find(lens: CameraLens?, type: CameraDeviceType): CaptureDeviceOps? = discoverCamera(lens, type)
+
+        override fun findById(id: String): CaptureDeviceOps? =
+            AVCaptureDevice.deviceWithUniqueID(id)?.let(::AVCaptureDeviceOps)
+    }
     private var previewMirroring: (AVCaptureVideoPreviewLayer?, Boolean) -> Unit = ::mirrorPreview
     private var photoCapturer: PhotoCapturer = AVPhotoCapturer
     private var previewOrienting: (
@@ -129,6 +135,13 @@ class CustomCameraController(
     /** Written only on [sessionQueue]; read elsewhere only to check presence. */
     @Volatile
     private var session: CaptureSessionOps? = null
+
+    /**
+     * The session [prepareSession] made ahead of setup, so a preview layer can show it before the
+     * camera starts; setup configures this one instead of asking [sessionFactory] for another.
+     */
+    @Volatile
+    private var preparedSession: CaptureSessionOps? = null
 
     var captureSession: AVCaptureSession?
         get() = session?.avSession
@@ -231,44 +244,74 @@ class CustomCameraController(
         // touches the session while it is being built.
         dispatch_async(sessionQueue) {
             if (setupGeneration.value != generation) return@dispatch_async
-
-            val ops = sessionFactory()
-            // Published before configuring so changes applied below (safeAddOutput) reach it.
-            session = ops
-
-            // One transaction: input, photo output, the final preset and every change queued so far.
-            ops.beginConfiguration()
-            val failure: CameraException? = try {
-                val inputsReady = inputConfigurator?.invoke(ops, cameraDeviceType) ?: setupInputs(cameraDeviceType)
-                if (inputsReady) {
-                    setupPhotoOutput()
-                    applySessionPreset(ops)
-                    runPendingConfigurations()
-                    null
-                } else {
-                    CameraException.DeviceNotAvailable()
-                }
-            } catch (e: CameraException) {
-                CameraKLogger.e(TAG, "CameraK: session setup failed", e)
-                e
-            } finally {
-                ops.commitConfiguration()
-            }
-
+            val failure = configureOnQueue(device = null, lens = initialCameraLens, cameraDeviceType = cameraDeviceType)
             if (failure != null) {
-                session = null
-                photoOutput = null
                 reportError(failure)
                 return@dispatch_async
             }
-            applyMaxPhotoDimensions()
-
+            val ops = session
             dispatch_async(dispatch_get_main_queue()) {
                 if (setupGeneration.value == generation && session === ops) {
                     onSessionReady?.invoke()
                 }
             }
         }
+    }
+
+    /**
+     * Makes the session now, on the calling thread, without configuring it: the engine calls it once
+     * from its constructor, so a preview layer is bound to the session before the camera starts.
+     */
+    internal fun prepareSession(): CaptureSessionOps = sessionOps ?: sessionFactory().also { preparedSession = it }
+
+    /** The session: configured, or prepared and waiting for its first configuration; null before either. */
+    internal val sessionOps: CaptureSessionOps? get() = session ?: preparedSession
+
+    /**
+     * Configures the session in one transaction: the camera input ([device], or the one [lens] and
+     * [cameraDeviceType] find), the photo output, the preset and every change queued so far. Session
+     * queue only. Every failure comes back as the returned exception and none is thrown across the
+     * queue: setup used to throw inside its dispatch_async, which aborts the process.
+     */
+    internal fun configureOnQueue(
+        device: CaptureDeviceOps?,
+        lens: CameraLens,
+        cameraDeviceType: CameraDeviceType,
+    ): CameraException? {
+        val ops = preparedSession ?: sessionFactory()
+        // Published before configuring so changes applied below (safeAddOutput) reach it.
+        session = ops
+
+        // One transaction: input, photo output, the final preset and every change queued so far.
+        ops.beginConfiguration()
+        val failure: CameraException? = try {
+            val inputsReady =
+                inputConfigurator?.invoke(ops, cameraDeviceType) ?: setupInputs(lens, cameraDeviceType, device)
+            if (inputsReady) {
+                setupPhotoOutput()
+                applySessionPreset(ops)
+                runPendingConfigurations()
+                null
+            } else {
+                CameraException.DeviceNotAvailable()
+            }
+        } catch (e: CameraException) {
+            CameraKLogger.e(TAG, "CameraK: session setup failed", e)
+            e
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "CameraK: session setup failed", e)
+            CameraException.ConfigurationError("Session setup failed", e)
+        } finally {
+            ops.commitConfiguration()
+        }
+
+        if (failure != null) {
+            session = null
+            photoOutput = null
+            return failure
+        }
+        applyMaxPhotoDimensions()
+        return null
     }
 
     private fun reportError(error: CameraException) {
@@ -426,15 +469,19 @@ class CustomCameraController(
         return device?.let(::AVCaptureDeviceOps)
     }
 
-    private fun setupInputs(cameraDeviceType: CameraDeviceType): Boolean {
-        backCamera = cameraDevices.find(CameraLens.BACK, cameraDeviceType)
-        frontCamera = cameraDevices.find(CameraLens.FRONT, cameraDeviceType)
-
-        val camera = when (initialCameraLens) {
-            CameraLens.FRONT -> frontCamera ?: backCamera
-            CameraLens.BACK -> backCamera ?: frontCamera
-        } ?: cameraDevices.find(null, cameraDeviceType)?.also { found ->
-            if (found.isFront) frontCamera = found else backCamera = found
+    private fun setupInputs(lens: CameraLens, cameraDeviceType: CameraDeviceType, device: CaptureDeviceOps?): Boolean {
+        val camera = if (device != null) {
+            if (device.isFront) frontCamera = device else backCamera = device
+            device
+        } else {
+            backCamera = cameraDevices.find(CameraLens.BACK, cameraDeviceType)
+            frontCamera = cameraDevices.find(CameraLens.FRONT, cameraDeviceType)
+            when (lens) {
+                CameraLens.FRONT -> frontCamera ?: backCamera
+                CameraLens.BACK -> backCamera ?: frontCamera
+            } ?: cameraDevices.find(null, cameraDeviceType)?.also { found ->
+                if (found.isFront) frontCamera = found else backCamera = found
+            }
         } ?: return false
 
         currentCamera = camera
@@ -583,24 +630,61 @@ class CustomCameraController(
     }
 
     fun startSession() {
-        dispatch_async(sessionQueue) {
-            val ops = session ?: return@dispatch_async
-            if (!ops.isRunning) {
-                ops.startRunning()
-                // A torch set before the session ran does not survive its start.
-                applyConfiguredTorch()
-                preparePhotoOutput()
-            }
-        }
+        dispatch_async(sessionQueue) { startRunningOnQueue() }
     }
 
     fun stopSession() {
-        dispatch_async(sessionQueue) {
-            val ops = session ?: return@dispatch_async
-            if (ops.isRunning) {
-                ops.stopRunning()
-            }
+        dispatch_async(sessionQueue) { stopRunningOnQueue() }
+    }
+
+    /** Starts the configured session unless it runs, then applies the torch and prepares the photo output. */
+    internal fun startRunningOnQueue() {
+        val ops = session ?: return
+        if (!ops.isRunning) {
+            ops.startRunning()
+            // A torch set before the session ran does not survive its start.
+            applyConfiguredTorch()
+            preparePhotoOutput()
         }
+    }
+
+    /** Stops the session if it runs or the system holds it interrupted. Session queue only. */
+    internal fun stopRunningOnQueue() {
+        val ops = sessionOps ?: return
+        if (ops.isRunning || ops.isInterrupted) ops.stopRunning()
+    }
+
+    /** Whether setup has configured the session (and cleanupSession not yet released it). */
+    internal val isConfigured: Boolean get() = session != null
+
+    /**
+     * The camera facing [lens] of [type], else the one facing the other way, else any camera of that
+     * type: the order setup has always picked in.
+     */
+    internal fun findCamera(lens: CameraLens, type: CameraDeviceType): CaptureDeviceOps? {
+        val other = if (lens == CameraLens.FRONT) CameraLens.BACK else CameraLens.FRONT
+        return cameraDevices.find(lens, type) ?: cameraDevices.find(other, type) ?: cameraDevices.find(null, type)
+    }
+
+    internal fun findCameraById(id: String): CaptureDeviceOps? = cameraDevices.findById(id)
+
+    /**
+     * Moves the session to [camera]'s input in one transaction, as a lens switch does: the session
+     * keeps running and the configured torch follows. Session queue only; returns why it failed.
+     */
+    internal fun useDeviceOnQueue(camera: CaptureDeviceOps): CameraException? {
+        val ops = session ?: return CameraException.DeviceNotAvailable("The session is not set up")
+        swapVideoInput(ops, camera)?.let { return it }
+        if (camera.isFront) frontCamera = camera else backCamera = camera
+        useCamera(camera)
+        if (ops.isRunning) applyConfiguredTorch()
+        return null
+    }
+
+    /** Shows [layer] as the preview: mirrored for the front camera, removed with the session. Main only. */
+    internal fun adoptPreviewLayer(layer: AVCaptureVideoPreviewLayer) {
+        cameraPreviewLayer = layer
+        previewMirroring(layer, isUsingFrontCamera)
     }
 
     /**
@@ -610,13 +694,20 @@ class CustomCameraController(
      */
     fun cleanupSession() {
         setupGeneration.incrementAndGet()
-        cameraPreviewLayer?.removeFromSuperlayer()
+        val layer = cameraPreviewLayer
         cameraPreviewLayer = null
-        dispatch_async(sessionQueue) {
-            session?.let { ops ->
-                if (ops.isRunning) ops.stopRunning()
+        // The layer belongs to UIKit; the engine may close from any thread.
+        if (layer != null) {
+            if (NSThread.isMainThread) {
+                layer.removeFromSuperlayer()
+            } else {
+                dispatch_async(dispatch_get_main_queue()) { layer.removeFromSuperlayer() }
             }
+        }
+        dispatch_async(sessionQueue) {
+            (session ?: preparedSession)?.tearDown()
             session = null
+            preparedSession = null
             photoOutput = null
             maxPhotoDimensions = null
             currentCamera = null

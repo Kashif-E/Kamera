@@ -74,7 +74,7 @@ class FlashTorchTest {
         val custom = custom()
         val controller = cameraController(FlashMode.OFF, TorchMode.ON, custom)
 
-        controller.view // loads the view, which sets the session up and starts it
+        controller.startSession() // its own engine sets the session up and starts it, with no view
         awaitTrue("the configured torch to reach the back camera") {
             back.callsOf("setTorchMode").any { it.value == AVCaptureTorchModeOn }
         }
