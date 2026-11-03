@@ -32,6 +32,9 @@ kotlin {
                 api(libs.javacpp)
                 implementation(libs.ffmpeg)
                 implementation(libs.videoinput)
+                // macOS camera authorization over the Objective-C runtime (Decision 15). Compile-only:
+                // without JNA at runtime the status reads as not determined, and the open prompts.
+                compileOnly(libs.jna)
             }
         }
 
