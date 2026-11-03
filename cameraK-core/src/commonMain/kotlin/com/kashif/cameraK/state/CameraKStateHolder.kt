@@ -185,7 +185,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     @InternalCameraKApi
     @CameraKEngineApi
     public val previewSource: PlatformPreviewSource
-        get() = TODO("K2")
+        get() = engine.preview
 
     init {
         plugins.forEach(pluginHost::add)
