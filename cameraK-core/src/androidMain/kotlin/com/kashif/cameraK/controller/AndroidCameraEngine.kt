@@ -408,7 +408,16 @@ internal class AndroidCameraEngine(
 
     /** Runs [block] once the camera is bound: at once when it is, else after the next bind. Main thread. */
     internal fun whenBound(block: () -> Unit) {
-        if (binder.camera != null) block() else bindListeners += block
+        if (binder.camera != null) runCameraReady(block) else bindListeners += block
+    }
+
+    // The facade's onCameraReady is app code: one that throws is logged, as 1.x did, and goes no further.
+    private fun runCameraReady(block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "An onCameraReady callback failed", e)
+        }
     }
 
     /** Rebinds the bound camera with the current use cases, if a session has one. Main thread. */
@@ -502,7 +511,7 @@ internal class AndroidCameraEngine(
         )
         val ready = bindListeners.toList()
         bindListeners.clear()
-        ready.forEach { it() }
+        ready.forEach(::runCameraReady)
         return null
     }
 
