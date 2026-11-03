@@ -8,6 +8,7 @@ package com.kashif.cameraK.utils
     message = "This is CameraK's internal API for its own plugins and can change in any release.",
     level = RequiresOptIn.Level.ERROR,
 )
-@Retention(AnnotationRetention.BINARY)
-@Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS, AnnotationTarget.PROPERTY)
+// RUNTIME so that CameraK's own tests can read it through reflection; nothing reads it at run time.
+@Retention(AnnotationRetention.RUNTIME)
+@Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS, AnnotationTarget.PROPERTY, AnnotationTarget.CONSTRUCTOR)
 annotation class InternalCameraKApi

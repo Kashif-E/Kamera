@@ -60,6 +60,14 @@ kotlin {
             }
         }
 
+        // CameraKEventShapeTest reads constructor visibility and annotations through kotlin-reflect.
+        // Test-only: never on a main or published classpath.
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("reflect"))
+            }
+        }
+
         androidUnitTest.dependencies {
             implementation(libs.junit)
             implementation(libs.robolectric)

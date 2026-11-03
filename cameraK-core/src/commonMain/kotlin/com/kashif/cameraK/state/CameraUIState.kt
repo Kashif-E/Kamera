@@ -2,6 +2,7 @@ package com.kashif.cameraK.state
 
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
@@ -65,4 +66,7 @@ data class CameraUIState(
     val isRecording: Boolean = false,
     val isPaused: Boolean = false,
     val recordingDurationMs: Long = 0L,
+    val pendingCaptures: Int = 0,
+    val cameraId: String? = null,
+    val targetOrientation: DeviceOrientation? = null,
 )

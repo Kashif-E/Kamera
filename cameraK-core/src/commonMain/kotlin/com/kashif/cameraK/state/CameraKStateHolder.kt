@@ -3,6 +3,8 @@
 package com.kashif.cameraK.state
 
 import com.kashif.cameraK.capabilities.CameraCapabilities
+import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.coroutines.isFatal
@@ -15,6 +17,8 @@ import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.LegacyControllerEngine
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.createPlatformEngine
+import com.kashif.cameraK.enums.CameraDeviceType
+import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
@@ -22,6 +26,7 @@ import com.kashif.cameraK.permissions.platformPermissionChecker
 import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.plugin.PluginHost
 import com.kashif.cameraK.plugin.effectiveConfig
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.InternalCameraKApi
@@ -54,6 +59,7 @@ import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
 /**
@@ -280,6 +286,34 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // Commands (red stubs)
+    // ═══════════════════════════════════════════════════════════════
+
+    public val zoom: StateFlow<ZoomState> get() = TODO("H2' red stub")
+
+    public val capabilities: StateFlow<CameraCapabilities> get() = TODO("H2' red stub")
+
+    public val captures: SharedFlow<CapturedImage> get() = TODO("H2' red stub")
+
+    public suspend fun capture(): CameraKResult<CapturedImage> = TODO("H2' red stub")
+
+    public suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = TODO("H2' red stub")
+
+    public suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = TODO("H2' red stub")
+
+    public suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = TODO("H2' red stub")
+
+    public suspend fun selectCamera(
+        lens: CameraLens,
+        deviceType: CameraDeviceType = CameraDeviceType.DEFAULT,
+    ): CameraKResult<LensInfo> = TODO("H2' red stub")
+
+    public suspend fun selectCamera(id: String): CameraKResult<LensInfo> = TODO("H2' red stub")
+
+    public suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> =
+        TODO("H2' red stub")
+
+    // ═══════════════════════════════════════════════════════════════
     // Plugins
     // ═══════════════════════════════════════════════════════════════
 
@@ -375,28 +409,12 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         }
     }
 
-    /** Sets the zoom ratio on the 1.x controller. */
-    @Deprecated("Replaced by the holder's suspend setZoom command.")
-    public fun setZoom(zoom: Float) {
-        val currentController = facade() ?: return
-        currentController.setZoom(zoom)
-        _uiState.value = _uiState.value.copy(zoomLevel = currentController.getZoom())
-    }
-
     /** Cycles the flash mode on the 1.x controller. */
     @Deprecated("Replaced by the holder's flash commands.")
     public fun toggleFlashMode() {
         val currentController = facade() ?: return
         currentController.toggleFlashMode()
         _uiState.value = _uiState.value.copy(flashMode = currentController.getFlashMode())
-    }
-
-    /** Sets the flash mode on the 1.x controller. */
-    @Deprecated("Replaced by the holder's suspend setFlashMode command.")
-    public fun setFlashMode(mode: FlashMode) {
-        val currentController = facade() ?: return
-        currentController.setFlashMode(mode)
-        _uiState.value = _uiState.value.copy(flashMode = mode)
     }
 
     /** Toggles the torch on the 1.x controller. */
@@ -407,26 +425,12 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         _uiState.value = _uiState.value.copy(torchMode = currentController.getTorchMode())
     }
 
-    /** Sets the torch mode on the 1.x controller. */
-    @Deprecated("Replaced by the holder's suspend setTorchMode command.")
-    public fun setTorchMode(mode: TorchMode) {
-        val currentController = facade() ?: return
-        currentController.setTorchMode(mode)
-        _uiState.value = _uiState.value.copy(torchMode = mode)
-    }
-
     /** Switches between the front and back camera on the 1.x controller. */
     @Deprecated("Replaced by the holder's camera selection commands.")
     public fun toggleCameraLens() {
         val currentController = facade() ?: return
         currentController.toggleCameraLens()
         _uiState.value = _uiState.value.copy(cameraLens = currentController.getCameraLens())
-    }
-
-    /** Locks the output orientation on the 1.x controller; null follows the device. */
-    @Deprecated("Replaced by the holder's suspend setTargetOrientation command.")
-    public fun setTargetOrientation(orientation: DeviceOrientation?) {
-        facade()?.setTargetOrientation(orientation)
     }
 
     private var recordingTimerJob: Job? = null
@@ -602,6 +606,9 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
 }
 
 /** The production constructor's environment: the platform's permission checker. */
+/** How long close() lets running commands finish before it closes the engine. */
+internal val COMMAND_DRAIN_TIMEOUT: Duration = 2.seconds
+
 internal fun productionEnvironment(context: CameraKPlatformContext): CameraKEnvironment =
     CameraKEnvironment(permissionChecker = platformPermissionChecker(context))
 

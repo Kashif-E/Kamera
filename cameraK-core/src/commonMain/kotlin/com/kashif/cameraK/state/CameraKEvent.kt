@@ -1,5 +1,6 @@
 package com.kashif.cameraK.state
 
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.video.VideoCaptureResult
 
@@ -103,11 +104,8 @@ sealed class CameraKEvent {
      */
     data class RecordingMaxDurationReached(val filePath: String, val durationMs: Long) : CameraKEvent()
 
-    /**
-     * A coroutine a plugin launched in [CameraKStateHolder.pluginScope] failed. The failure is
-     * contained: the camera and the other plugins keep running.
-     *
-     * @property error What the plugin's coroutine threw. Its message may contain paths or URIs.
-     */
-    data class PluginFailed(val error: Throwable) : CameraKEvent()
+    /** Red stub: the 2.0 shape with a placeholder id. */
+    class PluginFailed(val pluginId: String, val error: CameraKError) : CameraKEvent() {
+        constructor(error: Throwable) : this("", CameraKError.Internal(error))
+    }
 }

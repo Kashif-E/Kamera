@@ -1,5 +1,6 @@
 package com.kashif.imagesaverplugin
 
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKStateHolder
@@ -16,6 +17,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertSame
 
 /**
@@ -38,9 +41,9 @@ class ImageSaverAutoSaveFailureTest {
         try {
             val holder = CameraKStateHolder(CameraConfiguration(), { error("unit tests have no camera") }, hostScope)
             val failure = IllegalStateException("storage full")
-            val reported = CompletableDeferred<Throwable>()
+            val reported = CompletableDeferred<CameraKEvent.PluginFailed>()
             hostScope.launch(start = CoroutineStart.UNDISPATCHED) {
-                reported.complete(holder.events.filterIsInstance<CameraKEvent.PluginFailed>().first().error)
+                reported.complete(holder.events.filterIsInstance<CameraKEvent.PluginFailed>().first())
             }
             val plugin = FailingSaver(failure)
             plugin.onAttach(holder)
@@ -48,8 +51,9 @@ class ImageSaverAutoSaveFailureTest {
             plugin.captureListener(byteArrayOf(1, 2, 3))
 
             // Real time: the save runs on Dispatchers.IO, outside the test scheduler.
-            val error = withContext(Dispatchers.Default) { withTimeout(5_000) { reported.await() } }
-            assertSame(failure, error)
+            val event = withContext(Dispatchers.Default) { withTimeout(5_000) { reported.await() } }
+            assertSame(failure, assertIs<CameraKError.Internal>(event.error).cause)
+            assertEquals("FailingSaver", event.pluginId, "the id is the plugin's class name")
         } finally {
             hostScope.cancel()
         }

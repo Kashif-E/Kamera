@@ -119,6 +119,13 @@ class AppStyleFakeUsageTest {
         runCurrent()
         assertIs<CameraKState.Ready>(holder.cameraState.value)
 
+        assertEquals(CameraKResult.Success(FakeCaptures.image()), holder.capture())
+        val uiState = holder.uiState.value
+        assertEquals(FakeCapabilities.BACK_ID, uiState.cameraId)
+        assertEquals(FlashMode.OFF, uiState.flashMode)
+        assertEquals(0, uiState.pendingCaptures)
+        assertFalse(uiState.isCapturing)
+
         holder.close()
         runCurrent()
         assertEquals(CameraKState.Closed, holder.cameraState.value)

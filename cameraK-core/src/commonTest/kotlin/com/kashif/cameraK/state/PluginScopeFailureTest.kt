@@ -1,5 +1,6 @@
 package com.kashif.cameraK.state
 
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -11,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -52,7 +54,8 @@ class PluginScopeFailureTest {
             assertTrue(otherPlugin.isActive, "a plugin failure cancelled another plugin's coroutine")
             val reported = events.filterIsInstance<CameraKEvent.PluginFailed>()
             assertEquals(1, reported.size, "the failure was not reported as PluginFailed: $events")
-            assertSame(failure, reported.single().error)
+            assertSame(failure, assertIs<CameraKError.Internal>(reported.single().error).cause)
+            assertEquals("pluginScope", reported.single().pluginId, "the shared scope cannot tell which plugin failed")
             assertTrue(logged.any { (_, error) -> error === failure }, "the failure was not logged: $logged")
         } finally {
             hostScope.cancel()
