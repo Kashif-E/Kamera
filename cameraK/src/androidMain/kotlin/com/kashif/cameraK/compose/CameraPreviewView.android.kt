@@ -29,7 +29,9 @@ actual fun CameraPreviewView(
     overlay: @Composable (CameraPreviewScope.() -> Unit)?,
 ) {
     val context = LocalContext.current
-    val previewView = remember { fitCenterPreviewView(context) }
+    // Keyed on the context: a new Activity context (after a configuration change the host did not
+    // handle) gets a PreviewView of its own instead of one that holds the destroyed Activity.
+    val previewView = remember(context) { fitCenterPreviewView(context) }
 
     // The camera opens from the session, not from the preview: the preview attaches its surface on
     // enter and detaches it on dispose, which leaves an incoming preview's surface in place.
