@@ -70,6 +70,15 @@ internal class FakeCameraXBackend : CameraXBackend {
     /** The per-frame callback of each preview built, oldest first. */
     val previewFrameCallbacks = mutableListOf<() -> Unit>()
 
+    /**
+     * When set, the flash mode CameraX reports for an ImageCapture, in place of the mode it holds:
+     * a read-back that differs from what was requested.
+     */
+    var flashReadBack: ((ImageCapture) -> Int)? = null
+
+    override fun flashModeOf(imageCapture: ImageCapture): Int =
+        flashReadBack?.invoke(imageCapture) ?: imageCapture.flashMode
+
     /** The preview of the latest bind produces a frame, reported on the calling thread. */
     fun deliverPreviewFrame() = previewFrameCallbacks.last().invoke()
 
@@ -298,11 +307,14 @@ internal class FakeCameraBinding : CameraBinding {
 
 /**
  * A bound camera. Its control records what the controller asks of the hardware and, like CameraX,
- * reports the result through the camera info's torch and zoom state. [minZoom] below 1 is a logical
- * camera that can switch to its ultra-wide lens. With [torchFailure] set, every torch request fails
- * through its future, as CameraX fails it when the camera is closed or has no flash unit. Its camera
- * state follows the lifecycle it is bound to, as CameraX opens a camera while that lifecycle is
- * started: OPENING, then OPEN unless the binding holds the open.
+ * reports the result through the camera info's torch and zoom state; with [holdReports] it records
+ * the request and leaves the reports to the test ([reportTorch], [reportZoom]). [minZoom] below 1 is
+ * a logical camera that can switch to its ultra-wide lens. With [torchFailure] set, every torch
+ * request fails through its future, as CameraX fails it when the camera is closed or has no flash
+ * unit. Its camera state follows the lifecycle it is bound to, as CameraX opens a camera while that
+ * lifecycle is started: OPENING, then OPEN unless the binding holds the open. While that lifecycle is
+ * not started its use cases are detached, so, as CameraX's TorchControl and ZoomControl do, the
+ * control refuses torch and zoom requests ("Camera is not active") and records none.
  */
 internal class FakeCamera(
     val id: String = "0",
@@ -310,8 +322,12 @@ internal class FakeCamera(
     private val minZoom: Float = 1f,
     private val hasFlashUnit: Boolean = true,
     private val torchFailure: Throwable? = null,
+    private val holdReports: Boolean = false,
 ) {
+    /** The torch requests the camera accepted, oldest first. */
     val torchRequests = mutableListOf<Boolean>()
+
+    /** The zoom ratios the camera accepted, oldest first. */
     val zoomRequests = mutableListOf<Float>()
     val torchState = MutableLiveData(TorchState.OFF)
     val zoomState = MutableLiveData<ZoomState>(FakeZoomState(1f, minZoom, maxZoom))
@@ -350,23 +366,42 @@ internal class FakeCamera(
         report(CameraState.create(CameraState.Type.CLOSED))
     }
 
+    /** CameraX reports the torch [on] or off, as its torch state observer would. */
+    fun reportTorch(on: Boolean) {
+        torchState.value = if (on) TorchState.ON else TorchState.OFF
+    }
+
+    /** CameraX reports the zoom [ratio], as its zoom state observer would. */
+    fun reportZoom(ratio: Float) {
+        zoomState.value = FakeZoomState(ratio.coerceIn(minZoom, maxZoom), minZoom, maxZoom)
+    }
+
     private val control = proxy<CameraControl> { method, args ->
         when (method.name) {
             "enableTorch" -> {
                 val on = args!![0] as Boolean
-                torchRequests += on
-                if (torchFailure != null) {
-                    failedFuture(torchFailure)
-                } else {
-                    torchState.value = if (on) TorchState.ON else TorchState.OFF
-                    completedFuture()
+                when {
+                    !opened -> failedFuture(IllegalStateException("Camera is not active."))
+                    torchFailure != null -> {
+                        torchRequests += on
+                        failedFuture(torchFailure)
+                    }
+                    else -> {
+                        torchRequests += on
+                        if (!holdReports) reportTorch(on)
+                        completedFuture()
+                    }
                 }
             }
             "setZoomRatio" -> {
                 val ratio = args!![0] as Float
-                zoomRequests += ratio
-                zoomState.value = FakeZoomState(ratio.coerceIn(minZoom, maxZoom), minZoom, maxZoom)
-                completedFuture()
+                if (!opened) {
+                    failedFuture(IllegalStateException("Camera is not active."))
+                } else {
+                    zoomRequests += ratio
+                    if (!holdReports) reportZoom(ratio)
+                    completedFuture()
+                }
             }
             else -> completedFuture()
         }

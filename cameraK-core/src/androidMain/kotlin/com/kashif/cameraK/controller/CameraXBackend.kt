@@ -99,6 +99,12 @@ internal interface CameraXBackend {
      */
     fun onPreviewFrame(previewBuilder: Preview.Builder, onFrame: () -> Unit)
 
+    /**
+     * The flash mode [imageCapture] holds, read back after each set and each bind: flash has no
+     * CameraX observer, so this read-back is the platform's report (design §2.3 rule 5).
+     */
+    fun flashModeOf(imageCapture: ImageCapture): Int = imageCapture.flashMode
+
     object Default : CameraXBackend {
         override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
             val future = ProcessCameraProvider.getInstance(context)

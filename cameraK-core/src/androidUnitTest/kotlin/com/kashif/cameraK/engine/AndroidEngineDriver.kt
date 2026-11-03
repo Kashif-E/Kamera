@@ -3,11 +3,11 @@
 package com.kashif.cameraK.engine
 
 import androidx.camera.core.CameraState
-import androidx.camera.core.TorchState
 import com.kashif.cameraK.controller.AndroidCameraEngine
 import com.kashif.cameraK.engine.contract.BoundSettings
 import com.kashif.cameraK.engine.contract.HardwareChange
 import com.kashif.cameraK.engine.contract.PreOpenInterruptionDriver
+import com.kashif.cameraK.engine.contract.ReadBackFlashDriver
 import com.kashif.cameraK.engine.contract.ThrowingCallbackDriver
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.InterruptionReason
@@ -20,16 +20,19 @@ import kotlinx.coroutines.test.runTest
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * The contract kit's driver for [AndroidCameraEngine], over [FakeAndroidPlatform]: two cameras with
- * no flash unit and a fixed zoom until A2. Every report is a CameraX camera state on the bound
- * camera: an open is OPEN, an interruption a recoverable error, a failed open a critical one, and a
- * runtime failure a recoverable error CameraX does not recover from within the engine's
- * [AndroidCameraEngine.RECOVERY_TIMEOUT].
+ * The contract kit's driver for [AndroidCameraEngine], over [FakeAndroidPlatform]: a back and a front
+ * camera, each with a flash unit and a zoom range, whose torch and zoom reports wait for
+ * [changeHardware]. Every state report is a CameraX camera state on the bound camera: an open is
+ * OPEN, an interruption a recoverable error, a failed open a critical one, and a runtime failure a
+ * recoverable error CameraX does not recover from within the engine's
+ * [AndroidCameraEngine.RECOVERY_TIMEOUT]. Flash has no CameraX observer: the engine reads the bound
+ * ImageCapture's mode back after each set ([ReadBackFlashDriver]).
  */
 internal class AndroidEngineDriver :
     ThrowingCallbackDriver,
-    PreOpenInterruptionDriver {
-    private var platform = FakeAndroidPlatform()
+    PreOpenInterruptionDriver,
+    ReadBackFlashDriver {
+    private var platform = newPlatform()
     private var scheduler: TestCoroutineScheduler? = null
     private var throwNext = false
 
@@ -39,7 +42,7 @@ internal class AndroidEngineDriver :
     }
 
     override fun createEngine(config: CameraConfiguration): AndroidCameraEngine {
-        platform = FakeAndroidPlatform()
+        platform = newPlatform()
         return platform.engine(checkNotNull(scheduler) { "createEngine outside runCase" }, config)
     }
 
@@ -79,9 +82,9 @@ internal class AndroidEngineDriver :
 
     override fun changeHardware(change: HardwareChange) {
         val camera = platform.camera ?: return
-        change.torchMode?.let { camera.torchState.value = if (it == TorchMode.OFF) TorchState.OFF else TorchState.ON }
-        change.zoomRatio?.let { error("the fake cameras have a fixed zoom until A2") }
-        // A flash report is the ImageCapture's own mode, which the engine reads back itself.
+        change.torchMode?.let { camera.reportTorch(it != TorchMode.OFF) }
+        change.zoomRatio?.let { camera.reportZoom(it) }
+        // Flash is never reported: the engine reads the ImageCapture's mode back after each set.
     }
 
     override fun boundSettings(): BoundSettings = BoundSettings(
@@ -98,6 +101,8 @@ internal class AndroidEngineDriver :
     override fun throwFromNextCallback() {
         throwNext = true
     }
+
+    private fun newPlatform() = FakeAndroidPlatform(FakeAndroidPlatform.CONTRACT_CAMERAS, holdReports = true)
 
     private fun report(state: CameraState) {
         val camera = platform.camera ?: return

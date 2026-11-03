@@ -7,7 +7,6 @@ import android.os.Looper
 import androidx.camera.core.CameraState
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
-import androidx.camera.core.TorchState
 import androidx.test.core.app.ApplicationProvider
 import com.kashif.cameraK.capabilities.AndroidLensDescriptor
 import com.kashif.cameraK.capabilities.LensInfo
@@ -31,8 +30,16 @@ import org.robolectric.Shadows.shadowOf
  * The Android engine's fake platform: [FakeCameraXBackend] with the cameras [lenses] describes, the
  * engine's dispatchers on one test scheduler, and the platform's reports. Robolectric runs a test on
  * the main looper's thread, so the scheduler's thread is the main thread.
+ *
+ * With [holdReports], each camera records the torch and zoom requests it accepts and reports a
+ * change only when the test does. [flashUnitOf] is what each camera's CameraInfo.hasFlashUnit says;
+ * by default the lens's own hasFlash, which the enumerator read from the same characteristic.
  */
-internal class FakeAndroidPlatform(val lenses: List<LensInfo> = TWO_FIXED_CAMERAS) {
+internal class FakeAndroidPlatform(
+    val lenses: List<LensInfo> = TWO_FIXED_CAMERAS,
+    private val holdReports: Boolean = false,
+    private val flashUnitOf: (LensInfo) -> Boolean = { it.hasFlash },
+) {
     val context: Context = ApplicationProvider.getApplicationContext()
     val backend = FakeCameraXBackend()
 
@@ -94,9 +101,11 @@ internal class FakeAndroidPlatform(val lenses: List<LensInfo> = TWO_FIXED_CAMERA
             else -> FlashMode.OFF
         }
 
-    fun boundTorchMode(): TorchMode = if (camera?.torchState?.value == TorchState.ON) TorchMode.ON else TorchMode.OFF
+    /** The torch the bound camera last accepted; OFF, as CameraX opens a camera, before any request. */
+    fun boundTorchMode(): TorchMode = if (camera?.torchRequests?.lastOrNull() == true) TorchMode.ON else TorchMode.OFF
 
-    fun boundZoomRatio(): Float = camera?.zoomState?.value?.zoomRatio ?: 1f
+    /** The zoom ratio the bound camera last accepted; 1x, as CameraX opens a camera, before any request. */
+    fun boundZoomRatio(): Float = camera?.zoomRequests?.lastOrNull() ?: 1f
 
     /** The Preview use case currently bound. */
     fun boundPreview(): Preview = backend.binding.bound.filterIsInstance<Preview>().single()
@@ -108,7 +117,13 @@ internal class FakeAndroidPlatform(val lenses: List<LensInfo> = TWO_FIXED_CAMERA
             is ResolvedCamera.PhysicalLens -> resolved.physicalId
         }
         val lens = lenses.first { it.id == id }
-        return FakeCamera(id = id, maxZoom = lens.maxZoom, minZoom = lens.minZoom, hasFlashUnit = lens.hasFlash)
+        return FakeCamera(
+            id = id,
+            maxZoom = lens.maxZoom,
+            minZoom = lens.minZoom,
+            hasFlashUnit = flashUnitOf(lens),
+            holdReports = holdReports,
+        )
     }
 
     companion object {
@@ -117,8 +132,20 @@ internal class FakeAndroidPlatform(val lenses: List<LensInfo> = TWO_FIXED_CAMERA
         val BACK = LensInfo("0", CameraDeviceType.WIDE_ANGLE, CameraLens.BACK, 1f, 1f, false, false)
         val FRONT = LensInfo("1", CameraDeviceType.WIDE_ANGLE, CameraLens.FRONT, 1f, 1f, false, false)
 
-        /** Until A2: two cameras, neither with a flash unit, each with a fixed zoom. */
+        /** Two cameras, neither with a flash unit, each with a fixed zoom. */
         val TWO_FIXED_CAMERAS = listOf(BACK, FRONT)
+
+        /** A back camera with a flash unit and a 1x to 8x zoom. */
+        val BACK_WITH_FLASH = LensInfo("0", CameraDeviceType.WIDE_ANGLE, CameraLens.BACK, 1f, 8f, true, false)
+
+        /** A back camera with a flash unit and a zoom range, and a front one with neither. */
+        val FLASH_AND_ZOOM = listOf(BACK_WITH_FLASH, FRONT)
+
+        /** A front camera with a flash unit and a 1x to 4x zoom. */
+        val FRONT_WITH_FLASH = LensInfo("1", CameraDeviceType.WIDE_ANGLE, CameraLens.FRONT, 1f, 4f, true, false)
+
+        /** The contract driver's cameras from A2: both with a flash unit and a zoom range, so every step runs. */
+        val CONTRACT_CAMERAS = listOf(BACK_WITH_FLASH, FRONT_WITH_FLASH)
 
         val desired = DesiredHardware(
             selection = CameraSelection.ByLens(CameraLens.BACK, CameraDeviceType.DEFAULT),
