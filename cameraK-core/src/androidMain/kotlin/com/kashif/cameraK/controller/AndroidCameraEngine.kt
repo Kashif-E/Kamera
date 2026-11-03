@@ -279,7 +279,9 @@ internal class AndroidCameraEngine(
             if (awaitUnlessEnded(live, enumeration) == null) return live.opened.await()
             val resolved = resolve(desired.selection)
                 ?: return fail(live, CameraKError.NoCamera(lensOf(desired.selection)))
-            if (resolved != boundCamera) {
+            // The display listener runs only while started, so a display that turned while stopped
+            // left the ViewPort stale: the start rebinds then, even on the same camera.
+            if (resolved != boundCamera || viewPortStale()) {
                 val bindProvider = awaitUnlessEnded(live, providerAsync()) ?: return live.opened.await()
                 val error = bindProvider.fold(
                     onSuccess = { bind(resolved, it) },
@@ -289,6 +291,9 @@ internal class AndroidCameraEngine(
                     },
                 )
                 if (error != null) return fail(live, error)
+            } else {
+                // A half turn keeps the ViewPort but not the capture rotation.
+                if (orientation.targetOrientation == null) applyCaptureRotation()
             }
             if (session !== live) return live.opened.await()
             orientation.start(::onDeviceOrientation)
@@ -602,6 +607,7 @@ internal class AndroidCameraEngine(
         live.firstFrameTrace = null
         awaitingFirstFrame.set(false)
         orientation.stop()
+        binder.stopListeningForDisplayChanges()
         if (registry.currentState.isAtLeast(Lifecycle.State.STARTED)) {
             registry.currentState = Lifecycle.State.CREATED
         }
@@ -655,6 +661,9 @@ internal class AndroidCameraEngine(
         if (orientation.targetOrientation == null) applyCaptureRotation()
         rebindIfViewPortOrientationChanged()
     }
+
+    private fun viewPortStale(): Boolean =
+        boundCamera != null && !videoRecorder.isRecording && binder.viewPortOrientationChanged()
 
     /**
      * Rebinds the camera when the display rotation flips between portrait and landscape, so the
