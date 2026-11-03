@@ -86,7 +86,7 @@ public class FakeCameraEngine(
     private val _recordingEvents = MutableSharedFlow<EngineRecordingEvent>(extraBufferCapacity = EVENT_BUFFER)
     override val recordingEvents: Flow<EngineRecordingEvent> = _recordingEvents.asSharedFlow()
 
-    /** A stub until frame delivery lands: its registrations stay inactive. */
+    /** The engine's frame source: [FakeFrameSource.emit] reaches its analyzers only while the engine is Open. */
     public val fakeFrames: FakeFrameSource = FakeFrameSource(
         sessionFormat = { configuration.analysisFormat },
         isOpen = { _state.value == EngineState.Open },
