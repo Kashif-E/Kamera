@@ -54,4 +54,18 @@ class FakeCameraEngineTest {
         assertEquals(EngineState.Open, fake.state.value, "an interruption after stop reached the next generation")
         fake.close()
     }
+
+    @Test
+    fun interruptWhileOpenPublishesTheReasonItWasGiven() = runTest {
+        val fake = FakeCameraEngine()
+        assertEquals(success, fake.start(desiredOn(FakeCapabilities.BACK_ID)))
+
+        for (given in listOf(InterruptionReason.SYSTEM_PRESSURE, InterruptionReason.APP_IN_BACKGROUND, reason)) {
+            fake.interrupt(given)
+            assertEquals(EngineState.Interrupted(given), fake.state.value, "the reason an interruption publishes")
+            fake.endInterruption()
+            assertEquals(EngineState.Open, fake.state.value, "after the interruption ($given) ended")
+        }
+        fake.close()
+    }
 }
