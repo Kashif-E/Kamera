@@ -9,59 +9,60 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 
 /**
- * Immutable UI state for camera properties.
- * All properties are observable and update automatically when camera configuration changes.
+ * The camera's low-rate properties as the platform reports them. The holder derives every field;
+ * nothing else writes it, so a command shows here only once the platform has applied it. Before the
+ * first bind the camera fields are null and DEFAULT; the values are confirmed once `cameraState` is
+ * Ready.
  *
  * camerak-core carries no Compose annotations; camerak's compose-stability.conf marks this class
  * stable for Compose, so only changed properties trigger recomposition.
  *
- * @property zoomLevel Current zoom level (1.0 = no zoom, higher values = zoomed in).
- * @property maxZoom Maximum zoom level supported by the camera hardware.
- * @property flashMode Current flash mode setting.
- * @property torchMode Current torch/flashlight mode setting.
- * @property cameraLens Current camera lens (FRONT or BACK).
- * @property imageFormat Current image format (JPEG or PNG).
- * @property qualityPrioritization Current quality prioritization strategy.
- * @property cameraDeviceType Current camera device type (WIDE_ANGLE, TELEPHOTO, etc.).
- * @property isCapturing Whether a capture operation is currently in progress.
- * @property lastError Error message if an operation failed, null otherwise.
+ * @property zoomLevel The zoom ratio. Deprecated: read `holder.zoom`.
+ * @property maxZoom The largest zoom ratio. Deprecated: read `holder.zoom`.
+ * @property flashMode The flash mode for captures.
+ * @property torchMode The torch mode.
+ * @property cameraLens The bound camera's facing; null before the first bind.
+ * @property imageFormat The configured image format. Deprecated: read the configuration.
+ * @property qualityPrioritization The configured trade-off. Deprecated: read the configuration.
+ * @property cameraDeviceType The bound camera's device type; DEFAULT before the first bind.
+ * @property isCapturing Whether a capture is in flight: [pendingCaptures] is above zero.
+ * @property lastError Always null: a command returns its failure. Deprecated.
+ * @property pendingCaptures How many captures are in flight.
+ * @property cameraId The bound camera's `LensInfo.id`; null before the first bind.
+ * @property targetOrientation The orientation outputs are fixed to; null follows the device.
  *
  * @example
  * ```kotlin
  * val holder = rememberCameraKStateHolder()
  * val uiState by holder.uiState.collectAsState()
- * when (holder.cameraState.collectAsState().value) {
- *     is CameraKState.Ready -> {
- *         Text("Zoom: ${uiState.zoomLevel}x / ${uiState.maxZoom}x")
- *         IconButton(
- *             onClick = { holder.toggleFlashMode() },
- *             enabled = !uiState.isCapturing
- *         ) {
- *             Icon(
- *                 imageVector = when (uiState.flashMode) {
- *                     FlashMode.ON -> Icons.Default.FlashOn
- *                     FlashMode.OFF -> Icons.Default.FlashOff
- *                     FlashMode.AUTO -> Icons.Default.FlashAuto
- *                     null -> Icons.Default.FlashOff
- *                 },
- *                 contentDescription = "Flash"
- *             )
- *         }
- *     }
- *     else -> {}
+ * val scope = rememberCoroutineScope()
+ * IconButton(onClick = { scope.launch { holder.cycleFlashMode() } }, enabled = !uiState.isCapturing) {
+ *     Icon(
+ *         imageVector = when (uiState.flashMode) {
+ *             FlashMode.ON -> Icons.Default.FlashOn
+ *             FlashMode.AUTO -> Icons.Default.FlashAuto
+ *             else -> Icons.Default.FlashOff
+ *         },
+ *         contentDescription = "Flash",
+ *     )
  * }
  * ```
  */
 data class CameraUIState(
+    @Deprecated("Read the ratio from the holder's zoom flow.", ReplaceWith("holder.zoom.value.ratio"))
     val zoomLevel: Float = 1.0f,
+    @Deprecated("Read the range from the holder's zoom flow.", ReplaceWith("holder.zoom.value.maxRatio"))
     val maxZoom: Float = 1.0f,
     val flashMode: FlashMode? = null,
     val torchMode: TorchMode? = null,
     val cameraLens: CameraLens? = null,
+    @Deprecated("A configuration value: read CameraConfiguration.imageFormat.")
     val imageFormat: ImageFormat = ImageFormat.JPEG,
+    @Deprecated("A configuration value: read CameraConfiguration.qualityPrioritization.")
     val qualityPrioritization: QualityPrioritization = QualityPrioritization.BALANCED,
     val cameraDeviceType: CameraDeviceType = CameraDeviceType.DEFAULT,
     val isCapturing: Boolean = false,
+    @Deprecated("Always null: every command returns its failure as its result.")
     val lastError: String? = null,
     val isRecording: Boolean = false,
     val isPaused: Boolean = false,

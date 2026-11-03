@@ -104,7 +104,11 @@ class UiStateShapeTest {
         )
         val holder = CameraKStateHolder(config, { _, _ -> FakeCameraEngine() }, emptyList(), cameraKTestEnvironment())
         assertEquals(ImageFormat.PNG, holder.uiState.value.imageFormat, "before the first start")
-        assertEquals(QualityPrioritization.QUALITY, holder.uiState.value.qualityPrioritization, "before the first start")
+        assertEquals(
+            QualityPrioritization.QUALITY,
+            holder.uiState.value.qualityPrioritization,
+            "before the first start",
+        )
 
         holder.start()
         runCurrent()

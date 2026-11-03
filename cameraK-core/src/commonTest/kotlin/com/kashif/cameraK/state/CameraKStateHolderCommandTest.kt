@@ -10,6 +10,7 @@ import com.kashif.cameraK.controls.nextFlashMode
 import com.kashif.cameraK.controls.toggleLens
 import com.kashif.cameraK.controls.toggleTorch
 import com.kashif.cameraK.engine.CameraEngine
+import com.kashif.cameraK.engine.CameraEngineFactory
 import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -68,7 +69,10 @@ class CameraKStateHolderCommandTest {
     private fun TestScope.holderOver(
         engine: CameraEngine,
         plugins: List<CameraKPlugin> = emptyList(),
-    ): CameraKStateHolder = CameraKStateHolder(CameraConfiguration(), { _, _ -> engine }, plugins, cameraKTestEnvironment())
+    ): CameraKStateHolder {
+        val factory = CameraEngineFactory { _, _ -> engine }
+        return CameraKStateHolder(CameraConfiguration(), factory, plugins, cameraKTestEnvironment())
+    }
 
     private fun TestScope.readyHolder(
         engine: CameraEngine,

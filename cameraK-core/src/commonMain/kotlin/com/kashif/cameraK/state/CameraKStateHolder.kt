@@ -13,6 +13,7 @@ import com.kashif.cameraK.engine.CameraEngineFactory
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.LegacyControllerEngine
 import com.kashif.cameraK.engine.PlatformPreviewSource
@@ -22,11 +23,14 @@ import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.permissions.platformPermissionChecker
 import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.plugin.PluginHost
 import com.kashif.cameraK.plugin.effectiveConfig
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.result.onSuccess
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.InternalCameraKApi
@@ -38,18 +42,25 @@ import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -59,7 +70,6 @@ import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
 /**
@@ -143,6 +153,8 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     private val engine: CameraEngine =
         engineFactory.create(effectiveConfig(config, plugins), environment.under(scope.coroutineContext.job))
 
+    private val configuration = config
+
     private val desiredHardware = MutableStateFlow(config.toDesiredHardware())
 
     // The one Ready value, over the engine's 1.x facade channel when it has one. Ready reads the
@@ -154,17 +166,55 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     // Set when the first session reaches Ready: from then until close, the 1.x facade is live.
     private val facadeLive = atomic(false)
 
-    private val _events = MutableSharedFlow<CameraKEvent>()
+    private val _events = MutableSharedFlow<CameraKEvent>(
+        extraBufferCapacity = EVENT_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
 
-    /** One-shot events. Not replayed: collect them to see them. */
+    /**
+     * Unsolicited notices, such as a plugin that failed. Lossy and not replayed: collect them to see
+     * them. A command's outcome is its result, never an event.
+     */
     public val events: SharedFlow<CameraKEvent> = _events.asSharedFlow()
 
-    private val _uiState = MutableStateFlow(CameraUIState())
+    // Captures in flight, the capture commands' and the 1.x captureImage's together.
+    private val pendingCaptures = MutableStateFlow(0)
 
-    /** The camera's properties as the 1.x commands last set them, seeded from the 1.x facade at the first Ready. */
-    public val uiState: StateFlow<CameraUIState> = _uiState.asStateFlow()
+    // What the 1.x recording calls report, until the recording controller replaces them.
+    private val legacyRecording = MutableStateFlow(LegacyRecording())
 
-    private val pluginHost = PluginHost(this, scope) { _events.emit(it) }
+    /**
+     * The camera's properties, derived from what the engine reports, the captures in flight and the
+     * configuration. Nothing else writes it: a command changes it only once the platform reports the
+     * change. [CameraUIState.flashMode], [CameraUIState.torchMode] and the camera fields are the
+     * platform's from the first bind on.
+     */
+    public val uiState: StateFlow<CameraUIState> = DerivedStateFlow(
+        read = { uiStateOf(engine.hardware.value, engine.zoom.value, pendingCaptures.value, legacyRecording.value) },
+        changes = combine(engine.hardware, engine.zoom, pendingCaptures, legacyRecording, ::uiStateOf),
+    )
+
+    private val _captures = MutableSharedFlow<CapturedImage>(
+        extraBufferCapacity = CAPTURE_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /**
+     * Every successful capture, once its file is written, including captures whose caller was
+     * cancelled. Not replayed, buffered (64, the oldest dropped first); collect it from any thread.
+     */
+    public val captures: SharedFlow<CapturedImage> = _captures.asSharedFlow()
+
+    /** The zoom the platform reports, at gesture rate. */
+    public val zoom: StateFlow<ZoomState> = engine.zoom
+
+    /**
+     * What the cameras offer, from the engine: `CameraCapabilities.EMPTY` until it has enumerated
+     * them. [com.kashif.cameraK.controls.cycleFlashMode] reads the current camera's flash modes here.
+     */
+    public val capabilities: StateFlow<CameraCapabilities> = engine.capabilities
+
+    private val pluginHost = PluginHost(this, scope) { _events.tryEmit(it) }
 
     private val lifecycle = SessionLifecycle(
         engine = engine,
@@ -180,6 +230,34 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
      * platform confirms the camera is open. [CameraKState.Closed] after [close].
      */
     public val cameraState: StateFlow<CameraKState> = lifecycle.state
+
+    private val commands = CommandRunner(scope) {
+        when {
+            closing.value -> CameraKError.Closed
+            cameraState.value !is CameraKState.Ready -> CameraKError.NotReady
+            else -> null
+        }
+    }
+
+    private val zoomRequests = LatestWins<Float, CameraKResult<ZoomState>>(
+        launch = { commands.launch(it) },
+        call = { ratio ->
+            commands.execute(CameraOperation.ZOOM) { engine.setZoom(ratio) }
+                .onSuccess { applied -> desire { it.with(zoomRatio = applied.ratio) } }
+        },
+        abandoned = { CameraKResult.Failure(CameraKError.Closed) },
+    )
+
+    private val orientationRequests = LatestWins<DeviceOrientation?, CameraKResult<Unit>>(
+        launch = { commands.launch(it) },
+        call = { orientation ->
+            commands.execute(CameraOperation.ORIENTATION) { engine.setTargetOrientation(orientation) }
+                .onSuccess { desire { it.with(targetOrientation = orientation) } }
+        },
+        abandoned = { CameraKResult.Failure(CameraKError.Closed) },
+    )
+
+    private val updateUiStateWarned = atomic(false)
 
     /** The device's physical orientation, as the engine reports it. */
     public val deviceOrientation: StateFlow<DeviceOrientation> = engine.deviceOrientation
@@ -224,8 +302,10 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     }
 
     /**
-     * Releases the camera, once: publishes [CameraKState.Closed], detaches the plugins, then closes
-     * the engine, waiting at most a bounded time for it. Returns at once; [closeAndJoin] waits.
+     * Releases the camera, once: publishes [CameraKState.Closed], detaches the plugins, lets running
+     * commands finish for at most [COMMAND_DRAIN_TIMEOUT], then closes the engine, which completes
+     * the rest with `Failure(Closed)`, waiting at most a bounded time for it. From here every command
+     * returns `Failure(Closed)`. Returns at once; [closeAndJoin] waits.
      */
     override fun close() {
         if (!closing.compareAndSet(expect = false, update = true)) return
@@ -236,7 +316,11 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
                 withContext(NonCancellable) {
                     lifecycle.shutDown()
                     pluginHost.detachAll()
+                    // Commands finishing normally land (a capture writing its file); one waiting on a
+                    // callback that will not come does not hold the engine open beyond the bound.
+                    commands.drain(COMMAND_DRAIN_TIMEOUT)
                     closeEngine()
+                    resetRecordingState()
                 }
             } finally {
                 scope.cancel()
@@ -245,10 +329,14 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     }
 
     // Bounded, and never thrown out of the release: an engine that breaks its contract by throwing
-    // from closeAndJoin is logged, and the holder closes without it.
+    // from closeAndJoin is logged, and the holder closes without it. The commands still running
+    // return promptly once the engine has closed: their engine calls answer Closed.
     private suspend fun closeEngine() {
         val closed = try {
-            withTimeoutOrNull(ENGINE_CLOSE_TIMEOUT) { engine.closeAndJoin() }
+            withTimeoutOrNull(ENGINE_CLOSE_TIMEOUT) {
+                engine.closeAndJoin()
+                commands.joinAll()
+            }
         } catch (e: Throwable) {
             if (e.isFatal()) throw e
             CameraKLogger.e(TAG, "Closing the camera engine failed; the holder closed without it", e)
@@ -274,7 +362,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
 
     private fun beforeReady() {
         if (closing.value) return
-        if (facadeLive.compareAndSet(expect = false, update = true)) facade()?.let(::seedUiState)
+        facadeLive.value = true
         pluginHost.attachPending()
     }
 
@@ -286,32 +374,106 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // Commands (red stubs)
+    // Commands
     // ═══════════════════════════════════════════════════════════════
+    //
+    // Each command returns once the platform has applied the change, with the applied value. Outside
+    // Ready it returns Failure(NotReady), after close Failure(Closed). A caller that is cancelled
+    // stops waiting; the platform operation still finishes in the holder's scope.
 
-    public val zoom: StateFlow<ZoomState> get() = TODO("H2' red stub")
+    /**
+     * Takes a picture to a file in app-owned storage. The image also reaches [captures], even when
+     * the caller is cancelled. More than three captures at once return `Failure(Busy(CAPTURE))`.
+     */
+    public suspend fun capture(): CameraKResult<CapturedImage> {
+        commands.refused()?.let { return it }
+        if (!takeCaptureSlot()) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.CAPTURE))
+        val job = commands.start(CameraOperation.CAPTURE) {
+            try {
+                engine.capture().onSuccess { _captures.tryEmit(it) }
+            } finally {
+                pendingCaptures.update { it - 1 }
+            }
+        }
+        return commands.await(job)
+    }
 
-    public val capabilities: StateFlow<CameraCapabilities> get() = TODO("H2' red stub")
+    /**
+     * Sets the zoom ratio. A ratio outside the camera's range is clamped into it, and the result is
+     * the zoom the platform applied. Latest wins: a call replaced while it waits returns the
+     * replacing call's result.
+     */
+    public suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> {
+        commands.refused()?.let { return it }
+        return zoomRequests.submit(ratio)
+    }
 
-    public val captures: SharedFlow<CapturedImage> get() = TODO("H2' red stub")
+    /** Sets the flash mode for captures; `Unsupported` for a mode the current camera does not offer. */
+    public suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> =
+        commands.run(CameraOperation.FLASH) { engine.setFlashMode(mode) }
+            .onSuccess { applied -> desire { it.with(flashMode = applied) } }
 
-    public suspend fun capture(): CameraKResult<CapturedImage> = TODO("H2' red stub")
+    /** Sets the torch; `Unsupported` for a mode the current camera does not offer. */
+    public suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> =
+        commands.run(CameraOperation.TORCH) { engine.setTorchMode(mode) }
+            .onSuccess { applied -> desire { it.with(torchMode = applied) } }
 
-    public suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = TODO("H2' red stub")
-
-    public suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = TODO("H2' red stub")
-
-    public suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = TODO("H2' red stub")
-
+    /**
+     * Switches to the camera facing [lens] of [deviceType], in one rebind, and returns the camera
+     * that is live afterwards. `NoCamera` leaves the current camera in place.
+     */
     public suspend fun selectCamera(
         lens: CameraLens,
         deviceType: CameraDeviceType = CameraDeviceType.DEFAULT,
-    ): CameraKResult<LensInfo> = TODO("H2' red stub")
+    ): CameraKResult<LensInfo> = select(CameraSelection.ByLens(lens, deviceType))
 
-    public suspend fun selectCamera(id: String): CameraKResult<LensInfo> = TODO("H2' red stub")
+    /**
+     * Switches to the camera with this `LensInfo.id` from [capabilities]: a desktop device, an
+     * Android camera id or an iOS uniqueID. `NoCamera` for an unknown id leaves the current camera in
+     * place.
+     */
+    public suspend fun selectCamera(id: String): CameraKResult<LensInfo> = select(CameraSelection.ById(id))
 
-    public suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> =
-        TODO("H2' red stub")
+    private suspend fun select(selection: CameraSelection): CameraKResult<LensInfo> =
+        commands.run(CameraOperation.LENS) { engine.selectCamera(selection) }
+            .onSuccess { desire { it.with(selection = selection) } }
+
+    /**
+     * Fixes the orientation of captures and recordings; null follows the device. Latest wins, as for
+     * [setZoom].
+     */
+    public suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> {
+        commands.refused()?.let { return it }
+        return orientationRequests.submit(orientation)
+    }
+
+    // Takes one of the in-flight capture slots, or none when all are taken.
+    private fun takeCaptureSlot(): Boolean {
+        var taken = false
+        pendingCaptures.update { count ->
+            taken = count < MAX_IN_FLIGHT_CAPTURES
+            if (taken) count + 1 else count
+        }
+        return taken
+    }
+
+    // The desired hardware changes only through a successful command; the next start applies it.
+    private fun desire(change: (DesiredHardware) -> DesiredHardware) {
+        desiredHardware.update(change)
+    }
+
+    private fun uiStateOf(
+        hardware: HardwareState,
+        zoom: ZoomState,
+        capturing: Int,
+        recording: LegacyRecording,
+    ): CameraUIState = legacyUiState(
+        hardware = hardware,
+        zoom = zoom,
+        capturing = capturing,
+        recording = recording,
+        configuration = configuration,
+    )
 
     // ═══════════════════════════════════════════════════════════════
     // Plugins
@@ -380,7 +542,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     public fun getController(): CameraController? = facade()
 
     /** The 1.x controller's capabilities, or [CameraCapabilities.EMPTY] without one. */
-    @Deprecated("Use the engine's capabilities through the holder.")
+    @Deprecated("Read the holder's capabilities.", ReplaceWith("capabilities.value"))
     public fun getCameraCapabilities(): CameraCapabilities =
         facade()?.getCameraCapabilities() ?: CameraCapabilities.EMPTY
 
@@ -391,9 +553,9 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
             scope.launch { _events.emit(CameraKEvent.CaptureFailed(Exception("Camera not initialized"))) }
             return
         }
-        scope.launch {
+        pendingCaptures.update { it + 1 }
+        scope.launch(start = CoroutineStart.ATOMIC) {
             try {
-                _uiState.value = _uiState.value.copy(isCapturing = true)
                 val result = currentController.takePictureToFile()
                 _events.emit(CameraKEvent.ImageCaptured(result))
             } catch (e: CancellationException) {
@@ -402,9 +564,8 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "Capturing an image failed", e)
                 _events.emit(CameraKEvent.CaptureFailed(e))
-                _uiState.value = _uiState.value.copy(lastError = "Capture failed: ${e.message}")
             } finally {
-                _uiState.value = _uiState.value.copy(isCapturing = false)
+                pendingCaptures.update { it - 1 }
             }
         }
     }
@@ -412,25 +573,19 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     /** Cycles the flash mode on the 1.x controller. */
     @Deprecated("Replaced by the holder's flash commands.")
     public fun toggleFlashMode() {
-        val currentController = facade() ?: return
-        currentController.toggleFlashMode()
-        _uiState.value = _uiState.value.copy(flashMode = currentController.getFlashMode())
+        facade()?.toggleFlashMode()
     }
 
     /** Toggles the torch on the 1.x controller. */
     @Deprecated("Replaced by the holder's torch commands.")
     public fun toggleTorchMode() {
-        val currentController = facade() ?: return
-        currentController.toggleTorchMode()
-        _uiState.value = _uiState.value.copy(torchMode = currentController.getTorchMode())
+        facade()?.toggleTorchMode()
     }
 
     /** Switches between the front and back camera on the 1.x controller. */
     @Deprecated("Replaced by the holder's camera selection commands.")
     public fun toggleCameraLens() {
-        val currentController = facade() ?: return
-        currentController.toggleCameraLens()
-        _uiState.value = _uiState.value.copy(cameraLens = currentController.getCameraLens())
+        facade()?.toggleCameraLens()
     }
 
     private var recordingTimerJob: Job? = null
@@ -438,7 +593,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     private fun resetRecordingState() {
         recordingTimerJob?.cancel()
         recordingTimerJob = null
-        _uiState.value = _uiState.value.copy(isRecording = false, isPaused = false, recordingDurationMs = 0L)
+        legacyRecording.value = LegacyRecording()
     }
 
     /**
@@ -448,7 +603,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     @Deprecated("Replaced by the holder's recording commands.")
     public fun startRecording(configuration: VideoConfiguration = VideoConfiguration()) {
         // A second start while recording would orphan the timer and the platform recorder.
-        if (_uiState.value.isRecording) {
+        if (legacyRecording.value.isRecording) {
             scope.launch { _events.emit(CameraKEvent.RecordingFailed(Exception("Recording already in progress"))) }
             return
         }
@@ -459,7 +614,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         scope.launch {
             try {
                 val path = currentController.startRecording(configuration)
-                _uiState.value = _uiState.value.copy(isRecording = true, isPaused = false, recordingDurationMs = 0L)
+                legacyRecording.value = LegacyRecording(isRecording = true)
                 _events.emit(CameraKEvent.RecordingStarted(path))
                 recordingTimerJob = scope.launch { tickRecording(currentController, configuration, path) }
             } catch (e: CancellationException) {
@@ -467,7 +622,6 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "Starting a recording failed", e)
                 resetRecordingState()
-                _uiState.value = _uiState.value.copy(lastError = "Recording failed: ${e.message}")
                 _events.emit(CameraKEvent.RecordingFailed(e))
             }
         }
@@ -485,7 +639,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         var pauseStartMs = 0L
         while (isActive) {
             delay(250L)
-            val isPaused = _uiState.value.isPaused
+            val isPaused = legacyRecording.value.isPaused
             val wasPaused = pauseStartMs > 0L
             if (isPaused && !wasPaused) {
                 pauseStartMs = Clock.System.now().toEpochMilliseconds()
@@ -495,11 +649,11 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
             }
             if (isPaused) continue
             val elapsed = Clock.System.now().toEpochMilliseconds() - startMs - pausedAccumulatorMs
-            _uiState.value = _uiState.value.copy(recordingDurationMs = elapsed)
+            legacyRecording.update { it.copy(durationMs = elapsed) }
 
             if (configuration.maxDurationMs > 0 && elapsed >= configuration.maxDurationMs) {
                 // A manual stopRecording may have won the race.
-                if (!_uiState.value.isRecording) break
+                if (!legacyRecording.value.isRecording) break
                 val result = controller.stopRecording()
                 resetRecordingState()
                 _events.emit(CameraKEvent.RecordingMaxDurationReached(path, elapsed))
@@ -512,7 +666,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     /** Stops the recording on the 1.x controller; emits [CameraKEvent.RecordingStopped]. */
     @Deprecated("Replaced by the holder's recording commands.")
     public fun stopRecording() {
-        if (!_uiState.value.isRecording) return
+        if (!legacyRecording.value.isRecording) return
         val currentController = facade() ?: return
         scope.launch {
             try {
@@ -527,7 +681,6 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "Stopping a recording failed", e)
                 resetRecordingState()
-                _uiState.value = _uiState.value.copy(lastError = "Stop recording failed: ${e.message}")
                 _events.emit(CameraKEvent.RecordingFailed(e))
             }
         }
@@ -540,12 +693,11 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         scope.launch {
             try {
                 currentController.pauseRecording()
-                _uiState.value = _uiState.value.copy(isPaused = true)
+                legacyRecording.update { it.copy(isPaused = true) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "Pausing a recording failed", e)
-                _uiState.value = _uiState.value.copy(lastError = "Pause recording failed: ${e.message}")
                 _events.emit(CameraKEvent.RecordingFailed(e))
             }
         }
@@ -558,12 +710,11 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         scope.launch {
             try {
                 currentController.resumeRecording()
-                _uiState.value = _uiState.value.copy(isPaused = false)
+                legacyRecording.update { it.copy(isPaused = false) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "Resuming a recording failed", e)
-                _uiState.value = _uiState.value.copy(lastError = "Resume recording failed: ${e.message}")
                 _events.emit(CameraKEvent.RecordingFailed(e))
             }
         }
@@ -575,40 +726,28 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         _events.emit(event)
     }
 
-    /** Replaces [uiState] with [update] applied to it. */
-    @Deprecated("uiState is read-only in 2.0; it follows what the platform reports.")
+    /**
+     * Writes nothing: [uiState] is derived from what the platform reports. A caller built against
+     * 1.x still links; its first call logs a warning.
+     */
+    @Deprecated(
+        "uiState follows what the platform reports and cannot be written. Issue a command instead.",
+        level = DeprecationLevel.ERROR,
+    )
     public fun updateUIState(update: (CameraUIState) -> CameraUIState) {
-        _uiState.value = update(_uiState.value)
-    }
-
-    private fun seedUiState(controller: CameraController) {
-        try {
-            _uiState.value = CameraUIState(
-                zoomLevel = controller.getZoom(),
-                maxZoom = controller.getMaxZoom(),
-                flashMode = controller.getFlashMode(),
-                torchMode = controller.getTorchMode(),
-                cameraLens = controller.getCameraLens(),
-                imageFormat = controller.getImageFormat(),
-                qualityPrioritization = controller.getQualityPrioritization(),
-                cameraDeviceType = controller.getPreferredCameraDeviceType(),
-                isCapturing = false,
-                lastError = null,
-            )
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Reading the 1.x controller's settings failed; uiState keeps its defaults", e)
+        if (updateUiStateWarned.compareAndSet(expect = false, update = true)) {
+            CameraKLogger.w(TAG, "updateUIState changes nothing: uiState follows what the platform reports")
         }
     }
 
     private companion object {
         const val TAG = "CameraK"
+        const val EVENT_BUFFER = 64
+        const val CAPTURE_BUFFER = 64
     }
 }
 
 /** The production constructor's environment: the platform's permission checker. */
-/** How long close() lets running commands finish before it closes the engine. */
-internal val COMMAND_DRAIN_TIMEOUT: Duration = 2.seconds
-
 internal fun productionEnvironment(context: CameraKPlatformContext): CameraKEnvironment =
     CameraKEnvironment(permissionChecker = platformPermissionChecker(context))
 
@@ -638,3 +777,61 @@ private fun CameraConfiguration.toDesiredHardware(): DesiredHardware = DesiredHa
     zoomRatio = 1f,
     targetOrientation = null,
 )
+
+private fun DesiredHardware.with(
+    selection: CameraSelection = this.selection,
+    flashMode: FlashMode = this.flashMode,
+    torchMode: TorchMode = this.torchMode,
+    zoomRatio: Float = this.zoomRatio,
+    targetOrientation: DeviceOrientation? = this.targetOrientation,
+): DesiredHardware = DesiredHardware(selection, flashMode, torchMode, zoomRatio, targetOrientation)
+
+/** What the 1.x recording calls report, read by the three recording fields of [CameraUIState] until H3'. */
+private data class LegacyRecording(
+    val isRecording: Boolean = false,
+    val isPaused: Boolean = false,
+    val durationMs: Long = 0L,
+)
+
+// The 1.x data class, filled from the engine's reports, the capture counter, the 1.x recording calls
+// and the configuration. lastError stays null: commands return their failures.
+@Suppress("DEPRECATION")
+private fun legacyUiState(
+    hardware: HardwareState,
+    zoom: ZoomState,
+    capturing: Int,
+    recording: LegacyRecording,
+    configuration: CameraConfiguration,
+): CameraUIState = CameraUIState(
+    zoomLevel = zoom.ratio,
+    maxZoom = zoom.maxRatio,
+    flashMode = hardware.flashMode,
+    torchMode = hardware.torchMode,
+    cameraLens = hardware.camera?.lens,
+    imageFormat = configuration.imageFormat,
+    qualityPrioritization = configuration.qualityPrioritization,
+    cameraDeviceType = hardware.camera?.deviceType ?: CameraDeviceType.DEFAULT,
+    isCapturing = capturing > 0,
+    lastError = null,
+    isRecording = recording.isRecording,
+    isPaused = recording.isPaused,
+    recordingDurationMs = recording.durationMs,
+    pendingCaptures = capturing,
+    cameraId = hardware.camera?.id,
+    targetOrientation = hardware.targetOrientation,
+)
+
+/**
+ * A state flow whose value is computed from other state flows on every read, so it is never stale,
+ * not even after the scope that ran its collectors is gone. Collecting it collects [changes].
+ */
+@OptIn(ExperimentalForInheritanceCoroutinesApi::class)
+private class DerivedStateFlow<T>(private val read: () -> T, private val changes: Flow<T>) : StateFlow<T> {
+    override val value: T get() = read()
+    override val replayCache: List<T> get() = listOf(value)
+
+    override suspend fun collect(collector: FlowCollector<T>): Nothing {
+        changes.distinctUntilChanged().collect(collector)
+        awaitCancellation()
+    }
+}
