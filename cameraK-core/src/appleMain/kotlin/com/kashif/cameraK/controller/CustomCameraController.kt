@@ -366,9 +366,6 @@ class CustomCameraController(
     private val highResolution: Boolean
         get() = qualityPrioritization == QualityPrioritization.QUALITY
 
-    /** iOS 16 replaced the high-resolution flags with maxPhotoDimensions; below it the flags still apply. */
-    private val usesMaxPhotoDimensions: Boolean = isOsAtLeast(16)
-
     /** The size QUALITY captures ask for: the current camera's largest. Written on the session queue. */
     @Volatile
     private var maxPhotoDimensions: PhotoDimensions? = null
@@ -379,7 +376,7 @@ class CustomCameraController(
      * session queue once the camera (and its format) is settled: after setup and after each swap.
      */
     private fun applyMaxPhotoDimensions() {
-        if (!highResolution || !usesMaxPhotoDimensions) return
+        if (!highResolution) return
         val output = photoOutput ?: return
         val largest = currentCamera?.supportedMaxPhotoDimensions?.maxByOrNull { it.pixels }
         maxPhotoDimensions = largest
@@ -403,7 +400,6 @@ class CustomCameraController(
 
     private fun setupPhotoOutput() {
         photoOutput = AVCapturePhotoOutput()
-        if (!usesMaxPhotoDimensions) photoOutput?.setHighResolutionCaptureEnabled(highResolution)
         avQualityPrioritization?.let { photoOutput?.setMaxPhotoQualityPrioritization(it) }
 
         if (session?.canAddOutput(photoOutput!!) == true) {
@@ -870,11 +866,8 @@ class CustomCameraController(
             ),
         )
 
-        if (usesMaxPhotoDimensions) {
-            maxPhotoDimensions?.let { settings.maxPhotoDimensions = it.toCMVideoDimensions() }
-        } else {
-            settings.setHighResolutionPhotoEnabled(highResolution)
-        }
+        // iOS 16, CameraK's minimum, sizes photos with maxPhotoDimensions; the high-resolution flags are gone.
+        maxPhotoDimensions?.let { settings.maxPhotoDimensions = it.toCMVideoDimensions() }
         avQualityPrioritization?.let { settings.photoQualityPrioritization = it }
         settings.flashMode = supportedFlashMode(flashMode)
 

@@ -467,7 +467,13 @@ fun publishedClasspathProblems(
 fun iosDeploymentTargetsBelow(
     pbxproj: String,
     minimumMajor: Int,
-): List<String> = emptyList()
+): List<String> {
+    val targets = Regex("""IPHONEOS_DEPLOYMENT_TARGET\s*=\s*"?(\d+)((?:\.\d+)*)"?\s*;""").findAll(pbxproj).toList()
+    if (targets.isEmpty()) return listOf("sets no IPHONEOS_DEPLOYMENT_TARGET, so nothing holds it at iOS $minimumMajor")
+    return targets
+        .filter { it.groupValues[1].toInt() < minimumMajor }
+        .map { "IPHONEOS_DEPLOYMENT_TARGET ${it.groupValues[1]}${it.groupValues[2]} is below iOS $minimumMajor" }
+}
 
 // The types camerak-core no longer annotates for Compose; cameraK/compose-stability.conf lists them.
 val strippedStableTypes =

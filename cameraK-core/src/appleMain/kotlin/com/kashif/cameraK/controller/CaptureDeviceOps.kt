@@ -26,7 +26,7 @@ internal interface CaptureDeviceOps {
     val videoZoomFactor: Double
     val maxVideoZoomFactor: Double
 
-    /** The photo sizes the camera's active format can deliver (iOS 16+); empty below iOS 16. */
+    /** The photo sizes the camera's active format can deliver. */
     val supportedMaxPhotoDimensions: List<PhotoDimensions>
 
     fun isTorchModeSupported(mode: AVCaptureTorchMode): Boolean
@@ -66,12 +66,8 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
     override val videoZoomFactor: Double get() = device.videoZoomFactor
     override val maxVideoZoomFactor: Double get() = device.activeFormat.videoMaxZoomFactor
     override val supportedMaxPhotoDimensions: List<PhotoDimensions>
-        get() = if (isOsAtLeast(16)) {
-            device.activeFormat.supportedMaxPhotoDimensions
-                .mapNotNull { (it as? NSValue)?.CMVideoDimensionsValue?.toPhotoDimensions() }
-        } else {
-            emptyList()
-        }
+        get() = device.activeFormat.supportedMaxPhotoDimensions
+            .mapNotNull { (it as? NSValue)?.CMVideoDimensionsValue?.toPhotoDimensions() }
 
     override fun isTorchModeSupported(mode: AVCaptureTorchMode): Boolean = device.isTorchModeSupported(mode)
 
