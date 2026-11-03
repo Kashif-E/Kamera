@@ -11,6 +11,12 @@ import com.kashif.cameraK.signpost.camerak_signpost_log
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.ExperimentalForeignApi
 
+/** The iOS engine's trace names beyond the shared ones in TraceNames. */
+internal object AppleTraceNames {
+    /** Marks a lens switch whose input the session refused, inside its `CameraK.lensSwitch` interval. */
+    const val LENS_SWITCH_FAILED = "CameraK.lensSwitch.failed"
+}
+
 /**
  * The engine's production Tracer: each interval is an os_signpost interval and each marker an
  * os_signpost event, under the "CameraK" name, labelled with the trace name, so Instruments' Points

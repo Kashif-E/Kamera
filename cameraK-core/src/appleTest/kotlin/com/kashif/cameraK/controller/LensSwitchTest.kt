@@ -1,5 +1,10 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.contract.AppleEngineDriver
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -8,17 +13,21 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
  * A lens or device-type switch swaps the camera input inside one configuration transaction on the
  * running session: it never stops the session, it removes the camera input rather than whatever
  * input comes first, a refused input leaves the previous camera in place, and it does not cut an
- * active recording.
+ * active recording. The engine's selectCamera returns once the new input is live, and a refused input
+ * returns a failure with the previous camera, and the facade's lens, kept.
  */
 class LensSwitchTest {
     private val back = FakeDevice(isFront = false, maxVideoZoomFactor = 10.0)
@@ -180,5 +189,52 @@ class LensSwitchTest {
             cameraController.getPreferredCameraDeviceType(),
             "the device type was reported changed while recording",
         )
+    }
+
+    @Test
+    fun switchReturnsWhenNewInputIsLive() {
+        val driver = AppleEngineDriver(adjustableBack = true)
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+
+            val switched = engine.selectCamera(CameraSelection.ById(AppleEngineDriver.FRONT_ID))
+
+            // Read before any settle: the switch had already happened when selectCamera returned.
+            assertEquals(AppleEngineDriver.FRONT_ID, assertIs<CameraKResult.Success<LensInfo>>(switched).value.id)
+            assertEquals(
+                listOf(driver.front.input),
+                driver.session.inputs,
+                "the session's input when selectCamera returned",
+            )
+            assertTrue(driver.session.isRunning, "the session stopped for the switch")
+            assertEquals(AppleEngineDriver.FRONT_ID, engine.hardware.value.camera?.id, "the reported camera")
+            engine.close()
+        }
+    }
+
+    @Test
+    fun refusedInputRevertsLensAndReturnsFailure() {
+        val driver = AppleEngineDriver(adjustableBack = true)
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            driver.session.refuse(driver.front.input!!)
+
+            val refused = engine.selectCamera(CameraSelection.ById(AppleEngineDriver.FRONT_ID))
+
+            assertIs<CameraKResult.Failure>(refused, "a switch whose input the session refused")
+            assertEquals(listOf(driver.back.input), driver.session.inputs, "the previous camera is not back in place")
+            assertEquals(AppleEngineDriver.BACK_ID, engine.hardware.value.camera?.id, "the reported camera")
+
+            val facade = driver.engine.legacyController
+            facade.toggleCameraLens()
+            driver.settle()
+            assertEquals(listOf(driver.back.input), driver.session.inputs)
+            assertEquals(CameraLens.BACK, facade.getCameraLens(), "the facade reports the lens the session refused")
+            engine.close()
+        }
     }
 }

@@ -4,6 +4,7 @@ import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.cValue
 import kotlinx.cinterop.useContents
+import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCapturePhoto
 import platform.AVFoundation.AVCapturePhotoCaptureDelegateProtocol
 import platform.AVFoundation.AVCapturePhotoOutput
@@ -45,6 +46,9 @@ internal interface PhotoCapturer {
         settings: List<AVCapturePhotoSettings>,
         completion: (Boolean, NSError?) -> Unit,
     )
+
+    /** The flash modes [output] supports with the camera now behind it. */
+    fun supportedFlashModes(output: AVCapturePhotoOutput): List<AVCaptureFlashMode> = emptyList()
 }
 
 @OptIn(ExperimentalForeignApi::class)

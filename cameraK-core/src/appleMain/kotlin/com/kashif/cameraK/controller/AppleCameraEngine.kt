@@ -76,6 +76,8 @@ import platform.Foundation.NSNotification
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
 import platform.Foundation.NSProcessInfo
+import platform.UIKit.UIDevice
+import platform.UIKit.UIDeviceOrientation
 import kotlin.coroutines.resume
 
 /**
@@ -103,6 +105,8 @@ internal class AppleCameraEngine(
     private val config: CameraConfiguration,
     environment: CameraKEnvironment,
     internal val custom: CustomCameraController,
+    /** How the device is held now; tests answer for the simulator, which cannot be turned. */
+    private val readDeviceOrientation: () -> UIDeviceOrientation = { UIDevice.currentDevice.orientation },
     private val enumerateLenses: () -> List<LensInfo> = custom::getCameraCapabilities,
 ) : CameraEngine,
     LegacyControllerAccess {

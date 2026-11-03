@@ -23,7 +23,13 @@ internal interface CaptureDeviceOps {
     val isFront: Boolean
     val hasTorch: Boolean
     val torchMode: AVCaptureTorchMode
+
+    /** Whether the torch is lit: false while torchMode is on but the system has shut it off (thermal). */
+    val isTorchActive: Boolean get() = torchMode == AVCaptureTorchModeOn
     val videoZoomFactor: Double
+
+    /** The zoom range a set must stay inside: AVFoundation raises an uncatchable exception outside it. */
+    val minVideoZoomFactor: Double get() = 1.0
     val maxVideoZoomFactor: Double
 
     /** The photo sizes the camera's active format can deliver. */
@@ -39,6 +45,12 @@ internal interface CaptureDeviceOps {
     fun setTorchMode(mode: AVCaptureTorchMode)
 
     fun setVideoZoomFactor(factor: Double)
+
+    /**
+     * Calls [onChange], on whatever thread reports it, each time the torch or the zoom changes, as
+     * key-value observing of the device reports it. Closing the result stops the observation.
+     */
+    fun observeHardware(onChange: () -> Unit): AutoCloseable = AutoCloseable { }
 
     /**
      * A session input that captures from this device, or why one cannot be made: for a real device,

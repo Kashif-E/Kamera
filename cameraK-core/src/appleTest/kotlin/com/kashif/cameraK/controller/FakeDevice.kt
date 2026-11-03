@@ -57,6 +57,12 @@ internal fun captureInputWithoutCamera(): AVCaptureInput = memScoped {
 /**
  * A [CaptureDeviceOps] that records every call with the queue it ran on and whether the
  * configuration lock was held, standing in for a camera on the simulator.
+ *
+ * What the device reports (the torch and zoom getters, and its key-value observers) follows each set
+ * at once, unless [holdReports] is set: then a set reaches only what the device last received
+ * ([lastTorchSet], [lastZoomSet]), and the report waits for [report], as the contract kit's driver
+ * needs. A zoom set outside [minVideoZoomFactor]..[maxVideoZoomFactor] is recorded in
+ * [outOfRangeZoomSets], where AVFoundation would raise an exception nothing can catch.
  */
 internal class FakeDevice(
     override val isFront: Boolean = false,
@@ -70,6 +76,8 @@ internal class FakeDevice(
     val input: AVCaptureInput? = captureInputWithoutCamera(),
     /** The error makeInput fails with, as AVFoundation does for a camera the user has not authorised. */
     private val inputError: NSError? = null,
+    override val minVideoZoomFactor: Double = 1.0,
+    val holdReports: Boolean = false,
 ) : CaptureDeviceOps {
     class Call(val op: String, val value: Any?, val queue: String, val onMainThread: Boolean, val locked: Boolean) {
         override fun toString(): String = "$op($value) on '$queue'${if (onMainThread) " (main thread)" else ""}" +
@@ -78,14 +86,30 @@ internal class FakeDevice(
 
     private val lock = NSLock()
     private val recorded = mutableListOf<Call>()
+    private val observers = mutableListOf<() -> Unit>()
+    private val outOfRange = mutableListOf<Double>()
     private var locked = false
     private var torch: AVCaptureTorchMode = AVCaptureTorchModeOff
+    private var torchActive = false
     private var zoom = 1.0
+    private var setTorch: AVCaptureTorchMode? = null
+    private var setZoom: Double? = null
 
     val calls: List<Call> get() = guarded { recorded.toList() }
     val isLocked: Boolean get() = guarded { locked }
     override val torchMode: AVCaptureTorchMode get() = guarded { torch }
+    override val isTorchActive: Boolean get() = guarded { torchActive }
     override val videoZoomFactor: Double get() = guarded { zoom }
+
+    /** The torch mode and zoom factor the device was last given; null before the first. */
+    val lastTorchSet: AVCaptureTorchMode? get() = guarded { setTorch }
+    val lastZoomSet: Double? get() = guarded { setZoom }
+
+    /** Every zoom factor set outside the device's range. */
+    val outOfRangeZoomSets: List<Double> get() = guarded { outOfRange.toList() }
+
+    /** Key-value observers registered and not yet closed. */
+    val hardwareObservers: Int get() = guarded { observers.size }
 
     override fun isTorchModeSupported(mode: AVCaptureTorchMode): Boolean = mode in supportedTorchModes
 
@@ -99,9 +123,45 @@ internal class FakeDevice(
 
     override fun unlockForConfiguration() = record("unlockForConfiguration", null) { locked = false }
 
-    override fun setTorchMode(mode: AVCaptureTorchMode) = record("setTorchMode", mode) { torch = mode }
+    override fun setTorchMode(mode: AVCaptureTorchMode) {
+        record("setTorchMode", mode) { setTorch = mode }
+        if (!holdReports) report(torch = mode)
+    }
 
-    override fun setVideoZoomFactor(factor: Double) = record("setVideoZoomFactor", factor) { zoom = factor }
+    override fun setVideoZoomFactor(factor: Double) {
+        record("setVideoZoomFactor", factor) {
+            setZoom = factor
+            if (factor < minVideoZoomFactor || factor > maxVideoZoomFactor) outOfRange += factor
+        }
+        if (!holdReports) report(zoom = factor)
+    }
+
+    override fun observeHardware(onChange: () -> Unit): AutoCloseable {
+        guarded { observers += onChange }
+        return AutoCloseable { guarded { observers -= onChange } }
+    }
+
+    /** The device reports [torch] (lit when on) and [zoom] to its observers; null leaves a value alone. */
+    fun report(torch: AVCaptureTorchMode? = null, zoom: Double? = null) {
+        val notify = guarded {
+            torch?.let {
+                this.torch = it
+                torchActive = it == AVCaptureTorchModeOn
+            }
+            zoom?.let { this.zoom = it }
+            observers.toList()
+        }
+        notify.forEach { it() }
+    }
+
+    /** The system turns a lit torch off to protect the device: torchMode stays on, the torch goes dark. */
+    fun thermalShutoff() {
+        val notify = guarded {
+            torchActive = false
+            observers.toList()
+        }
+        notify.forEach { it() }
+    }
 
     override fun makeInput(): Result<AVCaptureInput> = when {
         inputError != null -> Result.failure(NSErrorException(inputError))

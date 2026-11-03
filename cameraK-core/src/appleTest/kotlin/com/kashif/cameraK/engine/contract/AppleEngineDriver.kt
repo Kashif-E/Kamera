@@ -31,22 +31,35 @@ import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestResult
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCaptureFlashModeAuto
+import platform.AVFoundation.AVCaptureFlashModeOff
 import platform.AVFoundation.AVCaptureFlashModeOn
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonAudioDeviceInUseByAnotherClient
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonVideoDeviceInUseByAnotherClient
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonVideoDeviceNotAvailableDueToSystemPressure
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonVideoDeviceNotAvailableInBackground
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonVideoDeviceNotAvailableWithMultipleForegroundApps
+import platform.AVFoundation.AVCaptureTorchMode
+import platform.AVFoundation.AVCaptureTorchModeAuto
 import platform.AVFoundation.AVCaptureTorchModeOff
 import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVErrorDeviceAlreadyUsedByAnotherSession
 import platform.AVFoundation.AVErrorDeviceWasDisconnected
+import platform.UIKit.UIDeviceOrientation
+import kotlin.concurrent.Volatile
 
 /**
- * The contract kit's driver over the iOS engine on a [FakeSessionOps]. Until I2 its fake platform has
- * two cameras, back and front, with no flash and no torch and a fixed zoom of 1, so the enumerated
- * capabilities give OFF-only flash and torch and the kit lists the steps that need read-back.
+ * The contract kit's driver over the iOS engine on a [FakeSessionOps]. Its fake platform has two
+ * cameras, back and front. With [adjustableBack] the back camera has a flash, a torch (off and on)
+ * and a zoom range of 1 to 4, so every hardware step of the kit runs; the front camera has none of
+ * them and a fixed zoom of 1. Without it, the back camera is like the front one (the I1' platform).
+ *
+ * The devices hold their torch and zoom reports until [changeHardware], as the kit's
+ * `commandsLeaveHardwareUntilThePlatformReports` needs, and [boundSettings] reads what they were last
+ * given. Flash has no observer on iOS: the engine reads the photo output's mode back itself
+ * ([ReadBackFlashDriver]), and the fake photo output supports [backPhotoFlashModes] with the back
+ * camera behind it and only off with the front one.
  *
  * The engine runs on the case's test scheduler, and AVFoundation's side on the engine's own session
  * queue; [settle] drains the session queue and the main queue, then runs the scheduler's current
@@ -55,22 +68,51 @@ import platform.AVFoundation.AVErrorDeviceWasDisconnected
 internal class AppleEngineDriver(
     private val osVersion: Int = 18,
     private val tracer: Tracer? = null,
-    /** The back camera has a flash and a torch (off and on); the front camera has neither. */
-    adjustableBack: Boolean = false,
+    /** The back camera has a flash, a torch and a zoom range; the front camera has none of them. */
+    private val adjustableBack: Boolean = false,
+    backTorchModes: Set<AVCaptureTorchMode> = setOf(AVCaptureTorchModeOff, AVCaptureTorchModeOn),
 ) : ThrowingCallbackDriver,
-    PreOpenInterruptionDriver {
+    PreOpenInterruptionDriver,
+    ReadBackFlashDriver {
     val back = FakeDevice(
         isFront = false,
         uniqueId = BACK_ID,
         hasTorch = adjustableBack,
-        supportedTorchModes = setOf(AVCaptureTorchModeOff, AVCaptureTorchModeOn),
-        maxVideoZoomFactor = 1.0,
+        supportedTorchModes = backTorchModes,
+        maxVideoZoomFactor = if (adjustableBack) BACK_MAX_ZOOM.toDouble() else 1.0,
+        holdReports = true,
     )
-    val front = FakeDevice(isFront = true, uniqueId = FRONT_ID, hasTorch = false, maxVideoZoomFactor = 1.0)
+    val front = FakeDevice(
+        isFront = true,
+        uniqueId = FRONT_ID,
+        hasTorch = false,
+        maxVideoZoomFactor = 1.0,
+        holdReports = true,
+    )
     val lenses = listOf(
-        lensInfo(BACK_ID, CameraLens.BACK, hasFlash = adjustableBack),
+        lensInfo(
+            BACK_ID,
+            CameraLens.BACK,
+            hasFlash = adjustableBack,
+            maxZoom = if (adjustableBack) BACK_MAX_ZOOM else 1f,
+        ),
         lensInfo(FRONT_ID, CameraLens.FRONT),
     )
+
+    /** The flash modes the photo output supports while the back camera is behind it. */
+    @Volatile
+    var backPhotoFlashModes: List<AVCaptureFlashMode> =
+        listOf(AVCaptureFlashModeOff, AVCaptureFlashModeAuto, AVCaptureFlashModeOn)
+
+    /** How the device is held, as the engine's orientation reader answers. */
+    @Volatile
+    var deviceOrientation: UIDeviceOrientation = UIDeviceOrientation.UIDeviceOrientationPortrait
+
+    val photoCapturer = FakePhotoCapturer().also { capturer ->
+        capturer.flashModes = {
+            if (adjustableBack && custom.currentDevice === back) backPhotoFlashModes else listOf(AVCaptureFlashModeOff)
+        }
+    }
 
     private val sessions = atomic(0)
     private val enumerations = atomic(0)
@@ -103,12 +145,12 @@ internal class AppleEngineDriver(
                 ops
             },
             cameraDevices = devices,
-            photoCapturer = FakePhotoCapturer(),
+            photoCapturer = photoCapturer,
         )
         val onScheduler = checkNotNull(dispatcher) { "createEngine runs inside runCase" }
         val environment = CameraKEnvironment(dispatchers = CameraKDispatchers(onScheduler, onScheduler, onScheduler))
         environment.runtime = EngineRuntime(tracer = tracer, osVersion = osVersion)
-        engine = AppleCameraEngine(config, environment, custom) {
+        engine = AppleCameraEngine(config, environment, custom, readDeviceOrientation = { deviceOrientation }) {
             enumerations.incrementAndGet()
             lenses
         }
@@ -127,19 +169,29 @@ internal class AppleEngineDriver(
 
     override fun fail() = session.fail(FakeSessionOps.avError(AVErrorDeviceWasDisconnected))
 
-    // Nothing to report until I2: no camera of this platform has a flash, a torch or a zoom range.
-    override fun changeHardware(change: HardwareChange) = Unit
+    override fun changeHardware(change: HardwareChange) {
+        val device = custom.currentDevice as? FakeDevice ?: return
+        device.report(
+            torch = change.torchMode?.let(::avTorchMode),
+            zoom = change.zoomRatio?.toDouble(),
+        )
+    }
 
     override fun boundSettings(): BoundSettings {
-        val camera = custom.currentDevice
+        val camera = custom.currentDevice as? FakeDevice
+        val torch = camera?.lastTorchSet ?: camera?.torchMode
         return BoundSettings(
             flashMode = when (custom.captureFlashMode) {
                 AVCaptureFlashModeOn -> FlashMode.ON
                 AVCaptureFlashModeAuto -> FlashMode.AUTO
                 else -> FlashMode.OFF
             },
-            torchMode = if (camera?.torchMode == AVCaptureTorchModeOn) TorchMode.ON else TorchMode.OFF,
-            zoomRatio = camera?.videoZoomFactor?.toFloat() ?: 1f,
+            torchMode = when (torch) {
+                AVCaptureTorchModeOn -> TorchMode.ON
+                AVCaptureTorchModeAuto -> TorchMode.AUTO
+                else -> TorchMode.OFF
+            },
+            zoomRatio = (camera?.lastZoomSet ?: camera?.videoZoomFactor ?: 1.0).toFloat(),
             cameraId = camera?.uniqueId,
         )
     }
@@ -175,16 +227,23 @@ internal class AppleEngineDriver(
     companion object {
         const val BACK_ID = "back"
         const val FRONT_ID = "front"
+        const val BACK_MAX_ZOOM = 4f
 
-        fun lensInfo(id: String, lens: CameraLens, hasFlash: Boolean = false) = LensInfo(
+        fun lensInfo(id: String, lens: CameraLens, hasFlash: Boolean = false, maxZoom: Float = 1f) = LensInfo(
             id = id,
             deviceType = CameraDeviceType.WIDE_ANGLE,
             lens = lens,
             minZoom = 1f,
-            maxZoom = 1f,
+            maxZoom = maxZoom,
             hasFlash = hasFlash,
             isLogical = false,
         )
+
+        fun avTorchMode(mode: TorchMode): AVCaptureTorchMode = when (mode) {
+            TorchMode.ON -> AVCaptureTorchModeOn
+            TorchMode.AUTO -> AVCaptureTorchModeAuto
+            TorchMode.OFF -> AVCaptureTorchModeOff
+        }
 
         /** The AVCaptureSessionInterruptionReason the engine maps to [reason]. */
         fun avReason(reason: InterruptionReason): Long = when (reason) {

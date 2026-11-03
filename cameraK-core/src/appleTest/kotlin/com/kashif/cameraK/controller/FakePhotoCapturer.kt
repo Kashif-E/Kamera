@@ -1,5 +1,6 @@
 package com.kashif.cameraK.controller
 
+import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCapturePhotoCaptureDelegateProtocol
 import platform.AVFoundation.AVCapturePhotoOutput
 import platform.AVFoundation.AVCapturePhotoSettings
@@ -32,6 +33,45 @@ internal class FakePhotoCapturer : PhotoCapturer {
     /** When set, every prepare fails with this error, as AVFoundation reports one it could not do. */
     @Volatile
     var prepareError: NSError? = null
+
+    /**
+     * The flash modes the output supports with the camera now behind it; null asks the real output,
+     * which on the simulator has no camera and supports none.
+     */
+    @Volatile
+    var flashModes: (() -> List<AVCaptureFlashMode>)? = null
+
+    private val flashModeQueues = mutableListOf<String>()
+
+    /** The queue of every supportedFlashModes read, in order. */
+    val flashModeReads: List<String>
+        get() {
+            lock.lock()
+            try {
+                return flashModeQueues.toList()
+            } finally {
+                lock.unlock()
+            }
+        }
+
+    fun clearFlashModeReads() {
+        lock.lock()
+        try {
+            flashModeQueues.clear()
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    override fun supportedFlashModes(output: AVCapturePhotoOutput): List<AVCaptureFlashMode> {
+        lock.lock()
+        try {
+            flashModeQueues += currentQueueLabel()
+        } finally {
+            lock.unlock()
+        }
+        return flashModes?.invoke() ?: AVPhotoCapturer.supportedFlashModes(output)
+    }
 
     /** The settings of every prepare call, in order. */
     val prepareCalls: List<List<AVCapturePhotoSettings>>

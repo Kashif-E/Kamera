@@ -33,6 +33,7 @@ internal class FakeSessionOps : CaptureSessionOps {
     private var starts = 0
     private var teardowns = 0
     private val inputList = mutableListOf<AVCaptureInput>()
+    private val refused = mutableSetOf<AVCaptureInput>()
     private val outputList = mutableListOf<AVCaptureOutput>()
 
     override val avSession: AVCaptureSession = AVCaptureSession()
@@ -60,7 +61,10 @@ internal class FakeSessionOps : CaptureSessionOps {
 
     override fun setSessionPreset(preset: String) = Unit
 
-    override fun canAddInput(input: AVCaptureInput): Boolean = locked { input !in inputList }
+    override fun canAddInput(input: AVCaptureInput): Boolean = locked { input !in inputList && input !in refused }
+
+    /** Makes canAddInput refuse [input], as AVFoundation does for an input the session cannot take. */
+    fun refuse(input: AVCaptureInput) = locked { refused += input }
 
     override fun addInput(input: AVCaptureInput) = locked { inputList += input }
 
