@@ -1,0 +1,93 @@
+@file:OptIn(CameraKEngineApi::class)
+
+package com.kashif.cameraK.controller
+
+import com.kashif.cameraK.capabilities.CameraCapabilities
+import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.EngineState
+import com.kashif.cameraK.enums.CameraDeviceType
+import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.FlashMode
+import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.utils.CameraKEngineApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+
+/**
+ * `selectCamera(ById)` on an open desktop engine moves the grab loop to that enumerated device and
+ * returns once its first frame arrives, with the new camera reported; an id the engine did not
+ * enumerate is NoCamera and leaves the open camera as it was (§2.4 desktop, §4.1 row 2).
+ */
+class SelectCameraByIdTest {
+    private val first = webcam("usb-first")
+    private val second = webcam("usb-second")
+
+    @Test
+    fun opensTheGrabberForThatId() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val sut = rig.engine(enumerate = { CameraCapabilities(listOf(first, second)) })
+        try {
+            open(rig, sut, CameraSelection.ById(first.id))
+            assertEquals(first.id, rig.openedDeviceId)
+
+            val switched = async { sut.selectCamera(CameraSelection.ById(second.id)) }
+            rig.settle()
+
+            assertEquals(CameraKResult.Success(second), switched.await())
+            assertEquals(second.id, rig.openedDeviceId, "the device the grabber was opened for")
+            assertEquals(second, sut.hardware.value.camera, "the reported camera")
+            assertEquals(EngineState.Open, sut.state.value)
+            assertEquals(2, rig.camera.startCount, "grabber starts")
+            assertEquals(1, rig.camera.releaseCount, "the first device's grabber was not released")
+        } finally {
+            sut.close()
+        }
+    }
+
+    @Test
+    fun unknownIdIsNoCamera() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val sut = rig.engine(enumerate = { CameraCapabilities(listOf(first, second)) })
+        try {
+            open(rig, sut, CameraSelection.ById(first.id))
+
+            val result = sut.selectCamera(CameraSelection.ById("not-a-device"))
+            rig.settle()
+
+            assertIs<CameraKError.NoCamera>(assertIs<CameraKResult.Failure>(result).error)
+            assertEquals(EngineState.Open, sut.state.value, "a failed selection changed the state")
+            assertEquals(first, sut.hardware.value.camera, "a failed selection changed the camera")
+            assertEquals(1, rig.camera.startCount, "a failed selection reopened the camera")
+            assertEquals(0, rig.camera.releaseCount)
+        } finally {
+            sut.close()
+        }
+    }
+
+    private suspend fun TestScope.open(rig: DesktopEngineRig, sut: DesktopCameraEngine, selection: CameraSelection) {
+        val start = async { sut.start(desiredOn(selection)) }
+        rig.settle()
+        assertEquals(CameraKResult.Success(Unit), start.await())
+    }
+
+    private fun desiredOn(selection: CameraSelection) = DesiredHardware(
+        selection = selection,
+        flashMode = FlashMode.OFF,
+        torchMode = TorchMode.OFF,
+        zoomRatio = 1f,
+        targetOrientation = null,
+    )
+
+    private companion object {
+        fun webcam(id: String) =
+            LensInfo(id, CameraDeviceType.DEFAULT, CameraLens.BACK, 1f, 1f, hasFlash = false, isLogical = false)
+    }
+}

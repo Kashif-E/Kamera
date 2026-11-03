@@ -21,6 +21,18 @@ internal interface ObjCRuntime {
 
     /** The value of the pointer constant [symbol] exported by [library]. */
     fun pointerConstant(library: String, symbol: String): Long
+
+    /** `objc_msgSend(receiver, selector)` for a method with no argument that returns an object or an NSInteger. */
+    fun send(receiver: Long, selector: Long): Long
+
+    /** The text of the NSString at [string]; null for nil. */
+    fun string(string: Long): String?
+}
+
+/** The AVFoundation media types whose authorization CameraK reads. */
+internal enum class MacMediaType(val constant: String) {
+    VIDEO("AVMediaTypeVideo"),
+    AUDIO("AVMediaTypeAudio"),
 }
 
 /**
@@ -35,6 +47,8 @@ internal class MacCameraAuthorization(
     // A lambda, not a constructor reference, so nothing resolves JnaObjCRuntime before the read.
     private val runtime: () -> ObjCRuntime = { JnaObjCRuntime() },
 ) : CameraAuthorization {
+    fun status(type: MacMediaType): PermissionStatus = TODO("D2'")
+
     override fun cameraStatus(): PermissionStatus {
         val objc = try {
             runtime()
@@ -93,4 +107,8 @@ internal class JnaObjCRuntime : ObjCRuntime {
 
     override fun pointerConstant(library: String, symbol: String): Long =
         Pointer.nativeValue(NativeLibrary.getInstance(library).getGlobalVariableAddress(symbol).getPointer(0))
+
+    override fun send(receiver: Long, selector: Long): Long = TODO("D2'")
+
+    override fun string(string: Long): String? = TODO("D2'")
 }

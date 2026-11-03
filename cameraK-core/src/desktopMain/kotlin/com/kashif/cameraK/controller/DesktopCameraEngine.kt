@@ -112,6 +112,9 @@ internal class DesktopCameraEngine(
 
     override val legacyController: CameraController by lazy { facade(this) }
 
+    /** The desired hardware the current session started with; null without one. */
+    internal val startedWith: DesiredHardware? get() = TODO("D2'")
+
     private val _state = MutableStateFlow<EngineState>(EngineState.Closed)
     override val state: StateFlow<EngineState> = _state.asStateFlow()
 

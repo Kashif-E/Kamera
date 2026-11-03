@@ -2,10 +2,14 @@
 
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.capabilities.CameraCapabilities
+import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.contract.BoundSettings
 import com.kashif.cameraK.engine.contract.HardwareChange
 import com.kashif.cameraK.engine.contract.ThrowingCallbackDriver
+import com.kashif.cameraK.enums.CameraDeviceType
+import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.InterruptionReason
@@ -28,6 +32,9 @@ import java.io.IOException
  * stop, close or a failure) goes to the last grab loop's listener, as a late callback of a dead
  * generation would arrive; the engine must ignore it.
  *
+ * The engine enumerates two OFF-only webcams with a fixed zoom, both opening the one scripted
+ * camera, so the kit's camera-switch steps run on desktop too.
+ *
  * Not a `PreOpenInterruptionDriver`: desktop has no interruption before Open (w3 decisions §6).
  */
 internal class DesktopEngineDriver : ThrowingCallbackDriver {
@@ -40,9 +47,11 @@ internal class DesktopEngineDriver : ThrowingCallbackDriver {
         body()
     }
 
-    override fun createEngine(config: CameraConfiguration): CameraEngine = rig.engine(config, wrap = { listener ->
-        ScriptedListener(listener).also { lastListener = it }
-    })
+    override fun createEngine(config: CameraConfiguration): CameraEngine = rig.engine(
+        config,
+        enumerate = { CameraCapabilities(listOf(webcam("cam-a"), webcam("cam-b"))) },
+        wrap = { listener -> ScriptedListener(listener).also { lastListener = it } },
+    )
 
     override fun holdOpen() {
         rig.camera.holdOpen = true
@@ -87,6 +96,9 @@ internal class DesktopEngineDriver : ThrowingCallbackDriver {
     }
 
     private fun lateFrame() = BufferedImage(64, 48, BufferedImage.TYPE_3BYTE_BGR)
+
+    private fun webcam(id: String) =
+        LensInfo(id, CameraDeviceType.DEFAULT, CameraLens.BACK, 1f, 1f, hasFlash = false, isLogical = false)
 
     /** The engine's own listener; its next frame callback throws when the kit asks. */
     private inner class ScriptedListener(private val engine: GrabLoopListener) : GrabLoopListener by engine {

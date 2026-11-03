@@ -1,7 +1,9 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.platform.DesktopGrabberFactory
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.CameraKPlatformApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runInterruptible
 import org.bytedeco.javacv.FFmpegFrameGrabber
@@ -112,4 +114,26 @@ internal class DefaultDeviceSource(private val targetResolution: Pair<Int, Int>?
             currentOperatingSystem(),
             if (constrained) targetResolution ?: DEFAULT_CAMERA_RESOLUTION else null,
         )
+}
+
+/** The enumerated cameras of [devices], each opened by its id. */
+internal class EnumeratedDeviceSource(
+    private val devices: DesktopDevices,
+    private val targetResolution: Pair<Int, Int>?,
+) : GrabberSource {
+    override fun deviceKey(device: LensInfo): Any = TODO("D2'")
+
+    override val canRelax: Boolean get() = TODO("D2'")
+
+    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = TODO("D2'")
+}
+
+/** The app's [DesktopGrabberFactory]. */
+@OptIn(CameraKPlatformApi::class)
+internal class FactoryGrabberSource(private val factory: DesktopGrabberFactory) : GrabberSource {
+    override fun deviceKey(device: LensInfo): Any = TODO("D2'")
+
+    override val canRelax: Boolean get() = TODO("D2'")
+
+    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = TODO("D2'")
 }
