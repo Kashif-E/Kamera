@@ -29,6 +29,13 @@ public interface FramePlane {
 
     /** Bulk copy into a caller-owned, reusable buffer. Returns the bytes copied. */
     public fun copyTo(destination: ByteArray, destinationOffset: Int = 0): Int
+
+    /**
+     * Copies [length] bytes of this plane, starting at [sourceOffset], into [destination] at
+     * [destinationOffset]. One row at a time, this reads a padded plane without its row padding
+     * and without allocating.
+     */
+    public fun copyTo(destination: ByteArray, destinationOffset: Int, sourceOffset: Int, length: Int)
 }
 
 /** A frame kept past [FrameAnalyzer.analyze]; closing it gives the frame back. */

@@ -1,6 +1,7 @@
 package com.kashif.cameraK.testing
 
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.frames.CameraFrame
 import com.kashif.cameraK.frames.FrameAnalyzer
 import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FrameRegistration
@@ -28,6 +29,9 @@ public class FakeFrameSource internal constructor(
 
     /** The registrations not yet closed, in registration order. */
     internal val registrations: List<FrameRegistration> get() = registered.toList()
+
+    /** Delivers [frame] to the registered analyzers. */
+    public fun emit(frame: CameraFrame): Unit = TODO("F0'")
 
     override fun register(spec: FrameSpec, analyzer: FrameAnalyzer): FrameRegistration =
         Registration().also { registered += it }

@@ -78,7 +78,7 @@ class AppStyleFakeUsageTest {
         fake.reportCamera(FakeCapabilities.FRONT_ID)
 
         val registration = fake.fakeFrames.register(FrameSpec()) { }
-        assertFalse(registration.active.value, "the stub frame source never activates a registration")
+        assertTrue(registration.active.value, "a registration the session format accepts is active")
         assertNull(registration.rejection)
         registration.close()
         registration.close()
