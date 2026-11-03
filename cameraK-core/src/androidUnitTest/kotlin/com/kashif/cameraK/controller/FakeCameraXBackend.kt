@@ -424,6 +424,7 @@ internal fun testController(
     qualityPriority: QualityPrioritization = QualityPrioritization.BALANCED,
     flashMode: FlashMode = FlashMode.OFF,
     mirrorFrontCamera: Boolean = false,
+    started: Boolean = true,
 ) = CameraController(
     context = context,
     lifecycleOwner = lifecycleOwner,
@@ -440,4 +441,7 @@ internal fun testController(
     backend = backend,
     imageProcessingExecutor = imageProcessingExecutor,
     analyzerExecutor = analyzerExecutor,
-)
+).also {
+    // A 1.x controller opens the camera from startSession, as the 1.x holder's initialize calls it.
+    if (started) it.startSession()
+}

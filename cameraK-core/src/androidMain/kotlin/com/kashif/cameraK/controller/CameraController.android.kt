@@ -90,6 +90,9 @@ actual class CameraController internal constructor(
     // imageFormat asks for; its name and MIME type follow the bytes.
     private val outputFormat = ImageFormat.JPEG
 
+    /** The engine this facade runs on. Red stub: A1' builds it. */
+    internal val engine: AndroidCameraEngine get() = TODO("A1'")
+
     init {
         if (imageFormat != outputFormat && imageFormat != ImageFormat.HEIC) {
             CameraKLogger.w(TAG, "ImageFormat.$imageFormat is not supported for Android captures; saving JPEG instead")
