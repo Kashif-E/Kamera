@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.kashif.cameraK.permissions
 
 import android.Manifest
@@ -16,6 +18,10 @@ import androidx.core.content.ContextCompat
  * Android-specific implementation of [Permissions] using Activity Result Contracts.
  * Simplified internal implementation that removes redundant permission checks.
  */
+@Deprecated(
+    "Use rememberCameraKPermissionState(CameraKPermission.CAMERA) and call launchRequest() from an event " +
+        "handler. Removed in 2.0.",
+)
 @Composable
 actual fun providePermissions(): Permissions {
     val context = LocalContext.current
