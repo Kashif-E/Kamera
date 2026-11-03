@@ -78,6 +78,22 @@ class ContractKitMutationTest {
         assertContains(failure.message.orEmpty(), "after opening on 'front'")
     }
 
+    @Test
+    fun torchCommandThatNeverReachesThePlatformFailsTheCommandRule() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(::SwallowsTorchCommands).commandsLeaveHardwareUntilThePlatformReports()
+        }
+        assertContains(failure.message.orEmpty(), "setTorchMode did not reach the platform")
+    }
+
+    @Test
+    fun engineBindingAnotherCameraThanTheSelectedOneFailsTheObserverCase() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(::BindsTheFrontReportsTheBack).hardwareChangesOnlyFromPlatformObserver()
+        }
+        assertContains(failure.message.orEmpty(), "the platform bound another camera than the one the case selected")
+    }
+
     private fun cases(breakIt: (FakeCameraEngine) -> BrokenEngine) =
         ContractCases(BrokenDriver(breakIt), requires = emptySet(), skips = ContractSkips())
 
@@ -198,5 +214,39 @@ class ContractKitMutationTest {
 
         override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> =
             fake.selectCamera(selection).also { sync() }
+    }
+
+    // Rule 5 broken: setTorchMode reports success without passing the command to the platform.
+    private class SwallowsTorchCommands(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = CameraKResult.Success(mode)
+    }
+
+    // Selection broken: the platform binds the front camera whatever was selected, while hardware reports the
+    // selected one.
+    private class BindsTheFrontReportsTheBack(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        private val back: LensInfo = fake.capabilities.value.lenses(CameraLens.BACK).first()
+        private val front: LensInfo = fake.capabilities.value.lenses(CameraLens.FRONT).first()
+        private val _hardware = MutableStateFlow(fake.hardware.value)
+        override val hardware: StateFlow<HardwareState> = _hardware.asStateFlow()
+
+        override fun sync() {
+            val reported = fake.hardware.value
+            _hardware.value = if (reported.camera == null) {
+                reported
+            } else {
+                HardwareState(reported.flashMode, reported.torchMode, back, reported.targetOrientation)
+            }
+        }
+
+        override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> {
+            val onFront = DesiredHardware(
+                CameraSelection.ById(front.id),
+                desired.flashMode,
+                desired.torchMode,
+                desired.zoomRatio,
+                desired.targetOrientation,
+            )
+            return fake.start(onFront).also { sync() }
+        }
     }
 }
