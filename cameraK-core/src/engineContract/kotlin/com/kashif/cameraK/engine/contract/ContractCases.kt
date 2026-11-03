@@ -287,6 +287,18 @@ internal class ContractCases(
             val lens = currentLens(engine)
             val steps = Steps(case)
 
+            // Runs on every engine with a bound camera, also one with nothing adjustable. On a camera with one
+            // flash mode it shows the command is accepted while Open and moves nothing before a report; the
+            // setFlashMode step below shows the routing where the camera has a second mode.
+            val reported = engine.hardware.value.flashMode
+            val toReported = "setFlashMode to the reported mode"
+            steps.step(toReported, skipIf = noLens(lens)) {
+                val change = HardwareChange(flashMode = reported)
+                commandThenReport(engine, toReported, change, reported, { it.flashMode }) {
+                    assertEquals(CameraKResult.Success(reported), engine.setFlashMode(reported), toReported)
+                }
+                assertEquals(reported, engine.hardware.value.flashMode, "hardware follows the platform's flash report")
+            }
             val torch = torchTarget(engine, lens)
             steps.step("setTorchMode", skipIf = skipReason(lens, torch) { onlyTorch(engine, it) }) {
                 commandThenReport(engine, "setTorchMode", HardwareChange(torchMode = torch), torch, { it.torchMode }) {
