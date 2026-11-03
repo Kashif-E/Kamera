@@ -26,6 +26,8 @@ androidx-lifecycle = "2.9.4"
 # camerak's Compose lifecycle effects (LifecycleStartEffect, LifecycleResumeEffect, LocalLifecycleOwner):
 # the JetBrains multiplatform build, at the version compose-multiplatform 1.11.1's ui depends on.
 jetbrains-lifecycle = "2.9.6"
+# cameraK-core's Android trace sections. The version CameraX 1.5.3 already brings at runtime.
+androidx-tracing = "1.2.0"
 # The JavaCPP release train: javacv and javacpp carry its number, each preset binding its native
 # library's version before it. These are the Java bindings only; apps add the natives they ship.
 javacpp = "1.5.12"
@@ -73,6 +75,7 @@ androidx-activityCompose = { module = "androidx.activity:activity-compose", vers
 androidx-activity = { module = "androidx.activity:activity", version.ref = "androidx-activity" }
 androidx-lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime", version.ref = "androidx-lifecycle" }
 jetbrains-lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "jetbrains-lifecycle" }
+androidx-tracing = { module = "androidx.tracing:tracing", version.ref = "androidx-tracing" }
 lucide-icons-cmp = { module = "com.composables:icons-lucide-cmp", version.ref = "lucide-icons" }
 
 javacv = { module = "org.bytedeco:javacv", version.ref = "javacpp" }

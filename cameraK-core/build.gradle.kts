@@ -68,9 +68,11 @@ kotlin {
             api(libs.androidx.camera.view)
             api(libs.camera.lifecycle)
             api(libs.camera.video)
-            // The 1.x bridge drives the controller through its own LifecycleRegistry. No public
+            // The Android engine is its own LifecycleOwner over a LifecycleRegistry. No public
             // signature names a registry, so it is not api.
             implementation(libs.androidx.lifecycle.runtime)
+            // The engine's trace sections (start, first frame). No public signature names it.
+            implementation(libs.androidx.tracing)
         }
     }
 }
