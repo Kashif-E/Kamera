@@ -10,8 +10,8 @@ import kotlinx.atomicfu.locks.synchronized
  *
  * ```kotlin
  * val lease = gate.tryEnter(onReleased = { slot.release() }) ?: return  // skip: busy, throttled or at maxRetained
- * val frame = copyInto(slot, lease)                                     // the frame's retain() calls lease.retain(),
- * lease.deliver { analyzer.analyze(frame) }                             //   and its RetainedFrame.close() lease.release()
+ * val frame = copyInto(slot, lease)                                     // the frame's retain() calls lease.retain(), and
+ * lease.deliver { analyzer.analyze(frame) }                             //   that RetainedFrame's close() its handle's release()
  * ```
  *
  * - **Busy skips, nothing queues.** While the analyzer runs, [tryEnter] returns null; the frame is
@@ -21,8 +21,9 @@ import kotlinx.atomicfu.locks.synchronized
  *   attempt. Call [tryEnter] before any copy, so a throttled frame costs nothing.
  * - **[maxRetained].** While the analyzer holds that many frames through `retain()`, [tryEnter]
  *   returns null; other registrations, each with its own gate, still receive frames.
- * - **Released exactly once.** `onReleased` runs once per lease, when the callback has returned and
- *   every retain is released, even when the analyzer throws.
+ * - **Released exactly once.** The entry and each [AnalyzerRetain] release at most once; a further
+ *   call does nothing. `onReleased` runs once per lease, when the callback has returned and every
+ *   retain is released, even when the analyzer throws.
  * - **A throwing analyzer** is caught by [AnalyzerLease.deliver], logged with its throwable and
  *   counted in [failures]; the next frame is delivered as usual.
  *
@@ -64,22 +65,6 @@ internal class AnalyzerGate(maxFps: Float?, private val nanoTime: () -> Long, ma
         return minIntervalNanos != null && nanoTime() - last < minIntervalNanos
     }
 
-    /** Returns true when this release finished the lease. */
-    internal fun release(lease: AnalyzerLease): Boolean = synchronized(lock) {
-        when {
-            lease.retains > 0 -> {
-                lease.retains--
-                retained--
-                finish(lease)
-            }
-            lease.entered -> {
-                exit(lease)
-                finish(lease)
-            }
-            else -> false
-        }
-    }
-
     internal fun retain(lease: AnalyzerLease): AnalyzerRetain = synchronized(lock) {
         check(!lease.finished) { "retain() after the frame was released" }
         lease.retains++
@@ -87,23 +72,32 @@ internal class AnalyzerGate(maxFps: Float?, private val nanoTime: () -> Long, ma
         AnalyzerRetain(lease)
     }
 
-    internal fun exitCallback(lease: AnalyzerLease): Boolean = synchronized(lock) {
+    /** Releases [lease]'s entry, once; returns true when this release finished the lease. */
+    internal fun releaseEntry(lease: AnalyzerLease): Boolean = synchronized(lock) {
         if (lease.entered) {
-            exit(lease)
+            lease.entered = false
+            running = false
             finish(lease)
         } else {
             false
         }
     }
 
+    /** Releases [handle], once; returns true when this release finished its lease. */
+    internal fun releaseRetain(handle: AnalyzerRetain): Boolean = synchronized(lock) {
+        if (handle.released) {
+            false
+        } else {
+            handle.released = true
+            handle.lease.retains--
+            retained--
+            finish(handle.lease)
+        }
+    }
+
     internal fun recordFailure(failure: Throwable) {
         synchronized(lock) { failureCount++ }
         CameraKLogger.w(TAG, "Frame analyzer threw; the frame is released and the next one is delivered", failure)
-    }
-
-    private fun exit(lease: AnalyzerLease) {
-        lease.entered = false
-        running = false
     }
 
     private fun finish(lease: AnalyzerLease): Boolean {
@@ -129,12 +123,12 @@ internal class AnalyzerLease internal constructor(private val gate: AnalyzerGate
     fun retain(): AnalyzerRetain = gate.retain(this)
 
     /**
-     * Releases one retain or, with none outstanding, the entry. Calls beyond the entry and every
-     * retain do nothing. The analyzer is idle again once its callback has returned and its retains
-     * are below the gate's limit.
+     * Releases the entry: the analyzer's callback has returned, so the analyzer is idle again once
+     * its retains are below the gate's limit. [deliver] calls it; a second call does nothing, and it
+     * never releases a retain.
      */
     fun release() {
-        if (gate.release(this)) onReleased()
+        if (gate.releaseEntry(this)) onReleased()
     }
 
     /**
@@ -147,12 +141,23 @@ internal class AnalyzerLease internal constructor(private val gate: AnalyzerGate
         } catch (failure: Throwable) {
             gate.recordFailure(failure)
         } finally {
-            if (gate.exitCallback(this)) onReleased()
+            release()
         }
+    }
+
+    internal fun releaseRetain(handle: AnalyzerRetain) {
+        if (gate.releaseRetain(handle)) onReleased()
     }
 }
 
-/** One retain of an [AnalyzerLease]: the frame stays held until [release]. */
-internal class AnalyzerRetain internal constructor(private val lease: AnalyzerLease) {
-    fun release() = lease.release()
+/**
+ * One retain of an [AnalyzerLease]: the frame stays held until [release]. A platform
+ * `RetainedFrame.close()` calls its own handle's [release].
+ */
+internal class AnalyzerRetain internal constructor(internal val lease: AnalyzerLease) {
+    // Guarded by the gate's lock.
+    internal var released = false
+
+    /** Releases this retain, once; a second call does nothing, and never releases another retain or the entry. */
+    fun release() = lease.releaseRetain(this)
 }
