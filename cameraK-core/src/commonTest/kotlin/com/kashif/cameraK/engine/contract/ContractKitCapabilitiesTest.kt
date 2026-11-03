@@ -177,6 +177,31 @@ class ContractKitCapabilitiesTest {
     }
 
     @Test
+    fun flashStepsOverAReadBackDriverExpectTheReadBackRightAfterTheCommand() = runTest {
+        val skips = ContractSkips()
+        val driver = ReadBackFlashFakeDriver(twoFullCameras)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.commandsLeaveHardwareUntilThePlatformReports()
+
+        assertEquals(emptyList(), skips.skipped, "both flash steps ran")
+        assertEquals(emptyList(), driver.flashReports, "the kit reported flash through changeHardware")
+    }
+
+    @Test
+    fun flashStepsOverAnObserverDriverAreUnchanged() = runTest {
+        val skips = ContractSkips()
+        val driver = ReportsRecordingDriver(twoFullCameras)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.commandsLeaveHardwareUntilThePlatformReports()
+
+        assertEquals(emptyList(), skips.skipped, "both flash steps ran")
+        // The reported mode first, then the second mode the bound camera takes, each as a platform observer report.
+        assertEquals(listOf(FlashMode.OFF, FlashMode.ON), driver.flashReports)
+    }
+
+    @Test
     fun preOpenInterruptionCaseIsSkippedAndListedForAnEngineWithoutIt() = runTest {
         val skips = ContractSkips()
         val cases = ContractCases(InterruptsOnlyWhenOpenDriver(), requires = emptySet(), skips = skips)
@@ -220,6 +245,16 @@ class ContractKitCapabilitiesTest {
         cases.hardwareChangesOnlyFromPlatformObserver()
 
         assertEquals(emptyList(), skips.skipped)
+    }
+
+    // The fake driver as K1 left it, listing the flash values the kit reports as platform observer reports.
+    private class ReportsRecordingDriver(capabilities: CameraCapabilities) : FakeEngineDriver(capabilities) {
+        val flashReports = mutableListOf<FlashMode>()
+
+        override fun changeHardware(change: HardwareChange) {
+            change.flashMode?.let(flashReports::add)
+            super.changeHardware(change)
+        }
     }
 
     // A platform that never says which camera it bound gives the hardware cases nothing to compare against.

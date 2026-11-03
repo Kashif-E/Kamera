@@ -10,6 +10,7 @@ import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
+import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
@@ -17,6 +18,7 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.ZoomState
 import com.kashif.cameraK.testing.FakeCameraEngine
+import com.kashif.cameraK.testing.FakeCapabilities
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -113,6 +115,19 @@ class ContractKitMutationTest {
             failure.message.orEmpty(),
             "setFlashMode to the reported mode changed hardware before the platform reported it",
         )
+    }
+
+    // Rule 5 broken on a read-back engine: the platform received the request, but the engine publishes another
+    // mode the camera takes, which is not the platform's read-back.
+    @Test
+    fun readBackDriverPublishingAnotherModeThanThePlatformsFailsTheFlashStep() = runTest {
+        val capabilities = FakeCapabilities.backAndFront(setOf(ImageFormat.JPEG))
+        val driver = ReadBackFlashFakeDriver(capabilities) { platform, supported -> supported.first { it != platform } }
+        val cases = ContractCases(driver, requires = emptySet(), skips = ContractSkips())
+
+        val failure = assertFailsWith<AssertionError> { cases.commandsLeaveHardwareUntilThePlatformReports() }
+
+        assertContains(failure.message.orEmpty(), "hardware is the platform's flash read-back")
     }
 
     private fun cases(breakIt: (FakeCameraEngine) -> BrokenEngine) =

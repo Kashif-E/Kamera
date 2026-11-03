@@ -78,6 +78,15 @@ internal data class BoundSettings(
     val cameraId: String?,
 )
 
+/**
+ * Flash has no platform observer (Android, iOS): the engine reads the platform object back right
+ * after the platform call and publishes that read-back before `setFlashMode` returns. Over a driver
+ * that implements it, the kit's flash steps expect [EngineContractDriver.boundSettings]' flash mode
+ * in `hardware` right after the command, and report no flash change through
+ * [EngineContractDriver.changeHardware].
+ */
+internal interface ReadBackFlashDriver : EngineContractDriver
+
 internal interface ThrowingCallbackDriver : EngineContractDriver {
     /** The next scripted platform callback throws inside the engine's callback boundary. */
     fun throwFromNextCallback()
