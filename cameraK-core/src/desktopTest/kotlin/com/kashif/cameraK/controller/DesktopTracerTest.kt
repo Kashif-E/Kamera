@@ -4,6 +4,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.TraceNames
 import com.kashif.cameraK.engine.Tracer
 import com.kashif.cameraK.enums.CameraDeviceType
@@ -14,13 +15,16 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 /**
  * The desktop engine marks the start of a session and its first frame through the runtime's
- * Tracer (§11.3): one marker each per start, however many frames follow.
+ * Tracer (§11.3): one marker each per start, however many frames follow, and however many times
+ * the engine reopens the camera within that start.
  */
 class DesktopTracerTest {
     private val desired = DesiredHardware(
@@ -69,6 +73,36 @@ class DesktopTracerTest {
                 listOf(TraceNames.START, TraceNames.FIRST_FRAME, TraceNames.START, TraceNames.FIRST_FRAME),
                 tracer.markers.toList(),
                 "a second start",
+            )
+        } finally {
+            sut.close()
+        }
+    }
+
+    @Test
+    fun firstFrameIsMarkedOncePerStartNotOnAReopen() = runTest {
+        val tracer = RecordingTracer()
+        val rig = DesktopEngineRig(testScheduler, tracer = tracer)
+        val sut = rig.engine()
+        try {
+            val start = async { sut.start(desired) }
+            rig.settle()
+            assertEquals(CameraKResult.Success(Unit), start.await())
+
+            // The camera stops delivering: the engine is Interrupted and reopens it, and the reopen
+            // waits for the camera's next frame.
+            rig.camera.holdOpen = true
+            rig.camera.failGrab(IOException("the camera stopped delivering frames"))
+            rig.settle()
+            assertIs<EngineState.Interrupted>(sut.state.value, "after the camera stopped delivering")
+            rig.camera.deliverFrame()
+            rig.settle()
+            assertEquals(EngineState.Open, sut.state.value, "after the reopened camera's first frame")
+
+            assertEquals(
+                listOf(TraceNames.START, TraceNames.FIRST_FRAME),
+                tracer.markers.toList(),
+                "a reopen within one start is not a new first frame",
             )
         } finally {
             sut.close()
