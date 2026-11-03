@@ -177,7 +177,7 @@ class JavaCvErrorMapperTest {
     private class ScriptedSource(override val canRelax: Boolean, vararg grabbers: FrameGrabber) : GrabberSource {
         private val next = ArrayDeque(grabbers.toList())
         val constrainedRequests = mutableListOf<Boolean>()
-        override val deviceKey: Any = this
+        override fun deviceKey(device: LensInfo): Any = this
 
         override fun create(device: LensInfo, constrained: Boolean): FrameGrabber {
             constrainedRequests += constrained

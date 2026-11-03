@@ -9,8 +9,8 @@ import org.bytedeco.javacv.FrameGrabber
 
 /** Where a grab loop gets its grabber for a device. */
 internal interface GrabberSource {
-    /** What the per-device lock is keyed on. */
-    val deviceKey: Any
+    /** What the per-device lock is keyed on for [device]. */
+    fun deviceKey(device: LensInfo): Any
 
     /** Whether a failed open is retried once without CameraK's size and frame rate (§4.1 row 3). */
     val canRelax: Boolean
@@ -91,7 +91,7 @@ private const val TAG = "CameraK"
  * no CameraK size or frame rate to drop on a retry.
  */
 internal class CustomGrabberSource(private val grabber: FrameGrabber) : GrabberSource {
-    override val deviceKey: Any get() = grabber
+    override fun deviceKey(device: LensInfo): Any = grabber
     override val canRelax: Boolean get() = false
 
     override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = grabber
@@ -104,7 +104,7 @@ internal class CustomGrabberSource(private val grabber: FrameGrabber) : GrabberS
  * enumerated devices instead.
  */
 internal class DefaultDeviceSource(private val targetResolution: Pair<Int, Int>?) : GrabberSource {
-    override val deviceKey: Any get() = defaultCamera
+    override fun deviceKey(device: LensInfo): Any = defaultCamera
     override val canRelax: Boolean get() = true
 
     override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = defaultCameraOverride?.invoke()

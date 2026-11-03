@@ -40,9 +40,9 @@ internal class DesktopEngineDriver : ThrowingCallbackDriver {
         body()
     }
 
-    override fun createEngine(config: CameraConfiguration): CameraEngine = rig.engine(config) { listener ->
+    override fun createEngine(config: CameraConfiguration): CameraEngine = rig.engine(config, wrap = { listener ->
         ScriptedListener(listener).also { lastListener = it }
-    }
+    })
 
     override fun holdOpen() {
         rig.camera.holdOpen = true

@@ -152,7 +152,7 @@ class CameraGrabber(
         listener: GrabLoopListener,
     ): Job {
         val previous = job.value
-        val deviceLock = cameraDeviceLock(source.deviceKey)
+        val deviceLock = cameraDeviceLock(source.deviceKey(device))
         val producer = newWorker(PRODUCER_THREAD)
         val loop = scope.launch(producer.dispatcher, start = CoroutineStart.ATOMIC) {
             runLoop(previous, deviceLock, source, device, listener)

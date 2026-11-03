@@ -2,6 +2,7 @@
 
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.engine.BackoffPolicy
@@ -17,6 +18,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
@@ -28,10 +30,10 @@ import kotlin.time.Duration
 /**
  * A desktop engine on the test scheduler, with its producer on real threads the rig can see. The
  * engine's own coroutines (enumeration, watchdog, recovery) run on virtual time; each grab loop
- * runs on a worker thread from [workers], over the one [camera].
+ * runs on a worker thread from [workers], over [camera] or another camera from [newCamera].
  *
  * [settle] is the desktop driver's quiescence: it waits until every producer thread is idle or
- * parked in the camera's `grab()` with nothing to deliver, runs the scheduler's current tasks, and
+ * parked in a camera's `grab()` with nothing to deliver, runs the scheduler's current tasks, and
  * repeats until neither side moves. It never sleeps and never advances virtual time.
  */
 internal class DesktopEngineRig(
@@ -40,14 +42,19 @@ internal class DesktopEngineRig(
     private val tracer: Tracer = Tracer.None,
 ) {
     val workers = TrackedWorkers()
-    val camera = ScriptedFrameGrabber(workers)
+    private val cameras = CopyOnWriteArrayList<ScriptedFrameGrabber>()
+    val camera = newCamera()
+
+    /** Another camera whose parked grabs [settle] counts as quiet. */
+    fun newCamera(): ScriptedFrameGrabber = ScriptedFrameGrabber(workers).also { cameras += it }
 
     /** The device the engine last opened the camera on, as a grabber factory sees it. */
     @Volatile var openedDeviceId: String? = null
         private set
 
     val source = object : GrabberSource {
-        override val deviceKey: Any = camera
+        override fun deviceKey(device: LensInfo): Any = camera
+
         override val canRelax: Boolean = false
 
         override fun create(device: LensInfo, constrained: Boolean): FrameGrabber {
@@ -64,9 +71,13 @@ internal class DesktopEngineRig(
         }
     }
 
-    /** The OS's authorization is the host's own, so the rig's engines read a fixed Granted instead. */
+    /**
+     * The OS's authorization and devices are the host's own, so the rig's engines read a fixed
+     * Granted and enumerate [enumerate] (the one default device unless a test names others).
+     */
     fun engine(
         config: CameraConfiguration = CameraConfiguration(),
+        enumerate: () -> CameraCapabilities = { desktopCapabilities() },
         wrap: (GrabLoopListener) -> GrabLoopListener = { it },
     ): DesktopCameraEngine = DesktopCameraEngine(
         config,
@@ -74,14 +85,15 @@ internal class DesktopEngineRig(
         source,
         authorization = { PermissionStatus.Granted },
         listenerWrapper = wrap,
+        enumerate = enumerate,
     )
 
     fun settle() {
         repeat(MAX_ROUNDS) {
-            workers.awaitQuiet(camera)
+            workers.awaitQuiet(cameras)
             val before = workers.epoch
             scheduler.runCurrent()
-            workers.awaitQuiet(camera)
+            workers.awaitQuiet(cameras)
             if (workers.epoch == before) return
         }
         throw AssertionError("the engine never settled in $MAX_ROUNDS rounds")
@@ -137,15 +149,15 @@ internal class TrackedWorkers {
     fun bump() = change {}
 
     /**
-     * Blocks until no producer task is queued and every running one is parked in [camera]'s
-     * `grab()`. The camera is read outside this lock (it bumps [epoch] under its own), and an
+     * Blocks until no producer task is queued and every running one is parked in one of [cameras]'
+     * `grab()`. The cameras are read outside this lock (each bumps [epoch] under its own), and an
      * unchanged epoch shows the read is still current.
      */
-    fun awaitQuiet(camera: ScriptedFrameGrabber) {
+    fun awaitQuiet(cameras: List<ScriptedFrameGrabber>) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(QUIET_TIMEOUT_SECONDS)
         while (true) {
             val seen = epoch
-            val parked = camera.parkedGrabs()
+            val parked = cameras.sumOf { it.parkedGrabs() }
             lock.withLock {
                 if (epoch == seen) {
                     if (queued == 0 && running <= parked) return
