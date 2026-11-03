@@ -24,6 +24,8 @@ kotlin {
             api(libs.compose.ui)
             api(libs.compose.material3)
             api(libs.compose.foundation)
+            // rememberCameraKStateHolder's start/stop and resume effects; its signature names LifecycleOwner.
+            api(libs.jetbrains.lifecycle.runtime.compose)
         }
 
         commonTest.dependencies {
@@ -41,6 +43,8 @@ kotlin {
             dependencies {
                 // Skiko natives for the host, needed to render composables in screenshot tests.
                 implementation(compose.desktop.currentOs)
+                // RememberHolderLifecycleTest drives the default Compose path over FakeCameraEngine.
+                implementation(project(":cameraK-testing"))
             }
         }
 

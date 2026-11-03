@@ -92,6 +92,9 @@ fun CameraKScreen(
                 content(cameraState)
             }
             is CameraKState.Error -> errorContent(cameraState)
+            // H1' red stub: the 2.0 subtypes, so the 1.x screen compiles over them.
+            CameraKState.Idle, CameraKState.Starting, is CameraKState.Interrupted -> loadingContent()
+            CameraKState.Closed -> Unit
         }
     }
 }

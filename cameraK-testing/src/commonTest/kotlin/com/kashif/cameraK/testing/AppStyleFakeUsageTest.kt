@@ -9,9 +9,13 @@ import com.kashif.cameraK.frames.FrameSpec
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.CameraKState
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
@@ -99,5 +103,25 @@ class AppStyleFakeUsageTest {
         assertEquals("/fake/VID_0001.mp4", video.path)
         assertEquals(1.seconds, video.duration)
         assertTrue(video.hasAudio)
+    }
+
+    @Test
+    fun fakeCameraKStateHolderNeedsNoOptIn() = runTest {
+        val fake = FakeCameraEngine()
+        fake.autoOpen = false
+        val holder = fakeCameraKStateHolder(fake = fake)
+
+        holder.start()
+        runCurrent()
+        assertEquals(CameraKState.Starting, holder.cameraState.value)
+
+        fake.deliverOpen()
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value)
+
+        holder.close()
+        runCurrent()
+        assertEquals(CameraKState.Closed, holder.cameraState.value)
+        assertEquals(1, fake.closeCalls)
     }
 }

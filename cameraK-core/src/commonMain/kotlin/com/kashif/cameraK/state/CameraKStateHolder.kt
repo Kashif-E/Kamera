@@ -2,7 +2,10 @@ package com.kashif.cameraK.state
 
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.engine.CameraEngineFactory
+import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.locks.SynchronizedObject
@@ -71,7 +74,30 @@ class CameraKStateHolder(
     private val cameraConfiguration: CameraConfiguration,
     private val controllerFactory: suspend () -> CameraController,
     private val coroutineScope: CoroutineScope,
-) {
+) : AutoCloseable {
+    // H1' red stubs: the engine constructor and the 2.0 lifecycle calls, declared so the H1' tests compile.
+    @CameraKEngineApi
+    constructor(
+        config: CameraConfiguration,
+        engineFactory: CameraEngineFactory,
+        plugins: List<CameraKPlugin> = emptyList(),
+        environment: CameraKEnvironment = CameraKEnvironment(),
+    ) : this(config, { TODO("H1' red stub: engine constructor") }, CoroutineScope(Job())) {
+        TODO("H1' red stub: engine constructor")
+    }
+
+    fun start(): Unit = TODO("H1' red stub: start")
+
+    fun stop(): Unit = TODO("H1' red stub: stop")
+
+    fun retry(): Boolean = TODO("H1' red stub: retry")
+
+    fun recheckPermission(): Unit = TODO("H1' red stub: recheckPermission")
+
+    override fun close(): Unit = TODO("H1' red stub: close")
+
+    suspend fun closeAndJoin(): Unit = TODO("H1' red stub: closeAndJoin")
+
     // ═══════════════════════════════════════════════════════════════
     // State Management
     // ═══════════════════════════════════════════════════════════════

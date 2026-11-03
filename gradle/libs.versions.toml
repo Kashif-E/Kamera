@@ -23,6 +23,9 @@ androidx-activity = "1.13.0"
 # cameraK-core's lifecycle-runtime, which has no Compose: its Android 1.x bridge drives a
 # LifecycleRegistry. The version is the one activity-compose brought before the module split.
 androidx-lifecycle = "2.9.4"
+# camerak's Compose lifecycle effects (LifecycleStartEffect, LifecycleResumeEffect, LocalLifecycleOwner):
+# the JetBrains multiplatform build, at the version compose-multiplatform 1.11.1's ui depends on.
+jetbrains-lifecycle = "2.9.6"
 # The JavaCPP release train: javacv and javacpp carry its number, each preset binding its native
 # library's version before it. These are the Java bindings only; apps add the natives they ship.
 javacpp = "1.5.12"
@@ -69,6 +72,7 @@ coil3-compose-core = { module = "io.coil-kt.coil3:coil-compose-core", version.re
 androidx-activityCompose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 androidx-activity = { module = "androidx.activity:activity", version.ref = "androidx-activity" }
 androidx-lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime", version.ref = "androidx-lifecycle" }
+jetbrains-lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "jetbrains-lifecycle" }
 lucide-icons-cmp = { module = "com.composables:icons-lucide-cmp", version.ref = "lucide-icons" }
 
 javacv = { module = "org.bytedeco:javacv", version.ref = "javacpp" }

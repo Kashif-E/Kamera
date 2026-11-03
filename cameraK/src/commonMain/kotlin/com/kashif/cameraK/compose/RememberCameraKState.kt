@@ -2,9 +2,14 @@ package com.kashif.cameraK.compose
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.lifecycle.LifecycleOwner
+import com.kashif.cameraK.engine.CameraEngineFactory
+import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
+import com.kashif.cameraK.utils.CameraKEngineApi
 
 /**
  * Creates and remembers a [CameraKStateHolder] with automatic lifecycle management.
@@ -41,3 +46,14 @@ expect fun rememberCameraKState(
     config: CameraConfiguration = CameraConfiguration(),
     setupPlugins: suspend (CameraKStateHolder) -> Unit = {},
 ): State<CameraKState>
+
+/** H1' red stub: the default Compose path over an engine factory, for this module's tests. */
+@CameraKEngineApi
+@Composable
+internal fun rememberCameraKStateHolder(
+    config: CameraConfiguration,
+    plugins: List<CameraKPlugin>,
+    lifecycleOwner: LifecycleOwner?,
+    engineFactory: CameraEngineFactory,
+    environment: CameraKEnvironment,
+): CameraKStateHolder = TODO("H1' red stub: rememberCameraKStateHolder")
