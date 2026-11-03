@@ -49,6 +49,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
@@ -350,6 +351,9 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
                 _uiState.value = _uiState.value.copy(isCapturing = true)
                 val result = currentController.takePictureToFile()
                 _events.emit(CameraKEvent.ImageCaptured(result))
+            } catch (e: CancellationException) {
+                // close() cancelled the holder's scope: not a failure of the command.
+                throw e
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "Capturing an image failed", e)
                 _events.emit(CameraKEvent.CaptureFailed(e))
@@ -443,6 +447,8 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
                 _uiState.value = _uiState.value.copy(isRecording = true, isPaused = false, recordingDurationMs = 0L)
                 _events.emit(CameraKEvent.RecordingStarted(path))
                 recordingTimerJob = scope.launch { tickRecording(currentController, configuration, path) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "Starting a recording failed", e)
                 resetRecordingState()
@@ -501,6 +507,8 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
                 val result = currentController.stopRecording()
                 resetRecordingState()
                 _events.emit(CameraKEvent.RecordingStopped(result))
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "Stopping a recording failed", e)
                 resetRecordingState()
@@ -518,6 +526,8 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
             try {
                 currentController.pauseRecording()
                 _uiState.value = _uiState.value.copy(isPaused = true)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "Pausing a recording failed", e)
                 _uiState.value = _uiState.value.copy(lastError = "Pause recording failed: ${e.message}")
@@ -534,6 +544,8 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
             try {
                 currentController.resumeRecording()
                 _uiState.value = _uiState.value.copy(isPaused = false)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "Resuming a recording failed", e)
                 _uiState.value = _uiState.value.copy(lastError = "Resume recording failed: ${e.message}")
