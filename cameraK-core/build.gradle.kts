@@ -15,8 +15,13 @@ kotlin {
     }
     jvm("desktop")
 
-    iosArm64()
-    iosSimulatorArm64()
+    // The os_signpost shim behind the iOS engine's Tracer: the signpost calls are C macros, so Kotlin
+    // reaches them through the static wrappers in the .def.
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
+        target.compilations.getByName("main").cinterops.create("signpost") {
+            definitionFile.set(project.file("src/nativeInterop/cinterop/signpost.def"))
+        }
+    }
 
     sourceSets {
         val desktopMain by getting {

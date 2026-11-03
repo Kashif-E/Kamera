@@ -1,6 +1,34 @@
+@file:OptIn(ExperimentalForeignApi::class)
+
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.engine.Tracer
+import com.kashif.cameraK.signpost.camerak_signpost_begin
+import com.kashif.cameraK.signpost.camerak_signpost_end
+import com.kashif.cameraK.signpost.camerak_signpost_event
+import com.kashif.cameraK.signpost.camerak_signpost_id
+import com.kashif.cameraK.signpost.camerak_signpost_log
+import kotlinx.atomicfu.atomic
+import kotlinx.cinterop.ExperimentalForeignApi
 
-/** The engine's production Tracer: os_signpost intervals and events. Stub until I1''s fix. */
-internal fun signpostTracer(): Tracer = TODO("I1'")
+/**
+ * The engine's production Tracer: each interval is an os_signpost interval and each marker an
+ * os_signpost event, under the "CameraK" name, labelled with the trace name, so Instruments' Points
+ * of Interest and os_signpost tracks show them on a device.
+ */
+internal fun signpostTracer(): Tracer = SignpostTracer
+
+private object SignpostTracer : Tracer {
+    private val log = camerak_signpost_log()
+
+    override fun beginInterval(name: String): AutoCloseable {
+        val id = camerak_signpost_id(log)
+        camerak_signpost_begin(log, id, name)
+        val ended = atomic(false)
+        return AutoCloseable {
+            if (ended.compareAndSet(expect = false, update = true)) camerak_signpost_end(log, id, name)
+        }
+    }
+
+    override fun marker(name: String) = camerak_signpost_event(log, name)
+}

@@ -1,0 +1,27 @@
+# os_signpost for the iOS engine's Tracer (design §2.2, §11.3). os_signpost_interval_begin and its
+# siblings are macros whose name and format must be string literals, so Kotlin cannot call them;
+# these static wrappers fix both to "CameraK" and "%{public}s" and take the interval's label as the
+# argument. Begin and end match by log, name and id, so every interval gets its own id.
+package = com.kashif.cameraK.signpost
+headers = os/log.h os/signpost.h
+headerFilter = os/log.h os/signpost.h
+---
+static inline os_log_t camerak_signpost_log(void) {
+    return os_log_create("io.github.kashif-mehmood-km.camerak", "CameraK");
+}
+
+static inline uint64_t camerak_signpost_id(os_log_t log) {
+    return os_signpost_id_generate(log);
+}
+
+static inline void camerak_signpost_begin(os_log_t log, uint64_t id, const char *label) {
+    os_signpost_interval_begin(log, id, "CameraK", "%{public}s", label);
+}
+
+static inline void camerak_signpost_end(os_log_t log, uint64_t id, const char *label) {
+    os_signpost_interval_end(log, id, "CameraK", "%{public}s", label);
+}
+
+static inline void camerak_signpost_event(os_log_t log, const char *label) {
+    os_signpost_event_emit(log, OS_SIGNPOST_ID_EXCLUSIVE, "CameraK", "%{public}s", label);
+}
