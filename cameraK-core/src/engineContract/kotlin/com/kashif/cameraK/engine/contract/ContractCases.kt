@@ -120,7 +120,13 @@ internal class ContractCases(
         }
     }
 
-    suspend fun interruptBeforeOpenThenEndInterruptionReachesOpenWithOneStartCall(scope: TestScope) =
+    // The reason is the platform's own mapping (CameraX RECOVERABLE, AVFoundation's interruption reasons), which
+    // each platform's mapper table tests pin; the kit checks only that the engine is Interrupted.
+    suspend fun interruptBeforeOpenThenEndInterruptionReachesOpenWithOneStartCall(scope: TestScope) {
+        val case = "interruptBeforeOpenThenEndInterruptionReachesOpenWithOneStartCall"
+        if (driver !is PreOpenInterruptionDriver) {
+            return skips.record(case, "every step", "the engine has no interruption before Open")
+        }
         withEngine { engine ->
             driver.holdOpen()
             val start = scope.async { engine.start(desired) }
@@ -129,7 +135,7 @@ internal class ContractCases(
             driver.settle()
 
             assertEquals(success, start.await(), "a start the platform holds interrupted succeeds")
-            assertEquals(EngineState.Interrupted(reason), engine.state.value)
+            assertIs<EngineState.Interrupted>(engine.state.value, "a start the platform holds interrupted")
 
             driver.endInterruption()
             driver.settle()
@@ -139,6 +145,7 @@ internal class ContractCases(
                 "the platform resumed the session without a second start",
             )
         }
+    }
 
     suspend fun endInterruptionAfterStopLeavesEngineClosed() = withEngine { engine ->
         open(engine)

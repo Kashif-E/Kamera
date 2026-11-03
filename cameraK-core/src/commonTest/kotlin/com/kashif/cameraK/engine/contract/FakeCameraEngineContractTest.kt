@@ -6,6 +6,7 @@ internal class FakeCameraEngineContractTest :
         driver = FakeEngineDriver(),
         requires = setOf(
             ThrowingCallbackDriver::class,
+            PreOpenInterruptionDriver::class,
             RecordingDriver::class,
             CaptureDriver::class,
             UnsupportedConfigurationDriver::class,

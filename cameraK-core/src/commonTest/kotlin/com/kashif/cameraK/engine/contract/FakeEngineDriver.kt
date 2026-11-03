@@ -24,6 +24,7 @@ internal open class FakeEngineDriver(
         setOf(ImageFormat.JPEG, ImageFormat.PNG),
     ),
 ) : ThrowingCallbackDriver,
+    PreOpenInterruptionDriver,
     RecordingDriver,
     CaptureDriver,
     UnsupportedConfigurationDriver {

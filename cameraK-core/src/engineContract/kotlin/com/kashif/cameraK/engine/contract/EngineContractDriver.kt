@@ -79,6 +79,15 @@ internal interface ThrowingCallbackDriver : EngineContractDriver {
 }
 
 /**
+ * The platform can interrupt a start it holds, before the camera opens: CameraX reports a recoverable
+ * error while opening, AVFoundation an interruption of a session still starting. [interrupt] during a
+ * held start then gives a start that succeeds with `Interrupted`, which [endInterruption] turns into
+ * Open with no second start. A driver whose engine has no interruption before Open (desktop) leaves
+ * it out, and the kit lists the case as skipped.
+ */
+internal interface PreOpenInterruptionDriver : EngineContractDriver
+
+/**
  * The kit starts a recording, then calls [deliverRecordingStarted] for the platform's start event,
  * and, after it requests the end (stopRecording, stop or close), [deliverRecordingFinalized] for
  * the platform's finalize event.
