@@ -36,7 +36,9 @@ class ViewPortDisplayTest {
         assertEquals(Rational(9, 16), first.aspectRatio, "the configured 16:9, portrait on the default display")
 
         val displays = platform.context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        val external = displays.getDisplay(ShadowDisplayManager.addDisplay("w640dp-h360dp"))
+        // A portrait-first panel turned to ROTATION_90, so landscape (#182 decides from the panel's own
+        // orientation; a 640x360 panel turned a quarter would be portrait).
+        val external = displays.getDisplay(ShadowDisplayManager.addDisplay("w360dp-h640dp"))
         shadowOf(external).setRotation(Surface.ROTATION_90)
         engine.preview.attach(Preview.SurfaceProvider { }, external)
         platform.settle(testScheduler)

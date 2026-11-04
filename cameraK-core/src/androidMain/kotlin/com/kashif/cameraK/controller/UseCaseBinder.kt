@@ -139,7 +139,7 @@ internal class UseCaseBinder(
      */
     private fun buildViewPort(): ViewPort {
         val rotation = displayRotation()
-        val portrait = rotation.isPortraitRotation()
+        val portrait = displayIsPortrait()
         lastViewPortPortrait = portrait
         val rational = when (aspectRatio) {
             AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 ->
@@ -160,8 +160,22 @@ internal class UseCaseBinder(
      * needlessly rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
      */
     fun viewPortOrientationChanged(): Boolean {
-        val portrait = displayRotation().isPortraitRotation()
+        val portrait = displayIsPortrait()
         return lastViewPortPortrait != null && portrait != lastViewPortPortrait
+    }
+
+    /**
+     * Whether the display is portrait now: its natural orientation, turned a quarter at ROTATION_90
+     * and ROTATION_270 (PR #182). The natural orientation is the panel's own, from its mode's physical
+     * size, which does not turn with the display; ROTATION_0 is landscape on a landscape-first panel
+     * (tablets, Chromebooks).
+     */
+    private fun displayIsPortrait(): Boolean {
+        val display = currentDisplay() ?: return true
+        val mode = display.mode
+        val naturalPortrait = mode.physicalHeight >= mode.physicalWidth
+        val quarterTurned = display.rotation == Surface.ROTATION_90 || display.rotation == Surface.ROTATION_270
+        return naturalPortrait != quarterTurned
     }
 
     /** The rotation of the display the preview is attached on, else the default display's. */
@@ -195,8 +209,6 @@ internal class UseCaseBinder(
         (context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager)?.unregisterDisplayListener(listener)
     }
 }
-
-private fun Int.isPortraitRotation(): Boolean = this == Surface.ROTATION_0 || this == Surface.ROTATION_180
 
 private fun AspectRatio.toCameraXAspectRatioStrategy(): AspectRatioStrategy = when (this) {
     AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
