@@ -103,6 +103,8 @@ internal class DesktopCameraEngine(
     horizontalFlip: Boolean = false,
     private val listenerWrapper: (GrabLoopListener) -> GrabLoopListener = { it },
     private val enumerate: () -> CameraCapabilities = ::desktopCapabilities,
+    /** Where and how stills and recordings are written. */
+    internal val media: DesktopMedia = DesktopMedia(),
     facade: (DesktopCameraEngine) -> CameraController = { CameraController(it, config) },
 ) : CameraEngine,
     LegacyControllerAccess {
@@ -621,7 +623,7 @@ internal fun desktopLensInfo(): LensInfo = LensInfo(
 
 /**
  * The capabilities of the desktop cameras [lenses] (the 1.x enumerator's one camera by default):
- * flash and torch OFF only (from `hasFlash`), and pause and resume through RecordingClock.
+ * flash and torch OFF only (from `hasFlash`), and pause and resume through the common RecordingClock.
  * Everything else keeps the 1.x constructor's values until D3' and D4' fill it.
  */
 internal fun desktopCapabilities(lenses: List<LensInfo> = listOf(desktopLensInfo())): CameraCapabilities {

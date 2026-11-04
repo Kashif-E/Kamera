@@ -52,7 +52,8 @@ class LegacyFacadeLiveTest {
             config,
             CameraKEnvironment(CameraKDispatchers(main = Dispatchers.Default, default = Dispatchers.Default)),
             CustomGrabberSource(camera),
-            facade = { CameraController(it, config, userHome = home) },
+            media = DesktopMedia(userHome = home),
+            facade = { CameraController(it, config) },
         )
         val facade = (engine as LegacyControllerAccess).legacyController
         try {

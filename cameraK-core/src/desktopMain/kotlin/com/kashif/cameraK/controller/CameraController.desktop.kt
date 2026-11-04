@@ -18,6 +18,7 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.recording.RecordingClock
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
@@ -46,24 +47,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.bytedeco.ffmpeg.global.avcodec
-import org.bytedeco.javacv.FFmpegFrameRecorder
 import org.bytedeco.javacv.FrameGrabber
 import org.bytedeco.javacv.FrameRecorder
 import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
 import java.io.File
-import java.io.IOException
-import java.nio.file.FileAlreadyExistsException
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.attribute.PosixFilePermissions
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.CopyOnWriteArrayList
-import javax.imageio.IIOImage
-import javax.imageio.ImageIO
-import javax.imageio.ImageWriteParam
 import org.bytedeco.javacv.FrameConverter as JavaCvFrameConverter
 
 /**
@@ -78,12 +69,7 @@ actual class CameraController internal constructor(
     private val directory: Directory,
     private val aspectRatio: AspectRatio,
     sessionDispatcher: CoroutineDispatcher,
-    private val recorderFactory: (String, VideoConfiguration) -> FrameRecorder,
-    // The folder that Directory and the default video folder resolve under: the user's home.
-    private val userHome: File,
     private val nanoClock: () -> Long,
-    private val recordingConverter: () -> JavaCvFrameConverter<BufferedImage>,
-    private val writeCapture: (BufferedImage, ImageFormat, File) -> Unit,
     private val readCapture: (File) -> ByteArray,
     engine: (CameraController) -> DesktopCameraEngine,
 ) {
@@ -99,13 +85,11 @@ actual class CameraController internal constructor(
         directory = directory,
         aspectRatio = aspectRatio,
         sessionDispatcher = Dispatchers.IO,
-        recorderFactory = ::createFrameRecorder,
-        userHome = defaultUserHome(),
         nanoClock = System::nanoTime,
-        recordingConverter = ::Java2DFrameConverter,
-        writeCapture = ::writeImage,
         readCapture = File::readBytes,
-        engine = { facade -> ownEngine(facade, customGrabber, targetResolution, horizontalFlip, System::nanoTime) },
+        engine = { facade ->
+            ownEngine(facade, customGrabber, targetResolution, horizontalFlip, System::nanoTime, DesktopMedia())
+        },
     )
 
     internal constructor(
@@ -125,30 +109,24 @@ actual class CameraController internal constructor(
         directory = directory,
         aspectRatio = AspectRatio.RATIO_16_9,
         sessionDispatcher = sessionDispatcher,
-        recorderFactory = recorderFactory,
-        userHome = userHome,
         nanoClock = nanoClock,
-        recordingConverter = recordingConverter,
-        writeCapture = writeCapture,
         readCapture = readCapture,
-        engine = { facade -> ownEngine(facade, customGrabber, null, horizontalFlip, nanoClock) },
+        engine = { facade ->
+            val media = DesktopMedia(userHome, recorderFactory, recordingConverter, writeCapture)
+            ownEngine(facade, customGrabber, null, horizontalFlip, nanoClock, media)
+        },
     )
 
     /** The facade an engine builds over itself: the bridge's, read through `Ready.controller`. */
     internal constructor(
         engine: DesktopCameraEngine,
         config: CameraConfiguration,
-        userHome: File = defaultUserHome(),
     ) : this(
         imageFormat = config.imageFormat,
         directory = config.directory,
         aspectRatio = config.aspectRatio,
         sessionDispatcher = Dispatchers.IO,
-        recorderFactory = ::createFrameRecorder,
-        userHome = userHome,
         nanoClock = System::nanoTime,
-        recordingConverter = ::Java2DFrameConverter,
-        writeCapture = ::writeImage,
         readCapture = File::readBytes,
         engine = { engine },
     )
@@ -158,6 +136,10 @@ actual class CameraController internal constructor(
 
     // The engine's producer: captures and recordings read copies of its frames.
     private val cameraGrabber: CameraGrabber get() = engine.grabber
+
+    // Where and how the engine's stills and recordings are written.
+    private val media: DesktopMedia get() = engine.media
+    private val userHome: File get() = media.userHome
 
     // The controller's own scope: the session calls and the recording run in it, and cleanup() cancels it.
     private val scope = CoroutineScope(
@@ -204,7 +186,7 @@ actual class CameraController internal constructor(
             val result = try {
                 val ext = if (imageFormat == ImageFormat.PNG) "png" else "jpg"
                 val file = createUniqueFile(File(pictureFolder(), "CameraK"), "CameraK", ext).also { outFile = it }
-                writeCapture(currentImage, imageFormat, file)
+                media.writeCapture(currentImage, imageFormat, file)
                 ImageCaptureResult.SuccessWithFile(file.absolutePath)
             } catch (e: Exception) {
                 CameraKLogger.e("CameraK", "CameraK: Error writing the captured image", e)
@@ -476,7 +458,7 @@ actual class CameraController internal constructor(
         // recorder, which nothing could then stop or release.
         check(activeRecording.value == null) { "A recording is already in progress" }
         val outputPath = createVideoOutputPath(configuration)
-        val recorder = recorderFactory(outputPath, configuration)
+        val recorder = media.recorderFactory(outputPath, configuration)
         // Encode at the camera's own frame size, so no frame is rescaled on the way in.
         cameraGrabber.frameSize?.let { (width, height) ->
             recorder.imageWidth = width
@@ -502,7 +484,7 @@ actual class CameraController internal constructor(
         val finalized = CompletableDeferred<Exception?>()
         val frames = cameraGrabber.frames()
         val job = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
-            val converter = recordingConverter()
+            val converter = media.recordingConverter()
             var failure: Exception? = null
             var lastFrameNumber = -1L
             try {
@@ -650,6 +632,7 @@ private fun ownEngine(
     targetResolution: Pair<Int, Int>?,
     horizontalFlip: Boolean,
     nanoClock: () -> Long,
+    media: DesktopMedia,
 ): DesktopCameraEngine = DesktopCameraEngine(
     config = CameraConfiguration(targetResolution = targetResolution),
     environment = CameraKEnvironment(
@@ -658,118 +641,6 @@ private fun ownEngine(
     source = customGrabber?.let(::CustomGrabberSource) ?: DefaultDeviceSource(targetResolution),
     nanoClock = nanoClock,
     horizontalFlip = horizontalFlip,
+    media = media,
     facade = { facade },
 )
-
-// user.home can be missing in sandboxed runtimes; fall back to the working directory, as the desktop
-// image saver does.
-private fun defaultUserHome(): File = File(System.getProperty("user.home") ?: System.getProperty("user.dir") ?: ".")
-
-// macOS names the user's video folder Movies; Linux (XDG) and Windows name it Videos.
-private fun moviesFolderName(): String =
-    if (System.getProperty("os.name").lowercase().contains("mac")) "Movies" else "Videos"
-
-private fun hasPosixPermissions(path: Path): Boolean = "posix" in path.fileSystem.supportedFileAttributeViews()
-
-/**
- * Returns [folder], creating it (and any missing parents) if it does not exist. A folder this
- * creates is open only to its owner where the file system has POSIX permissions; an existing one
- * keeps its permissions.
- */
-private fun createOwnerOnlyDirectory(folder: File): Path {
-    val path = folder.toPath().toAbsolutePath()
-    if (Files.isDirectory(path)) return path
-    path.parent?.let { Files.createDirectories(it) }
-    val ownerOnly = if (hasPosixPermissions(path)) {
-        arrayOf(PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")))
-    } else {
-        emptyArray()
-    }
-    return try {
-        Files.createDirectory(path, *ownerOnly)
-    } catch (e: FileAlreadyExistsException) {
-        // Another capture created it first; use it if it is a folder.
-        if (!Files.isDirectory(path)) throw e
-        CameraKLogger.w("CameraK", "CameraK: Capture folder created concurrently, using it", e)
-        path
-    }
-}
-
-/**
- * Creates a new, empty file in [folder] (creating the folder too) whose name no other file has,
- * readable and writable only by its owner where the file system has POSIX permissions.
- */
-internal fun createUniqueFile(folder: File, prefix: String, extension: String): File {
-    val dir = createOwnerOnlyDirectory(folder)
-    val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS"))
-    val ownerOnly = if (hasPosixPermissions(dir)) {
-        arrayOf(PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
-    } else {
-        emptyArray()
-    }
-    for (attempt in 0 until MAX_NAME_ATTEMPTS) {
-        val suffix = if (attempt == 0) "" else "_$attempt"
-        try {
-            return Files.createFile(dir.resolve("${prefix}_$stamp$suffix.$extension"), *ownerOnly).toFile()
-        } catch (e: FileAlreadyExistsException) {
-            // Another capture in the same millisecond took this name; try the next suffix.
-            CameraKLogger.w("CameraK", "CameraK: Capture file name taken, trying the next one", e)
-        }
-    }
-    throw IOException("No free file name for $prefix in $MAX_NAME_ATTEMPTS attempts")
-}
-
-/**
- * An H.264 MP4 recorder for [configuration], sized from its quality until the controller sets the
- * camera's frame size. Desktop captures no microphone audio, so the file has no audio track even
- * when audio is asked for: an AAC track with no samples would be empty.
- */
-internal fun createFrameRecorder(outputPath: String, configuration: VideoConfiguration): FrameRecorder {
-    if (configuration.enableAudio) {
-        CameraKLogger.w("CameraK", "CameraK: Desktop records no audio; the video has no audio track")
-    }
-    return FFmpegFrameRecorder(outputPath, configuration.quality.width, configuration.quality.height, 0).apply {
-        videoCodec = avcodec.AV_CODEC_ID_H264
-        format = "mp4"
-        // The time base for the capture-time timestamps set on each frame.
-        frameRate = RECORDING_FRAME_RATE
-        videoBitrate = configuration.quality.bitrateBps
-    }
-}
-
-/**
- * The frame number an encoder at [frameRate] gives a frame stamped [timestampMicros], as
- * `FFmpegFrameRecorder.setTimestamp` computes it. A recorder with no frame rate keeps the timestamp.
- */
-private fun frameNumberAt(timestampMicros: Long, frameRate: Double): Long =
-    if (frameRate > 0) Math.round(timestampMicros * frameRate / 1_000_000) else timestampMicros
-
-/** Writes [image] to [file] as [format], throwing if no writer accepts it. */
-internal fun writeImage(image: BufferedImage, format: ImageFormat, file: File) {
-    if (format == ImageFormat.PNG) {
-        if (!ImageIO.write(image, "png", file)) throw IOException("No PNG writer accepts this image")
-        return
-    }
-    val writer = ImageIO.getImageWritersByFormatName("jpeg").asSequence().firstOrNull()
-        ?: throw IOException("No JPEG writer is installed")
-    try {
-        val params = writer.defaultWriteParam.apply {
-            compressionMode = ImageWriteParam.MODE_EXPLICIT
-            compressionQuality = JPEG_QUALITY
-        }
-        val stream = ImageIO.createImageOutputStream(file) ?: throw IOException("Cannot open the capture file")
-        stream.use { out ->
-            writer.output = out
-            writer.write(null, IIOImage(image, null, null), params)
-        }
-    } finally {
-        writer.dispose()
-    }
-}
-
-// The encoder's frame rate: a camera faster than this is recorded at this rate.
-private const val RECORDING_FRAME_RATE = 30.0
-
-// Android compresses stills at 95 too, so a desktop JPEG matches it.
-private const val JPEG_QUALITY = 0.95f
-private const val MAX_NAME_ATTEMPTS = 100
