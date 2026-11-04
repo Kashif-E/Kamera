@@ -1,19 +1,37 @@
 package com.kashif.cameraK.screenshots
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.kashif.cameraK.compose.CameraKScreen
+import com.kashif.cameraK.compose.CameraPreviewScope
 import com.kashif.cameraK.compose.DefaultErrorScreen
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.state.CameraKState
+import com.kashif.cameraK.testing.FakeCameraEngine
+import com.kashif.cameraK.testing.fakeCameraKStateHolder
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
 /**
  * Snapshots of the camera-free states of [CameraKScreen].
  *
- * The Ready state is not covered: it renders CameraPreviewView, which needs a CameraX
- * PreviewView bound to a live camera, and layoutlib has no camera.
+ * The 1.x CameraKScreen(cameraState)'s Ready state is not covered: it renders CameraPreviewView,
+ * which needs a CameraX PreviewView bound to a live camera, and layoutlib has no camera.
+ * CameraKScreen(holder) runs over camerak-testing's fake engine, whose preview attachment does
+ * nothing, so Ready and Interrupted show an empty PreviewView with the content over it.
  */
 class CameraKScreenPaparazziTest {
     // Pixel-exact comparison; see PixelExactSnapshotVerifier for why maxPercentDifference = 0.0 alone
@@ -46,6 +64,51 @@ class CameraKScreenPaparazziTest {
         paparazzi.snapshot {
             DefaultErrorScreen(CameraKState.Error(CameraKError.CameraDisabled()))
         }
+    }
+
+    @Test
+    fun holder_ready_showsThePreviewWithContent() = runTest {
+        val holder = fakeCameraKStateHolder()
+        holder.start()
+        runCurrent()
+        assertTrue("state is ${holder.cameraState.value}", holder.cameraState.value is CameraKState.Ready)
+        paparazzi.snapshot {
+            CameraKScreen(holder, Modifier.fillMaxSize().background(Color.Blue)) { ContentMarker() }
+        }
+    }
+
+    @Test
+    fun holder_interrupted_keepsThePreviewAndContent() = runTest {
+        val fake = FakeCameraEngine()
+        val holder = fakeCameraKStateHolder(fake = fake)
+        holder.start()
+        runCurrent()
+        fake.interrupt(InterruptionReason.IN_USE_BY_ANOTHER_CLIENT)
+        runCurrent()
+        assertTrue("state is ${holder.cameraState.value}", holder.cameraState.value is CameraKState.Interrupted)
+        paparazzi.snapshot {
+            CameraKScreen(holder, Modifier.fillMaxSize().background(Color.Blue)) { ContentMarker() }
+        }
+    }
+
+    /** The default error slot draws no library text or colours: only the caller's background shows. */
+    @Test
+    fun holder_error_defaultSlotDrawsNothing() = runTest {
+        val fake = FakeCameraEngine().apply { autoOpen = false }
+        val holder = fakeCameraKStateHolder(fake = fake)
+        holder.start()
+        runCurrent()
+        fake.failOpen(CameraKError.CameraDisabled())
+        runCurrent()
+        assertTrue("state is ${holder.cameraState.value}", holder.cameraState.value is CameraKState.Error)
+        paparazzi.snapshot {
+            CameraKScreen(holder, Modifier.fillMaxSize().background(Color.Blue)) { ContentMarker() }
+        }
+    }
+
+    @Composable
+    private fun CameraPreviewScope.ContentMarker() {
+        Box(Modifier.align(Alignment.TopStart).size(24.dp).background(Color.Red))
     }
 
     private val retryableError = CameraKState.Error(CameraKError.CameraInUse(IllegalStateException("camera in use")))

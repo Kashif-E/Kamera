@@ -3,6 +3,7 @@ package com.kashif.cameraK.screenshots
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.platform.Font
@@ -23,6 +24,8 @@ import kotlin.test.fail
  * differ in anti-aliasing.
  */
 internal object Goldens {
+    private const val AWAIT_MILLIS = 5_000L
+
     private val record = System.getProperty("camerak.screenshots.record").toBoolean()
     private val goldenDir = File(requiredProperty("camerak.screenshots.goldenDir"))
     private val diffDir = File(requiredProperty("camerak.screenshots.diffDir"))
@@ -35,8 +38,18 @@ internal object Goldens {
         FontFamily(Font(identity = "DroidSans", data = bytes))
     }
 
-    fun assertMatches(name: String, width: Int, height: Int, content: @Composable () -> Unit) {
-        val png = render(width, height, content)
+    /**
+     * [until] is for content that draws asynchronously, such as the desktop preview, whose frames are
+     * converted off the UI thread: the scene is rendered again, up to [AWAIT_MILLIS], until it holds.
+     */
+    fun assertMatches(
+        name: String,
+        width: Int,
+        height: Int,
+        until: (BufferedImage) -> Boolean = { true },
+        content: @Composable () -> Unit,
+    ) {
+        val png = render(width, height, until, content)
         val golden = File(goldenDir, "$name.png")
 
         if (record) {
@@ -76,7 +89,12 @@ internal object Goldens {
         }
     }
 
-    private fun render(width: Int, height: Int, content: @Composable () -> Unit): ByteArray {
+    private fun render(
+        width: Int,
+        height: Int,
+        until: (BufferedImage) -> Boolean,
+        content: @Composable () -> Unit,
+    ): ByteArray {
         val scene =
             ImageComposeScene(width = width, height = height, density = Density(1f)) {
                 CompositionLocalProvider(
@@ -86,12 +104,26 @@ internal object Goldens {
                 }
             }
         return try {
-            // nanoTime 0 pins every animation (the loading spinner) to its first frame.
-            val image = scene.render(nanoTime = 0)
-            checkNotNull(image.encodeToData(EncodedImageFormat.PNG)) { "Skia could not encode the render as PNG" }.bytes
+            val deadline = System.nanoTime() + AWAIT_MILLIS * 1_000_000
+            var png = renderPng(scene)
+            while (!until(decode(png))) {
+                if (System.nanoTime() > deadline) fail("The render never reached its condition in $AWAIT_MILLIS ms")
+                Thread.sleep(5)
+                png = renderPng(scene)
+            }
+            png
         } finally {
             scene.close()
         }
+    }
+
+    private fun renderPng(scene: ImageComposeScene): ByteArray {
+        Snapshot.sendApplyNotifications()
+        // nanoTime 0 pins every animation (the loading spinner) to its first frame.
+        val image = scene.render(nanoTime = 0)
+        return checkNotNull(image.encodeToData(EncodedImageFormat.PNG)) {
+            "Skia could not encode the render as PNG"
+        }.bytes
     }
 
     private fun decode(png: ByteArray): BufferedImage =

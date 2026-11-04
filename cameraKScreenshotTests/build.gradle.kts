@@ -32,6 +32,8 @@ android {
 
 dependencies {
     testImplementation(projects.cameraK)
+    // CameraKScreen(holder) over FakeCameraEngine; brings kotlinx-coroutines-test for runTest.
+    testImplementation(projects.cameraKTesting)
     testImplementation(libs.junit)
 }
 

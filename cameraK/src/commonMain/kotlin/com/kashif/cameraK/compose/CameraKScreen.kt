@@ -33,6 +33,26 @@ import com.kashif.cameraK.state.CameraKStateHolder
  */
 val LocalCameraKStateHolder = compositionLocalOf<CameraKStateHolder?> { null }
 
+@Composable
+fun CameraKScreen(
+    holder: CameraKStateHolder,
+    modifier: Modifier = Modifier,
+    loading: @Composable () -> Unit = {},
+    error: @Composable (error: CameraKError, retry: () -> Unit) -> Unit = DefaultCameraKError,
+    content: @Composable CameraPreviewScope.() -> Unit = {},
+) {
+    TODO("UI'")
+}
+
+internal val DefaultCameraKError: @Composable (CameraKError, () -> Unit) -> Unit = { error, retry ->
+    DefaultErrorSlot(error, retry)
+}
+
+@Composable
+internal fun DefaultErrorSlot(error: CameraKError, retry: () -> Unit) {
+    TODO("UI'")
+}
+
 /**
  * Root camera screen that provides state to all descendants.
  * This composable manages the full camera lifecycle and provides a slot-based API.
