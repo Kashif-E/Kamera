@@ -19,6 +19,7 @@ import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.state.COMMAND_DRAIN_TIMEOUT
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKState
@@ -30,14 +31,17 @@ import com.kashif.cameraK.testing.FakePermissionChecker
 import com.kashif.cameraK.testing.cameraKTestEnvironment
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -609,5 +613,324 @@ class RecordingControllerTest {
 
         assertSame(default, engine.prepareDispatcher, "prepareRecording ran on ${engine.prepareDispatcher}")
         assertSame(default, engine.startDispatcher, "startRecording ran on ${engine.startDispatcher}")
+    }
+
+    /**
+     * The fake underneath, with a platform's timing scripted on top: Finalized events held back and
+     * delivered late, and one stop or pause replaced, for instance by a call that never answers.
+     */
+    private class ScriptedRecordingEngine(val fake: FakeCameraEngine) : CameraEngine by fake {
+        private val late = MutableSharedFlow<EngineRecordingEvent>(extraBufferCapacity = 16)
+        private val held = mutableListOf<EngineRecordingEvent.Finalized>()
+        private val closed = CompletableDeferred<Unit>()
+
+        /** True: each Finalized the fake emits is held until [deliverHeld]. */
+        var holdFinalized = false
+
+        /** Runs once in place of the next stopRecording. */
+        var nextStop: (suspend () -> CameraKResult<RecordedVideo>)? = null
+
+        /** Runs once in place of the next pauseRecording. */
+        var nextPause: (suspend () -> CameraKResult<Unit>)? = null
+
+        override val recordingEvents: Flow<EngineRecordingEvent> = merge(
+            fake.recordingEvents.transform { event ->
+                if (holdFinalized && event is EngineRecordingEvent.Finalized) held += event else emit(event)
+            },
+            late,
+        )
+
+        fun deliverHeld() {
+            held.forEach { late.tryEmit(it) }
+            held.clear()
+        }
+
+        /** A platform call that never answers: it returns only once the engine closes. */
+        suspend fun <T> untilClosed(): CameraKResult<T> {
+            closed.await()
+            return CameraKResult.Failure(CameraKError.Closed)
+        }
+
+        override suspend fun stopRecording(): CameraKResult<RecordedVideo> =
+            nextStop?.also { nextStop = null }?.invoke() ?: fake.stopRecording()
+
+        override suspend fun pauseRecording(): CameraKResult<Unit> =
+            nextPause?.also { nextPause = null }?.invoke() ?: fake.pauseRecording()
+
+        override fun close() {
+            closed.complete(Unit)
+            fake.close()
+        }
+
+        override suspend fun closeAndJoin() {
+            closed.complete(Unit)
+            fake.closeAndJoin()
+        }
+    }
+
+    @Test
+    fun aLateFinalizedOfAStoppedRecordingDoesNotEndTheNextOne() = runTest {
+        val engine = ScriptedRecordingEngine(FakeCameraEngine()).apply { holdFinalized = true }
+        val holder = readyHolder(engine)
+        val first = holder.recording()
+        assertIs<CameraKResult.Success<RecordedVideo>>(holder.stopRecording())
+        runCurrent()
+        val second = holder.recording()
+
+        // The platform reports the first recording's end only now.
+        engine.deliverHeld()
+        runCurrent()
+
+        val live = assertIs<RecordingState.Recording>(
+            holder.recordingState.value,
+            "the first recording's late Finalized ended the second",
+        )
+        assertEquals(second.recordingId, live.recordingId)
+        engine.holdFinalized = false
+        val stopped = assertIs<CameraKResult.Success<RecordedVideo>>(holder.stopRecording(), "the second stop").value
+        assertEquals(second.filePath, stopped.path)
+        assertTrue(stopped.path != first.filePath, "both recordings wrote ${first.filePath}")
+    }
+
+    @Test
+    fun aLateFinalizedThatLandsWhileTheNextStartIsStartingIsNotItsEnd() = runTest {
+        val fake = FakeCameraEngine()
+        val engine = ScriptedRecordingEngine(fake).apply { holdFinalized = true }
+        val holder = readyHolder(engine)
+        val first = holder.recording()
+        assertIs<CameraKResult.Success<RecordedVideo>>(holder.stopRecording())
+        runCurrent()
+        engine.holdFinalized = false
+        fake.autoStartRecording = false
+
+        val start = async { holder.startRecording() }
+        runCurrent()
+        assertIs<RecordingState.Starting>(holder.recordingState.value)
+        engine.deliverHeld()
+        runCurrent()
+        fake.deliverRecordingStarted()
+        runCurrent()
+
+        val second = assertIs<CameraKResult.Success<RecordingState.Recording>>(start.await()).value
+        assertTrue(second.filePath != first.filePath, "the second start returned the first recording's file")
+        val live = assertIs<RecordingState.Recording>(
+            holder.recordingState.value,
+            "the first recording's late Finalized ended the second start",
+        )
+        assertEquals(second.recordingId, live.recordingId)
+        val stopped = assertIs<CameraKResult.Success<RecordedVideo>>(holder.stopRecording(), "the second stop").value
+        assertEquals(second.filePath, stopped.path)
+    }
+
+    @Test
+    fun aLateFinalizedOfATimedOutStartIsDrained() = runTest {
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val engine = ScriptedRecordingEngine(fake).apply { holdFinalized = true }
+        val holder = readyHolder(engine)
+        // The platform had begun the start the holder gave up on: the stop ends it, and its Finalized comes late.
+        val abandoned = FakeCaptures.video(path = "/fake/VID_0001.mp4")
+        engine.nextStop = {
+            fake.finishRecording(CameraKResult.Success(abandoned), RecordingEndReason.USER)
+            CameraKResult.Success(abandoned)
+        }
+
+        val start = async { holder.startRecording() }
+        runCurrent()
+        advanceTimeBy(RECORDING_START_TIMEOUT)
+        runCurrent()
+        assertIs<CameraKError.Timeout>(assertIs<CameraKResult.Failure>(start.await()).error)
+        assertEquals(RecordingState.Idle, holder.recordingState.value)
+        fake.autoStartRecording = true
+        val second = holder.recording()
+        engine.deliverHeld()
+        runCurrent()
+
+        val live = assertIs<RecordingState.Recording>(
+            holder.recordingState.value,
+            "the abandoned start's late Finalized ended the next recording",
+        )
+        assertEquals(second.recordingId, live.recordingId)
+    }
+
+    @Test
+    fun aUserStopTheEngineNeverAnswersEndsAsTimeoutAndItsLateFinalizedIsDrained() = runTest {
+        val fake = FakeCameraEngine()
+        val engine = ScriptedRecordingEngine(fake).apply { holdFinalized = true }
+        val holder = readyHolder(engine)
+        val events = collectEvents(holder)
+        val first = holder.recording()
+        engine.nextStop = { engine.untilClosed() }
+
+        val stop = async { holder.stopRecording() }
+        runCurrent()
+        advanceTimeBy(SHUTDOWN_STOP_TIMEOUT - 1.milliseconds)
+        runCurrent()
+        assertFalse(stop.isCompleted, "the stop gave up before SHUTDOWN_STOP_TIMEOUT")
+        advanceTimeBy(1.milliseconds)
+        runCurrent()
+
+        assertTrue(stop.isCompleted, "the stop still waits on the engine: ${holder.recordingState.value}")
+        val error = assertIs<CameraKError.Timeout>(assertIs<CameraKResult.Failure>(stop.await()).error)
+        assertEquals(CameraOperation.RECORD_STOP, error.operation)
+        val finished = assertIs<RecordingState.Finished>(holder.recordingState.value)
+        assertEquals(first.recordingId, finished.recordingId)
+        assertEquals(RecordingEndReason.ERROR, finished.reason)
+        assertIs<CameraKError.Timeout>(assertIs<CameraKResult.Failure>(finished.result).error)
+        val ended = events.filterIsInstance<CameraKEvent.RecordingEnded>().single()
+        assertEquals(first.recordingId, ended.recordingId)
+        assertEquals(RecordingEndReason.ERROR, ended.reason)
+
+        // The platform finalizes the first recording after all, once the second is live.
+        fake.finishRecording(
+            CameraKResult.Success(FakeCaptures.video(path = first.filePath)),
+            RecordingEndReason.USER,
+        )
+        runCurrent()
+        val second = holder.recording()
+        engine.deliverHeld()
+        runCurrent()
+        val live = assertIs<RecordingState.Recording>(
+            holder.recordingState.value,
+            "the timed-out stop's late Finalized ended the next recording",
+        )
+        assertEquals(second.recordingId, live.recordingId)
+    }
+
+    @Test
+    fun aFinalizedFromInsideStopRecordingEndsTheRecordingOnce() = runTest {
+        val fake = FakeCameraEngine()
+        val engine = ScriptedRecordingEngine(fake)
+        val holder = readyHolder(engine)
+        val events = collectEvents(holder)
+        val states = mutableListOf<RecordingState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            holder.recordingState.collect { states += it }
+        }
+        val first = holder.recording()
+        val video = FakeCaptures.video(path = first.filePath)
+        // The platform reaches its limit as the stop arrives: its one Finalized reaches the holder
+        // from inside stopRecording, before the call returns.
+        engine.nextStop = {
+            fake.finishRecording(CameraKResult.Success(video), RecordingEndReason.MAX_DURATION)
+            delay(1.milliseconds)
+            CameraKResult.Success(video)
+        }
+
+        val stopped = holder.stopRecording()
+
+        assertEquals(CameraKResult.Success(video), stopped)
+        val finished = assertIs<RecordingState.Finished>(holder.recordingState.value)
+        assertEquals(1, states.count { it is RecordingState.Finished }, "terminal states: $states")
+        assertEquals(RecordingEndReason.USER, finished.reason, "the stop held the lock first; its outcome stands")
+        assertEquals(stopped, finished.result)
+        assertEquals(emptyList(), events.filterIsInstance<CameraKEvent.RecordingEnded>(), "a stop the caller asked for")
+
+        // That Finalized was the first recording's own: the next recording's platform end is still its.
+        val second = holder.recording()
+        val limit = FakeCaptures.video(path = second.filePath)
+        fake.finishRecording(CameraKResult.Success(limit), RecordingEndReason.MAX_FILE_SIZE)
+        runCurrent()
+        val next = assertIs<RecordingState.Finished>(holder.recordingState.value, "the next recording's end was lost")
+        assertEquals(second.recordingId, next.recordingId)
+        assertEquals(RecordingEndReason.MAX_FILE_SIZE, next.reason)
+    }
+
+    @Test
+    fun hostStopGivesUpOnTheRecordingAfterShutdownStopTimeout() = runTest {
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val engine = ScriptedRecordingEngine(fake)
+        val holder = readyHolder(engine)
+        // The start is never confirmed and the stop of it never answers, so the recording step cannot end.
+        engine.nextStop = { engine.untilClosed() }
+        val start = async { holder.startRecording() }
+        runCurrent()
+        advanceTimeBy(1.seconds)
+
+        holder.stop()
+        runCurrent()
+        advanceTimeBy(SHUTDOWN_STOP_TIMEOUT - 1.milliseconds)
+        runCurrent()
+        assertEquals(0, fake.stopCalls, "the host stop gave up before SHUTDOWN_STOP_TIMEOUT: ${fake.calls}")
+        advanceTimeBy(1.milliseconds)
+        runCurrent()
+
+        assertEquals(1, fake.stopCalls, "the host stop waited past SHUTDOWN_STOP_TIMEOUT: ${fake.calls}")
+        start.cancel()
+    }
+
+    @Test
+    fun closeGivesUpOnTheRecordingAfterShutdownStopTimeout() = runTest {
+        val fake = FakeCameraEngine()
+        val engine = ScriptedRecordingEngine(fake)
+        val holder = readyHolder(engine)
+        holder.recording()
+        // A pause the platform never answers holds the recording's transitions, so close's stop waits behind it.
+        engine.nextPause = { engine.untilClosed() }
+        val pause = async { holder.pauseRecording() }
+        runCurrent()
+
+        holder.close()
+        runCurrent()
+        // After the recording step, close lets the running commands drain before it closes the engine.
+        advanceTimeBy(SHUTDOWN_STOP_TIMEOUT + COMMAND_DRAIN_TIMEOUT - 1.milliseconds)
+        runCurrent()
+        assertEquals(0, fake.closeCalls, "close gave up on the recording before SHUTDOWN_STOP_TIMEOUT")
+        advanceTimeBy(1.milliseconds)
+        runCurrent()
+
+        assertEquals(1, fake.closeCalls, "close waited past SHUTDOWN_STOP_TIMEOUT for the recording: ${fake.calls}")
+        assertEquals(CameraKResult.Failure(CameraKError.Closed), pause.await())
+    }
+
+    @Test
+    fun aPlatformEndWhilePausedGivesFinishedAndRecordingEnded() = runTest {
+        val fake = FakeCameraEngine()
+        val holder = readyHolder(fake)
+        val events = collectEvents(holder)
+        val recording = holder.recording()
+        assertEquals(CameraKResult.Success(Unit), holder.pauseRecording())
+        assertIs<RecordingState.Paused>(holder.recordingState.value)
+
+        val video = FakeCaptures.video(path = recording.filePath)
+        fake.finishRecording(CameraKResult.Success(video), RecordingEndReason.MAX_FILE_SIZE)
+        runCurrent()
+
+        val finished = assertIs<RecordingState.Finished>(holder.recordingState.value, "a paused recording's end")
+        assertEquals(recording.recordingId, finished.recordingId)
+        assertEquals(CameraKResult.Success(video), finished.result)
+        assertEquals(RecordingEndReason.MAX_FILE_SIZE, finished.reason)
+        val ended = events.filterIsInstance<CameraKEvent.RecordingEnded>().single()
+        assertEquals(recording.recordingId, ended.recordingId)
+        assertEquals(RecordingEndReason.MAX_FILE_SIZE, ended.reason)
+    }
+
+    @Test
+    fun hostStopDuringStartingWaitsForTheStartThenStopsItAsInterrupted() = runTest {
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val holder = readyHolder(fake)
+        val events = collectEvents(holder)
+        val start = async { holder.startRecording() }
+        runCurrent()
+        assertIs<RecordingState.Starting>(holder.recordingState.value)
+
+        holder.stop()
+        runCurrent()
+        assertEquals(0, fake.stopCalls, "the camera stopped under a start still resolving: ${fake.calls}")
+        fake.deliverRecordingStarted()
+        runCurrent()
+
+        val started = assertIs<CameraKResult.Success<RecordingState.Recording>>(start.await(), "the start").value
+        val calls = fake.calls
+        assertTrue(
+            calls.indexOf("stopRecording") in 0 until calls.indexOf("stop"),
+            "the host stop did not stop the recording before the camera: $calls",
+        )
+        val finished = assertIs<RecordingState.Finished>(holder.recordingState.value)
+        assertEquals(started.recordingId, finished.recordingId)
+        assertEquals(RecordingEndReason.INTERRUPTED, finished.reason)
+        val ended = events.filterIsInstance<CameraKEvent.RecordingEnded>().single()
+        assertEquals(started.recordingId, ended.recordingId)
+        assertEquals(RecordingEndReason.INTERRUPTED, ended.reason)
+        assertEquals(CameraKState.Idle, holder.cameraState.value)
     }
 }

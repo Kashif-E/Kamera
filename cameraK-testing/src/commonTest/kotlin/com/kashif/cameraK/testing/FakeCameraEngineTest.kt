@@ -6,6 +6,7 @@ import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.EngineRecordingEvent
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -14,9 +15,14 @@ import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.InterruptionReason
+import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.ZoomState
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -119,6 +125,24 @@ class FakeCameraEngineTest {
         val refused = assertIs<CameraKResult.Failure>(fake.setZoom(2f), "a ratio a fixed zoom cannot take")
         assertEquals(CameraFeature.ZOOM, assertIs<CameraKError.Unsupported>(refused.error).feature)
         assertEquals(1f, fake.appliedZoomRatio, "the refused ratio reached the platform")
+        fake.close()
+    }
+
+    @Test
+    fun aUserStopYieldsTheRecordingsOneFinalized() = runTest {
+        val fake = FakeCameraEngine()
+        val events = mutableListOf<EngineRecordingEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { fake.recordingEvents.toList(events) }
+        assertEquals(success, fake.start(desiredOn(FakeCapabilities.BACK_ID)))
+        val path = assertIs<CameraKResult.Success<String>>(fake.startRecording(VideoConfiguration())).value
+
+        val stopped = fake.stopRecording()
+
+        assertEquals(CameraKResult.Success(FakeCaptures.video(path = path)), stopped)
+        val finalized = events.filterIsInstance<EngineRecordingEvent.Finalized>()
+        assertEquals(1, finalized.size, "Finalized events for one stopped recording: $events")
+        assertEquals(stopped, finalized.single().result)
+        assertEquals(RecordingEndReason.USER, finalized.single().reason)
         fake.close()
     }
 }
