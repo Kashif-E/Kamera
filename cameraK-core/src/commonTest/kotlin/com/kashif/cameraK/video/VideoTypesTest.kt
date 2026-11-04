@@ -2,9 +2,12 @@ package com.kashif.cameraK.video
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class VideoTypesTest {
 
@@ -53,8 +56,8 @@ class VideoTypesTest {
     fun videoConfiguration_defaultValues() {
         val config = VideoConfiguration()
         assertEquals(VideoQuality.FHD, config.quality)
-        assertTrue(config.enableAudio)
-        assertEquals(0L, config.maxDurationMs)
+        assertFalse(config.enableAudio)
+        assertNull(config.maxDuration)
         assertEquals(null, config.outputDirectory)
         assertEquals("VID", config.filePrefix)
     }
@@ -64,13 +67,13 @@ class VideoTypesTest {
         val config = VideoConfiguration(
             quality = VideoQuality.UHD,
             enableAudio = false,
-            maxDurationMs = 60_000L,
+            maxDuration = 60.seconds,
             outputDirectory = "/tmp/videos",
             filePrefix = "TEST",
         )
         assertEquals(VideoQuality.UHD, config.quality)
         assertEquals(false, config.enableAudio)
-        assertEquals(60_000L, config.maxDurationMs)
+        assertEquals(60.seconds, config.maxDuration)
         assertEquals("/tmp/videos", config.outputDirectory)
         assertEquals("TEST", config.filePrefix)
     }
@@ -80,12 +83,12 @@ class VideoTypesTest {
         val original = VideoConfiguration(
             quality = VideoQuality.HD,
             enableAudio = false,
-            maxDurationMs = 30_000L,
+            maxDuration = 30.seconds,
         )
         val copy = original.copy(enableAudio = true)
         assertEquals(VideoQuality.HD, copy.quality)
         assertTrue(copy.enableAudio)
-        assertEquals(30_000L, copy.maxDurationMs)
+        assertEquals(30.seconds, copy.maxDuration)
     }
 
     @Test

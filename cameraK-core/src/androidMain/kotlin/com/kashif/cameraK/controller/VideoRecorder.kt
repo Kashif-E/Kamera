@@ -147,8 +147,8 @@ internal class VideoRecorder(
             val outcome = CompletableDeferred<VideoCaptureResult>()
             // CameraX stops at either limit and finalizes a playable file (see FinalizeMapper).
             val outputOptions = FileOutputOptions.Builder(outputFile)
-                .setDurationLimitMillis(configuration.maxDurationMs)
-                .setFileSizeLimit(configuration.maxFileSizeBytes)
+                .setDurationLimitMillis(configuration.maxDuration?.inWholeMilliseconds ?: 0L)
+                .setFileSizeLimit(configuration.maxFileSizeBytes ?: 0L)
                 .build()
 
             val hasAudioPermission = ContextCompat.checkSelfPermission(

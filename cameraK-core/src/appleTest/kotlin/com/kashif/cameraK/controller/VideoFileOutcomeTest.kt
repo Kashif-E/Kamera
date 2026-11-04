@@ -27,6 +27,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * A recording's outcome is what AVFoundation says it is: a recording it reports as not successfully
@@ -137,7 +138,7 @@ class VideoFileOutcomeTest {
     @Test
     fun theMovieOutputKeepsDiskSpaceFreeAndStopsAtTheConfiguredMaximumDuration() {
         use(Directory.DOCUMENTS)
-        val started = startedRecording(VideoConfiguration(enableAudio = false, maxDurationMs = 5_000))
+        val started = startedRecording(VideoConfiguration(enableAudio = false, maxDuration = 5.seconds))
 
         assertTrue(started.output.minFreeDiskSpaceLimit > 0, "the movie output keeps no disk space free")
         assertEquals(5.0, CMTimeGetSeconds(started.output.maxRecordedDuration), "the maximum duration was not set")

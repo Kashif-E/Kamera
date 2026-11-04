@@ -111,7 +111,6 @@ internal fun CameraContent(
         holder.attachPlugin(imageSaver.plugin)
         holder.attachPlugin(qrScanner.plugin)
         holder.attachPlugin(ocr.plugin)
-        holder.attachPlugin(recording.plugin)
     }
     val cameraState by holder.cameraState.collectAsState()
 
@@ -209,7 +208,8 @@ private fun CameraScreen(
     onCameraDeviceTypeChange: (CameraDeviceType) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    // The capture button stays on the 1.x controller until the engines capture (A3', I3', D3').
+    // The capture and record buttons stay on the 1.x controller until the engines capture and record
+    // (A3', I3', D3').
     val cameraController = cameraState.controller
     var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
@@ -237,7 +237,6 @@ private fun CameraScreen(
     RecordingEffects(
         recording = recording,
         isRecording = isRecording,
-        onRecordingChange = { isRecording = it },
         onDurationChange = { recordingDurationMs = it },
     )
 
@@ -352,7 +351,9 @@ private fun CameraScreen(
                                 }
                             }
                         },
-                        onVideoToggle = { recording.toggleRecording(isRecording) },
+                        onVideoToggle = {
+                            scope.launch { isRecording = recording.toggleRecording(cameraController, isRecording) }
+                        },
                     )
                 }
 

@@ -22,6 +22,7 @@ import org.robolectric.Shadows.shadowOf
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * A long recording at high resolution can fill the device. The size and duration limits in the
@@ -41,7 +42,7 @@ class RecordingLimitsTest {
 
     @Test
     fun sizeAndDurationLimits_reachTheRecorder() {
-        start(VideoConfiguration(enableAudio = false, maxDurationMs = 30_000L, maxFileSizeBytes = 50_000_000L))
+        start(VideoConfiguration(enableAudio = false, maxDuration = 30.seconds, maxFileSizeBytes = 50_000_000L))
 
         val output = backend.recordings.single().output
         assertEquals(30_000L, output.durationLimitMillis, "the duration limit never reached CameraX")

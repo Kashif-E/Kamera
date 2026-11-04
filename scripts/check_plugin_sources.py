@@ -19,7 +19,7 @@ import pathlib
 import re
 import sys
 
-PLUGIN_MODULES = ["qrScannerPlugin", "ocrPlugin", "videoRecorderPlugin", "analyzerPlugin"]
+PLUGIN_MODULES = ["qrScannerPlugin", "ocrPlugin", "analyzerPlugin"]
 LAYOUT_MODULES = ["ImageSaverPlugin", *PLUGIN_MODULES]
 SOURCE_SETS = {
     "commonMain",

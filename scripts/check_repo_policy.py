@@ -738,7 +738,6 @@ LIBRARY_MODULES = [
     "ImageSaverPlugin",
     "qrScannerPlugin",
     "ocrPlugin",
-    "videoRecorderPlugin",
     "analyzerPlugin",
 ]
 CATALOG_ENTRY = re.compile(r"^([A-Za-z0-9_.-]+)\s*=\s*(.+?)\s*$")

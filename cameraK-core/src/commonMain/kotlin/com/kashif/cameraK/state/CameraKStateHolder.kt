@@ -5,6 +5,7 @@ package com.kashif.cameraK.state
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.CapturedImage
+import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.coroutines.isFatal
@@ -51,7 +52,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -64,16 +64,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Clock
 import kotlin.time.Duration
-import kotlin.time.ExperimentalTime
 
 /**
  * The camera's state and lifecycle, free of Compose. It owns its coroutine scope and one camera
@@ -464,6 +461,26 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         return orientationRequests.submit(orientation)
     }
 
+    /** Where the recording is: the one recording state, written only by the holder. */
+    public val recordingState: StateFlow<RecordingState>
+        get() = TODO("H3' fix")
+
+    /** Adds the recording outputs ahead of time, so [startRecording] commits no configuration change. */
+    public suspend fun prepareRecording(config: VideoConfiguration = VideoConfiguration()): CameraKResult<Unit> =
+        TODO("H3' fix")
+
+    /** Starts a recording and returns it once the platform confirms it started. */
+    public suspend fun startRecording(
+        config: VideoConfiguration = VideoConfiguration(),
+    ): CameraKResult<RecordingState.Recording> = TODO("H3' fix")
+
+    /** Stops the recording and returns the finished file. */
+    public suspend fun stopRecording(): CameraKResult<RecordedVideo> = TODO("H3' fix")
+
+    public suspend fun pauseRecording(): CameraKResult<Unit> = TODO("H3' fix")
+
+    public suspend fun resumeRecording(): CameraKResult<Unit> = TODO("H3' fix")
+
     // Takes one of the in-flight capture slots, or none when all are taken.
     private fun takeCaptureSlot(): Boolean {
         var taken = false
@@ -605,136 +622,8 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         facade()?.toggleCameraLens()
     }
 
-    private var recordingTimerJob: Job? = null
-
     private fun resetRecordingState() {
-        recordingTimerJob?.cancel()
-        recordingTimerJob = null
         legacyRecording.value = LegacyRecording()
-    }
-
-    /**
-     * Starts a recording on the 1.x controller. Emits [CameraKEvent.RecordingStarted], and
-     * [CameraKEvent.RecordingMaxDurationReached] when [VideoConfiguration.maxDurationMs] ends it.
-     */
-    @Deprecated("Replaced by the holder's recording commands.")
-    public fun startRecording(configuration: VideoConfiguration = VideoConfiguration()) {
-        // A second start while recording would orphan the timer and the platform recorder.
-        if (legacyRecording.value.isRecording) {
-            scope.launch { _events.emit(CameraKEvent.RecordingFailed(Exception("Recording already in progress"))) }
-            return
-        }
-        val currentController = facade() ?: run {
-            scope.launch { _events.emit(CameraKEvent.RecordingFailed(Exception("Camera not initialized"))) }
-            return
-        }
-        scope.launch {
-            try {
-                val path = currentController.startRecording(configuration)
-                legacyRecording.value = LegacyRecording(isRecording = true)
-                _events.emit(CameraKEvent.RecordingStarted(path))
-                recordingTimerJob = scope.launch { tickRecording(currentController, configuration, path) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                CameraKLogger.e(TAG, "Starting a recording failed", e)
-                resetRecordingState()
-                _events.emit(CameraKEvent.RecordingFailed(e))
-            }
-        }
-    }
-
-    // The 1.x duration ticker: pause-aware elapsed time, and the auto-stop at maxDurationMs.
-    @OptIn(ExperimentalTime::class)
-    private suspend fun CoroutineScope.tickRecording(
-        controller: CameraController,
-        configuration: VideoConfiguration,
-        path: String,
-    ) {
-        val startMs = Clock.System.now().toEpochMilliseconds()
-        var pausedAccumulatorMs = 0L
-        var pauseStartMs = 0L
-        while (isActive) {
-            delay(250L)
-            val isPaused = legacyRecording.value.isPaused
-            val wasPaused = pauseStartMs > 0L
-            if (isPaused && !wasPaused) {
-                pauseStartMs = Clock.System.now().toEpochMilliseconds()
-            } else if (!isPaused && wasPaused) {
-                pausedAccumulatorMs += Clock.System.now().toEpochMilliseconds() - pauseStartMs
-                pauseStartMs = 0L
-            }
-            if (isPaused) continue
-            val elapsed = Clock.System.now().toEpochMilliseconds() - startMs - pausedAccumulatorMs
-            legacyRecording.update { it.copy(durationMs = elapsed) }
-
-            if (configuration.maxDurationMs > 0 && elapsed >= configuration.maxDurationMs) {
-                // A manual stopRecording may have won the race.
-                if (!legacyRecording.value.isRecording) break
-                val result = controller.stopRecording()
-                resetRecordingState()
-                _events.emit(CameraKEvent.RecordingMaxDurationReached(path, elapsed))
-                _events.emit(CameraKEvent.RecordingStopped(result))
-                break
-            }
-        }
-    }
-
-    /** Stops the recording on the 1.x controller; emits [CameraKEvent.RecordingStopped]. */
-    @Deprecated("Replaced by the holder's recording commands.")
-    public fun stopRecording() {
-        if (!legacyRecording.value.isRecording) return
-        val currentController = facade() ?: return
-        scope.launch {
-            try {
-                // The timer goes first, so it cannot auto-stop the same recording.
-                recordingTimerJob?.cancel()
-                recordingTimerJob = null
-                val result = currentController.stopRecording()
-                resetRecordingState()
-                _events.emit(CameraKEvent.RecordingStopped(result))
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                CameraKLogger.e(TAG, "Stopping a recording failed", e)
-                resetRecordingState()
-                _events.emit(CameraKEvent.RecordingFailed(e))
-            }
-        }
-    }
-
-    /** Pauses the recording on the 1.x controller. */
-    @Deprecated("Replaced by the holder's recording commands.")
-    public fun pauseRecording() {
-        val currentController = facade() ?: return
-        scope.launch {
-            try {
-                currentController.pauseRecording()
-                legacyRecording.update { it.copy(isPaused = true) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                CameraKLogger.e(TAG, "Pausing a recording failed", e)
-                _events.emit(CameraKEvent.RecordingFailed(e))
-            }
-        }
-    }
-
-    /** Resumes a paused recording on the 1.x controller. */
-    @Deprecated("Replaced by the holder's recording commands.")
-    public fun resumeRecording() {
-        val currentController = facade() ?: return
-        scope.launch {
-            try {
-                currentController.resumeRecording()
-                legacyRecording.update { it.copy(isPaused = false) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                CameraKLogger.e(TAG, "Resuming a recording failed", e)
-                _events.emit(CameraKEvent.RecordingFailed(e))
-            }
-        }
     }
 
     /** Emits [event] on [events]. Plugins use it to reach the app. */

@@ -49,7 +49,6 @@ kotlin {
             implementation(projects.imageSaverPlugin)
             implementation(projects.qrScannerPlugin)
             implementation(projects.ocrPlugin)
-            implementation(projects.videoRecorderPlugin)
             implementation(libs.lucide.icons.cmp)
         }
 

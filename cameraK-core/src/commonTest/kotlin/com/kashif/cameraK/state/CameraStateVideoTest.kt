@@ -1,11 +1,24 @@
+@file:OptIn(CameraKEngineApi::class, ExperimentalCoroutinesApi::class)
+
 package com.kashif.cameraK.state
 
+import com.kashif.cameraK.engine.CameraEngineFactory
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.testing.FakeCameraEngine
+import com.kashif.cameraK.testing.cameraKTestEnvironment
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoCaptureResult
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class CameraStateVideoTest {
 
@@ -56,6 +69,48 @@ class CameraStateVideoTest {
         )
         assertEquals(2.5f, state.zoomLevel)
         assertTrue(state.isRecording)
+    }
+
+    @Test
+    fun uiStateRecordingFieldsFollowTheRecordingController() = runTest {
+        val fake = FakeCameraEngine()
+        val holder = CameraKStateHolder(
+            CameraConfiguration(),
+            CameraEngineFactory { _, _ -> fake },
+            emptyList(),
+            cameraKTestEnvironment(),
+        )
+        holder.start()
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value)
+
+        fun assertFields(recording: Boolean, paused: Boolean, durationMs: Long, moment: String) {
+            val state = holder.uiState.value
+            assertEquals(recording, state.isRecording, "isRecording $moment")
+            assertEquals(paused, state.isPaused, "isPaused $moment")
+            assertEquals(durationMs, state.recordingDurationMs, "recordingDurationMs $moment")
+        }
+
+        assertFields(recording = false, paused = false, durationMs = 0L, moment = "before a recording")
+        assertIs<CameraKResult.Success<*>>(holder.startRecording())
+        assertFields(recording = true, paused = false, durationMs = 0L, moment = "at the start")
+        advanceTimeBy(1.seconds)
+        runCurrent()
+        assertFields(recording = true, paused = false, durationMs = 1_000L, moment = "a second in")
+
+        assertEquals(CameraKResult.Success(Unit), holder.pauseRecording())
+        assertFields(recording = true, paused = true, durationMs = 1_000L, moment = "at the pause")
+        advanceTimeBy(3.seconds)
+        runCurrent()
+        assertFields(recording = true, paused = true, durationMs = 1_000L, moment = "while paused")
+
+        assertEquals(CameraKResult.Success(Unit), holder.resumeRecording())
+        advanceTimeBy(500.milliseconds)
+        runCurrent()
+        assertFields(recording = true, paused = false, durationMs = 1_500L, moment = "after the resume")
+
+        assertIs<CameraKResult.Success<*>>(holder.stopRecording())
+        assertFields(recording = false, paused = false, durationMs = 0L, moment = "after the stop")
     }
 
     // ═══════════════════════════════════════════════════════════════

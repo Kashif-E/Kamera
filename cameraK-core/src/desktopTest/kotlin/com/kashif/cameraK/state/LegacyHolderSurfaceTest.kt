@@ -8,7 +8,6 @@ import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.ImageCaptureResult
-import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -223,18 +222,6 @@ class LegacyHolderSurfaceTest {
         sut.captureImage()
 
         val failed = assertIs<CameraKEvent.CaptureFailed>(withTimeout(TIMEOUT_MS) { event.await() })
-        assertEquals("Camera not initialized", failed.exception.message)
-        sut.shutdown()
-    }
-
-    @Test
-    fun legacyStartRecordingWithoutAFacadeEmitsCameraNotInitialized() = runBlocking {
-        val sut = holder { controller() }
-        val event = hostScope.async(start = CoroutineStart.UNDISPATCHED) { sut.events.first() }
-
-        sut.startRecording(VideoConfiguration())
-
-        val failed = assertIs<CameraKEvent.RecordingFailed>(withTimeout(TIMEOUT_MS) { event.await() })
         assertEquals("Camera not initialized", failed.exception.message)
         sut.shutdown()
     }

@@ -41,7 +41,6 @@ dependencies {
     implementation("io.github.kashif-mehmood-km:image_saver_plugin:2.0")
     implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:2.0")
     implementation("io.github.kashif-mehmood-km:ocr_plugin:2.0")
-    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:2.0")
     implementation("io.github.kashif-mehmood-km:analyzer_plugin:2.0")
 }
 ```

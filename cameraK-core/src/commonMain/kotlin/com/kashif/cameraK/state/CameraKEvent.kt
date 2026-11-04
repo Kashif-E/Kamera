@@ -1,6 +1,9 @@
 package com.kashif.cameraK.state
 
+import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.recording.RecordingEndReason
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.video.VideoCaptureResult
@@ -112,6 +115,24 @@ abstract class CameraKEvent internal constructor() {
      */
     @Deprecated("Emitted only by the 1.x recording calls, which the 2.0 recording commands replace.")
     data class RecordingMaxDurationReached(val filePath: String, val durationMs: Long) : CameraKEvent()
+
+    /**
+     * A recording the caller did not stop ended: a duration or size limit, an interruption, a
+     * platform error, a host stop, or [CameraKStateHolder.close] (SHUTDOWN). The same outcome is in
+     * `recordingState` as Finished, with the same [recordingId]; a stop the caller asked for returns
+     * its outcome from `stopRecording` instead.
+     *
+     * @property recordingId The id of the recording that ended, as in `RecordingState.Recording`.
+     * @property result The finished file, or why there is none.
+     * @property reason Why it ended.
+     */
+    class RecordingEnded internal constructor(
+        val recordingId: Long,
+        val result: CameraKResult<RecordedVideo>,
+        val reason: RecordingEndReason,
+    ) : CameraKEvent() {
+        override fun toString(): String = "RecordingEnded(recordingId=$recordingId, reason=$reason)"
+    }
 
     /**
      * A plugin failed. The failure is contained: the camera and the other plugins keep running. A

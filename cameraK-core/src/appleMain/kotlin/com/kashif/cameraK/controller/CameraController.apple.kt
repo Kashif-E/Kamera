@@ -778,13 +778,14 @@ actual class CameraController private constructor(
 
     /**
      * Keeps [minFreeRecordingDiskBytes] free (AVFoundation ends the recording, still playable, before
-     * the disk fills) and stops at [VideoConfiguration.maxDurationMs] when one is set.
+     * the disk fills) and stops at [VideoConfiguration.maxDuration] when one is set.
      */
     @OptIn(ExperimentalForeignApi::class)
     private fun applyRecordingLimits(output: AVCaptureMovieFileOutput, configuration: VideoConfiguration) {
         output.minFreeDiskSpaceLimit = minFreeRecordingDiskBytes
-        output.maxRecordedDuration = if (configuration.maxDurationMs > 0) {
-            CMTimeMakeWithSeconds(configuration.maxDurationMs / 1000.0, 600)
+        val maxDuration = configuration.maxDuration
+        output.maxRecordedDuration = if (maxDuration != null && maxDuration.isPositive()) {
+            CMTimeMakeWithSeconds(maxDuration.inWholeMilliseconds / 1000.0, 600)
         } else {
             kCMTimeInvalid.readValue()
         }

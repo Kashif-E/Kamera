@@ -45,11 +45,12 @@ Add these keys for camera, photo library, and microphone access:
 
 ## 2. Installation
 
-Add the plugin dependency to your `build.gradle.kts`:
+From 2.0, recording is part of the core library; the video recorder plugin is no longer published.
+Add the core library to your `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:video_recorder_plugin:2.0")
+    implementation("io.github.kashif-mehmood-km:camerak:2.0")
 }
 ```
 

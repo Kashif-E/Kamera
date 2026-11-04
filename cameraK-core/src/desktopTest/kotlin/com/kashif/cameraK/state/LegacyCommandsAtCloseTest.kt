@@ -23,8 +23,6 @@ import org.bytedeco.javacv.FrameRecorder
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -106,53 +104,5 @@ class LegacyCommandsAtCloseTest {
             grabber.openGate()
             controller.cleanup()
         }
-    }
-
-    @Test
-    fun startRecordingInFlightAtCloseReportsNoFailure() = runTest {
-        captureErrorLogs()
-        val entered = CountDownLatch(1)
-        val proceed = CountDownLatch(1)
-        // The recorder factory runs inside the controller's startRecording; holding it keeps the
-        // start in flight while the holder closes.
-        val controller = controller { _, _ ->
-            entered.countDown()
-            proceed.await(LATCH_SECONDS, TimeUnit.SECONDS)
-            FakeFrameRecorder()
-        }
-        try {
-            val environment = cameraKTestEnvironment()
-            val holder = CameraKStateHolder(
-                CameraConfiguration(),
-                { _, _ -> FacadeEngine(FakeCameraEngine(), controller) },
-                emptyList(),
-                environment,
-            )
-            holder.start()
-            runCurrent()
-            assertIs<CameraKState.Ready>(holder.cameraState.value)
-
-            holder.startRecording(VideoConfiguration())
-            runCurrent()
-            val reached = entered.await(LATCH_SECONDS, TimeUnit.SECONDS)
-            assertTrue(reached, "the recording start never reached the controller")
-
-            holder.close()
-            runCurrent()
-            val holderJob = environment.parentJob!!.children.single()
-            assertTrue(holderJob.isCancelled, "close did not cancel the holder's scope")
-            proceed.countDown()
-            holder.closeAndJoin()
-
-            assertNoFailureReported(holder)
-            assertFalse(holder.uiState.value.isRecording, "isRecording after close")
-        } finally {
-            proceed.countDown()
-            controller.cleanup()
-        }
-    }
-
-    private companion object {
-        const val LATCH_SECONDS = 10L
     }
 }

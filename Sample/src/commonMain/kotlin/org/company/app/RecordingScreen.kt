@@ -23,71 +23,72 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.kashif.cameraK.state.CameraKEvent
+import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
-import com.kashif.videorecorderplugin.VideoRecorderPlugin
-import com.kashif.videorecorderplugin.rememberVideoRecorderPlugin
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
-/** The Sample's video recording: Full HD with audio, up to five minutes. */
-internal class RecordingFeature(val plugin: VideoRecorderPlugin)
-
-@Composable
-internal fun rememberRecordingFeature(): RecordingFeature {
-    val plugin = rememberVideoRecorderPlugin(
-        config = VideoConfiguration(
-            quality = VideoQuality.FHD,
-            enableAudio = true,
-            maxDurationMs = 300_000L,
-        ),
+/**
+ * The Sample's video recording: Full HD with audio, up to five minutes. It records on the 1.x
+ * controller until the engines record (A3', I3', D3'); the desktop controller applies no duration
+ * limit, so there the five minutes are not enforced.
+ */
+internal class RecordingFeature {
+    val configuration = VideoConfiguration(
+        quality = VideoQuality.FHD,
+        enableAudio = true,
+        maxDuration = 5.minutes,
     )
-    return remember(plugin) { RecordingFeature(plugin) }
-}
 
-internal fun RecordingFeature.toggleRecording(isRecording: Boolean) {
-    if (isRecording) {
-        plugin.stopRecording()
-    } else {
-        plugin.startRecording()
+    // The elapsed time shown while recording: the Sample's own, from when the recording started.
+    private var startedAt: TimeMark? = null
+
+    /** The recorded time, or 0 when nothing is recording. */
+    val durationMs: Long get() = startedAt?.elapsedNow()?.inWholeMilliseconds ?: 0L
+
+    /** Starts a recording on [controller], or stops the one running; returns whether one runs afterwards. */
+    suspend fun toggleRecording(controller: CameraController, isRecording: Boolean): Boolean =
+        if (isRecording) stop(controller) else start(controller)
+
+    private suspend fun start(controller: CameraController): Boolean = try {
+        val path = controller.startRecording(configuration)
+        startedAt = TimeSource.Monotonic.markNow()
+        println("Recording to $path")
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        println("Starting a recording failed: ${e::class.simpleName}")
+        false
+    }
+
+    private suspend fun stop(controller: CameraController): Boolean {
+        startedAt = null
+        when (val result = controller.stopRecording()) {
+            is VideoCaptureResult.Success -> println("Recording saved: ${result.filePath}")
+            is VideoCaptureResult.Error -> println("Recording failed: ${result.exception::class.simpleName}")
+        }
+        return false
     }
 }
 
-/** Follows the recorder's events into [onRecordingChange] and, while recording, its duration into [onDurationChange]. */
 @Composable
-internal fun RecordingEffects(
-    recording: RecordingFeature,
-    isRecording: Boolean,
-    onRecordingChange: (Boolean) -> Unit,
-    onDurationChange: (Long) -> Unit,
-) {
-    LaunchedEffect(recording) {
-        recording.plugin.recordingEvents.collect { event ->
-            when (event) {
-                is CameraKEvent.RecordingStarted -> {
-                    onRecordingChange(true)
-                }
+internal fun rememberRecordingFeature(): RecordingFeature = remember { RecordingFeature() }
 
-                is CameraKEvent.RecordingStopped,
-                is CameraKEvent.RecordingFailed,
-                is CameraKEvent.RecordingMaxDurationReached,
-                -> {
-                    onRecordingChange(false)
-                    onDurationChange(0L)
-                }
-
-                else -> {}
-            }
-        }
-    }
-
+/** While [isRecording], publishes the recording's elapsed time to [onDurationChange] four times a second. */
+@Composable
+internal fun RecordingEffects(recording: RecordingFeature, isRecording: Boolean, onDurationChange: (Long) -> Unit) {
     LaunchedEffect(isRecording) {
-        if (isRecording) {
-            while (true) {
-                onDurationChange(recording.plugin.recordingDurationMs)
-                delay(250L)
-            }
+        while (isRecording) {
+            onDurationChange(recording.durationMs)
+            delay(250L)
         }
+        onDurationChange(0L)
     }
 }
 

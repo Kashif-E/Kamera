@@ -47,7 +47,6 @@ val libraryModules =
         "ImageSaverPlugin",
         "qrScannerPlugin",
         "ocrPlugin",
-        "videoRecorderPlugin",
         "analyzerPlugin",
     )
 // Published modules that are not libraries: test fixtures, which apps add to test source sets only.
