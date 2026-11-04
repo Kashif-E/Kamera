@@ -52,11 +52,17 @@ kotlin {
             implementation(libs.junit)
             implementation(libs.robolectric)
             implementation(libs.androidx.test.core)
+            // ViewfinderSurfaceRequestTest composes the Android preview under Robolectric: runComposeUiTest,
+            // and the manifest that declares the ComponentActivity it launches.
+            implementation(libs.compose.ui.test)
+            implementation(libs.androidx.compose.ui.test.manifest)
         }
 
         androidMain.dependencies {
             // Only the 1.x permission launcher (Permissions.android.kt) uses it.
             implementation(libs.androidx.activityCompose)
+            // Both Android preview composables render CameraXViewfinder (design §7.1).
+            implementation(libs.camera.compose)
         }
     }
 

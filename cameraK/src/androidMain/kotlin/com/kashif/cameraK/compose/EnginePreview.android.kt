@@ -3,7 +3,9 @@
 package com.kashif.cameraK.compose
 
 import android.content.Context
+import androidx.camera.core.SurfaceRequest
 import androidx.camera.view.PreviewView
+import androidx.camera.viewfinder.compose.MutableCoordinateTransformer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -58,3 +60,22 @@ private fun AttachedPreviewView(source: PlatformPreviewSource, modifier: Modifie
 // RememberReturnType reads an apply block that ends in an assignment as remember returning Unit.
 private fun fitCenterPreviewView(context: Context): PreviewView =
     PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_CENTER }
+
+/**
+ * The engine's preview in CameraXViewfinder, with [overlay] over it. [viewfinder] renders each
+ * SurfaceRequest the engine publishes; [coordinateTransformer] maps the viewfinder's coordinates to the
+ * camera frame's.
+ */
+@Composable
+internal fun ViewfinderPreview(
+    source: PlatformPreviewSource,
+    deviceOrientation: DeviceOrientation,
+    modifier: Modifier,
+    overlay: (@Composable CameraPreviewScope.() -> Unit)?,
+    coordinateTransformer: MutableCoordinateTransformer = remember { MutableCoordinateTransformer() },
+    viewfinder: @Composable (SurfaceRequest, MutableCoordinateTransformer, Modifier) -> Unit = { _, _, _ -> },
+) {
+    Box(modifier = modifier) {
+        if (overlay != null) CameraPreviewOverlay(deviceOrientation, overlay)
+    }
+}

@@ -52,6 +52,9 @@ robolectric = "4.17"
 androidx-test-core = "1.7.0"
 # 2.0.0-alpha04 and later are compiled for Java 21; this build runs on JDK 17.
 paparazzi = "2.0.0-alpha02"
+# ui-test-manifest declares the ComponentActivity Robolectric launches for camerak's Compose tests. It is
+# the androidx Compose UI version compose-multiplatform 1.11.1 resolves on Android, never a newer one.
+androidx-compose-ui-test = "1.11.2"
 
 [libraries]
 
@@ -61,6 +64,9 @@ camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "cam
 camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
 camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
 camera-video = { module = "androidx.camera:camera-video", version.ref = "camerax" }
+# CameraXViewfinder for camerak's Android preview; it brings viewfinder-compose. Always the camerax ref:
+# checkBuildGateRules' camera_compose_must_match_camerax_version fails on any other.
+camera-compose = { module = "androidx.camera:camera-compose", version.ref = "camerax" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 zxing-javase = { module = "com.google.zxing:javase", version.ref = "zxing" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
@@ -95,6 +101,8 @@ kflite = {module = "io.github.shadmanadman:kflite", version.ref = "kflite"}
 junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidx-test-core" }
+compose-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "compose-multiplatform" }
+androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "androidx-compose-ui-test" }
 
 [plugins]
 

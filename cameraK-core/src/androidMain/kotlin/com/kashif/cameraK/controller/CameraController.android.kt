@@ -15,6 +15,7 @@ import com.kashif.cameraK.capture.heicCaptureUnsupported
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewAttachment
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
@@ -203,6 +204,12 @@ actual class CameraController internal constructor(
     @CameraKEngineApi
     fun attachPreview(previewView: PreviewView): PreviewAttachment =
         engine.preview.attach(previewView.surfaceProvider, displayOf(previewView))
+
+    /** The engine's preview, which camerak's 1.x CameraPreviewView attaches its viewfinder to. */
+    @InternalCameraKApi
+    @CameraKEngineApi
+    val previewSource: PlatformPreviewSource
+        get() = TODO("UA: the engine's preview")
 
     // previewView.display is null until the view is attached (bindCamera runs from a DisposableEffect
     // before layout), so fall back to the hosting activity's display: a landscape start would

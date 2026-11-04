@@ -475,6 +475,10 @@ fun iosDeploymentTargetsBelow(
         .map { "IPHONEOS_DEPLOYMENT_TARGET ${it.groupValues[1]}${it.groupValues[2]} is below iOS $minimumMajor" }
 }
 
+// What is wrong with how a version catalog's text pins camera-compose: CameraXViewfinder reads CameraX's
+// SurfaceRequest internals, so it must come from the same release as camera-core, through the same ref.
+fun cameraComposeVersionProblems(catalog: String): List<String> = emptyList()
+
 // The types camerak-core no longer annotates for Compose; cameraK/compose-stability.conf lists them.
 val strippedStableTypes =
     listOf(
@@ -543,6 +547,7 @@ tasks.register("checkBuildGateRules") {
         }
     val stabilityConfig = layout.projectDirectory.file("cameraK/compose-stability.conf").asFile
     val sampleXcodeProject = layout.projectDirectory.file("iosApp/iosApp.xcodeproj/project.pbxproj").asFile
+    val versionCatalog = layout.projectDirectory.file("gradle/libs.versions.toml").asFile
     doLast {
         fun graphs(vararg entries: Pair<String, List<String>>) =
             publishedGraphs.associateWith { emptyList<String>() } + entries
@@ -557,6 +562,8 @@ tasks.register("checkBuildGateRules") {
                         "org.jetbrains.compose.ui:ui",
                         "androidx.activity:activity-compose",
                         "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose",
+                        "androidx.camera:camera-compose",
+                        "androidx.camera.viewfinder:viewfinder-compose",
                     ).filter { component ->
                         publishedClasspathProblems(
                             "cameraK-core",
@@ -695,6 +702,29 @@ tasks.register("checkBuildGateRules") {
                     ) +
                         iosDeploymentTargetsBelow(sampleXcodeProject.readText(), 16)
                             .map { "${sampleXcodeProject.relativeTo(rootDir)}: $it" }
+                },
+                "camera_compose_must_match_camerax_version" to {
+                    fun catalog(composeVersion: String?) =
+                        "[versions]\ncamerax = \"1.5.3\"\ncamerax-compose = \"1.5.3\"\n[libraries]\n" +
+                            "camera-core = { module = \"androidx.camera:camera-core\", version.ref = \"camerax\" }\n" +
+                            composeVersion
+                                ?.let { "camera-compose = { module = \"androidx.camera:camera-compose\", $it }\n" }
+                                .orEmpty()
+                    val matching = cameraComposeVersionProblems(catalog("version.ref = \"camerax\""))
+                    listOfNotNull(
+                        "a catalog with camera-compose at version.ref camerax is rejected: $matching"
+                            .takeIf { matching.isNotEmpty() },
+                        "a catalog with camera-compose at a literal version is accepted"
+                            .takeIf { cameraComposeVersionProblems(catalog("version = \"1.5.3\"")).isEmpty() },
+                        "a catalog with camera-compose at its own ref is accepted"
+                            .takeIf {
+                                cameraComposeVersionProblems(catalog("version.ref = \"camerax-compose\"")).isEmpty()
+                            },
+                        "a catalog without camera-compose is accepted"
+                            .takeIf { cameraComposeVersionProblems(catalog(null)).isEmpty() },
+                    ) +
+                        cameraComposeVersionProblems(versionCatalog.readText())
+                            .map { "${versionCatalog.relativeTo(rootDir)}: $it" }
                 },
                 "stability_config_lists_every_stripped_type" to {
                     if (!stabilityConfig.isFile) {
