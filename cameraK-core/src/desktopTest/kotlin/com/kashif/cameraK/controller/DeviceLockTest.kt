@@ -62,8 +62,11 @@ class DeviceLockTest {
             assertEquals(EngineState.Opening, secondOnA.state.value, "a second engine opened a device that is in use")
             assertEquals(listOf("usb-a", "usb-b"), opens.map { it.first }, "devices opened")
 
-            onA.stop()
+            // Not a plain stop(): while the case suspends on the producer's threads, runTest would
+            // skip virtual time and fire the open engines' no-frame watchdogs.
+            val stopA = async { onA.stop() }
             rig.settle()
+            stopA.await()
 
             assertEquals(CameraKResult.Success(Unit), secondA.await(), "the device once its first engine released it")
             assertEquals(listOf("usb-a", "usb-b", "usb-a"), opens.map { it.first })

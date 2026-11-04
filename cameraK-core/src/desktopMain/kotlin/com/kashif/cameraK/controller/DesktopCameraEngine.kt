@@ -85,10 +85,13 @@ internal val RECOVERY_TIMEOUT: Duration = 10.seconds
  * them; the engine's own coroutines (enumeration, watchdog, recovery) run on
  * `environment.dispatchers.default`.
  *
- * Until D2' and D3' there is one device, whose flash and torch are OFF and zoom fixed at 1: the
- * engine accepts `setFlashMode(OFF)` and refuses every other command with `InvalidState`, logging
- * the first refusal of each kind at warning (§12.1). Until C1' it carries the 1.x facade over
- * itself, [legacyController].
+ * The devices are what [enumerate] lists (D2': the bridge's [DeviceEnumerator]; the one default
+ * device for an engine a 1.x constructor built). A webcam has no flash, no torch and a fixed zoom
+ * of 1, so flash and torch OFF and zoom 1 succeed while Open and anything else is Unsupported;
+ * outside Open they are NotReady. The target orientation is configuration, accepted in every state
+ * but closed and applied to nothing (§2.4 desktop). Capture and recording are refused with
+ * `InvalidState` until D3', logging the first refusal of each kind at warning (§12.1). Until C1'
+ * it carries the 1.x facade over itself, [legacyController].
  */
 internal class DesktopCameraEngine(
     private val config: CameraConfiguration,
@@ -113,7 +116,7 @@ internal class DesktopCameraEngine(
     override val legacyController: CameraController by lazy { facade(this) }
 
     /** The desired hardware the current session started with; null without one. */
-    internal val startedWith: DesiredHardware? get() = TODO("D2'")
+    internal val startedWith: DesiredHardware? get() = synchronized(lock) { session?.desired }
 
     private val _state = MutableStateFlow<EngineState>(EngineState.Closed)
     override val state: StateFlow<EngineState> = _state.asStateFlow()
@@ -203,17 +206,21 @@ internal class DesktopCameraEngine(
         }
     }
 
-    // ById must name an enumerated device (§4.1 row 2). The one desktop device answers any lens
-    // until D2' enumerates devices: a webcam faces no particular way, and 1.x opened it for both.
+    // ById must name an enumerated device (§4.1 row 2). ByLens takes the first device facing that
+    // way, external cameras included, else the first device: a webcam faces no particular way, and
+    // 1.x opened the one camera whatever lens was configured (§2.4 desktop).
     private fun select(capabilities: CameraCapabilities, selection: CameraSelection): LensInfo? = when (selection) {
         is CameraSelection.ById -> capabilities.allLenses.firstOrNull { it.id == selection.id }
-        is CameraSelection.ByLens -> capabilities.lenses(selection.lens).firstOrNull()
+        is CameraSelection.ByLens -> capabilities.allLenses.firstOrNull { it.lens == selection.lens }
             ?: capabilities.allLenses.firstOrNull()
     }
 
-    private fun launchRunLocked(session: Session): Run {
-        session.run?.job?.cancel()
-        val run = Run(session)
+    private fun launchRunLocked(session: Session, switching: Boolean = false): Run {
+        session.run?.let { replaced ->
+            replaced.job?.cancel()
+            replaced.firstFrame.complete(false)
+        }
+        val run = Run(session, switching)
         session.run = run
         val listener = listenerWrapper(RunListener(run))
         val job = grabber.startRun(scope, source, checkNotNull(session.device), runtime.newWorker, listener)
@@ -248,6 +255,7 @@ internal class DesktopCameraEngine(
         session.watchdog?.cancel()
         session.recovery?.cancel()
         session.run?.job?.cancel()
+        session.run?.firstFrame?.complete(false)
         session.outcome.complete(CameraKResult.Failure(CameraKError.Closed))
     }
 
@@ -283,12 +291,14 @@ internal class DesktopCameraEngine(
         if (!isCurrentRun(run)) return
         previewFrames.value = PreviewFrame(image, captureNanos)
         session.frames.incrementAndGet()
+        // The first frame of this run: the platform confirmed the device it opened (§2.3 rule 1),
+        // the session's first, a reopen's, or a camera switch's.
+        if (run.firstFrame.complete(true)) {
+            _hardware.value = HardwareState(FlashMode.OFF, TorchMode.OFF, session.device, null)
+        }
         if (_state.value == EngineState.Open) return
-        // The first frame of this run: the platform confirmed the session (§2.3 rule 1).
-        _hardware.value = HardwareState(FlashMode.OFF, TorchMode.OFF, session.device, null)
         _state.value = EngineState.Open
         session.outcome.complete(CameraKResult.Success(Unit))
-        run.firstFrame.complete(true)
         startWatchdogLocked(session)
         if (!session.opened) {
             session.opened = true
@@ -297,16 +307,23 @@ internal class DesktopCameraEngine(
     }
 
     private fun onRunFailure(run: Run, failure: Throwable) {
-        // Before Open this is a failed open; the macOS authorization read may need JNA, so outside the lock.
-        val beforeOpen = synchronized(lock) { isCurrentRun(run) && !run.session.opened }
-        val openError = if (beforeOpen || JavaCvErrorMapper.isNativeLibraryMissing(failure)) {
-            JavaCvErrorMapper.openFailure(failure, os) { authorization.cameraStatus() }
-        } else {
-            null
+        // Before Open, or before a switched camera's first frame, this is a failed open; the macOS
+        // authorization read may need JNA, so outside the lock.
+        val opening = synchronized(lock) {
+            isCurrentRun(run) && (!run.session.opened || run.switching && !run.firstFrame.isCompleted)
+        }
+        val openError = when {
+            // The device was unplugged after enumeration (§2.4 desktop, §4.1 row 2).
+            failure is DeviceGoneException -> CameraKError.NoCamera(null, failure)
+            opening || JavaCvErrorMapper.isNativeLibraryMissing(failure) ->
+                JavaCvErrorMapper.openFailure(failure, os) { authorization.cameraStatus() }
+            else -> null
         }
         synchronized(lock) {
             val session = run.session
             if (!isCurrentRun(run)) return
+            run.error = openError
+            run.firstFrame.complete(false)
             when {
                 // Missing natives, and a camera that never opened: no reopen fixes either.
                 openError != null && (openError is CameraKError.NativeLibraryMissing || !session.opened) ->
@@ -375,6 +392,7 @@ internal class DesktopCameraEngine(
         session.watchdog?.cancel()
         session.recovery?.cancel()
         session.run?.job?.cancel()
+        session.run?.firstFrame?.complete(false)
         _state.value = EngineState.Failed(error)
         session.outcome.complete(CameraKResult.Failure(error))
     }
@@ -390,23 +408,91 @@ internal class DesktopCameraEngine(
 
     private fun capabilitiesNow(): CameraCapabilities = enumeration.value.also { _capabilities.value = it }
 
-    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> {
-        if (isClosed()) return CameraKResult.Failure(CameraKError.Closed)
-        // Flash OFF is what a desktop camera has: accepted, and nothing to change (K1's flash step).
-        return if (mode == FlashMode.OFF) CameraKResult.Success(FlashMode.OFF) else refuse(CameraOperation.FLASH)
+    /**
+     * The devices, enumerated on the calling thread if the engine's own enumeration has not run
+     * yet. The facade reads it: a 1.x engine lists the one default device without any I/O, and a
+     * bridge engine's facade is reachable only after a start, which enumerated.
+     */
+    internal fun enumeratedCapabilities(): CameraCapabilities = capabilitiesNow()
+
+    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = flashCommand(mode)
+
+    /** [setFlashMode] without suspending, for the facade. A desktop camera's flash is OFF. */
+    internal fun flashCommand(mode: FlashMode): CameraKResult<FlashMode> = hardwareCommand {
+        when (mode) {
+            FlashMode.OFF -> CameraKResult.Success(FlashMode.OFF)
+            FlashMode.ON -> unsupported(CameraFeature.FLASH_ON)
+            FlashMode.AUTO -> unsupported(CameraFeature.FLASH_AUTO)
+        }
     }
 
-    override suspend fun capture(): CameraKResult<CapturedImage> = refuse(CameraOperation.CAPTURE)
+    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = torchCommand(mode)
 
-    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = refuse(CameraOperation.ZOOM)
+    /** [setTorchMode] without suspending, for the facade. A desktop camera has no torch. */
+    internal fun torchCommand(mode: TorchMode): CameraKResult<TorchMode> = hardwareCommand {
+        if (mode == TorchMode.OFF) CameraKResult.Success(TorchMode.OFF) else unsupported(CameraFeature.TORCH)
+    }
 
-    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = refuse(CameraOperation.TORCH)
+    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = zoomCommand(ratio)
 
-    override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> =
-        refuse(CameraOperation.LENS)
+    /** [setZoom] without suspending, for the facade. A desktop camera's zoom is fixed at 1. */
+    internal fun zoomCommand(ratio: Float): CameraKResult<ZoomState> = hardwareCommand {
+        if (ratio == 1f) CameraKResult.Success(_zoom.value) else unsupported(CameraFeature.ZOOM)
+    }
 
+    // Hardware commands act on an open camera: Closed after close, NotReady in any other state but
+    // Open (D1' carry-over 3, as the fake).
+    private inline fun <T> hardwareCommand(command: () -> CameraKResult<T>): CameraKResult<T> {
+        val state = synchronized(lock) {
+            if (closed) return CameraKResult.Failure(CameraKError.Closed)
+            _state.value
+        }
+        return if (state == EngineState.Open) command() else CameraKResult.Failure(CameraKError.NotReady)
+    }
+
+    private fun unsupported(feature: CameraFeature) = CameraKResult.Failure(CameraKError.Unsupported(feature))
+
+    /**
+     * Moves a live session to the device [selection] names. While Open it returns once that
+     * device's first frame arrives; while opening the new device replaces the one being opened, and
+     * while interrupted the recovery reopens the new one. Without a live session there is nothing
+     * to move, and the next start opens what its own selection names. A device that fails to open
+     * returns its open error.
+     */
+    override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> {
+        if (isClosed()) return CameraKResult.Failure(CameraKError.Closed)
+        val capabilities = capabilitiesNow()
+        val (device, run) = synchronized(lock) {
+            if (closed) return CameraKResult.Failure(CameraKError.Closed)
+            val device = select(capabilities, selection)
+                ?: return CameraKResult.Failure(CameraKError.NoCamera((selection as? CameraSelection.ByLens)?.lens))
+            val live = session?.takeUnless { it.ended } ?: return CameraKResult.Success(device)
+            if (live.device?.id == device.id) return CameraKResult.Success(device)
+            val waitForFrame = _state.value == EngineState.Open
+            live.device = device
+            when {
+                waitForFrame -> device to launchRunLocked(live, switching = true)
+                _state.value is EngineState.Interrupted -> return CameraKResult.Success(device)
+                else -> {
+                    launchRunLocked(live)
+                    return CameraKResult.Success(device)
+                }
+            }
+        }
+        if (run.firstFrame.await()) return CameraKResult.Success(device)
+        return CameraKResult.Failure(synchronized(lock) { switchFailure(run) })
+    }
+
+    private fun switchFailure(run: Run): CameraKError = run.error ?: when (val state = _state.value) {
+        is EngineState.Failed -> state.error
+        else -> if (closed) CameraKError.Closed else CameraKError.NotReady
+    }
+
+    /** Configuration, not a hardware command: accepted in every state but closed, and a no-op on desktop (G2). */
     override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> =
-        refuse(CameraOperation.ORIENTATION)
+        if (isClosed()) CameraKResult.Failure(CameraKError.Closed) else CameraKResult.Success(Unit)
+
+    override suspend fun capture(): CameraKResult<CapturedImage> = refuse(CameraOperation.CAPTURE)
 
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> =
         refuse(CameraOperation.RECORD_PREPARE)
@@ -422,7 +508,7 @@ internal class DesktopCameraEngine(
 
     private fun isClosed(): Boolean = synchronized(lock) { closed }
 
-    // Until D2' and D3' give the engine these commands, the facade carries them (§12.1).
+    // Until D3' gives the engine capture and recording, the facade carries them (§12.1).
     private fun refuse(operation: CameraOperation): CameraKResult<Nothing> {
         if (isClosed()) return CameraKResult.Failure(CameraKError.Closed)
         if (operation !in refused.getAndUpdate { it + operation }) {
@@ -443,12 +529,15 @@ internal class DesktopCameraEngine(
         var ended = false
     }
 
-    /** One grab loop of a session: the first, or a reopen while interrupted. */
-    private class Run(val session: Session) {
+    /** One grab loop of a session: the first, a reopen while interrupted, or a camera switch's. */
+    private class Run(val session: Session, val switching: Boolean) {
         var job: Job? = null
 
-        /** True at the run's first frame, false when it fails before one. */
+        /** True at the run's first frame; false when it fails, ends or is replaced before one. */
         val firstFrame = CompletableDeferred<Boolean>()
+
+        /** The open error of a run that failed before its first frame. */
+        var error: CameraKError? = null
     }
 
     private inner class RunListener(private val run: Run) : GrabLoopListener {
@@ -474,7 +563,11 @@ private object DesktopLogTracer : Tracer {
     override fun marker(name: String) = CameraKLogger.d("CameraK", name)
 }
 
-/** The 1.x enumerator's one camera (CameraController.desktop.kt's getCameraCapabilities). */
+/**
+ * The one default entry: the 1.x enumerator's camera, which opens the system's default camera as
+ * 1.x did. Offered alone when the devices cannot be listed, and by a grabber-factory engine with no
+ * local camera (§2.4 desktop).
+ */
 internal fun desktopLensInfo(): LensInfo = LensInfo(
     id = "",
     deviceType = CameraDeviceType.DEFAULT,
@@ -486,12 +579,12 @@ internal fun desktopLensInfo(): LensInfo = LensInfo(
 )
 
 /**
- * The 1.x enumerator's one camera with the first real values of §6.3: flash and torch OFF only
- * (from `hasFlash`), and pause and resume through RecordingClock. Everything else keeps the 1.x
- * constructor's values until D3' and D4' fill it.
+ * The capabilities of the desktop cameras [lenses] (the 1.x enumerator's one camera by default):
+ * flash and torch OFF only (from `hasFlash`), and pause and resume through RecordingClock.
+ * Everything else keeps the 1.x constructor's values until D3' and D4' fill it.
  */
-internal fun desktopCapabilities(): CameraCapabilities {
-    val legacy = CameraCapabilities(listOf(desktopLensInfo()))
+internal fun desktopCapabilities(lenses: List<LensInfo> = listOf(desktopLensInfo())): CameraCapabilities {
+    val legacy = CameraCapabilities(lenses)
     val ids = legacy.allLenses.map { it.id }
     return CameraCapabilities(
         allLenses = legacy.allLenses,

@@ -33,13 +33,15 @@ import kotlin.time.Duration
  * runs on a worker thread from [workers], over [camera] or another camera from [newCamera].
  *
  * [settle] is the desktop driver's quiescence: it waits until every producer thread is idle or
- * parked in a camera's `grab()` with nothing to deliver, runs the scheduler's current tasks, and
- * repeats until neither side moves. It never sleeps and never advances virtual time.
+ * parked in a camera's `grab()` with nothing to deliver, runs the scheduler's current tasks (and
+ * [caseScheduler]'s, when the engine's coroutines run apart from the case's), and repeats until
+ * nothing moves. It never sleeps and never advances virtual time.
  */
 internal class DesktopEngineRig(
     private val scheduler: TestCoroutineScheduler,
     private val backoff: BackoffPolicy = BackoffPolicy { Duration.ZERO },
     private val tracer: Tracer = Tracer.None,
+    private val caseScheduler: TestCoroutineScheduler? = null,
 ) {
     val workers = TrackedWorkers()
     private val cameras = CopyOnWriteArrayList<ScriptedFrameGrabber>()
@@ -92,15 +94,25 @@ internal class DesktopEngineRig(
         repeat(MAX_ROUNDS) {
             workers.awaitQuiet(cameras)
             val before = workers.epoch
-            scheduler.runCurrent()
+            runCurrent()
             workers.awaitQuiet(cameras)
             if (workers.epoch == before) return
         }
         throw AssertionError("the engine never settled in $MAX_ROUNDS rounds")
     }
 
+    // The engine's tasks and the case's resume each other (a start the case launched begins a
+    // session; a session's outcome resumes the case), so the two schedulers take turns.
+    private fun runCurrent() {
+        repeat(if (caseScheduler == null) 1 else TURNS) {
+            scheduler.runCurrent()
+            caseScheduler?.runCurrent()
+        }
+    }
+
     private companion object {
         const val MAX_ROUNDS = 1_000
+        const val TURNS = 3
     }
 }
 

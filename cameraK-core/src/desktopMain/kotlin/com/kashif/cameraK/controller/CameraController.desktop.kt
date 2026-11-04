@@ -8,6 +8,7 @@ import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -17,6 +18,7 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -24,6 +26,7 @@ import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -163,6 +166,10 @@ actual class CameraController internal constructor(
     )
     private val closed = atomic(false)
 
+    // The hardware the 1.x setters asked for, kept across stop and start and passed to the
+    // engine's start (W4 decision G3).
+    private val desired = atomic(FACADE_DESIRED)
+
     /**
      * The camera's frames, latest first, as opaque `TYPE_3BYTE_BGR` images: the engine's preview
      * frames. Each image comes from a small ring the producer reuses: it is never written while it
@@ -233,44 +240,46 @@ actual class CameraController internal constructor(
     }
 
     /**
-     * Toggles the flash mode between ON, OFF, and AUTO.
+     * Cycles the flash through the camera's modes. A desktop camera has only OFF, so the cycle stays
+     * on it.
      */
     actual fun toggleFlashMode() {
-        // flash mode not available on desktop
+        setFlashMode(FlashMode.OFF)
     }
 
     /**
-     * Sets the flash mode of the camera
+     * Sets the flash mode. The mode is kept for the next start; while the camera is open it also
+     * goes to the engine, which accepts only OFF on desktop.
      *
      * @param mode The desired [FlashMode]
      */
     actual fun setFlashMode(mode: FlashMode) {
-        // flash mode not available on desktop
+        if (!updateDesired { it.with(flashMode = mode) }) return
+        whileOpen { engine.flashCommand(mode) }
     }
 
     /**
-     * @return the current [FlashMode] of the camera, if available
+     * @return the camera's flash mode: OFF, the only mode a desktop camera has
      */
-    actual fun getFlashMode(): FlashMode? = FlashMode.OFF
+    actual fun getFlashMode(): FlashMode? = engine.hardware.value.flashMode
 
     /**
-     * Toggles the torch mode between ON, OFF, and AUTO.
-     *
-     * Note: Torch is not available on desktop hardware.
+     * Cycles the torch through the camera's modes. A desktop camera has no torch, so the cycle stays
+     * on OFF.
      */
     actual fun toggleTorchMode() {
-        // torch not available on desktop
+        setTorchMode(TorchMode.OFF)
     }
 
     /**
-     * Sets the torch mode of the camera
+     * Sets the torch mode. The mode is kept for the next start; while the camera is open it also
+     * goes to the engine, which accepts only OFF on desktop.
      *
      * @param mode The desired [TorchMode]
-     *
-     * Note: Torch is not available on desktop hardware.
      */
     actual fun setTorchMode(mode: TorchMode) {
-        // torch not available on desktop
+        if (!updateDesired { it.with(torchMode = mode) }) return
+        whileOpen { engine.torchCommand(mode) }
     }
 
     /**
@@ -323,30 +332,31 @@ actual class CameraController internal constructor(
         // No-op on desktop — single camera
     }
 
-    actual fun getCameraCapabilities(): CameraCapabilities = CameraCapabilities(listOf(desktopLensInfo()))
+    /** The engine's cameras: the enumerated devices, each OFF-only with a fixed zoom of 1. */
+    actual fun getCameraCapabilities(): CameraCapabilities = engine.enumeratedCapabilities()
 
     /**
-     * Sets the zoom level.
-     *
-     * Note: Zoom is not supported on Desktop.
+     * Sets the zoom ratio. The ratio is kept for the next start; while the camera is open it also
+     * goes to the engine, which accepts only 1.0 on desktop.
      */
     actual fun setZoom(zoomRatio: Float) {
-        // zoom not available on desktop
+        if (!updateDesired { it.with(zoomRatio = zoomRatio) }) return
+        whileOpen { engine.zoomCommand(zoomRatio) }
     }
 
     /**
      * Gets the current zoom ratio.
      *
-     * @return 1.0 as Desktop doesn't support zoom
+     * @return the engine's zoom: 1.0, as a desktop camera's zoom is fixed
      */
-    actual fun getZoom(): Float = 1.0f
+    actual fun getZoom(): Float = engine.zoom.value.ratio
 
     /**
      * Gets the maximum zoom ratio.
      *
-     * @return 1.0 as Desktop doesn't support zoom
+     * @return the engine's maximum: 1.0, as a desktop camera's zoom is fixed
      */
-    actual fun getMaxZoom(): Float = 1.0f
+    actual fun getMaxZoom(): Float = engine.zoom.value.maxRatio
 
     /**
      * Starts the camera session on the engine. The engine has begun the session when this returns
@@ -359,7 +369,7 @@ actual class CameraController internal constructor(
             return
         }
         // Undispatched: the engine begins the session on this thread, before the call returns.
-        scope.launch(start = CoroutineStart.UNDISPATCHED) { engine.start(FACADE_DESIRED) }
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { engine.start(desired.value) }
     }
 
     /**
@@ -395,8 +405,26 @@ actual class CameraController internal constructor(
         // No-op on desktop
     }
 
+    /** Kept for the next start; a desktop camera applies no orientation to its outputs. */
     actual fun setTargetOrientation(orientation: DeviceOrientation?) {
-        // No-op on desktop
+        updateDesired { it.with(targetOrientation = orientation) }
+    }
+
+    // In every state but closed, a 1.x setter changes the desired value (G3); false after cleanup().
+    private inline fun updateDesired(change: (DesiredHardware) -> DesiredHardware): Boolean {
+        if (closed.value) return false
+        desired.update(change)
+        return true
+    }
+
+    // Before Open the engine is not called: the value waits for the next start (G3).
+    private inline fun <T> whileOpen(command: () -> CameraKResult<T>) {
+        if (engine.state.value != EngineState.Open) return
+        val result = command()
+        if (result is CameraKResult.Failure) {
+            // 1.x ignored these on desktop; the camera keeps flash and torch OFF and zoom 1.
+            CameraKLogger.d("CameraK", "CameraK: The desktop camera has no such setting; it keeps OFF and zoom 1")
+        }
     }
 
     /**
@@ -576,6 +604,13 @@ actual class CameraController internal constructor(
         Directory.DOCUMENTS -> File(userHome, "Documents")
     }
 }
+
+private fun DesiredHardware.with(
+    flashMode: FlashMode = this.flashMode,
+    torchMode: TorchMode = this.torchMode,
+    zoomRatio: Float = this.zoomRatio,
+    targetOrientation: DeviceOrientation? = this.targetOrientation,
+) = DesiredHardware(selection, flashMode, torchMode, zoomRatio, targetOrientation)
 
 private val FACADE_DESIRED = DesiredHardware(
     selection = CameraSelection.ByLens(CameraLens.BACK, CameraDeviceType.DEFAULT),

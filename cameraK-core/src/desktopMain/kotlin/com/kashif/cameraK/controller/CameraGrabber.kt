@@ -420,15 +420,17 @@ private val VIDEO_NODE = Regex("video\\d+")
 
 // One lock per camera, held by a grab loop from before it opens the camera until it has released
 // it, so a new controller's loop waits for an old controller's loop that is still inside grab().
-// Every default grabber opens the system's first camera; a custom grabber is its own device. Weak
-// keys let a custom grabber be collected once no loop uses it.
+// A device is keyed on its id (§2.4 desktop); a custom grabber is its own device. Weak keys let a
+// custom grabber be collected once no loop uses it. Ids are held strongly: each enumeration builds
+// new id strings, so a weak id could be collected while a loop holds its lock, and the next loop
+// on that device would get a lock of its own.
 private val cameraDeviceLocks = WeakHashMap<Any, Mutex>()
+private val deviceIdLocks = HashMap<String, Mutex>()
 
-/** The device key every grabber of the system's default camera shares. */
-internal val defaultCamera = Any()
-
-private fun cameraDeviceLock(deviceKey: Any): Mutex =
-    synchronized(cameraDeviceLocks) { cameraDeviceLocks.getOrPut(deviceKey) { Mutex() } }
+private fun cameraDeviceLock(deviceKey: Any): Mutex = when (deviceKey) {
+    is String -> synchronized(deviceIdLocks) { deviceIdLocks.getOrPut(deviceKey) { Mutex() } }
+    else -> synchronized(cameraDeviceLocks) { cameraDeviceLocks.getOrPut(deviceKey) { Mutex() } }
+}
 
 /** A copy of one of the grab loop's frames, which its receiver may keep, and when it was grabbed. */
 internal class CapturedFrame(val image: BufferedImage, val captureNanos: Long)

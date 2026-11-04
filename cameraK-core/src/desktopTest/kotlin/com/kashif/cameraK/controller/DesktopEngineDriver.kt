@@ -15,6 +15,7 @@ import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestResult
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -42,8 +43,12 @@ internal class DesktopEngineDriver : ThrowingCallbackDriver {
     private var lastListener: GrabLoopListener? = null
     private var throwOnNextFrame = false
 
+    // The engine's coroutines get a scheduler of their own, which only settle() runs. On the case's
+    // scheduler, runTest would skip virtual time whenever a case suspends on the producer's real
+    // threads (a selectCamera waiting for the new device's first frame), and the engine's no-frame
+    // watchdog would fire in the middle of the case.
     override fun runCase(body: suspend TestScope.() -> Unit): TestResult = runTest {
-        rig = DesktopEngineRig(testScheduler)
+        rig = DesktopEngineRig(TestCoroutineScheduler(), caseScheduler = testScheduler)
         body()
     }
 

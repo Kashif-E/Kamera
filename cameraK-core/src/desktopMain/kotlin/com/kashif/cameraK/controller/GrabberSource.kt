@@ -101,12 +101,13 @@ internal class CustomGrabberSource(private val grabber: FrameGrabber) : GrabberS
 
 /**
  * The system's default camera, opened as the 1.x controller opened it: at [targetResolution] (720p
- * when null) and CameraK's frame rate, or at the camera's own mode on the retry. Every grabber of
- * it shares one device lock. Tests replace it through [defaultCameraOverride]. D2' selects among
- * enumerated devices instead.
+ * when null) and CameraK's frame rate, or at the camera's own mode on the retry. Its lock is keyed
+ * on the default entry's id. The 1.x constructors and `CameraGrabber.start` use it; the bridge's
+ * engine selects among enumerated devices ([EnumeratedDeviceSource]). Tests replace it through
+ * [defaultCameraOverride].
  */
 internal class DefaultDeviceSource(private val targetResolution: Pair<Int, Int>?) : GrabberSource {
-    override fun deviceKey(device: LensInfo): Any = defaultCamera
+    override fun deviceKey(device: LensInfo): Any = device.id
     override val canRelax: Boolean get() = true
 
     override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = defaultCameraOverride?.invoke()
@@ -116,24 +117,33 @@ internal class DefaultDeviceSource(private val targetResolution: Pair<Int, Int>?
         )
 }
 
-/** The enumerated cameras of [devices], each opened by its id. */
+/**
+ * The enumerated cameras of [devices], each opened by its `LensInfo.id` at [targetResolution] (720p
+ * when null) and CameraK's frame rate, or at the camera's own mode on the retry. The lock is keyed
+ * on the id (§2.4 desktop). Tests that reach a real camera get [defaultCameraOverride] instead.
+ */
 internal class EnumeratedDeviceSource(
     private val devices: DesktopDevices,
     private val targetResolution: Pair<Int, Int>?,
 ) : GrabberSource {
-    override fun deviceKey(device: LensInfo): Any = TODO("D2'")
+    override fun deviceKey(device: LensInfo): Any = device.id
 
-    override val canRelax: Boolean get() = TODO("D2'")
+    override val canRelax: Boolean get() = true
 
-    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = TODO("D2'")
+    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = defaultCameraOverride?.invoke()
+        ?: devices.open(device.id, if (constrained) targetResolution ?: DEFAULT_CAMERA_RESOLUTION else null)
 }
 
-/** The app's [DesktopGrabberFactory]. */
+/**
+ * The app's [DesktopGrabberFactory]: every open, watchdog reopens included, asks it for the selected
+ * device's id. Its grabber is opened as the app built it, like the 1.x `customGrabber`, so there is
+ * no CameraK size or frame rate to drop on a retry. The lock is keyed on the id.
+ */
 @OptIn(CameraKPlatformApi::class)
 internal class FactoryGrabberSource(private val factory: DesktopGrabberFactory) : GrabberSource {
-    override fun deviceKey(device: LensInfo): Any = TODO("D2'")
+    override fun deviceKey(device: LensInfo): Any = device.id
 
-    override val canRelax: Boolean get() = TODO("D2'")
+    override val canRelax: Boolean get() = false
 
-    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = TODO("D2'")
+    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = factory.create(device.id)
 }
