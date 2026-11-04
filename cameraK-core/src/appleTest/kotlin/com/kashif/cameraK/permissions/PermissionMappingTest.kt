@@ -100,7 +100,10 @@ class PermissionMappingTest {
         val platform = FakeApplePermissionPlatform(photo = PHAuthorizationStatusAuthorized, photoAccessLevels = false)
 
         withPlatform(platform) {
-            assertEquals(PermissionStatus.NotDetermined, platformPermissionStatus(context, CameraKPermission.GALLERY_ADD))
+            assertEquals(
+                PermissionStatus.NotDetermined,
+                platformPermissionStatus(context, CameraKPermission.GALLERY_ADD),
+            )
             assertEquals(
                 PermissionStatus.NotDetermined,
                 platformPermissionChecker(context).status(CameraKPermission.GALLERY_ADD),
