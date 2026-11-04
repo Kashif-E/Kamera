@@ -76,7 +76,6 @@ camerak-image-saver = { module = "io.github.kashif-mehmood-km:image_saver_plugin
 camerak-qr-scanner = { module = "io.github.kashif-mehmood-km:qr_scanner_plugin", version.ref = "camerak" }
 camerak-ocr = { module = "io.github.kashif-mehmood-km:ocr_plugin", version.ref = "camerak" }
 camerak-analyzer = { module = "io.github.kashif-mehmood-km:analyzer_plugin", version.ref = "camerak" }
-camerak-video-recorder = { module = "io.github.kashif-mehmood-km:video_recorder_plugin", version.ref = "camerak" }
 ```
 
 Then in your `build.gradle.kts`:
@@ -88,7 +87,6 @@ dependencies {
     implementation(libs.camerak.qr.scanner)
     implementation(libs.camerak.ocr)
     implementation(libs.camerak.analyzer)
-    implementation(libs.camerak.video.recorder)
 }
 ```
 
