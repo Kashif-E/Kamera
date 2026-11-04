@@ -392,11 +392,13 @@ class CustomCameraController(
             QualityPrioritization.NONE -> null
         }
 
+    /** The flash modes the photo output supports with the camera now in use; none before setup. */
+    internal val captureFlashModes: List<AVCaptureFlashMode>
+        get() = photoOutput?.let(photoCapturer::supportedFlashModes).orEmpty()
+
     /** [mode] when the photo output supports it, otherwise off (devices without a flash, such as iPads). */
-    private fun supportedFlashMode(mode: AVCaptureFlashMode): AVCaptureFlashMode {
-        val supportedFlashModes = photoOutput?.supportedFlashModes() as? List<*>
-        return if (supportedFlashModes?.contains(mode) == true) mode else AVCaptureFlashModeOff
-    }
+    private fun supportedFlashMode(mode: AVCaptureFlashMode): AVCaptureFlashMode =
+        if (mode in captureFlashModes) mode else AVCaptureFlashModeOff
 
     private fun setupPhotoOutput() {
         photoOutput = AVCapturePhotoOutput()
@@ -773,6 +775,23 @@ class CustomCameraController(
         }
     }
 
+    /** Applies [torchMode] to the camera in use unless the camera already reports it. Session queue only. */
+    internal fun reapplyTorchOnQueue() = applyConfiguredTorch()
+
+    /**
+     * Sets [mode] on [camera], which must have a torch that supports it, under its configuration lock.
+     * Session queue only; returns why the camera could not be locked.
+     */
+    internal fun setTorchOnQueue(camera: CaptureDeviceOps, mode: AVCaptureTorchMode): CameraException? =
+        withConfigurationLock(camera, "set the torch") { camera.setTorchMode(mode) }
+
+    /**
+     * Sets [factor], which must lie in [camera]'s zoom range, under its configuration lock. Session queue
+     * only; returns why the camera could not be locked.
+     */
+    internal fun setZoomOnQueue(camera: CaptureDeviceOps, factor: Double): CameraException? =
+        withConfigurationLock(camera, "set the zoom") { camera.setVideoZoomFactor(factor) }
+
     /** Applies [torchMode] to the camera in use unless it is already set. Runs on the session queue. */
     private fun applyConfiguredTorch() {
         val camera = currentCamera ?: return
@@ -792,21 +811,27 @@ class CustomCameraController(
 
     /**
      * Runs [change] holding [camera]'s configuration lock, which AVFoundation requires for every
-     * device property change; a refused lock is reported and the change skipped. Runs on the
-     * session queue.
+     * device property change; a refused lock is reported, the change skipped and the failure
+     * returned. Runs on the session queue.
      */
-    private inline fun withConfigurationLock(camera: CaptureDeviceOps, operation: String, change: () -> Unit) {
+    private inline fun withConfigurationLock(
+        camera: CaptureDeviceOps,
+        operation: String,
+        change: () -> Unit,
+    ): CameraException? {
         val refused = camera.lockForConfiguration()
         if (refused != null) {
             CameraKLogger.e(TAG, "CameraK: could not lock the camera to $operation", refused)
-            reportError(CameraException.ConfigurationError("Could not lock the camera to $operation", refused))
-            return
+            val failure = CameraException.ConfigurationError("Could not lock the camera to $operation", refused)
+            reportError(failure)
+            return failure
         }
         try {
             change()
         } finally {
             camera.unlockForConfiguration()
         }
+        return null
     }
 
     /** The zoom last requested, so getZoom answers at once while the change runs on the session queue. */

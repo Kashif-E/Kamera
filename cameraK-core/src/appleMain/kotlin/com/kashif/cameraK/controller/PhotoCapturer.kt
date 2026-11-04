@@ -16,6 +16,7 @@ import platform.AVFoundation.fileDataRepresentation
 import platform.CoreMedia.CMVideoDimensions
 import platform.Foundation.NSData
 import platform.Foundation.NSError
+import platform.Foundation.NSNumber
 import platform.darwin.NSObject
 
 /** A photo size, as AVFoundation's CMVideoDimensions gives it. */
@@ -48,7 +49,7 @@ internal interface PhotoCapturer {
     )
 
     /** The flash modes [output] supports with the camera now behind it. */
-    fun supportedFlashModes(output: AVCapturePhotoOutput): List<AVCaptureFlashMode> = emptyList()
+    fun supportedFlashModes(output: AVCapturePhotoOutput): List<AVCaptureFlashMode>
 }
 
 @OptIn(ExperimentalForeignApi::class)
@@ -81,6 +82,15 @@ internal object AVPhotoCapturer : PhotoCapturer {
     ) {
         output.setPreparedPhotoSettingsArray(settings, completionHandler = completion)
     }
+
+    override fun supportedFlashModes(output: AVCapturePhotoOutput): List<AVCaptureFlashMode> =
+        output.supportedFlashModes().mapNotNull { mode ->
+            when (mode) {
+                is NSNumber -> mode.longValue
+                is Number -> mode.toLong()
+                else -> null
+            }
+        }
 }
 
 @OptIn(ExperimentalForeignApi::class)

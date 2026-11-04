@@ -27,6 +27,7 @@ import com.kashif.cameraK.utils.toByteArray
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.update
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
@@ -46,21 +47,12 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import platform.AVFoundation.AVCaptureDeviceInput
-import platform.AVFoundation.AVCaptureFlashMode
-import platform.AVFoundation.AVCaptureFlashModeAuto
-import platform.AVFoundation.AVCaptureFlashModeOff
-import platform.AVFoundation.AVCaptureFlashModeOn
 import platform.AVFoundation.AVCaptureInput
 import platform.AVFoundation.AVCaptureMetadataOutput
 import platform.AVFoundation.AVCaptureMetadataOutputObjectsDelegateProtocol
 import platform.AVFoundation.AVCaptureMovieFileOutput
 import platform.AVFoundation.AVCaptureOutput
-import platform.AVFoundation.AVCaptureTorchMode
-import platform.AVFoundation.AVCaptureTorchModeAuto
-import platform.AVFoundation.AVCaptureTorchModeOff
-import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVCaptureVideoOrientation
-import platform.AVFoundation.AVCaptureVideoOrientationPortrait
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVMediaTypeAudio
 import platform.CoreMedia.CMTimeMakeWithSeconds
@@ -70,14 +62,11 @@ import platform.Foundation.NSDataWritingAtomic
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.writeToFile
-import platform.UIKit.UIDevice
-import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import platform.UIKit.UIInterfaceOrientation
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_HIGH
 import platform.darwin.dispatch_async
@@ -93,18 +82,20 @@ import kotlin.coroutines.resume
  * and the preview is a layer camerak's CameraPreviewView hosts ([createPreviewLayer]).
  *
  * Built through a public constructor or the builder, it builds an engine of its own; the bridge's
- * engine builds one over itself. Members that open, stop or switch the camera go through the engine.
- * Captures, recordings, analyzers and the flash, torch and zoom setters keep their 1.x bodies on the
- * session the engine owns, until I2 and I3' give the engine those paths.
+ * engine builds one over itself. Members that open, stop or switch the camera go through the engine,
+ * and so do the flash, torch and zoom setters while the camera is Open; before that the facade keeps
+ * them and its startSession passes them to the engine's start. The target and device orientation are
+ * the engine's. Captures, recordings and analyzers keep their 1.x bodies on the session the engine
+ * owns, until I3' and I4' give the engine those paths.
  */
 actual class CameraController private constructor(
-    internal var flashMode: FlashMode,
-    internal var torchMode: TorchMode,
-    internal var cameraLens: CameraLens,
+    flashMode: FlashMode,
+    torchMode: TorchMode,
+    @Volatile internal var cameraLens: CameraLens,
     internal var imageFormat: ImageFormat,
     internal var qualityPriority: QualityPrioritization,
     internal var directory: Directory,
-    internal var cameraDeviceType: CameraDeviceType,
+    @Volatile internal var cameraDeviceType: CameraDeviceType,
     internal var aspectRatio: AspectRatio,
     internal var targetResolution: Pair<Int, Int>?,
     internal var mirrorFrontCamera: Boolean,
@@ -206,6 +197,31 @@ actual class CameraController private constructor(
     ).also { it.adopt(this) }
 
     private val customCameraController: CustomCameraController get() = engine.custom
+
+    /**
+     * The flash, torch and zoom this facade wants, kept in any state and passed to the engine's start;
+     * its selection and target orientation are not read (the lens fields and the engine hold those).
+     */
+    private val desired = atomic(
+        DesiredHardware(
+            selection = CameraSelection.ByLens(cameraLens, cameraDeviceType),
+            flashMode = flashMode,
+            torchMode = torchMode,
+            zoomRatio = 1f,
+            targetOrientation = null,
+        ),
+    )
+
+    private fun updateDesired(flashMode: FlashMode? = null, torchMode: TorchMode? = null, zoomRatio: Float? = null) =
+        desired.update { current ->
+            DesiredHardware(
+                selection = current.selection,
+                flashMode = flashMode ?: current.flashMode,
+                torchMode = torchMode ?: current.torchMode,
+                zoomRatio = zoomRatio ?: current.zoomRatio,
+                targetOrientation = null,
+            )
+        }
     private var imageCaptureListeners = mutableListOf<(ByteArray) -> Unit>()
     private var metadataOutput = AVCaptureMetadataOutput()
     private var metadataObjectsDelegate: AVCaptureMetadataOutputObjectsDelegateProtocol? = null
@@ -237,12 +253,10 @@ actual class CameraController private constructor(
     internal var pauseSupported: () -> Boolean = { isOsAtLeast(18) }
 
     init {
-        // The configured modes, not CustomCameraController's defaults, are what captures and the
-        // torch use; the torch is applied once the session runs and again after each lens switch.
+        // The configured flash, not CustomCameraController's default, is what captures use until the
+        // engine's start applies the desired hardware.
         customCameraController.setFlashMode(flashMode.toAVCaptureFlashMode())
-        customCameraController.setTorchMode(torchMode.toAVCaptureTorchMode())
         customCameraController.recordingInProgress = { movieFileOutput?.let(movieRecorder::isRecording) == true }
-        customCameraController.captureOrientation = ::effectiveVideoOrientation
         customCameraController.onPhotoCapture = { image -> image?.let(::processImageCapture) }
         customCameraController.onError = { error ->
             CameraKLogger.e("CameraK", "CameraK: the camera reported an error", error)
@@ -307,17 +321,6 @@ actual class CameraController private constructor(
      */
     fun safeRemoveOutput(output: AVCaptureOutput) {
         customCameraController.safeRemoveOutput(output)
-    }
-
-    @Volatile
-    private var lastVideoOrientation: AVCaptureVideoOrientation = AVCaptureVideoOrientationPortrait
-
-    internal fun currentVideoOrientation(): AVCaptureVideoOrientation {
-        // FaceUp / FaceDown / Unknown don't correspond to a video orientation; mapping them to
-        // Portrait distorts a landscape preview when the device lies flat (#115). Keep the last
-        // valid orientation so portrait/landscape tracking stays stable as the device tilts (#109).
-        lastVideoOrientation = UIDevice.currentDevice.orientation.toVideoOrientation() ?: lastVideoOrientation
-        return lastVideoOrientation
     }
 
     private fun processImageCapture(imageData: NSData) {
@@ -508,51 +511,63 @@ actual class CameraController private constructor(
     }
 
     actual fun toggleFlashMode() {
-        flashMode = when (flashMode) {
-            FlashMode.OFF -> FlashMode.ON
-            FlashMode.ON -> FlashMode.AUTO
-            FlashMode.AUTO -> FlashMode.OFF
-        }
-        customCameraController.setFlashMode(flashMode.toAVCaptureFlashMode())
+        setFlashMode(
+            when (desired.value.flashMode) {
+                FlashMode.OFF -> FlashMode.ON
+                FlashMode.ON -> FlashMode.AUTO
+                FlashMode.AUTO -> FlashMode.OFF
+            },
+        )
     }
 
+    /**
+     * Kept for the next start in any state; while Open, set through the engine. Before Open the mode is
+     * also stored as the capture parameter, as 1.x did, which the engine's start sets again.
+     */
     actual fun setFlashMode(mode: FlashMode) {
-        flashMode = mode
-        customCameraController.setFlashMode(mode.toAVCaptureFlashMode())
+        updateDesired(flashMode = mode)
+        engine.launchFacadeCommand(
+            "setting the flash mode",
+            whenNotOpen = { customCameraController.setFlashMode(mode.toAVCaptureFlashMode()) },
+        ) { setFlashMode(mode) }
     }
 
-    actual fun getFlashMode(): FlashMode? {
-        fun AVCaptureFlashMode.toCameraKFlashMode(): FlashMode? = when (this) {
-            AVCaptureFlashModeOn -> FlashMode.ON
-            AVCaptureFlashModeOff -> FlashMode.OFF
-            AVCaptureFlashModeAuto -> FlashMode.AUTO
-            else -> null
-        }
-
-        return customCameraController.flashMode.toCameraKFlashMode()
-    }
+    actual fun getFlashMode(): FlashMode? = desired.value.flashMode
 
     actual fun toggleTorchMode() {
-        torchMode = when (torchMode) {
-            TorchMode.OFF -> TorchMode.ON
-            TorchMode.ON -> TorchMode.AUTO
-            TorchMode.AUTO -> TorchMode.OFF
-        }
-        customCameraController.setTorchMode(torchMode.toAVCaptureTorchMode())
+        setTorchMode(
+            when (desired.value.torchMode) {
+                TorchMode.OFF -> TorchMode.ON
+                TorchMode.ON -> TorchMode.AUTO
+                TorchMode.AUTO -> TorchMode.OFF
+            },
+        )
     }
 
+    /** Kept for the next start in any state; while Open, set through the engine. */
     actual fun setTorchMode(mode: TorchMode) {
-        torchMode = mode
-        customCameraController.setTorchMode(mode.toAVCaptureTorchMode())
+        updateDesired(torchMode = mode)
+        engine.launchFacadeCommand("setting the torch") { setTorchMode(mode) }
     }
 
-    actual fun getTorchMode(): TorchMode? = torchMode
+    actual fun getTorchMode(): TorchMode? = desired.value.torchMode
 
+    /**
+     * Kept for the next start in any state, clamped to the camera in use as 1.x did; while Open, set
+     * through the engine, which clamps it on the session queue.
+     */
     actual fun setZoom(zoomRatio: Float) {
-        customCameraController.setZoom(zoomRatio)
+        val camera = customCameraController.currentDevice
+        val kept = if (camera != null && camera.maxVideoZoomFactor > camera.minVideoZoomFactor) {
+            zoomRatio.coerceIn(camera.minVideoZoomFactor.toFloat(), camera.maxVideoZoomFactor.toFloat())
+        } else {
+            zoomRatio
+        }
+        updateDesired(zoomRatio = kept)
+        engine.launchFacadeCommand("setting the zoom") { setZoom(zoomRatio) }
     }
 
-    actual fun getZoom(): Float = customCameraController.getZoom()
+    actual fun getZoom(): Float = desired.value.zoomRatio
 
     actual fun getMaxZoom(): Float = customCameraController.getMaxZoom()
 
@@ -561,16 +576,22 @@ actual class CameraController private constructor(
             CameraKLogger.w("CameraK", "CameraK: cannot switch the lens while recording; stop the recording first")
             return
         }
-        cameraLens = if (cameraLens == CameraLens.BACK) CameraLens.FRONT else CameraLens.BACK
-        // Not started yet: the next startSession opens the new lens.
-        switchThroughEngine(CameraSelection.ByLens(cameraLens, cameraDeviceType))
+        val previous = cameraLens
+        val next = if (previous == CameraLens.BACK) CameraLens.FRONT else CameraLens.BACK
+        cameraLens = next
+        // Not started yet: the next startSession opens the new lens. A refused switch keeps the old one.
+        switchThroughEngine(CameraSelection.ByLens(next, cameraDeviceType)) {
+            if (cameraLens == next) cameraLens = previous
+        }
     }
 
-    private fun switchThroughEngine(selection: CameraSelection) {
+    /** Switches through the engine; [revert] undoes the facade's field when the switch was refused. */
+    private fun switchThroughEngine(selection: CameraSelection, revert: () -> Unit) {
         engine.switchCamera(selection) { result ->
             val error = (result as? CameraKResult.Failure)?.error
             if (error != null && error != CameraKError.NotReady) {
                 CameraKLogger.e("CameraK", "CameraK: switching the camera failed: $error", error.cause)
+                revert()
             }
         }
     }
@@ -591,24 +612,28 @@ actual class CameraController private constructor(
             CameraKLogger.w("CameraK", "CameraK: cannot change the camera device type while recording")
             return
         }
+        val previous = cameraDeviceType
         cameraDeviceType = deviceType
         // 1.x left the camera as it was for a type iOS has no discovery type for (MACRO).
         if (deviceType == CameraDeviceType.MACRO) return
-        switchThroughEngine(CameraSelection.ByLens(cameraLens, deviceType))
+        switchThroughEngine(CameraSelection.ByLens(cameraLens, deviceType)) {
+            if (cameraDeviceType == deviceType) cameraDeviceType = previous
+        }
     }
 
     actual fun getCameraCapabilities(): CameraCapabilities =
         CameraCapabilities(customCameraController.getCameraCapabilities())
 
-    /** Starts this facade's engine on the configured lens, flash and torch; no view is needed. */
+    /** Starts this facade's engine on its lens and desired hardware, and the engine's target; no view is needed. */
     actual fun startSession() {
+        val wanted = desired.value
         engine.launchStart(
             DesiredHardware(
                 selection = CameraSelection.ByLens(cameraLens, cameraDeviceType),
-                flashMode = flashMode,
-                torchMode = torchMode,
-                zoomRatio = 1f,
-                targetOrientation = targetOrientation,
+                flashMode = wanted.flashMode,
+                torchMode = wanted.torchMode,
+                zoomRatio = wanted.zoomRatio,
+                targetOrientation = engine.targetOrientation,
             ),
         )
     }
@@ -633,13 +658,11 @@ actual class CameraController private constructor(
     private val released = atomic(false)
 
     /**
-     * What the facade holds beyond the engine: the orientation observer and a running recording,
-     * stopped so its file is finished. The engine calls it once, when it closes.
+     * What the facade holds beyond the engine: a running recording, stopped so its file is finished.
+     * The engine calls it once, when it closes.
      */
     internal fun releaseForEngineClose() {
         if (!released.compareAndSet(expect = false, update = true)) return
-        removeOrientationObserver()
-        orientationChangedCallback = null
         // A stopRecording already waiting still gets the result, since the recording's delegate outlives this.
         activeRecording?.let { recording ->
             recording.stopRequested.value = true
@@ -1016,51 +1039,25 @@ actual class CameraController private constructor(
         }
     }
 
-    private fun TorchMode.toAVCaptureTorchMode(): AVCaptureTorchMode = when (this) {
-        TorchMode.ON -> AVCaptureTorchModeOn
-        TorchMode.OFF -> AVCaptureTorchModeOff
-        TorchMode.AUTO -> AVCaptureTorchModeAuto
-    }
-
     // ═══════════════════════════════════════════════════════════════
     // Device Orientation
     // ═══════════════════════════════════════════════════════════════
 
-    @Volatile
-    private var currentDeviceOrientation = DeviceOrientation.PORTRAIT
+    /** How the device is held, as the engine observes it between start and stop. */
+    actual fun getDeviceOrientation(): DeviceOrientation = engine.deviceOrientation.value
 
-    @Volatile
-    private var orientationChangedCallback: ((DeviceOrientation) -> Unit)? = null
-    private var orientationObserver: Any? = null
-
-    @Volatile
-    private var targetOrientation: DeviceOrientation? = null
-
-    actual fun getDeviceOrientation(): DeviceOrientation = currentDeviceOrientation
-
+    /** [callback] hears each orientation the engine observes; null removes it. */
     actual fun setOnOrientationChangedListener(callback: ((DeviceOrientation) -> Unit)?) {
-        removeOrientationObserver()
-        orientationChangedCallback = callback
-        if (callback != null) {
-            UIDevice.currentDevice.beginGeneratingDeviceOrientationNotifications()
-            orientationObserver = NSNotificationCenter.defaultCenter.addObserverForName(
-                UIDeviceOrientationDidChangeNotification,
-                null,
-                null,
-            ) { _ ->
-                val newOrientation = UIDevice.currentDevice.orientation.toDeviceOrientation()
-                if (newOrientation != null && newOrientation != currentDeviceOrientation) {
-                    currentDeviceOrientation = newOrientation
-                    orientationChangedCallback?.invoke(newOrientation)
-                }
-            }
-        }
+        engine.setDeviceOrientationListener(callback)
     }
 
+    /**
+     * Sets the engine's target orientation in any state, as 1.x did. The target decides how photos and
+     * recordings are oriented. The preview shows what the interface shows, so it keeps following the
+     * interface orientation.
+     */
     actual fun setTargetOrientation(orientation: DeviceOrientation?) {
-        // The target decides how photos and recordings are oriented. The preview shows what the
-        // interface shows, so it keeps following the interface orientation.
-        targetOrientation = orientation
+        engine.storeTargetOrientation(orientation)
     }
 
     /**
@@ -1078,18 +1075,8 @@ actual class CameraController private constructor(
      */
     internal var interfaceOrientation: () -> AVCaptureVideoOrientation? = { hostInterfaceOrientation }
 
-    private fun removeOrientationObserver() {
-        orientationObserver?.let { observer ->
-            NSNotificationCenter.defaultCenter.removeObserver(observer)
-            UIDevice.currentDevice.endGeneratingDeviceOrientationNotifications()
-        }
-        orientationObserver = null
-    }
-
-    internal fun effectiveVideoOrientation(): AVCaptureVideoOrientation {
-        val locked = targetOrientation
-        return locked?.toVideoOrientation() ?: currentVideoOrientation()
-    }
+    /** The orientation photos and movies take: the engine's target when set, otherwise the device's. */
+    internal fun effectiveVideoOrientation(): AVCaptureVideoOrientation = engine.captureVideoOrientation()
 }
 
 /** The default microphone's input, or why there is none: AVFoundation's NSError for one it refuses. */

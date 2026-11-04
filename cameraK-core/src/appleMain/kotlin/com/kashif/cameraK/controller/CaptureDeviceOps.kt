@@ -50,7 +50,7 @@ internal interface CaptureDeviceOps {
      * Calls [onChange], on whatever thread reports it, each time the torch or the zoom changes, as
      * key-value observing of the device reports it. Closing the result stops the observation.
      */
-    fun observeHardware(onChange: () -> Unit): AutoCloseable = AutoCloseable { }
+    fun observeHardware(onChange: () -> Unit): AutoCloseable
 
     /**
      * A session input that captures from this device, or why one cannot be made: for a real device,
@@ -75,7 +75,9 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
     override val isFront: Boolean get() = device.position == AVCaptureDevicePositionFront
     override val hasTorch: Boolean get() = device.hasTorch
     override val torchMode: AVCaptureTorchMode get() = device.torchMode
+    override val isTorchActive: Boolean get() = device.isTorchActive()
     override val videoZoomFactor: Double get() = device.videoZoomFactor
+    override val minVideoZoomFactor: Double get() = device.minAvailableVideoZoomFactor
     override val maxVideoZoomFactor: Double get() = device.activeFormat.videoMaxZoomFactor
     override val supportedMaxPhotoDimensions: List<PhotoDimensions>
         get() = device.activeFormat.supportedMaxPhotoDimensions
@@ -102,6 +104,9 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
     override fun setVideoZoomFactor(factor: Double) {
         device.videoZoomFactor = factor
     }
+
+    override fun observeHardware(onChange: () -> Unit): AutoCloseable =
+        observeKeyPaths(device, listOf("torchMode", "torchActive", "videoZoomFactor"), onChange)
 
     override fun makeInput(): Result<AVCaptureInput> = memScoped {
         val error = alloc<ObjCObjectVar<NSError?>>()

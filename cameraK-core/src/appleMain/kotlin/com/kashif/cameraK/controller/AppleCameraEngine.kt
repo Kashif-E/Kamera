@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCaptureFlashModeAuto
 import platform.AVFoundation.AVCaptureFlashModeOff
 import platform.AVFoundation.AVCaptureFlashModeOn
@@ -67,7 +68,11 @@ import platform.AVFoundation.AVCaptureSessionInterruptionEndedNotification
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonKey
 import platform.AVFoundation.AVCaptureSessionRuntimeErrorNotification
 import platform.AVFoundation.AVCaptureSessionWasInterruptedNotification
+import platform.AVFoundation.AVCaptureTorchMode
+import platform.AVFoundation.AVCaptureTorchModeAuto
+import platform.AVFoundation.AVCaptureTorchModeOff
 import platform.AVFoundation.AVCaptureTorchModeOn
+import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspect
 import platform.Foundation.NSError
@@ -78,6 +83,10 @@ import platform.Foundation.NSNumber
 import platform.Foundation.NSProcessInfo
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
+import platform.UIKit.UIDeviceOrientationDidChangeNotification
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
+import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
 
 /**
@@ -97,9 +106,15 @@ import kotlin.coroutines.resume
  *   `Unsupported(PLATFORM_VERSION)`: a Kotlin/Native library cannot raise its consumer's deployment
  *   target, and every iOS 16 call lives behind this check.
  *
- * Until I2 and I3', `setZoom`, `setTorchMode`, `setTargetOrientation`, `capture` and the recording
- * calls return `InvalidState`; the 1.x facade ([legacyController]) still does them on the session
- * this engine owns.
+ * - Torch and zoom are what the device reports by key-value observing, flash the photo output's mode
+ *   read back on the session queue after each set and each input swap (contract rule 5). Flash, torch
+ *   and zoom commands need an Open camera; the target orientation is a stored value any time before
+ *   close, which the facade's captures and movies read.
+ * - The device orientation is observed from UIDeviceOrientationDidChangeNotification between start
+ *   and stop.
+ *
+ * Until I3', `capture` and the recording calls return `InvalidState`; the 1.x facade
+ * ([legacyController]) still does them on the session this engine owns.
  */
 internal class AppleCameraEngine(
     private val config: CameraConfiguration,
@@ -129,6 +144,17 @@ internal class AppleCameraEngine(
     private val _deviceOrientation = MutableStateFlow(DeviceOrientation.PORTRAIT)
     override val deviceOrientation: StateFlow<DeviceOrientation> = _deviceOrientation.asStateFlow()
 
+    /** The orientation captures and movies are locked to; null follows the device. */
+    private val target = atomic<DeviceOrientation?>(null)
+    internal val targetOrientation: DeviceOrientation? get() = target.value
+
+    /** The facade's orientation listener, called with each new device orientation. */
+    private val orientationListener = atomic<((DeviceOrientation) -> Unit)?>(null)
+
+    /** The zoom ratio the engine re-applies after each start and camera switch. */
+    @Volatile
+    private var desiredZoom = 1f
+
     private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
     override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
 
@@ -151,6 +177,16 @@ internal class AppleCameraEngine(
     /** Set by a media-services reset's restart, cleared when the session runs again. */
     private var restartedAfterReset = false
     private var resetRestarts = 0
+    private var orientationObserver: Any? = null
+    private var enumeratedLenses: List<LensInfo> = emptyList()
+    private var torchModesById: Map<String, Set<TorchMode>> = emptyMap()
+
+    /** Each bound camera's flash modes, as the photo output reported them with that camera behind it. */
+    private val boundFlashModes = mutableMapOf<String, Set<FlashMode>>()
+
+    // Session queue only: the device whose torch and zoom the engine observes, and the observation.
+    private var observedDevice: CaptureDeviceOps? = null
+    private var hardwareObservation: AutoCloseable? = null
 
     /** The reason of the latest interruption, recorded when AVFoundation posts it, before the hop to the queue. */
     private val lastInterruption = atomic<InterruptionReason?>(null)
@@ -169,6 +205,7 @@ internal class AppleCameraEngine(
     private val observers: List<Any> = observeSession()
 
     init {
+        custom.captureOrientation = ::captureVideoOrientation
         if (unsupported == null) {
             scope.launch { enumerate() }
         } else {
@@ -211,7 +248,10 @@ internal class AppleCameraEngine(
             when {
                 isClosed -> CLOSED
                 locked { phase == Phase.LIVE } -> CameraKResult.Success(Unit)
-                else -> tracer.beginInterval(TraceNames.START).use { openGeneration(desired) }
+                else -> {
+                    startObservingOrientation()
+                    tracer.beginInterval(TraceNames.START).use { openGeneration(desired) }
+                }
             }
         }
     }
@@ -250,10 +290,16 @@ internal class AppleCameraEngine(
             else -> null
         }
         if (failure != null) return fail(generation, errorFor(failure, selection.lens()))
+        target.value = desired.targetOrientation
+        desiredZoom = desired.zoomRatio
         custom.setFlashMode(desired.flashMode.toAVCaptureFlashMode())
+        custom.torchMode = desired.torchMode.toAVCaptureTorchMode()
+        bindHardware(device)
         // A stop or close since the block was queued wins: the session is not started for nobody.
         if (!isCurrent(generation, Phase.STARTING)) return
-        custom.startRunningOnQueue()
+        // Starting the session applies the torch; one already running keeps the torch it had.
+        if (session?.isRunning == true) custom.reapplyTorchOnQueue() else custom.startRunningOnQueue()
+        applyDesiredZoom(device)
         publishHardware()
         confirm(generation)
     }
@@ -283,6 +329,7 @@ internal class AppleCameraEngine(
             true
         }
         if (cancelled) {
+            stopObservingOrientation()
             custom.afterQueuedSessionWork {
                 platformCallback("stopping a cancelled start") { custom.stopRunningOnQueue() }
             }
@@ -303,6 +350,7 @@ internal class AppleCameraEngine(
             pendingStart.also { pendingStart = null }
         }
         cut?.continuation?.resume(CLOSED)
+        stopObservingOrientation()
         suspendCancellableCoroutine { continuation ->
             custom.afterQueuedSessionWork {
                 platformCallback("stopping the session") { custom.stopRunningOnQueue() }
@@ -323,11 +371,16 @@ internal class AppleCameraEngine(
         }
         cut?.continuation?.resume(CLOSED)
         observers.forEach(center::removeObserver)
+        stopObservingOrientation()
+        orientationListener.value = null
         enumerated.complete(Unit)
         facade.value?.releaseForEngineClose()
         if (session != null) {
             custom.cleanupSession()
-            custom.afterQueuedSessionWork { closeDone.complete() }
+            custom.afterQueuedSessionWork {
+                stopObservingHardware()
+                closeDone.complete()
+            }
         }
         scope.cancel()
     }
@@ -503,9 +556,12 @@ internal class AppleCameraEngine(
     /**
      * Moves the open session to the camera [selection] names, with the 1.x lens switch, and passes
      * the camera live afterwards to [done] on the session queue. The work is queued before this
-     * returns, so it runs after any session work already requested.
+     * returns, so it runs after any session work already requested. The switch is one
+     * `CameraK.lensSwitch` interval, which ends when the swap has committed (the session keeps
+     * running through it) or, marked failed, when the switch was refused.
      */
     internal fun switchCamera(selection: CameraSelection, done: (CameraKResult<LensInfo>) -> Unit) {
+        val interval = tracer.beginInterval(TraceNames.LENS_SWITCH)
         custom.afterQueuedSessionWork {
             val result = try {
                 switchOnQueue(selection)
@@ -513,6 +569,8 @@ internal class AppleCameraEngine(
                 CameraKLogger.e(TAG, "CameraK: switching the camera failed", e)
                 failure(CameraKError.Internal(e))
             }
+            if (result is CameraKResult.Failure) tracer.marker(AppleTraceNames.LENS_SWITCH_FAILED)
+            interval.close()
             done(result)
         }
     }
@@ -522,30 +580,92 @@ internal class AppleCameraEngine(
         if (!locked { phase == Phase.LIVE }) return failure(CameraKError.NotReady)
         val device = resolve(selection) ?: return failure(CameraKError.NoCamera(selection.lens()))
         if (custom.recordingInProgress()) return failure(CameraKError.Busy(CameraOperation.LENS))
+        // A refused input puts the previous camera back, inside the same transaction.
         custom.useDeviceOnQueue(device)?.let { return failure(errorFor(it, selection.lens())) }
+        bindHardware(device)
+        applyDesiredZoom(device)
         publishHardware()
         return CameraKResult.Success(lensInfo(device))
     }
 
+    /**
+     * Validates [mode] against the camera's flash modes, stores it on the session queue, and returns
+     * and publishes the mode the photo output will use, read back after the store (contract rule 5).
+     */
     override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> {
-        unusable()?.let { return it }
+        notOpen()?.let { return it }
         val camera = custom.currentDevice?.let(::lensInfo)
         if (camera != null && mode !in capabilities.value.supportedFlashModes(camera.id)) {
             val feature = if (mode == FlashMode.AUTO) CameraFeature.FLASH_AUTO else CameraFeature.FLASH_ON
             return failure(CameraKError.Unsupported(feature))
         }
-        custom.setFlashMode(mode.toAVCaptureFlashMode())
-        return CameraKResult.Success(mode)
+        return onSessionQueue("setting the flash mode") {
+            custom.setFlashMode(mode.toAVCaptureFlashMode())
+            publishHardware()
+            CameraKResult.Success(custom.captureFlashMode.toFlashMode())
+        }
     }
 
     override suspend fun capture(): CameraKResult<CapturedImage> = refuse(CameraOperation.CAPTURE)
 
-    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = refuse(CameraOperation.ZOOM)
+    /**
+     * Clamps [ratio] into the camera's zoom range on the session queue before the device sees it, since
+     * AVFoundation raises an exception nothing can catch outside it, and returns the clamped ratio
+     * without waiting for the device's report. A camera with a fixed zoom takes only that ratio.
+     */
+    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> {
+        notOpen()?.let { return it }
+        if (ratio.isNaN()) return failure(CameraKError.Unsupported(CameraFeature.ZOOM))
+        return onSessionQueue("setting the zoom") {
+            val device = custom.currentDevice ?: return@onSessionQueue failure(CameraKError.NotReady)
+            val min = device.minVideoZoomFactor
+            val max = device.maxVideoZoomFactor
+            if (max <= min) {
+                return@onSessionQueue if (ratio.toDouble() == min) {
+                    CameraKResult.Success(ZoomState(min.toFloat(), min.toFloat(), max.toFloat()))
+                } else {
+                    failure(CameraKError.Unsupported(CameraFeature.ZOOM))
+                }
+            }
+            val factor = ratio.toDouble().coerceIn(min, max)
+            custom.setZoomOnQueue(device, factor)?.let { return@onSessionQueue hardwareFailure("setting the zoom", it) }
+            desiredZoom = factor.toFloat()
+            CameraKResult.Success(ZoomState(factor.toFloat(), min.toFloat(), max.toFloat()))
+        }
+    }
 
-    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = refuse(CameraOperation.TORCH)
+    /**
+     * Sets the torch on the session queue when the camera's device supports [mode], the source of its
+     * torch capabilities; [hardware] follows when the device reports it lit or dark.
+     */
+    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> {
+        notOpen()?.let { return it }
+        return onSessionQueue("setting the torch") {
+            val device = custom.currentDevice ?: return@onSessionQueue failure(CameraKError.NotReady)
+            val avMode = mode.toAVCaptureTorchMode()
+            if (!device.hasTorch || !device.isTorchModeSupported(avMode)) {
+                return@onSessionQueue failure(CameraKError.Unsupported(CameraFeature.TORCH))
+            }
+            custom.setTorchOnQueue(device, avMode)?.let {
+                return@onSessionQueue hardwareFailure("setting the torch", it)
+            }
+            custom.torchMode = avMode
+            CameraKResult.Success(mode)
+        }
+    }
 
-    override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> =
-        refuse(CameraOperation.ORIENTATION)
+    /**
+     * Stores the target in any state before close; while a camera is bound it is reported in
+     * [hardware] before this returns. The next start sets it from its desired hardware.
+     */
+    override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> {
+        unusable()?.let { return it }
+        target.value = orientation
+        return onSessionQueue("setting the target orientation") {
+            publishHardware()
+            CameraKResult.Success(Unit)
+        }
+    }
 
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> =
         refuse(CameraOperation.RECORD_PREPARE)
@@ -559,7 +679,7 @@ internal class AppleCameraEngine(
 
     override suspend fun resumeRecording(): CameraKResult<Unit> = refuse(CameraOperation.RECORD_RESUME)
 
-    // I2 and I3' give these their paths; until then each kind is logged once, as LegacyControllerEngine does.
+    // I3' gives these their paths; until then each kind is logged once, as LegacyControllerEngine does.
     private fun refuse(operation: CameraOperation): CameraKResult<Nothing> {
         unusable()?.let { return it }
         if (operation !in refusedOperations.getAndUpdate { it + operation }) {
@@ -572,6 +692,29 @@ internal class AppleCameraEngine(
         isClosed -> CLOSED
         unsupported != null -> failure(unsupported)
         else -> null
+    }
+
+    /** Hardware commands need an Open camera, as on every engine and the fake. */
+    private fun notOpen(): CameraKResult.Failure? =
+        unusable() ?: failure(CameraKError.NotReady).takeIf { _state.value != EngineState.Open }
+
+    /** Runs [block] on the session queue and returns its result; nothing it throws leaves the queue. */
+    private suspend fun <T> onSessionQueue(what: String, block: () -> CameraKResult<T>): CameraKResult<T> =
+        suspendCancellableCoroutine { continuation ->
+            custom.afterQueuedSessionWork {
+                val result = try {
+                    unusable() ?: block()
+                } catch (e: Exception) {
+                    CameraKLogger.e(TAG, "CameraK: $what failed", e)
+                    failure(CameraKError.Internal(e))
+                }
+                continuation.resume(result)
+            }
+        }
+
+    private fun hardwareFailure(what: String, cause: CustomCameraController.CameraException): CameraKResult.Failure {
+        CameraKLogger.e(TAG, "CameraK: $what failed", cause)
+        return failure(errorFor(cause, null))
     }
 
     // ─── The facade's session calls ─────────────────────────────────────────────────────────────
@@ -593,27 +736,133 @@ internal class AppleCameraEngine(
         scope.launch(start = CoroutineStart.UNDISPATCHED) { facadeCalls.withLock { stop() } }
     }
 
+    /**
+     * A facade setter, after any facade call made before it: [command] when the camera is Open then,
+     * else [whenNotOpen]. A failure is logged, as the 1.x setters, which return nothing, did.
+     */
+    internal fun launchFacadeCommand(
+        what: String,
+        whenNotOpen: () -> Unit = {},
+        command: suspend AppleCameraEngine.() -> CameraKResult<*>,
+    ) {
+        if (isClosed) return
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            facadeCalls.withLock {
+                if (_state.value != EngineState.Open) return@withLock whenNotOpen()
+                val result = command()
+                if (result is CameraKResult.Failure) {
+                    CameraKLogger.e(TAG, "CameraK: $what failed: ${result.error::class.simpleName}", result.error.cause)
+                }
+            }
+        }
+    }
+
+    /** The facade's target orientation: stored in any state, as 1.x did, and reported while a camera is bound. */
+    internal fun storeTargetOrientation(orientation: DeviceOrientation?) {
+        target.value = orientation
+        custom.afterQueuedSessionWork {
+            platformCallback("reporting the target orientation") { publishHardware() }
+        }
+    }
+
+    /** The facade's orientation listener; null removes it. */
+    internal fun setDeviceOrientationListener(listener: ((DeviceOrientation) -> Unit)?) {
+        orientationListener.value = listener
+    }
+
+    /** The orientation captures and movies take: the target when one is set, otherwise the device's. */
+    internal fun captureVideoOrientation(): AVCaptureVideoOrientation =
+        target.value?.toVideoOrientation() ?: custom.currentVideoOrientation()
+
+    // ─── Device orientation ─────────────────────────────────────────────────────────────────────
+
+    /** From start until stop or close: UIDeviceOrientationDidChangeNotification, read through the reader seam. */
+    private fun startObservingOrientation() {
+        val added = locked {
+            if (closed || orientationObserver != null) return@locked false
+            orientationObserver = center.addObserverForName(UIDeviceOrientationDidChangeNotification, null, null) {
+                platformCallback("a device orientation change") { updateDeviceOrientation() }
+            }
+            true
+        }
+        if (!added) return
+        dispatch_async(dispatch_get_main_queue()) {
+            UIDevice.currentDevice.beginGeneratingDeviceOrientationNotifications()
+        }
+        platformCallback("reading the device orientation") { updateDeviceOrientation() }
+    }
+
+    private fun stopObservingOrientation() {
+        val observer = locked { orientationObserver.also { orientationObserver = null } } ?: return
+        center.removeObserver(observer)
+        dispatch_async(dispatch_get_main_queue()) {
+            UIDevice.currentDevice.endGeneratingDeviceOrientationNotifications()
+        }
+    }
+
+    /** Face up, face down and unknown name no orientation, so they keep the last one. */
+    private fun updateDeviceOrientation() {
+        val orientation = readDeviceOrientation().toDeviceOrientation() ?: return
+        val changed = locked {
+            if (closed || _deviceOrientation.value == orientation) return@locked false
+            _deviceOrientation.value = orientation
+            true
+        }
+        if (changed) orientationListener.value?.invoke(orientation)
+    }
+
     // ─── Platform reads ─────────────────────────────────────────────────────────────────────────
 
     private suspend fun enumerate() {
-        val lenses = try {
-            enumerateLenses()
+        val (lenses, torchModes) = try {
+            val lenses = enumerateLenses()
+            lenses to lenses.associate { it.id to torchModesOf(it) }
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "CameraK: enumerating the cameras failed; reporting none", e)
-            emptyList()
+            emptyList<LensInfo>() to emptyMap()
         }
-        if (!isClosed) _capabilities.value = capabilitiesOf(lenses)
+        locked {
+            enumeratedLenses = lenses
+            torchModesById = torchModes
+        }
+        publishCapabilities()
         enumerated.complete(Unit)
     }
 
-    private fun capabilitiesOf(lenses: List<LensInfo>) = CameraCapabilities(
+    /** The torch modes [lens]'s device supports; from its hasFlash when the device cannot be found. */
+    private fun torchModesOf(lens: LensInfo): Set<TorchMode> {
+        val device = custom.findCameraById(lens.id)
+            ?: return if (lens.hasFlash) setOf(TorchMode.OFF, TorchMode.ON) else setOf(TorchMode.OFF)
+        if (!device.hasTorch) return setOf(TorchMode.OFF)
+        return setOf(TorchMode.OFF) + listOf(TorchMode.ON, TorchMode.AUTO)
+            .filter { device.isTorchModeSupported(it.toAVCaptureTorchMode()) }
+    }
+
+    private fun publishCapabilities() {
+        val capabilities = locked {
+            if (closed) return
+            capabilitiesOf(enumeratedLenses, torchModesById, boundFlashModes.toMap())
+        }
+        _capabilities.value = capabilities
+    }
+
+    /**
+     * A lens's flash modes are the photo output's once the lens has been bound, and come from its
+     * hasFlash before; its torch modes are its device's.
+     */
+    private fun capabilitiesOf(
+        lenses: List<LensInfo>,
+        torchModes: Map<String, Set<TorchMode>>,
+        boundFlash: Map<String, Set<FlashMode>>,
+    ) = CameraCapabilities(
         allLenses = lenses,
         flashModes = lenses.associate {
-            it.id to if (it.hasFlash) setOf(FlashMode.OFF, FlashMode.AUTO, FlashMode.ON) else setOf(FlashMode.OFF)
+            it.id to (
+                boundFlash[it.id]
+                    ?: if (it.hasFlash) setOf(FlashMode.OFF, FlashMode.AUTO, FlashMode.ON) else setOf(FlashMode.OFF)
+                )
         },
-        torchModes = lenses.associate {
-            it.id to if (it.hasFlash) setOf(TorchMode.OFF, TorchMode.ON) else setOf(TorchMode.OFF)
-        },
+        torchModes = lenses.associate { it.id to (torchModes[it.id] ?: setOf(TorchMode.OFF)) },
         // AVCaptureFileOutput pauses from iOS 18.
         supportsPauseResume = osVersion >= PAUSE_RESUME_IOS,
         supportedVideoQualities = emptySet(),
@@ -629,21 +878,75 @@ internal class AppleCameraEngine(
         is CameraSelection.ByLens -> custom.findCamera(selection.lens, selection.deviceType)
     }
 
-    /** Session queue: the camera, flash, torch and zoom the session now has, as AVFoundation reports them. */
+    /**
+     * Session queue, after [device] became the session's camera: its flash modes from the photo output
+     * now behind it, and the device's torch and zoom observed in place of the previous camera's.
+     */
+    private fun bindHardware(device: CaptureDeviceOps) {
+        val flash = custom.captureFlashModes.map { it.toFlashMode() }.toSet() + FlashMode.OFF
+        locked { boundFlashModes[device.uniqueId] = flash }
+        publishCapabilities()
+        if (observedDevice === device) return
+        stopObservingHardware()
+        observedDevice = device
+        hardwareObservation = device.observeHardware {
+            platformCallback("a torch or zoom report") {
+                custom.afterQueuedSessionWork {
+                    platformCallback("a torch or zoom report") { onHardwareReport(device) }
+                }
+            }
+        }
+    }
+
+    // Session queue only.
+    private fun stopObservingHardware() {
+        hardwareObservation?.close()
+        hardwareObservation = null
+        observedDevice = null
+    }
+
+    /** Session queue: a key-value report from [device], published while it is the live camera. */
+    private fun onHardwareReport(device: CaptureDeviceOps) {
+        if (custom.currentDevice !== device) return
+        if (!locked { !closed && (phase == Phase.STARTING || phase == Phase.LIVE) }) return
+        publishHardware()
+    }
+
+    /** Session queue: the desired zoom, clamped into [device]'s range, unless the device reports it already. */
+    private fun applyDesiredZoom(device: CaptureDeviceOps) {
+        val min = device.minVideoZoomFactor
+        val max = device.maxVideoZoomFactor
+        if (max < min) return
+        val factor = desiredZoom.toDouble().coerceIn(min, max)
+        if (device.videoZoomFactor == factor) return
+        custom.setZoomOnQueue(device, factor)?.let { failure ->
+            CameraKLogger.e(TAG, "CameraK: re-applying the zoom failed", failure)
+        }
+    }
+
+    /**
+     * Session queue: the camera, torch and zoom as the device reports them, the flash the photo output
+     * will use, and the target orientation.
+     */
     private fun publishHardware() {
         val device = custom.currentDevice ?: return
         if (isClosed) return
         _hardware.value = HardwareState(
-            flashMode = when (custom.captureFlashMode) {
-                AVCaptureFlashModeOn -> FlashMode.ON
-                AVCaptureFlashModeAuto -> FlashMode.AUTO
-                else -> FlashMode.OFF
+            flashMode = custom.captureFlashMode.toFlashMode(),
+            torchMode = when {
+                device.torchMode == AVCaptureTorchModeAuto -> TorchMode.AUTO
+                // A torch the system shut off for heat keeps its mode but is dark.
+                device.torchMode == AVCaptureTorchModeOn && device.isTorchActive -> TorchMode.ON
+                else -> TorchMode.OFF
             },
-            torchMode = if (device.torchMode == AVCaptureTorchModeOn) TorchMode.ON else TorchMode.OFF,
             camera = lensInfo(device),
-            targetOrientation = null,
+            targetOrientation = target.value,
         )
-        _zoom.value = ZoomState(device.videoZoomFactor.toFloat(), 1f, device.maxVideoZoomFactor.toFloat())
+        _zoom.value = ZoomState(
+            device.videoZoomFactor.toFloat(),
+            device.minVideoZoomFactor.toFloat(),
+            device.maxVideoZoomFactor.toFloat(),
+        )
     }
 
     /** [device] as the enumeration lists it, or described from the device when the enumeration does not. */
@@ -701,6 +1004,18 @@ internal fun FlashMode.toAVCaptureFlashMode() = when (this) {
     FlashMode.ON -> AVCaptureFlashModeOn
     FlashMode.OFF -> AVCaptureFlashModeOff
     FlashMode.AUTO -> AVCaptureFlashModeAuto
+}
+
+private fun AVCaptureFlashMode.toFlashMode(): FlashMode = when (this) {
+    AVCaptureFlashModeOn -> FlashMode.ON
+    AVCaptureFlashModeAuto -> FlashMode.AUTO
+    else -> FlashMode.OFF
+}
+
+internal fun TorchMode.toAVCaptureTorchMode(): AVCaptureTorchMode = when (this) {
+    TorchMode.ON -> AVCaptureTorchModeOn
+    TorchMode.OFF -> AVCaptureTorchModeOff
+    TorchMode.AUTO -> AVCaptureTorchModeAuto
 }
 
 private fun runningIosMajorVersion(): Int =

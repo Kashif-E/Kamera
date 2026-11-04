@@ -177,9 +177,10 @@ internal class AppleEngineDriver(
         )
     }
 
+    // What the devices were last given, never what they report: a report is not a command.
     override fun boundSettings(): BoundSettings {
         val camera = custom.currentDevice as? FakeDevice
-        val torch = camera?.lastTorchSet ?: camera?.torchMode
+        val torch = camera?.lastTorchSet
         return BoundSettings(
             flashMode = when (custom.captureFlashMode) {
                 AVCaptureFlashModeOn -> FlashMode.ON
@@ -191,7 +192,7 @@ internal class AppleEngineDriver(
                 AVCaptureTorchModeAuto -> TorchMode.AUTO
                 else -> TorchMode.OFF
             },
-            zoomRatio = (camera?.lastZoomSet ?: camera?.videoZoomFactor ?: 1.0).toFloat(),
+            zoomRatio = (camera?.lastZoomSet ?: 1.0).toFloat(),
             cameraId = camera?.uniqueId,
         )
     }
