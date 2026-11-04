@@ -5,7 +5,6 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import platform.AVFoundation.AVCaptureSessionPreset1920x1080
 import platform.AVFoundation.AVCaptureSessionPreset3840x2160
 import platform.AVFoundation.AVCaptureSessionPreset640x480
-import platform.AVFoundation.AVCaptureSessionPresetHigh
 import platform.AVFoundation.AVCaptureSessionPresetPhoto
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -69,13 +68,13 @@ class SessionPresetTest {
     }
 
     @Test
-    fun anAspectRatioPresetTheSessionCannotTakeFallsBackToHigh() {
+    fun anAspectRatioPresetTheSessionCannotTakeFallsBackToTheNextOneOfItsRatio() {
         session.refusePreset(AVCaptureSessionPresetPhoto)
 
         assertEquals(
-            listOf<Any?>(AVCaptureSessionPresetHigh),
+            listOf<Any?>(AVCaptureSessionPreset640x480),
             presetsSetUp(aspectRatio = AspectRatio.RATIO_4_3),
-            "setup set the Photo preset the session refused",
+            "setup set the Photo preset the session refused, or a preset of another aspect ratio",
         )
     }
 

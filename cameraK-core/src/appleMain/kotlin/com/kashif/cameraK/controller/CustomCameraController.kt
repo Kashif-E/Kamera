@@ -316,28 +316,11 @@ class CustomCameraController(
     }
 
     /**
-     * The presets setup tries, best first: those the target resolution reaches (its long and short
-     * sides, so 1080x1920 means 1920x1080), then the aspect ratio's, then High.
+     * The preset stills run at: the one setup chose ([presetCandidates]), which a recording's preset
+     * gives way to and returns to afterwards. Session queue only; null before setup.
      */
-    private fun presetCandidates(): List<String> {
-        val byResolution = targetResolution?.let { (w, h) ->
-            val long = maxOf(w, h)
-            val short = minOf(w, h)
-            listOfNotNull(
-                AVCaptureSessionPreset3840x2160.takeIf { long >= 3840 && short >= 2160 },
-                AVCaptureSessionPreset1920x1080.takeIf { long >= 1920 && short >= 1080 },
-                AVCaptureSessionPreset1280x720.takeIf { long >= 1280 && short >= 720 },
-            )
-        }.orEmpty()
-        val byAspectRatio = when (aspectRatio) {
-            AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> listOfNotNull(
-                AVCaptureSessionPreset1920x1080,
-                AVCaptureSessionPreset1280x720,
-            )
-            AspectRatio.RATIO_1_1, AspectRatio.RATIO_4_3 -> listOfNotNull(AVCaptureSessionPresetPhoto)
-        }
-        return (byResolution + byAspectRatio + listOfNotNull(AVCaptureSessionPresetHigh)).distinct()
-    }
+    internal var stillPreset: String? = null
+        private set
 
     /**
      * Sets the best preset the session can take with its current input. Assigning one it cannot
@@ -345,7 +328,7 @@ class CustomCameraController(
      * queue inside the setup transaction.
      */
     private fun applySessionPreset(ops: CaptureSessionOps) {
-        val candidates = presetCandidates()
+        val candidates = presetCandidates(aspectRatio, targetResolution)
         val preset = candidates.firstOrNull(ops::canSetSessionPreset)
         if (preset == null) {
             CameraKLogger.w(TAG, "CameraK: the session can take none of the presets $candidates; keeping its default")
@@ -355,6 +338,7 @@ class CustomCameraController(
             CameraKLogger.w(TAG, "CameraK: the session cannot take preset ${candidates.first()}; using $preset")
         }
         ops.setSessionPreset(preset)
+        stillPreset = preset
     }
 
     /** Whether captures request high resolution; QUALITY is the only prioritization that does. */
@@ -668,6 +652,7 @@ class CustomCameraController(
             preparedSession = null
             photoOutput = null
             maxPhotoDimensions = null
+            stillPreset = null
             currentCamera = null
             videoInput = null
             requestedZoom = null
