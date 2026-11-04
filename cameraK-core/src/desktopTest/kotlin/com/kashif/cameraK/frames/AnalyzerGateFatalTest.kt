@@ -27,4 +27,18 @@ class AnalyzerGateFatalTest {
         assertSame(fatal, thrown)
         assertEquals(0, gate.failures, "a fatal throwable was counted as an analyzer failure")
     }
+
+    // A source that survives the fatal throwable (a supervisor above it, or a test) must not find the
+    // analyzer stuck busy and the frame's slot never returned.
+    @Test
+    fun aFatalThrowableStillReleasesTheEntry() {
+        val gate = AnalyzerGate(maxFps = null, nanoTime = { 0L })
+        var released = 0
+        val lease = assertNotNull(gate.tryEnter(onReleased = { released++ }))
+
+        assertFailsWith<SimulatedOutOfMemory> { lease.deliver { throw SimulatedOutOfMemory() } }
+
+        assertEquals(1, released, "onReleased did not run after a fatal throwable propagated")
+        assertNotNull(gate.tryEnter(), "the gate refused the next frame after a fatal throwable propagated")
+    }
 }
