@@ -1,7 +1,7 @@
 package com.kashif.cameraK.permissions
 
-import com.kashif.cameraK.controller.CameraAuthorization
 import com.kashif.cameraK.controller.MacCameraAuthorization
+import com.kashif.cameraK.controller.MacMediaType
 import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.utils.InternalCameraKApi
 import java.awt.EventQueue
@@ -14,17 +14,25 @@ internal fun interface MacAuthorizationRead {
     fun status(permission: CameraKPermission): PermissionStatus
 }
 
-/** macOS's authorization read over D1''s JNA seam, which owns the status mapping and the JNA-absent rule. */
-internal class JnaMacAuthorizationRead(private val camera: CameraAuthorization = MacCameraAuthorization()) :
-    MacAuthorizationRead {
+/**
+ * macOS's authorization read over D1''s JNA seam, which owns the status mapping and the JNA-absent
+ * rule. [read] is the status of one AVFoundation media type, [MacCameraAuthorization.status] in
+ * production.
+ */
+internal class JnaMacAuthorizationRead(
+    private val read: (MacMediaType) -> PermissionStatus = MacCameraAuthorization()::status,
+) : MacAuthorizationRead {
     override fun status(permission: CameraKPermission): PermissionStatus = when (permission) {
-        CameraKPermission.CAMERA -> camera.cameraStatus()
+        CameraKPermission.CAMERA -> read(MacMediaType.VIDEO)
         // The AVMediaTypeAudio read comes with the desktop device work; until then the microphone,
         // unused while desktop audio is unsupported, reads as the open would find it: not determined.
         CameraKPermission.MICROPHONE -> PermissionStatus.NotDetermined
         CameraKPermission.GALLERY_ADD -> PermissionStatus.Granted
     }
 }
+
+/** The AVFoundation media type whose authorization is [permission]'s on macOS; null for the gallery, a folder. */
+internal fun macMediaTypeOf(permission: CameraKPermission): MacMediaType? = TODO("PM' repair: the macOS media type")
 
 /**
  * The desktop checker (Decision 15). Linux and Windows have no camera permission, so every status is

@@ -1,7 +1,7 @@
 package com.kashif.cameraK.permissions
 
-import com.kashif.cameraK.controller.CameraAuthorization
 import com.kashif.cameraK.controller.MacCameraAuthorization
+import com.kashif.cameraK.controller.MacMediaType
 import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.utils.InternalCameraKApi
 import java.awt.EventQueue
@@ -12,6 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -78,11 +79,29 @@ class DesktopPermissionTest {
     @Test
     fun macStatusComesFromTheJnaSeam() {
         val withoutJna =
-            JnaMacAuthorizationRead(MacCameraAuthorization { throw NoClassDefFoundError("com/sun/jna/Native") })
+            JnaMacAuthorizationRead(MacCameraAuthorization { throw NoClassDefFoundError("com/sun/jna/Native") }::status)
         assertEquals(PermissionStatus.NotDetermined, withoutJna.status(CameraKPermission.CAMERA))
 
-        val denied = JnaMacAuthorizationRead(CameraAuthorization { PermissionStatus.PermanentlyDenied })
+        val denied = JnaMacAuthorizationRead { PermissionStatus.PermanentlyDenied }
         assertEquals(PermissionStatus.PermanentlyDenied, denied.status(CameraKPermission.CAMERA))
+    }
+
+    @Test
+    fun macMicrophoneReadsTheAudioStatus() {
+        val types = CopyOnWriteArrayList<MacMediaType>()
+        val read = JnaMacAuthorizationRead { type ->
+            types += type
+            if (type == MacMediaType.AUDIO) PermissionStatus.PermanentlyDenied else PermissionStatus.Granted
+        }
+
+        assertEquals(PermissionStatus.PermanentlyDenied, read.status(CameraKPermission.MICROPHONE), "the microphone")
+        assertEquals(PermissionStatus.Granted, read.status(CameraKPermission.CAMERA), "the camera")
+        assertEquals(listOf(MacMediaType.AUDIO, MacMediaType.VIDEO), types.toList())
+
+        // The production read's mapping; that AUDIO asks AVFoundation for AVMediaTypeAudio is D2''s test.
+        assertEquals(MacMediaType.AUDIO, macMediaTypeOf(CameraKPermission.MICROPHONE))
+        assertEquals(MacMediaType.VIDEO, macMediaTypeOf(CameraKPermission.CAMERA))
+        assertNull(macMediaTypeOf(CameraKPermission.GALLERY_ADD), "the gallery is a folder")
     }
 
     @Test
