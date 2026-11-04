@@ -248,11 +248,15 @@ internal class DshowCaptureBackend(
 
     fun input(id: String): DeviceInput = DeviceInput("video=$id", DSHOW)
 
+    // Every open lists the sources again, so a camera unplugged after enumeration is NoCamera, not
+    // an FFmpeg open error.
     override fun open(id: String, size: Pair<Int, Int>?): FrameGrabber {
+        val video = sources().filter { it.isVideo }
         val name = if (id == desktopLensInfo().id) {
-            sources().firstOrNull { it.isVideo }?.name ?: throw DeviceGoneException("No camera is connected")
+            video.firstOrNull()?.name ?: throw DeviceGoneException("No camera is connected")
         } else {
-            id
+            id.takeIf { video.any { it.name == id } }
+                ?: throw DeviceGoneException("The selected camera is no longer connected")
         }
         return openInput(input(name), size)
     }

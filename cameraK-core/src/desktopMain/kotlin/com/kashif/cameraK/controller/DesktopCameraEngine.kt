@@ -373,7 +373,8 @@ internal class DesktopCameraEngine(
             while (true) {
                 val seen = session.frames.get()
                 delay(NO_FRAME_TIMEOUT)
-                if (session.frames.get() == seen) {
+                // A switch waiting for its device's first frame has its own bound (selectCamera).
+                if (session.frames.get() == seen && !session.switchPending) {
                     synchronized(lock) {
                         if (isCurrent(session) && _state.value == EngineState.Open) {
                             CameraKLogger.w(TAG, "The desktop camera delivered no frame in time; reopening it")
@@ -459,7 +460,9 @@ internal class DesktopCameraEngine(
      * device's first frame arrives; while opening the new device replaces the one being opened, and
      * while interrupted the recovery reopens the new one. Without a live session there is nothing
      * to move, and the next start opens what its own selection names. A device that fails to open
-     * returns its open error, and the engine reopens the device it had.
+     * returns its open error, and the engine reopens the device it had. A device that opens but
+     * delivers no frame within [NO_FRAME_TIMEOUT] is given up the same way, staying Open, and the
+     * switch returns `Timeout(LENS)`, or `Timeout(DEVICE_TYPE)` when only the device type changed.
      */
     override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> {
         if (isClosed()) return CameraKResult.Failure(CameraKError.Closed)
@@ -482,8 +485,28 @@ internal class DesktopCameraEngine(
                 }
             }
         }
-        if (run.firstFrame.await()) return CameraKResult.Success(device)
+        // The engine's own first-frame bound: a device that opens and stays silent is given up.
+        val opened = withTimeoutOrNull(NO_FRAME_TIMEOUT) { run.firstFrame.await() }
+            ?: synchronized(lock) {
+                if (run.firstFrame.isCompleted) null else return CameraKResult.Failure(revertLocked(run, device))
+            }
+            ?: run.firstFrame.await()
+        if (opened) return CameraKResult.Success(device)
         return CameraKResult.Failure(synchronized(lock) { switchFailure(run) })
+    }
+
+    // A switch's device opened but delivered no frame in time: the device the session had opens
+    // again, and the engine stays Open on it (D2' carry-over 3).
+    private fun revertLocked(run: Run, target: LensInfo): CameraKError {
+        val previous = run.revertTo
+        if (!isCurrentRun(run) || previous == null) return switchFailure(run)
+        CameraKLogger.w(TAG, "The selected camera delivered no frame in time; reopening the previous camera")
+        val error = CameraKError.Timeout(switchOperation(previous, target))
+        run.error = error
+        run.firstFrame.complete(false)
+        run.session.device = previous
+        launchRunLocked(run.session)
+        return error
     }
 
     private fun switchFailure(run: Run): CameraKError = run.error ?: when (val state = _state.value) {
@@ -520,6 +543,15 @@ internal class DesktopCameraEngine(
         return CameraKResult.Failure(CameraKError.InvalidState(operation))
     }
 
+    /**
+     * DEVICE_TYPE when a switch from [from] to [to] keeps the lens and changes only the device type,
+     * LENS otherwise (Decision 7).
+     */
+    private fun switchOperation(from: LensInfo, to: LensInfo): CameraOperation = when {
+        from.lens == to.lens && from.deviceType != to.deviceType -> CameraOperation.DEVICE_TYPE
+        else -> CameraOperation.LENS
+    }
+
     /** One start: a generation (§2.3 rule 2). */
     private class Session(val desired: DesiredHardware) {
         val outcome = CompletableDeferred<CameraKResult<Unit>>()
@@ -530,6 +562,9 @@ internal class DesktopCameraEngine(
         var recovery: Job? = null
         var opened = false
         var ended = false
+
+        /** A camera switch is waiting for its device's first frame. */
+        val switchPending: Boolean get() = run?.let { it.switching && !it.firstFrame.isCompleted } == true
     }
 
     /** One grab loop of a session: the first, a reopen while interrupted, or a camera switch's. */

@@ -290,10 +290,29 @@ actual class CameraController internal constructor(
     actual fun getTorchMode(): TorchMode? = null
 
     /**
-     * Toggles the camera lens between FRONT and BACK.
+     * Moves to the engine's next camera in enumeration order, back to the first after the last: a
+     * desktop webcam faces no particular way, so the toggle cycles the devices. It goes through the
+     * engine's `selectCamera` and keeps the camera for the next start. Does nothing with one camera.
+     * A switch the engine refuses is logged at warning and changes nothing.
      */
     actual fun toggleCameraLens() {
-        // camera lens not available on desktop
+        if (closed.value) return
+        val lenses = engine.enumeratedCapabilities().allLenses
+        if (lenses.size < 2) return
+        val current = engine.hardware.value.camera?.id ?: (desired.value.selection as? CameraSelection.ById)?.id
+        val next = lenses[(lenses.indexOfFirst { it.id == current }.coerceAtLeast(0) + 1) % lenses.size]
+        // Undispatched: a refusal is known, and logged, before the call returns.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            when (val result = engine.selectCamera(CameraSelection.ById(next.id))) {
+                is CameraKResult.Success -> desired.update {
+                    it.with(selection = CameraSelection.ById(result.value.id))
+                }
+                is CameraKResult.Failure -> CameraKLogger.w(
+                    "CameraK",
+                    "CameraK: The camera switch was refused (${result.error::class.simpleName}); the camera is unchanged",
+                )
+            }
+        }
     }
 
     /**
@@ -606,6 +625,7 @@ actual class CameraController internal constructor(
 }
 
 private fun DesiredHardware.with(
+    selection: CameraSelection = this.selection,
     flashMode: FlashMode = this.flashMode,
     torchMode: TorchMode = this.torchMode,
     zoomRatio: Float = this.zoomRatio,
