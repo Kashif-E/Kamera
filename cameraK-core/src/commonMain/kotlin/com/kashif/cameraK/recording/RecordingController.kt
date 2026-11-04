@@ -17,6 +17,7 @@ import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CommandRunner
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
@@ -74,6 +75,12 @@ internal val RECORDING_TICK: Duration = 250.milliseconds
  * `stopRecording` returned (`CameraEngine.recordingEvents`). A recording the holder ended before its
  * `Finalized` arrived owes one, and the next `Finalized` pays the oldest debt: it is drained, so a
  * late end never reaches the recording after it.
+ *
+ * Until C1' removes them, the deprecated 1.x events are emitted beside the 2.0 ones, so a 1.x
+ * listener keeps hearing about recordings: [CameraKEvent.RecordingStarted] when a start becomes
+ * Recording (not on resume), [CameraKEvent.RecordingStopped] for every end with a file,
+ * [CameraKEvent.RecordingFailed] for every end with a failure, and
+ * [CameraKEvent.RecordingMaxDurationReached] first when the duration limit ended it.
  *
  * @param commands Runs each platform call as a command job in the holder's scope, on its default
  *   dispatcher, so a caller that is cancelled never cancels a finalization.
@@ -379,9 +386,15 @@ internal class RecordingController(
     private fun onEngineEvent(event: EngineRecordingEvent) {
         when (event) {
             // A Started is always the current start's: only Finalized events can arrive late.
-            is EngineRecordingEvent.Started -> synchronized(lock) {
-                if (_state.value !is RecordingState.Starting || startAbandoned) return
-                startSignal.value = StartSignal.Started(becomeRecording(startingId, event.path, event.hasAudio))
+            is EngineRecordingEvent.Started -> {
+                val recording = synchronized(lock) {
+                    if (_state.value !is RecordingState.Starting || startAbandoned) return
+                    becomeRecording(startingId, event.path, event.hasAudio).also {
+                        startSignal.value = StartSignal.Started(it)
+                    }
+                }
+                @Suppress("DEPRECATION")
+                emit(CameraKEvent.RecordingStarted(recording.filePath))
             }
             is EngineRecordingEvent.Finalized -> onFinalized(event)
             // The pause and resume commands move the state when the engine returns.
@@ -467,19 +480,42 @@ internal class RecordingController(
     }
 
     // Any end, under lock: Finished for display. The caller announces it once the lock is released.
-    private fun finishLocked(
-        id: Long,
-        result: CameraKResult<RecordedVideo>,
-        reason: RecordingEndReason,
-    ): RecordingState.Finished {
+    private fun finishLocked(id: Long, result: CameraKResult<RecordedVideo>, reason: RecordingEndReason): Ended {
+        val filePath = when (val current = _state.value) {
+            is RecordingState.Recording -> current.filePath
+            is RecordingState.Paused -> current.filePath
+            is RecordingState.Stopping -> current.filePath
+            else -> null
+        }
+        val recordedMs = clock?.recordedMillis(nowNanos()) ?: 0L
         stopTicking()
-        return RecordingState.Finished(id, result, reason).also { _state.value = it }
+        val finished = RecordingState.Finished(id, result, reason).also { _state.value = it }
+        return Ended(finished, filePath, recordedMs)
     }
 
-    // RecordingEnded, unless the caller asked for the end.
-    private fun announce(end: RecordingState.Finished) {
-        if (end.reason != RecordingEndReason.USER) {
-            emit(CameraKEvent.RecordingEnded(end.recordingId, end.result, end.reason))
+    // RecordingEnded unless the caller asked for the end, then the deprecated 1.x events.
+    private fun announce(end: Ended) {
+        val finished = end.finished
+        if (finished.reason != RecordingEndReason.USER) {
+            emit(CameraKEvent.RecordingEnded(finished.recordingId, finished.result, finished.reason))
+        }
+        announceLegacy(end)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun announceLegacy(end: Ended) {
+        val limit = end.finished.reason == RecordingEndReason.MAX_DURATION
+        when (val result = end.finished.result) {
+            is CameraKResult.Success -> {
+                val video = result.value
+                val durationMs = video.duration.inWholeMilliseconds
+                if (limit) emit(CameraKEvent.RecordingMaxDurationReached(video.path, durationMs))
+                emit(CameraKEvent.RecordingStopped(VideoCaptureResult.Success(video.path, durationMs)))
+            }
+            is CameraKResult.Failure -> {
+                if (limit) end.filePath?.let { emit(CameraKEvent.RecordingMaxDurationReached(it, end.recordedMs)) }
+                emit(CameraKEvent.RecordingFailed(RecordingFailedException.of(result.error)))
+            }
         }
     }
 
@@ -511,6 +547,9 @@ internal class RecordingController(
 
     private fun nowNanos(): Long = origin.elapsedNow().inWholeNanoseconds
 
+    // A Finished, with what the 1.x events need of the recording it ended.
+    private class Ended(val finished: RecordingState.Finished, val filePath: String?, val recordedMs: Long)
+
     private sealed interface StartSignal {
         class Started(val recording: RecordingState.Recording) : StartSignal
 
@@ -519,6 +558,18 @@ internal class RecordingController(
 
     private companion object {
         const val TAG = "CameraK"
+    }
+}
+
+/**
+ * The exception a deprecated [CameraKEvent.RecordingFailed] carries for an error with no exception of
+ * its own; it names the error's kind, never a path.
+ */
+internal class RecordingFailedException(error: CameraKError) :
+    IllegalStateException("The recording failed: ${error::class.simpleName}", error.cause) {
+    companion object {
+        /** The platform's own exception when there is one, as 1.x passed it on. */
+        fun of(error: CameraKError): Exception = error.cause as? Exception ?: RecordingFailedException(error)
     }
 }
 

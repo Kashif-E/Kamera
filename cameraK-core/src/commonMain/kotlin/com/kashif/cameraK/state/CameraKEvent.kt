@@ -88,7 +88,10 @@ abstract class CameraKEvent internal constructor() {
      *
      * @property filePath The output file path where the video is being recorded.
      */
-    @Deprecated("Emitted only by the 1.x recording calls, which the 2.0 recording commands replace.")
+    @Deprecated(
+        "Emitted beside the 2.0 recording state until the next major release. Read the Recording that " +
+            "startRecording returns, or recordingState.",
+    )
     data class RecordingStarted(val filePath: String) : CameraKEvent()
 
     /**
@@ -96,7 +99,10 @@ abstract class CameraKEvent internal constructor() {
      *
      * @property result The result of the recording with file path and duration.
      */
-    @Deprecated("Emitted only by the 1.x recording calls, which the 2.0 recording commands replace.")
+    @Deprecated(
+        "Emitted beside the 2.0 recording state until the next major release. Read the result of " +
+            "stopRecording, or RecordingEnded for an end the app did not ask for.",
+    )
     data class RecordingStopped(val result: VideoCaptureResult) : CameraKEvent()
 
     /**
@@ -104,7 +110,10 @@ abstract class CameraKEvent internal constructor() {
      *
      * @property exception The exception that caused the failure.
      */
-    @Deprecated("Emitted only by the 1.x recording calls, which the 2.0 recording commands replace.")
+    @Deprecated(
+        "Emitted beside the 2.0 recording state until the next major release. Read the Failure that " +
+            "the recording command returns, or RecordingEnded for an end the app did not ask for.",
+    )
     data class RecordingFailed(val exception: Exception) : CameraKEvent()
 
     /**
@@ -113,7 +122,10 @@ abstract class CameraKEvent internal constructor() {
      * @property filePath The output file path.
      * @property durationMs The actual duration in milliseconds.
      */
-    @Deprecated("Emitted only by the 1.x recording calls, which the 2.0 recording commands replace.")
+    @Deprecated(
+        "Emitted beside the 2.0 recording state until the next major release. Read RecordingEnded with " +
+            "reason MAX_DURATION.",
+    )
     data class RecordingMaxDurationReached(val filePath: String, val durationMs: Long) : CameraKEvent()
 
     /**
