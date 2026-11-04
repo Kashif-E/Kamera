@@ -3,27 +3,18 @@ package com.kashif.cameraK.controller
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.coroutines.CompletableDeferred
 import platform.AVFoundation.AVCaptureFileOutput
 import platform.AVFoundation.AVCaptureFileOutputRecordingDelegateProtocol
-import platform.AVFoundation.AVErrorRecordingSuccessfullyFinishedKey
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
-import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.timeIntervalSince1970
 import platform.darwin.NSObject
 
 /**
- * Delegate for AVCaptureMovieFileOutput recording callbacks.
+ * Delegate for AVCaptureMovieFileOutput recording callbacks. The engine's recorder hears AVFoundation's
+ * start and finish through [onPlatformStarted] and [onPlatformFinished], on AVFoundation's queue.
  */
-private fun NSError.recordingFinishedSuccessfully(): Boolean =
-    when (val finished = userInfo[AVErrorRecordingSuccessfullyFinishedKey]) {
-        is NSNumber -> finished.boolValue
-        is Boolean -> finished
-        else -> false
-    }
-
 @OptIn(ExperimentalForeignApi::class)
 class VideoRecordingDelegate :
     NSObject(),
@@ -31,14 +22,12 @@ class VideoRecordingDelegate :
 
     var onFinished: ((VideoCaptureResult) -> Unit)? = null
 
-    /** Runs with the result when the recording ends for any reason, before [onFinished]. */
-    internal var onRecordingEnded: ((VideoCaptureResult) -> Unit)? = null
+    /** AVFoundation's didStartRecording. */
+    internal var onPlatformStarted: (() -> Unit)? = null
 
-    /** Completes when AVFoundation reports the recording started, or fails if it ended first. */
-    internal val started = CompletableDeferred<Unit>()
+    /** AVFoundation's didFinishRecording, with its error (null for none). */
+    internal var onPlatformFinished: ((error: NSError?) -> Unit)? = null
 
-    /** Completes with the recording's result when AVFoundation has finished the file. */
-    internal val finished = CompletableDeferred<VideoCaptureResult>()
     private var startTimeMs: Long = 0L
 
     override fun captureOutput(
@@ -47,7 +36,7 @@ class VideoRecordingDelegate :
         fromConnections: List<*>,
     ) {
         startTimeMs = (NSDate().timeIntervalSince1970 * 1000).toLong()
-        started.complete(Unit)
+        onPlatformStarted?.invoke()
     }
 
     override fun captureOutput(
@@ -61,19 +50,14 @@ class VideoRecordingDelegate :
 
         // AVFoundation reports an error for recordings that still produced a playable file (a duration
         // or size limit, some interruptions) and says so in AVErrorRecordingSuccessfullyFinishedKey.
-        // Anything else (disk full, a failure mid-recording) is an error; the partial file is kept.
-        val result = if (error == null || error.recordingFinishedSuccessfully()) {
+        val result = if (error == null || error.recordedPlayably) {
             VideoCaptureResult.Success(filePath, durationMs)
         } else {
             val failure = Exception("Recording failed: ${error.summary}", NSErrorException(error))
             CameraKLogger.e("CameraK", "CameraK: the recording failed", failure)
             VideoCaptureResult.Error(failure)
         }
-        if (!started.isCompleted) {
-            started.completeExceptionally(IllegalStateException("The recording ended before it started"))
-        }
-        finished.complete(result)
-        onRecordingEnded?.invoke(result)
+        onPlatformFinished?.invoke(error)
         try {
             onFinished?.invoke(result)
         } catch (e: Exception) {

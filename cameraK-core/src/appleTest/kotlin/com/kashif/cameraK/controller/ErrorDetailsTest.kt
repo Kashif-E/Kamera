@@ -234,6 +234,8 @@ class ErrorDetailsTest {
         val recorder = FakeMovieRecorder()
         rig.controller.movieRecorder = recorder
         rig.controller.microphoneInput = microphone
+        // The test bundle's Info.plist has no NSMicrophoneUsageDescription, which an app recording audio has.
+        rig.controller.hasUsageDescription = { true }
         scope.launch { rig.controller.startRecording(VideoConfiguration(enableAudio = true)) }
         awaitTrue("the recording to start on the movie output") { recorder.starts.isNotEmpty() }
         recorder.reportStarted(recorder.starts.single())

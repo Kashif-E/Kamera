@@ -22,13 +22,16 @@ import platform.Foundation.NSLock
 import platform.Foundation.NSThread
 import platform.UIKit.UIDevice
 import platform.UIKit.UIView
+import platform.darwin.DISPATCH_TIME_NOW
 import platform.darwin.NSObject
+import platform.darwin.dispatch_after
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_get_specific
 import platform.darwin.dispatch_queue_create
 import platform.darwin.dispatch_queue_set_specific
 import platform.darwin.dispatch_sync
+import platform.darwin.dispatch_time
 import kotlin.concurrent.Volatile
 
 private const val TAG = "CameraK"
@@ -287,6 +290,8 @@ class CustomCameraController(
         // One transaction: input, photo output, the final preset and every change queued so far.
         ops.beginConfiguration()
         val failure: CameraException? = try {
+            // A photo session never reconfigures the app's audio session; only an audio recording does.
+            ops.setAutomaticallyConfiguresApplicationAudioSession(false)
             val inputsReady =
                 inputConfigurator?.invoke(ops, cameraDeviceType) ?: setupInputs(lens, cameraDeviceType, device)
             if (inputsReady) {
@@ -577,17 +582,88 @@ class CustomCameraController(
         }
     }
 
-    /** Removes, as one queued configuration change, every attached input [matches] picks. */
-    internal fun removeInputsMatching(matches: (AVCaptureInput) -> Boolean) {
-        queueConfigurationChange {
-            val ops = session ?: return@queueConfigurationChange
-            ops.inputs.filter(matches).forEach(ops::removeInput)
-        }
-    }
-
     /** Runs [block] on the session queue after every piece of session work already requested. */
     internal fun afterQueuedSessionWork(block: () -> Unit) {
         dispatch_async(sessionQueue, block)
+    }
+
+    /** Runs [block] on the session queue once [delayMs] have passed. */
+    @OptIn(ExperimentalForeignApi::class)
+    internal fun onSessionQueueAfter(delayMs: Long, block: () -> Unit) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delayMs * 1_000_000), sessionQueue, block)
+    }
+
+    /**
+     * Adds a recording's movie [output], and the microphone [microphone] makes when it is given, and
+     * sets [preset] (the recording quality's) in one configuration transaction (design §5). The session
+     * configures the app's audio session only for an audio recording. A microphone that cannot be made
+     * or that the session refuses is logged and reported to [onError] as a ConfigurationError naming it,
+     * with the platform's error as the cause, and the recording goes ahead without audio. Session queue
+     * only; returns the microphone input added (null without one), or why the output could not be added.
+     */
+    internal fun configureMovieOnQueue(
+        output: AVCaptureMovieFileOutput,
+        microphone: (() -> Result<AVCaptureInput>)?,
+        preset: String?,
+    ): Result<AVCaptureInput?> {
+        val ops = session ?: return Result.failure(CameraException.DeviceNotAvailable("The session is not set up"))
+        ops.beginConfiguration()
+        try {
+            ops.setAutomaticallyConfiguresApplicationAudioSession(microphone != null)
+            if (!ops.canAddOutput(output)) {
+                return Result.failure(
+                    CameraException.ConfigurationError("The capture session refused the movie output"),
+                )
+            }
+            ops.addOutput(output)
+            if (turnsDeferredStartOff) photoCapturer.disableDeferredStart(output)
+            val audio = microphone?.let { addMicrophone(ops, it) }
+            when {
+                preset == null -> Unit
+                ops.canSetSessionPreset(preset) -> ops.setSessionPreset(preset)
+                else -> CameraKLogger.w(TAG, "CameraK: the session cannot take the recording's preset $preset")
+            }
+            return Result.success(audio)
+        } finally {
+            ops.commitConfiguration()
+        }
+    }
+
+    private fun addMicrophone(ops: CaptureSessionOps, microphone: () -> Result<AVCaptureInput>): AVCaptureInput? {
+        val failure = microphone().fold(
+            onSuccess = { input ->
+                if (ops.canAddInput(input)) {
+                    ops.addInput(input)
+                    return input
+                }
+                CameraException.ConfigurationError("The capture session refused the microphone")
+            },
+            onFailure = { cause ->
+                val reported = (cause as? NSErrorException)?.error?.let { ": ${it.summary}" }.orEmpty()
+                CameraException.ConfigurationError("Could not add the microphone$reported", cause)
+            },
+        )
+        CameraKLogger.e(TAG, "CameraK: adding the microphone failed", failure)
+        reportError(failure)
+        return null
+    }
+
+    /**
+     * Removes a finished recording's [output] and [microphone] and returns the session to the still
+     * preset, in one transaction, so the session and the microphone indicator are photo-only again.
+     * Session queue only.
+     */
+    internal fun releaseMovieOnQueue(output: AVCaptureMovieFileOutput, microphone: AVCaptureInput?) {
+        val ops = session ?: return
+        ops.beginConfiguration()
+        try {
+            if (output in ops.outputs) ops.removeOutput(output)
+            if (microphone != null && microphone in ops.inputs) ops.removeInput(microphone)
+            stillPreset?.let { if (ops.canSetSessionPreset(it)) ops.setSessionPreset(it) }
+            ops.setAutomaticallyConfiguresApplicationAudioSession(false)
+        } finally {
+            ops.commitConfiguration()
+        }
     }
 
     fun startSession() {

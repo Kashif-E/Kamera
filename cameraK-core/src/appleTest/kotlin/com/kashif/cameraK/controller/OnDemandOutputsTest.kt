@@ -8,7 +8,10 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import kotlinx.coroutines.runBlocking
+import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import platform.AVFoundation.AVCaptureMetadataOutput
 import platform.AVFoundation.AVCaptureMetadataOutputObjectsDelegateProtocol
 import platform.AVFoundation.AVCaptureMovieFileOutput
@@ -17,7 +20,6 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -86,21 +88,29 @@ class OnDemandOutputsTest {
 
     @Test
     fun aRecordingsMovieOutputAndMicrophoneLeaveTheSessionWhenItEnds() {
-        setUpSession()
-
-        val output = assertNotNull(runBlocking { controller.attachMovieOutput() }, "no movie output for a recording")
-        assertTrue(output in session.outputs, "the recording's movie output is not attached")
+        val recorder = FakeMovieRecorder()
         val microphone = captureInputWithoutCamera()
-        custom.addInputUnlessPresent(
-            what = "the microphone",
-            isPresent = { it === microphone },
-            create = { Result.success(microphone) },
-        )
+        controller.movieRecorder = recorder
+        controller.microphoneInput = { Result.success(microphone) }
+        controller.hasUsageDescription = { true }
+        controller.startSession()
+        awaitTrue("the session to start") { session.isRunning }
+        val scope = MainScope()
+        try {
+            scope.launch { controller.startRecording(VideoConfiguration(enableAudio = true)) }
+            awaitTrue("the recording to start on the movie output") { recorder.starts.isNotEmpty() }
+            val started = recorder.starts.single()
+            assertTrue(started.output in session.outputs, "the recording's movie output is not attached")
+            assertTrue(microphone in session.inputs, "the recording's microphone is not attached")
 
-        controller.releaseRecordingResources(output) { it === microphone }
-        drainSessionThenMain(custom)
+            recorder.reportStarted(started)
+            recorder.reportFinished(started, error = null)
+            drainSessionThenMain(custom)
 
-        assertFalse(output in session.outputs, "the movie output stayed attached after the recording ended")
-        assertEquals(listOf(back.input), session.inputs, "the microphone stayed attached after the recording ended")
+            assertFalse(started.output in session.outputs, "the movie output stayed attached after the recording ended")
+            assertEquals(listOf(back.input), session.inputs, "the microphone stayed attached after the recording ended")
+        } finally {
+            scope.cancel()
+        }
     }
 }

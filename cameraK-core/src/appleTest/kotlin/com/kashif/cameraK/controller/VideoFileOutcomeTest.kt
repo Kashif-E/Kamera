@@ -42,10 +42,10 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * A recording's outcome is what AVFoundation says it is: a recording it reports as not successfully
- * finished (disk full, interrupted unplayable) is an error, one it reports as playable is a success.
- * DOCUMENTS videos stay in Documents/CameraK, which iOS does not purge; the movie output keeps disk
- * space free and stops at the configured maximum duration; a failed Photos import is an error that
- * keeps the file.
+ * finished is an error and its file is deleted, one it reports as playable is a success whatever ended
+ * it, and a full disk keeps a playable file's path (design §5's partial-file rule). DOCUMENTS videos
+ * stay in Documents/CameraK, which iOS does not purge; the movie output keeps disk space free and
+ * stops at the configured maximum duration. Core no longer imports recordings into Photos.
  */
 @OptIn(ExperimentalForeignApi::class)
 class VideoFileOutcomeTest {
@@ -113,17 +113,6 @@ class VideoFileOutcomeTest {
         return result!!
     }
 
-    @Test
-    fun aRecordingAVFoundationReportsAsFailedIsAnErrorAndKeepsItsFile() {
-        use(Directory.DOCUMENTS)
-        val started = startedRecording()
-
-        val result = stop(started, avError(AVErrorDiskFull, successfullyFinished = false))
-
-        assertIs<VideoCaptureResult.Error>(result, "a recording AVFoundation reported as failed was a success: $result")
-        assertTrue(NSFileManager.defaultManager.fileExistsAtPath(started.url.path!!), "the partial file was deleted")
-    }
-
     /** Guard: AVFoundation's playable verdict decides, not the presence of an error (green before the fix). */
     @Test
     fun aRecordingAVFoundationReportsAsPlayableIsASuccess() {
@@ -157,34 +146,6 @@ class VideoFileOutcomeTest {
     }
 
     @Test
-    fun aFailedPhotosImportIsAnErrorAndKeepsTheFile() {
-        use(Directory.PICTURES)
-        rig.controller.photosLibrary = FakePhotosLibrary(FakePhotosLibrary.Answer.Failed(photosError()))
-        val started = startedRecording()
-
-        val result = stop(started, error = null)
-
-        assertIs<VideoCaptureResult.Error>(result, "a video Photos refused was reported as $result")
-        assertTrue(NSFileManager.defaultManager.fileExistsAtPath(started.url.path!!), "the video was deleted")
-    }
-
-    @Test
-    fun aRefusedPhotosImportIsAnErrorThatNamesWhatPhotosReported() {
-        use(Directory.PICTURES)
-        rig.controller.photosLibrary = FakePhotosLibrary(FakePhotosLibrary.Answer.Failed(photosError(3311)))
-        val started = startedRecording()
-
-        val result = stop(started, error = null)
-
-        val error = assertIs<VideoCaptureResult.Error>(result, "a video Photos refused was reported as $result")
-        val message = error.exception.message.orEmpty()
-        assertTrue(
-            "PHPhotosErrorDomain" in message && "3311" in message,
-            "the error does not say what Photos reported: $message",
-        )
-    }
-
-    @Test
     fun aFailedRecordingKeepsAVFoundationsErrorAsItsCause() {
         use(Directory.DOCUMENTS)
         val started = startedRecording()
@@ -195,19 +156,6 @@ class VideoFileOutcomeTest {
         val error =
             assertIs<VideoCaptureResult.Error>(result, "a recording AVFoundation failed was reported as $result")
         assertSame(failure, error.exception.platformError(), "the error does not carry AVFoundation's NSError")
-    }
-
-    @Test
-    fun aVideoPhotosRefusesKeepsPhotosErrorAsItsCause() {
-        use(Directory.PICTURES)
-        val refusal = photosError(3311)
-        rig.controller.photosLibrary = FakePhotosLibrary(FakePhotosLibrary.Answer.Failed(refusal))
-        val started = startedRecording()
-
-        val result = stop(started, error = null)
-
-        val error = assertIs<VideoCaptureResult.Error>(result, "a video Photos refused was reported as $result")
-        assertSame(refusal, error.exception.platformError(), "the error does not carry Photos' NSError")
     }
 
     @Test
@@ -234,21 +182,6 @@ class VideoFileOutcomeTest {
         val cause = assertNotNull(error.platformError(), "the error does not carry the file system's NSError: $error")
         assertEquals(NSCocoaErrorDomain, cause.domain)
     }
-
-    @Test
-    fun aPhotosImportThatNeverFinishesEndsTheStopWithAnErrorOnceItTimesOutAndKeepsTheFile() {
-        use(Directory.PICTURES)
-        rig.controller.photosLibrary = FakePhotosLibrary(FakePhotosLibrary.Answer.Never)
-        rig.controller.photosImportTimeoutMs = 200
-        val started = startedRecording()
-
-        val result = stop(started, error = null)
-
-        assertIs<VideoCaptureResult.Error>(result, "a video Photos never imported was reported as $result")
-        assertTrue(NSFileManager.defaultManager.fileExistsAtPath(started.url.path!!), "the video was deleted")
-    }
-
-    // The partial-file rule of design §5 on the engine: AVFoundation's playable verdict decides.
 
     @Test
     fun unplayableFileIsDeletedAndFailure() = engineDriver.runCase {

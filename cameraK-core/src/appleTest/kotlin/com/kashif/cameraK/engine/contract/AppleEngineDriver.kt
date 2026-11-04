@@ -86,7 +86,8 @@ internal class AppleEngineDriver(
 ) : ThrowingCallbackDriver,
     PreOpenInterruptionDriver,
     ReadBackFlashDriver,
-    CaptureDriver {
+    CaptureDriver,
+    RecordingDriver {
     val back = FakeDevice(
         isFront = false,
         uniqueId = BACK_ID,
@@ -288,6 +289,16 @@ internal class AppleEngineDriver(
     }
 
     override fun throwFromNextCallback() = session.throwOnNextInterruptedRead()
+
+    /** AVFoundation's didStartRecording for the last recording started. */
+    override fun deliverRecordingStarted() {
+        movieRecorder.starts.lastOrNull()?.let(movieRecorder::reportStarted)
+    }
+
+    /** AVFoundation's didFinishRecording, without an error, for the last recording started. */
+    override fun deliverRecordingFinalized() {
+        movieRecorder.starts.lastOrNull()?.let { movieRecorder.reportFinished(it, error = null) }
+    }
 
     // The fake photo output never finishes a capture on its own, so every capture is held.
     override fun holdNextCapture() = Unit

@@ -31,6 +31,7 @@ import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.frames.FrameSource
+import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.START_TIMEOUT
@@ -38,8 +39,8 @@ import com.kashif.cameraK.state.ZoomState
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
+import com.kashif.cameraK.video.VideoQuality
 import kotlinx.atomicfu.atomic
-import kotlinx.atomicfu.getAndUpdate
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.CancellableContinuation
@@ -55,7 +56,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -122,9 +122,8 @@ import kotlin.coroutines.resume
  *   and stop.
  *
  * - A capture is one session-queue block, written to app-owned storage ([capture]).
- *
- * Until the rest of I3', the recording calls return `InvalidState`; the 1.x facade
- * ([legacyController]) still records on the session this engine owns.
+ * - Recordings are [recorder]'s, on the movie file output; stop and close finalize a running one
+ *   before the camera closes.
  */
 internal class AppleCameraEngine(
     private val config: CameraConfiguration,
@@ -181,13 +180,31 @@ internal class AppleCameraEngine(
     private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
     override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
 
-    override val recordingEvents: Flow<EngineRecordingEvent> = emptyFlow()
+    /** Recordings on the movie file output; the facade's recording calls reach it too. */
+    internal val recorder = AppleRecorder(
+        custom = custom,
+        cameraConfig = config,
+        osVersion = osVersion,
+        hasUsageDescription = hasUsageDescription,
+        supportedQualities = ::boundQualities,
+        videoOrientation = ::captureVideoOrientation,
+    )
+
+    override val recordingEvents: Flow<EngineRecordingEvent> = recorder.events
 
     /** The movie-file-output calls recordings make; tests record them. */
-    internal var movieRecorder: MovieRecorder = AVMovieRecorder
+    internal var movieRecorder: MovieRecorder
+        get() = recorder.movieRecorder
+        set(value) {
+            recorder.movieRecorder = value
+        }
 
     /** The microphone's session input for a recording with audio, or why there is none. */
-    internal var microphoneInput: () -> Result<AVCaptureInput> = { TODO("I3': engine recording") }
+    internal var microphoneInput: () -> Result<AVCaptureInput>
+        get() = recorder.microphoneInput
+        set(value) {
+            recorder.microphoneInput = value
+        }
     override val frames: FrameSource = InactiveFrameSource()
 
     private val scope = CoroutineScope(
@@ -225,7 +242,6 @@ internal class AppleCameraEngine(
     private val starts = Mutex()
     private val facadeCalls = Mutex()
     private val facade = atomic<CameraController?>(null)
-    private val refusedOperations = atomic(emptySet<CameraOperation>())
 
     /** Captures waiting on AVFoundation, which close completes with Closed. Under [lock]. */
     private val pendingStills = mutableSetOf<StillRequest>()
@@ -244,6 +260,7 @@ internal class AppleCameraEngine(
 
     init {
         custom.captureOrientation = ::captureVideoOrientation
+        custom.recordingInProgress = { recorder.isActive }
         custom.photoFormat = config.imageFormat
         custom.turnsDeferredStartOff = osVersion >= DEFERRED_START_IOS
         if (unsupported == null) {
@@ -385,6 +402,8 @@ internal class AppleCameraEngine(
             locked { if (!closed) _state.value = EngineState.Closed }
             return
         }
+        // A recording is finalized before the camera closes (contract rule 7).
+        if (!isClosed) recorder.finishForStop()
         val cut = locked {
             if (closed) return
             generation++
@@ -397,6 +416,7 @@ internal class AppleCameraEngine(
         stopObservingOrientation()
         suspendCancellableCoroutine { continuation ->
             custom.afterQueuedSessionWork {
+                platformCallback("releasing a prepared recording") { recorder.releasePreparedOnQueue() }
                 platformCallback("stopping the session") { custom.stopRunningOnQueue() }
                 continuation.resume(Unit)
             }
@@ -419,12 +439,14 @@ internal class AppleCameraEngine(
         stopObservingOrientation()
         orientationListener.value = null
         enumerated.complete(Unit)
-        facade.value?.releaseForEngineClose()
         if (session != null) {
-            custom.cleanupSession()
-            custom.afterQueuedSessionWork {
-                stopObservingHardware()
-                closeDone.complete()
+            // A recording is finalized before the session is released (contract rule 7).
+            recorder.finishForClose {
+                custom.cleanupSession()
+                custom.afterQueuedSessionWork {
+                    stopObservingHardware()
+                    closeDone.complete()
+                }
             }
         }
         scope.cancel()
@@ -842,25 +864,38 @@ internal class AppleCameraEngine(
         }
     }
 
-    override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> =
-        refuse(CameraOperation.RECORD_PREPARE)
+    /** Adds the movie output (and the microphone, for audio) now, so the next start commits nothing. */
+    override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> {
+        notOpen()?.let { return it }
+        return recorder.prepare(config)
+    }
 
-    override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> =
-        refuse(CameraOperation.RECORD_START)
+    /** Returns once AVFoundation reports the recording started; its value is the file's path. */
+    override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> {
+        notOpen()?.let { return it }
+        return recorder.start(config)
+    }
 
-    override suspend fun stopRecording(): CameraKResult<RecordedVideo> = refuse(CameraOperation.RECORD_STOP)
-
-    override suspend fun pauseRecording(): CameraKResult<Unit> = refuse(CameraOperation.RECORD_PAUSE)
-
-    override suspend fun resumeRecording(): CameraKResult<Unit> = refuse(CameraOperation.RECORD_RESUME)
-
-    // I3' gives these their paths; until then each kind is logged once, as LegacyControllerEngine does.
-    private fun refuse(operation: CameraOperation): CameraKResult<Nothing> {
+    /** Reaches the movie output in any state before close, so a recording can always be ended. */
+    override suspend fun stopRecording(): CameraKResult<RecordedVideo> {
         unusable()?.let { return it }
-        if (operation !in refusedOperations.getAndUpdate { it + operation }) {
-            CameraKLogger.w(TAG, "CameraK: the iOS engine does not run $operation yet; issue it on Ready.controller")
-        }
-        return failure(CameraKError.InvalidState(operation))
+        return recorder.stop(RecordingEndReason.USER)
+    }
+
+    override suspend fun pauseRecording(): CameraKResult<Unit> {
+        unusable()?.let { return it }
+        return recorder.pause()
+    }
+
+    override suspend fun resumeRecording(): CameraKResult<Unit> {
+        unusable()?.let { return it }
+        return recorder.resume()
+    }
+
+    /** The recording qualities the bound camera can deliver: those whose session preset it supports. */
+    private fun boundQualities(): Set<VideoQuality> {
+        val device = custom.currentDevice ?: return emptySet()
+        return VideoQuality.entries.filter { device.supportsSessionPreset(it.sessionPreset) }.toSet()
     }
 
     private fun unusable(): CameraKResult.Failure? = when {
