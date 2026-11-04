@@ -16,7 +16,10 @@ import dev.drewhamilton.poko.Poko
  * value; it has no `copy` or `componentN`, so it can gain a field without breaking binary
  * compatibility.
  *
- * @property id Platform camera id (Camera2 id on Android, AVCaptureDevice.uniqueID on iOS, "" on Desktop).
+ * @property id Platform camera id: the Camera2 id on Android and the AVCaptureDevice.uniqueID on iOS. On
+ * Desktop, the `/dev/v4l/by-id` link name (else the `/dev/videoN` path) on Linux, the uniqueID on macOS
+ * and the DirectShow alternative name on Windows. "" is the one default entry, listed when the cameras
+ * cannot be read, by an engine with a grabber factory and no camera, and by a 1.x-constructed controller.
  * @property deviceType Classified lens type. Unclassifiable lenses report [CameraDeviceType.DEFAULT].
  * @property lens Which side of the device the lens faces.
  * @property minZoom Minimum zoom ratio (can be < 1.0 on logical multi-cameras that reach ultra-wide via zoom-out).
