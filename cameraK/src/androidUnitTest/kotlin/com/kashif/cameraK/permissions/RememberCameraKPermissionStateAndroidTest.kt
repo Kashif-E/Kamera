@@ -124,13 +124,17 @@ class RememberCameraKPermissionStateAndroidTest {
 
     @Test
     fun everyResumeReadsTheStatusesAgain() {
+        // Asked once before, so the first read (Denied) differs from the value before it (NotDetermined).
+        PermissionRequestRecord(app)
+            .recordResult(Manifest.permission.CAMERA, granted = false, shouldShowRationale = true)
+        val denied = PermissionStatus.Denied(shouldShowRationale = true)
         val state = compose(CameraKPermission.CAMERA)
-        awaitMain("the first read") { state.statuses[CameraKPermission.CAMERA] == PermissionStatus.NotDetermined }
+        awaitMain("the first read") { state.statuses[CameraKPermission.CAMERA] == denied }
 
         // Granted in Settings while the app was in the background.
         shadowOf(app).grantPermissions(Manifest.permission.CAMERA)
         awaitMain("a frame") { true }
-        assertEquals(PermissionStatus.NotDetermined, state.statuses[CameraKPermission.CAMERA], "read without a resume")
+        assertEquals(denied, state.statuses[CameraKPermission.CAMERA], "read without a resume")
 
         controller.pause().resume()
 
