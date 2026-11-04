@@ -42,7 +42,7 @@ private val sessionQueueIds = atomic(0L)
 /**
  * Convert CameraDeviceType enum to AVFoundation device type string
  */
-private fun CameraDeviceType.toAVCaptureDeviceType(): String? = when (this) {
+internal fun CameraDeviceType.toAVCaptureDeviceType(): String? = when (this) {
     CameraDeviceType.WIDE_ANGLE -> AVCaptureDeviceTypeBuiltInWideAngleCamera
     CameraDeviceType.TELEPHOTO -> AVCaptureDeviceTypeBuiltInTelephotoCamera
     CameraDeviceType.ULTRA_WIDE -> AVCaptureDeviceTypeBuiltInUltraWideCamera
@@ -61,12 +61,7 @@ class CustomCameraController(
     private var sessionFactory: () -> CaptureSessionOps = { AVCaptureSessionOps() }
     private var inputConfigurator: ((CaptureSessionOps, CameraDeviceType) -> Boolean)? = null
     private var lensSwitcher: ((CaptureSessionOps, Boolean) -> Unit)? = null
-    private var cameraDevices: CameraDeviceProvider = object : CameraDeviceProvider {
-        override fun find(lens: CameraLens?, type: CameraDeviceType): CaptureDeviceOps? = discoverCamera(lens, type)
-
-        override fun findById(id: String): CaptureDeviceOps? =
-            AVCaptureDevice.deviceWithUniqueID(id)?.let(::AVCaptureDeviceOps)
-    }
+    private var cameraDevices: CameraDeviceProvider = DiscoveryCameraDeviceProvider()
     private var previewMirroring: (AVCaptureVideoPreviewLayer?, Boolean) -> Unit = ::mirrorPreview
     private var photoCapturer: PhotoCapturer = AVPhotoCapturer
     private var previewOrienting: (
@@ -412,23 +407,6 @@ class CustomCameraController(
     }
 
     /**
-     * Single discovery entry point — setupInputs, switchToDeviceType and
-     * getCameraCapabilities all enumerate through here.
-     */
-    private fun discoverDevices(deviceTypes: List<String>, position: AVCaptureDevicePosition): List<AVCaptureDevice> =
-        AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes(
-            deviceTypes,
-            AVMediaTypeVideo,
-            position,
-        ).devices.mapNotNull { it as? AVCaptureDevice }
-
-    private fun allLensDeviceTypes(): List<String> = listOfNotNull(
-        AVCaptureDeviceTypeBuiltInWideAngleCamera,
-        AVCaptureDeviceTypeBuiltInTelephotoCamera,
-        AVCaptureDeviceTypeBuiltInUltraWideCamera,
-    )
-
-    /**
      * Enumerates every built-in lens (wide, telephoto, ultra-wide) on both positions.
      */
     fun getCameraCapabilities(): List<LensInfo> =
@@ -448,24 +426,6 @@ class CustomCameraController(
                 isLogical = false,
             )
         }
-
-    /**
-     * The camera of [type] facing [lens] (either way when null), found with AVCaptureDevice
-     * discovery; with no lens given and nothing discovered, the system's default video device.
-     */
-    private fun discoverCamera(lens: CameraLens?, type: CameraDeviceType): CaptureDeviceOps? {
-        val position = when (lens) {
-            CameraLens.FRONT -> AVCaptureDevicePositionFront
-            CameraLens.BACK -> AVCaptureDevicePositionBack
-            null -> AVCaptureDevicePositionUnspecified
-        }
-        val device = discoverDevices(type.toAVCaptureDeviceType()?.let { listOf(it) } ?: allLensDeviceTypes(), position)
-            .firstOrNull()
-            ?: (AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeVideo) as? AVCaptureDevice).takeIf {
-                lens == null
-            }
-        return device?.let(::AVCaptureDeviceOps)
-    }
 
     private fun setupInputs(lens: CameraLens, cameraDeviceType: CameraDeviceType, device: CaptureDeviceOps?): Boolean {
         val camera = if (device != null) {
