@@ -2,19 +2,13 @@
 
 package com.kashif.cameraK.compose
 
-import android.content.Context
 import android.content.res.Configuration
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.previewAspectRatio
@@ -28,23 +22,9 @@ actual fun CameraPreviewView(
     deviceOrientation: DeviceOrientation,
     overlay: @Composable (CameraPreviewScope.() -> Unit)?,
 ) {
-    val context = LocalContext.current
-    // Keyed on the context: a new Activity context (after a configuration change the host did not
-    // handle) gets a PreviewView of its own instead of one that holds the destroyed Activity.
-    val previewView = remember(context) { fitCenterPreviewView(context) }
-
-    // The camera opens from the session, not from the preview: the preview attaches its surface on
-    // enter and detaches it on dispose, which leaves an incoming preview's surface in place.
-    DisposableEffect(controller, previewView) {
-        val attachment = controller.attachPreview(previewView)
-        onDispose { attachment.close() }
-    }
-
     // Size the preview to the configured aspect ratio so it matches the capture. Drive portrait vs
     // landscape from the actual screen orientation (recomposes on rotation) rather than the caller's
     // deviceOrientation, which defaults to PORTRAIT and would otherwise mis-size a landscape preview.
-    // Sizing the box to the ratio also makes the UseCaseGroup's ViewPort (derived from this view) the
-    // requested ratio, so the capture is no longer cropped to the full screen.
     val screenOrientation = if (LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE) {
         DeviceOrientation.LANDSCAPE_LEFT
     } else {
@@ -55,18 +35,6 @@ actual fun CameraPreviewView(
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         // Preview and overlay share the same aspect-ratio box so overlay coordinates (focus
         // reticles, bounding boxes) align with the letterboxed preview frame, not the outer bounds.
-        Box(modifier = Modifier.aspectRatio(ratio)) {
-            AndroidView(
-                factory = { previewView },
-                modifier = Modifier.matchParentSize(),
-            )
-            if (overlay != null) CameraPreviewOverlay(deviceOrientation, overlay)
-        }
+        ViewfinderPreview(controller.previewSource, deviceOrientation, Modifier.aspectRatio(ratio), overlay)
     }
 }
-
-// FIT_CENTER shows the whole frame (letterboxed) instead of cropping it to fill the view, so the
-// preview matches the captured field of view. Built outside remember's lambda because Compose lint's
-// RememberReturnType reads an apply block that ends in an assignment as remember returning Unit.
-private fun fitCenterPreviewView(context: Context): PreviewView =
-    PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_CENTER }

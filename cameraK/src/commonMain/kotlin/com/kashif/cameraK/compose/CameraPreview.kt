@@ -15,8 +15,12 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.InternalCameraKApi
 
 /**
- * The camera preview for [holder], with [overlay] drawn in the same box as the frame, so overlay
- * coordinates (a focus reticle, a detection box) land on the frame rather than on letterbox bars.
+ * The camera preview for [holder], with [overlay] drawn over it. The frame is fitted to the preview's
+ * box, letterboxed where their aspect ratios differ, and what the overlay's coordinates (a focus
+ * reticle, a detection box) are relative to depends on the platform. On desktop the overlay's box is
+ * the frame's, so they land on the frame. On Android it is the preview's whole box, bars included:
+ * the viewfinder's coordinate transformer maps it to the frame. On iOS, where the preview layer is
+ * `AVLayerVideoGravityResizeAspect`, it is also the whole box and spans the letterbox bars.
  *
  * The preview only attaches to the camera's session and detaches when it leaves the composition: it
  * never opens or closes the camera, which the holder does. Two previews of one holder, as in a
@@ -44,8 +48,8 @@ fun CameraPreview(
 }
 
 /**
- * Draws [source], the engine's preview, with [overlay] in the frame's box (design §7.1): Android
- * attaches a PreviewView's surface provider, iOS hosts a preview layer, desktop draws the frames.
+ * Draws [source], the engine's preview, with [overlay] (design §7.1): Android renders its
+ * SurfaceRequests in CameraXViewfinder, iOS hosts a preview layer, desktop draws the frames.
  */
 @Composable
 internal expect fun EnginePreview(

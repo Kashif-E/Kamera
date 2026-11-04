@@ -209,7 +209,7 @@ actual class CameraController internal constructor(
     @InternalCameraKApi
     @CameraKEngineApi
     val previewSource: PlatformPreviewSource
-        get() = TODO("UA: the engine's preview")
+        get() = engine.preview
 
     // previewView.display is null until the view is attached (bindCamera runs from a DisposableEffect
     // before layout), so fall back to the hosting activity's display: a landscape start would

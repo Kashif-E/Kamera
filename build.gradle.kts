@@ -229,6 +229,8 @@ val composeArtifacts =
         Regex("""^org\.jetbrains\.skiko:"""),
         Regex("""^androidx\.activity:activity-compose$"""),
         Regex("""^(org\.jetbrains\.)?androidx\.lifecycle:lifecycle-[a-z-]*compose"""),
+        Regex("""^androidx\.camera:camera-compose$"""),
+        Regex("""^androidx\.camera\.viewfinder:viewfinder-compose$"""),
     )
 
 data class ClasspathRule(
@@ -477,7 +479,29 @@ fun iosDeploymentTargetsBelow(
 
 // What is wrong with how a version catalog's text pins camera-compose: CameraXViewfinder reads CameraX's
 // SurfaceRequest internals, so it must come from the same release as camera-core, through the same ref.
-fun cameraComposeVersionProblems(catalog: String): List<String> = emptyList()
+fun cameraComposeVersionProblems(catalog: String): List<String> {
+    val libraries =
+        catalog
+            .substringAfter("[libraries]", "")
+            .substringBefore("\n[")
+            .lines()
+
+    fun entry(artifact: String) =
+        libraries.firstOrNull {
+            "\"androidx.camera:$artifact\"" in it ||
+                ("\"androidx.camera\"" in it && Regex("""\bname\s*=\s*"$artifact"""").containsMatchIn(it))
+        }
+
+    fun versionRef(line: String) = Regex("""\bversion\.ref\s*=\s*"([^"]+)"""").find(line)?.groupValues?.get(1)
+    val core = entry("camera-core") ?: return listOf("declares no androidx.camera:camera-core library")
+    val coreRef = versionRef(core) ?: return listOf("camera-core has no version.ref for camera-compose to share")
+    val compose = entry("camera-compose") ?: return listOf("declares no androidx.camera:camera-compose library")
+    return when (val composeRef = versionRef(compose)) {
+        coreRef -> emptyList()
+        null -> listOf("camera-compose has no version.ref; use \"$coreRef\", camera-core's")
+        else -> listOf("camera-compose uses version.ref \"$composeRef\", not camera-core's \"$coreRef\"")
+    }
+}
 
 // The types camerak-core no longer annotates for Compose; cameraK/compose-stability.conf lists them.
 val strippedStableTypes =
