@@ -73,6 +73,8 @@ internal fun startTimeoutState(status: PermissionStatus): CameraKState.Error = i
  * one, so a stop during a start cancels the start instead of racing it.
  *
  * @param beforeReady Runs before the first and every later Ready is published, outside any lock.
+ * @param hostStop Stops the camera for a host stop in place of `engine.stop()`: the recording
+ *   controller ends a live recording first, then stops the engine.
  */
 internal class SessionLifecycle(
     private val engine: CameraEngine,
@@ -81,6 +83,7 @@ internal class SessionLifecycle(
     private val readyState: CameraKState.Ready,
     private val desiredHardware: () -> DesiredHardware,
     private val beforeReady: () -> Unit,
+    private val hostStop: suspend () -> Unit,
 ) {
     private sealed interface Desired {
         /** Stopped once every attempt up to [upTo] had been requested. */
@@ -110,7 +113,7 @@ internal class SessionLifecycle(
         desired.collectLatest { d ->
             when (d) {
                 is Desired.Stopped -> {
-                    if (engineStarted) withContext(NonCancellable) { engine.stop() }
+                    if (engineStarted) withContext(NonCancellable) { hostStop() }
                     transition { CameraKState.Idle }
                     settled.value = Settled(d.upTo, CameraKState.Idle)
                 }

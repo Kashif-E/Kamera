@@ -27,6 +27,10 @@ import com.kashif.cameraK.enums.TorchMode
  * @property cameraDeviceType The bound camera's device type; DEFAULT before the first bind.
  * @property isCapturing Whether a capture is in flight: [pendingCaptures] is above zero.
  * @property lastError Always null: a command returns its failure. Deprecated.
+ * @property isRecording Whether a recording is Recording or Paused. Deprecated: read `holder.recordingState`.
+ * @property isPaused Whether the recording is Paused. Deprecated: read `holder.recordingState`.
+ * @property recordingDurationMs The recorded time, paused stretches taken out, updated four times a
+ *   second; 0 when no recording is live. Deprecated: read `recordingState.value.elapsed()`.
  * @property pendingCaptures How many captures are in flight.
  * @property cameraId The bound camera's `LensInfo.id`; null before the first bind.
  * @property targetOrientation The orientation outputs are fixed to; null follows the device.
@@ -64,8 +68,11 @@ data class CameraUIState(
     val isCapturing: Boolean = false,
     @Deprecated("Always null: every command returns its failure as its result.")
     val lastError: String? = null,
+    @Deprecated("Read the holder's recordingState: Recording or Paused.")
     val isRecording: Boolean = false,
+    @Deprecated("Read the holder's recordingState: Paused.")
     val isPaused: Boolean = false,
+    @Deprecated("Read recordingState.value.elapsed(), or rememberRecordingElapsed in Compose.")
     val recordingDurationMs: Long = 0L,
     val pendingCaptures: Int = 0,
     val cameraId: String? = null,
