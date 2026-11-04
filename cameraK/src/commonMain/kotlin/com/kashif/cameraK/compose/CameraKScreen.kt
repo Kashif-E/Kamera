@@ -9,7 +9,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,8 +35,42 @@ import com.kashif.cameraK.state.CameraKStateHolder
  * }
  * ```
  */
+@Deprecated("Pass the CameraKStateHolder as a parameter. LocalCameraKStateHolder is removed in CameraK 2.0.")
 val LocalCameraKStateHolder = compositionLocalOf<CameraKStateHolder?> { null }
 
+/**
+ * The camera screen for [holder]: one slot per [CameraKState].
+ *
+ * - Idle and Starting show [loading].
+ * - Ready and Interrupted show the camera preview with [content] over it, in the box the frame is
+ *   drawn in. The preview and [content] stay composed from one to the other, so a Stop button
+ *   stays reachable while a phone call holds the camera.
+ * - Error shows [error], with the error and a `retry` that calls [CameraKStateHolder.retry].
+ * - Closed shows nothing.
+ *
+ * The defaults draw no text or colours of the library's own. The default [error] slot retries a
+ * retryable error on its own, once until the camera is Ready again. It leaves `Error(Permission)`
+ * alone: [rememberCameraKStateHolder] re-checks the permission when the host resumes. The preview is
+ * always drawn; to show none, read [holder] without this screen.
+ *
+ * @param holder The camera, usually from [rememberCameraKStateHolder].
+ * @param modifier Modifier for the screen's box.
+ * @param loading Shown while the camera is idle or starting.
+ * @param error Shown when the camera failed, with the error and a retry.
+ * @param content Drawn over the preview, with [CameraPreviewScope] for orientation-aware overlays.
+ *
+ * @example
+ * ```kotlin
+ * val holder = rememberCameraKStateHolder()
+ * CameraKScreen(
+ *     holder = holder,
+ *     loading = { CircularProgressIndicator() },
+ *     error = { error, retry -> CameraErrorMessage(error, onRetry = retry) },
+ * ) {
+ *     CaptureButton(holder, Modifier.align(Alignment.BottomCenter).keepUpright())
+ * }
+ * ```
+ */
 @Composable
 fun CameraKScreen(
     holder: CameraKStateHolder,
@@ -41,16 +79,58 @@ fun CameraKScreen(
     error: @Composable (error: CameraKError, retry: () -> Unit) -> Unit = DefaultCameraKError,
     content: @Composable CameraPreviewScope.() -> Unit = {},
 ) {
-    TODO("UI'")
+    val state by holder.cameraState.collectAsState()
+    val retry: () -> Unit = remember(holder) { { holder.retry() } }
+    val autoRetry = remember(holder) { AutoRetry(holder) }
+    LaunchedEffect(autoRetry) {
+        holder.cameraState.collect { if (it is CameraKState.Ready) autoRetry.rearm() }
+    }
+
+    Box(modifier = modifier) {
+        when (val current = state) {
+            CameraKState.Idle, CameraKState.Starting -> loading()
+            is CameraKState.Ready, is CameraKState.Interrupted ->
+                CameraPreview(holder, Modifier.fillMaxSize(), overlay = content)
+            is CameraKState.Error ->
+                if (error === DefaultCameraKError) {
+                    DefaultErrorSlot(current.error, autoRetry::retryOnce)
+                } else {
+                    error(current.error, retry)
+                }
+            CameraKState.Closed -> Unit
+        }
+    }
+}
+
+/**
+ * The default error slot's one retry. A retry that fails again shows the error again, and only a
+ * camera that reached Ready since earns another, so an error that keeps coming back is not retried
+ * in a loop. Used on the composition's thread only.
+ */
+private class AutoRetry(private val holder: CameraKStateHolder) {
+    private var spent = false
+
+    fun retryOnce() {
+        if (spent) return
+        spent = true
+        holder.retry()
+    }
+
+    fun rearm() {
+        spent = false
+    }
 }
 
 internal val DefaultCameraKError: @Composable (CameraKError, () -> Unit) -> Unit = { error, retry ->
     DefaultErrorSlot(error, retry)
 }
 
+/** Draws nothing. Retries a retryable error, except `Permission`, which the resume re-check handles. */
 @Composable
 internal fun DefaultErrorSlot(error: CameraKError, retry: () -> Unit) {
-    TODO("UI'")
+    LaunchedEffect(error) {
+        if (error.isRetryable && error !is CameraKError.Permission) retry()
+    }
 }
 
 /**
@@ -87,6 +167,10 @@ internal fun DefaultErrorSlot(error: CameraKError, retry: () -> Unit) {
  * }
  * ```
  */
+@Deprecated(
+    "Use CameraKScreen(holder, modifier, loading, error, content). This overload is removed in CameraK 2.0.",
+)
+@Suppress("DEPRECATION")
 @Composable
 fun CameraKScreen(
     modifier: Modifier = Modifier,
@@ -122,6 +206,7 @@ fun CameraKScreen(
 /**
  * Default loading screen shown during camera initialization.
  */
+@Deprecated("CameraKScreen(holder)'s loading slot draws nothing by default. Removed in CameraK 2.0.")
 @Composable
 fun DefaultLoadingScreen() {
     Box(
@@ -149,6 +234,10 @@ fun DefaultLoadingScreen() {
  *
  * @param errorState The error state.
  */
+@Deprecated(
+    "CameraKScreen(holder)'s error slot passes the CameraKError and a retry; map the error to your own text. " +
+        "Removed in CameraK 2.0.",
+)
 @Composable
 fun DefaultErrorScreen(errorState: CameraKState.Error) {
     Box(

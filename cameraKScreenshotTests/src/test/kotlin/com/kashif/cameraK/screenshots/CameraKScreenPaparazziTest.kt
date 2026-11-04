@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.dp
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
@@ -30,8 +32,9 @@ import org.junit.Test
  *
  * The 1.x CameraKScreen(cameraState)'s Ready state is not covered: it renders CameraPreviewView,
  * which needs a CameraX PreviewView bound to a live camera, and layoutlib has no camera.
- * CameraKScreen(holder) runs over camerak-testing's fake engine, whose preview attachment does
- * nothing, so Ready and Interrupted show an empty PreviewView with the content over it.
+ * CameraKScreen(holder) runs over camerak-testing's fake engine. layoutlib cannot attach a CameraX
+ * PreviewView to a window, so Ready and Interrupted render in inspection mode, as an Android Studio
+ * preview does: the preview draws no PreviewView and the content shows over the empty preview box.
  */
 class CameraKScreenPaparazziTest {
     // Pixel-exact comparison; see PixelExactSnapshotVerifier for why maxPercentDifference = 0.0 alone
@@ -73,7 +76,7 @@ class CameraKScreenPaparazziTest {
         runCurrent()
         assertTrue("state is ${holder.cameraState.value}", holder.cameraState.value is CameraKState.Ready)
         paparazzi.snapshot {
-            CameraKScreen(holder, Modifier.fillMaxSize().background(Color.Blue)) { ContentMarker() }
+            InspectionMode { CameraKScreen(holder, Modifier.fillMaxSize().background(Color.Blue)) { ContentMarker() } }
         }
     }
 
@@ -87,7 +90,7 @@ class CameraKScreenPaparazziTest {
         runCurrent()
         assertTrue("state is ${holder.cameraState.value}", holder.cameraState.value is CameraKState.Interrupted)
         paparazzi.snapshot {
-            CameraKScreen(holder, Modifier.fillMaxSize().background(Color.Blue)) { ContentMarker() }
+            InspectionMode { CameraKScreen(holder, Modifier.fillMaxSize().background(Color.Blue)) { ContentMarker() } }
         }
     }
 
@@ -104,6 +107,11 @@ class CameraKScreenPaparazziTest {
         paparazzi.snapshot {
             CameraKScreen(holder, Modifier.fillMaxSize().background(Color.Blue)) { ContentMarker() }
         }
+    }
+
+    @Composable
+    private fun InspectionMode(content: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalInspectionMode provides true, content = content)
     }
 
     @Composable

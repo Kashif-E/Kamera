@@ -492,6 +492,20 @@ val strippedStableTypes =
         "com.kashif.cameraK.video.VideoConfiguration",
     )
 
+// The 2.0 value types UI' adds to cameraK/compose-stability.conf (design §10.3); core never annotated them.
+val addedStableTypes =
+    listOf(
+        "com.kashif.cameraK.state.ZoomState",
+        "com.kashif.cameraK.recording.RecordingState",
+        "com.kashif.cameraK.recording.RecordingState.*",
+        "com.kashif.cameraK.error.CameraKError",
+        "com.kashif.cameraK.error.CameraKError.*",
+        "com.kashif.cameraK.capture.CapturedImage",
+        "com.kashif.cameraK.capture.RecordedVideo",
+        "com.kashif.cameraK.result.CameraKResult",
+        "com.kashif.cameraK.result.CameraKResult.*",
+    )
+
 // The gate rules run against fixtures, and the gates checked to cover the modules the 2.0 split adds.
 tasks.register("checkBuildGateRules") {
     group = lintGroup
@@ -694,9 +708,9 @@ tasks.register("checkBuildGateRules") {
                         listOfNotNull(
                             "${stabilityConfig.relativeTo(rootDir)} is not registered in cameraK/build.gradle.kts"
                                 .takeIf { stabilityConfig.canonicalFile !in registeredStabilityFiles.get() },
-                            "it lists $entries, not $strippedStableTypes"
+                            "it lists $entries, not ${strippedStableTypes + addedStableTypes}"
                                 .takeIf {
-                                    entries.sorted() != strippedStableTypes.sorted() ||
+                                    entries.sorted() != (strippedStableTypes + addedStableTypes).sorted() ||
                                         entries.size != entries.toSet().size
                                 },
                         )
