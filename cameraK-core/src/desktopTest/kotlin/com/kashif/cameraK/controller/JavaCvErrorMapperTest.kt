@@ -4,15 +4,19 @@ import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
 import kotlinx.coroutines.runBlocking
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber
+import org.bytedeco.javacv.FrameRecorder
+import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.test.fail
@@ -20,7 +24,8 @@ import kotlin.test.fail
 /**
  * The desktop error mapper's ordered table (design §4.1): missing natives first, then the open
  * failures, retried once at the camera's own mode before EBUSY, a macOS denial and any other
- * failure are told apart.
+ * failure are told apart. Rows 8 and 9 end a recording conditionally on the playable probe (§4.1):
+ * the table runs over both values of `playable`.
  */
 class JavaCvErrorMapperTest {
     private val granted = { PermissionStatus.Granted }
@@ -170,6 +175,56 @@ class JavaCvErrorMapperTest {
 
     private fun openError(code: Int, reason: String) =
         "avformat_open_input() error $code: Could not open input \"0\". (Has setFormat() been called?) $reason"
+
+    @Test
+    fun recordingFailuresFollowRowsEightAndNineOverBothPlayableValues() {
+        val path = "/home/me/Movies/CameraK/VID_1.mp4"
+        val encoder = FrameRecorder.Exception("av_interleaved_write_frame() error -22 while writing video packet")
+        val io = FrameRecorder.Exception("Could not write the packet", IOException("Input/output error"))
+        val noSpace = FrameRecorder.Exception("av_interleaved_write_frame() error -28 while writing video packet")
+
+        // Row 9: an encoder error keeps a playable file (Success(partial)), else Hardware with FFmpeg's code.
+        assertNull(JavaCvErrorMapper.recordingFailure(encoder, playable = true, path, diskFull = false))
+        val hardware = assertIs<CameraKError.Hardware>(
+            JavaCvErrorMapper.recordingFailure(encoder, playable = false, path, diskFull = false),
+        )
+        assertEquals(-22, hardware.platformCode)
+        assertSame(encoder, hardware.cause)
+
+        // Row 8: an I/O failure keeps a playable file, else NOT_WRITABLE.
+        assertNull(JavaCvErrorMapper.recordingFailure(io, playable = true, path, diskFull = false))
+        val unwritable = assertIs<CameraKError.Storage>(
+            JavaCvErrorMapper.recordingFailure(io, playable = false, path, diskFull = false),
+        )
+        assertEquals(StorageFailure.NOT_WRITABLE, unwritable.kind)
+        assertNull(unwritable.keptFilePath)
+
+        // A full disk is the one exception to the partial-file rule: FULL either way, the file kept when playable.
+        for ((failure, diskFull) in listOf(io to true, noSpace to false)) {
+            val kept = assertIs<CameraKError.Storage>(JavaCvErrorMapper.recordingFailure(failure, true, path, diskFull))
+            assertEquals(StorageFailure.FULL, kept.kind)
+            assertEquals(path, kept.keptFilePath, "a playable file on a full disk is kept")
+            val lost =
+                assertIs<CameraKError.Storage>(JavaCvErrorMapper.recordingFailure(failure, false, path, diskFull))
+            assertEquals(StorageFailure.FULL, lost.kind)
+            assertNull(lost.keptFilePath, "an unplayable file on a full disk is not kept")
+        }
+    }
+
+    @Test
+    fun captureWriteFailuresAreStorageErrors() {
+        val io = IOException("No space left on device")
+        assertEquals(
+            StorageFailure.NOT_WRITABLE,
+            assertIs<CameraKError.Storage>(JavaCvErrorMapper.captureFailure(io, diskFull = false)).kind,
+        )
+        assertEquals(
+            StorageFailure.FULL,
+            assertIs<CameraKError.Storage>(JavaCvErrorMapper.captureFailure(io, diskFull = true)).kind,
+        )
+        val other = IllegalStateException("no writer accepts this image")
+        assertSame(other, assertIs<CameraKError.Internal>(JavaCvErrorMapper.captureFailure(other, false)).cause)
+    }
 
     private val device =
         LensInfo("", CameraDeviceType.DEFAULT, CameraLens.BACK, 1f, 1f, hasFlash = false, isLogical = false)

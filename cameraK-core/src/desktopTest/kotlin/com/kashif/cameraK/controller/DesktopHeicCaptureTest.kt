@@ -1,10 +1,17 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
+import com.kashif.cameraK.error.CameraFeature
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.io.File
@@ -16,8 +23,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 /**
- * Until D3' reports HEIC unsupported at start, a capture configured as HEIC fails rather than writing
- * a JPEG: nothing is written under the user's home, and the refusal is logged once.
+ * HEIC is not a desktop format (§6.1). From D3' the start of a facade configured as HEIC fails with
+ * `Unsupported(IMAGE_FORMAT)`, which logs the refusal once; a capture after it returns
+ * `ImageCaptureResult.Error` and nothing is written under the user's home.
  */
 class DesktopHeicCaptureTest {
     private val home: File = Files.createTempDirectory("camerak-home").toFile()
@@ -31,7 +39,7 @@ class DesktopHeicCaptureTest {
     }
 
     @Test
-    fun heicCapture_failsWithoutWritingAFile() {
+    fun heicConfiguredFacadeWritesNothing() {
         CameraKLogger.enabled = true
         CameraKLogger.sink = { _, _, message, _ -> if ("HEIC" in message) logged += message }
         val sut = CameraController(
@@ -44,10 +52,15 @@ class DesktopHeicCaptureTest {
         )
         try {
             sut.startSession()
+            val failed = runBlocking {
+                withTimeout(10_000) { sut.engine.state.first { it is EngineState.Failed } }
+            }
+            val error = assertIs<CameraKError.Unsupported>(assertIs<EngineState.Failed>(failed).error)
+            assertEquals(CameraFeature.IMAGE_FORMAT, error.feature, "the start of a HEIC facade")
+
             val result = runBlocking { withTimeout(10_000) { sut.takePictureToFile() } }
 
-            val error = assertIs<ImageCaptureResult.Error>(result, "capture result: $result")
-            assertEquals("HEIC capture is not supported yet", error.exception.message)
+            assertIs<ImageCaptureResult.Error>(result, "capture result: $result")
             assertEquals(emptyList(), home.walk().filter { it.isFile }.map { it.name }.toList(), "files written")
             assertEquals(1, logged.size, "the refusal is logged once: $logged")
         } finally {

@@ -6,12 +6,18 @@ import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.contract.BoundSettings
+import com.kashif.cameraK.engine.contract.CaptureDriver
 import com.kashif.cameraK.engine.contract.HardwareChange
+import com.kashif.cameraK.engine.contract.RecordingDriver
 import com.kashif.cameraK.engine.contract.ThrowingCallbackDriver
+import com.kashif.cameraK.engine.contract.UnsupportedCase
+import com.kashif.cameraK.engine.contract.UnsupportedConfigurationDriver
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
+import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -36,9 +42,20 @@ import java.io.IOException
  * The engine enumerates two OFF-only webcams with a fixed zoom, both opening the one scripted
  * camera, so the kit's camera-switch steps run on desktop too.
  *
+ * Recording: the platform's start is the recorder's `start()`, which returns on its own, so the
+ * kit's start event lets one camera frame through to give the file a frame; the platform's
+ * finalize is the recorder's `stop()`, which waits for the kit's finalize event. A capture's
+ * platform callback is the camera's next frame, which the camera holds after its first. The
+ * configuration desktop cannot honour is HEIC (§6.1). The engine's clock moves one frame interval
+ * per read, so every frame it stamps is a frame of its own.
+ *
  * Not a `PreOpenInterruptionDriver`: desktop has no interruption before Open (w3 decisions §6).
  */
-internal class DesktopEngineDriver : ThrowingCallbackDriver {
+internal class DesktopEngineDriver :
+    ThrowingCallbackDriver,
+    RecordingDriver,
+    CaptureDriver,
+    UnsupportedConfigurationDriver {
     private lateinit var rig: DesktopEngineRig
     private var lastListener: GrabLoopListener? = null
     private var throwOnNextFrame = false
@@ -52,11 +69,29 @@ internal class DesktopEngineDriver : ThrowingCallbackDriver {
         body()
     }
 
-    override fun createEngine(config: CameraConfiguration): CameraEngine = rig.engine(
-        config,
-        enumerate = { CameraCapabilities(listOf(webcam("cam-a"), webcam("cam-b"))) },
-        wrap = { listener -> ScriptedListener(listener).also { lastListener = it } },
-    )
+    override fun createEngine(config: CameraConfiguration): CameraEngine {
+        rig.recorderScript = { path -> ScriptedFrameRecorder(path, rig.workers).apply { holdStop = true } }
+        return rig.engine(
+            config,
+            enumerate = { CameraCapabilities(listOf(webcam("cam-a"), webcam("cam-b"))) },
+            wrap = { listener -> ScriptedListener(listener).also { lastListener = it } },
+            nanoClock = { rig.clock.addAndGet(FRAME_NANOS) },
+        )
+    }
+
+    override fun deliverRecordingStarted() = rig.camera.deliverFrame()
+
+    override fun deliverRecordingFinalized() {
+        rig.recorders.lastOrNull()?.finishStop()
+    }
+
+    // The camera holds every frame after its first until the kit lets one through.
+    override fun holdNextCapture() = Unit
+
+    override fun releaseCapture() = deliverOpen()
+
+    override fun unsupportedConfiguration() =
+        UnsupportedCase(CameraConfiguration(imageFormat = ImageFormat.HEIC), CameraFeature.IMAGE_FORMAT)
 
     override fun holdOpen() {
         rig.camera.holdOpen = true
@@ -104,6 +139,11 @@ internal class DesktopEngineDriver : ThrowingCallbackDriver {
 
     private fun webcam(id: String) =
         LensInfo(id, CameraDeviceType.DEFAULT, CameraLens.BACK, 1f, 1f, hasFlash = false, isLogical = false)
+
+    private companion object {
+        // 25 fps: more than the recorder's 30 fps frame interval, so no two frames share a frame number.
+        const val FRAME_NANOS = 40_000_000L
+    }
 
     /** The engine's own listener; its next frame callback throws when the kit asks. */
     private inner class ScriptedListener(private val engine: GrabLoopListener) : GrabLoopListener by engine {

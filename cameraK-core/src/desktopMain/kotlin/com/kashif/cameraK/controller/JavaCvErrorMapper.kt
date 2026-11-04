@@ -42,6 +42,17 @@ internal object JavaCvErrorMapper {
         return CameraKError.Hardware(code, failure)
     }
 
+    /**
+     * Rows 8 and 9 for a recording the recorder ended with [failure]: null when the file at [path] is
+     * playable (the recording is `Success(partial)`), else the error. A full disk ([diskFull], or
+     * FFmpeg's ENOSPC) is `Storage(FULL)` either way, keeping [path] when the file is playable.
+     */
+    fun recordingFailure(failure: Throwable, playable: Boolean, path: String, diskFull: Boolean): CameraKError? =
+        TODO("D3'")
+
+    /** Row 8 for a still that could not be written: `Storage(NOT_WRITABLE)`, or `FULL` when [diskFull]. */
+    fun captureFailure(failure: Throwable, diskFull: Boolean): CameraKError = TODO("D3'")
+
     /** The code in FFmpeg's `avformat_open_input() error <code>` message anywhere in the cause chain, or null. */
     fun platformCode(failure: Throwable): Int? = failure.causes().firstNotNullOfOrNull { cause ->
         OPEN_ERROR.find(cause.message.orEmpty())?.groupValues?.get(1)?.toIntOrNull()

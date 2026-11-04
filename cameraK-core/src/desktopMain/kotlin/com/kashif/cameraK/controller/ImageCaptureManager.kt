@@ -13,7 +13,9 @@ import javax.imageio.ImageIO
     "Unused by CameraK, and it writes to a captured_images folder in the working directory. Use " +
         "CameraController.takePictureToFile(). ImageCaptureManager is removed in CameraK 2.1.",
 )
-class ImageCaptureManager {
+class ImageCaptureManager internal constructor(@Suppress("unused") private val userHome: File) {
+    constructor() : this(defaultUserHome())
+
     private val isCapturing = AtomicBoolean(false)
     private val outputDir =
         File("captured_images").apply {

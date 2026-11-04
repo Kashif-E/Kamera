@@ -18,19 +18,23 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber
+import java.io.File
+import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration
 
 /**
  * A desktop engine on the test scheduler, with its producer on real threads the rig can see. The
- * engine's own coroutines (enumeration, watchdog, recovery) run on virtual time; each grab loop
- * runs on a worker thread from [workers], over [camera] or another camera from [newCamera].
+ * engine's own coroutines (enumeration, watchdog, recovery) run on virtual time; each grab loop and
+ * each recording runs on a worker thread from [workers], over [camera] or another camera from
+ * [newCamera], recording into a [ScriptedFrameRecorder] under [home]. The engines read [clock].
  *
  * [settle] is the desktop driver's quiescence: it waits until every producer thread is idle or
  * parked in a camera's `grab()` with nothing to deliver, runs the scheduler's current tasks (and
@@ -49,6 +53,24 @@ internal class DesktopEngineRig(
 
     /** Another camera whose parked grabs [settle] counts as quiet. */
     fun newCamera(): ScriptedFrameGrabber = ScriptedFrameGrabber(workers).also { cameras += it }
+
+    /** The engines' clock, in nanoseconds: what a test sets it to, and only that. */
+    val clock = AtomicLong(0)
+
+    /** The folder the rig's engines write their stills and recordings under. */
+    val home: File by lazy { Files.createTempDirectory("camerak-rig").toFile() }
+
+    /** Every recorder the rig's engines opened, oldest first; [settle] counts their parked stops as quiet. */
+    val recorders = CopyOnWriteArrayList<ScriptedFrameRecorder>()
+
+    /** How the next recorder behaves: the scripted recorder for its output path. */
+    var recorderScript: (String) -> ScriptedFrameRecorder = { ScriptedFrameRecorder(it, workers) }
+
+    /** The media an engine of the rig writes with: under [home], into [recorders]. */
+    fun media(): DesktopMedia = DesktopMedia(
+        userHome = home,
+        recorderFactory = { path, _ -> recorderScript(path).also { recorders += it } },
+    )
 
     /** The device the engine last opened the camera on, as a grabber factory sees it. */
     @Volatile var openedDeviceId: String? = null
@@ -81,24 +103,32 @@ internal class DesktopEngineRig(
         config: CameraConfiguration = CameraConfiguration(),
         enumerate: () -> CameraCapabilities = { desktopCapabilities() },
         wrap: (GrabLoopListener) -> GrabLoopListener = { it },
+        nanoClock: () -> Long = clock::get,
     ): DesktopCameraEngine = DesktopCameraEngine(
         config,
         environment(),
         source,
         authorization = { PermissionStatus.Granted },
+        nanoClock = nanoClock,
         listenerWrapper = wrap,
         enumerate = enumerate,
+        media = media(),
     )
 
     fun settle() {
         repeat(MAX_ROUNDS) {
-            workers.awaitQuiet(cameras)
+            awaitQuiet()
             val before = workers.epoch
             runCurrent()
-            workers.awaitQuiet(cameras)
+            awaitQuiet()
             if (workers.epoch == before) return
         }
         throw AssertionError("the engine never settled in $MAX_ROUNDS rounds")
+    }
+
+    private fun awaitQuiet() = workers.awaitQuiet {
+        cameras.sumOf { it.parkedGrabs() } +
+            recorders.sumOf { it.parkedStops() }
     }
 
     // The engine's tasks and the case's resume each other (a start the case launched begins a
@@ -161,15 +191,15 @@ internal class TrackedWorkers {
     fun bump() = change {}
 
     /**
-     * Blocks until no producer task is queued and every running one is parked in one of [cameras]'
-     * `grab()`. The cameras are read outside this lock (each bumps [epoch] under its own), and an
-     * unchanged epoch shows the read is still current.
+     * Blocks until no producer task is queued and every running one is parked: in a camera's
+     * `grab()` or a recorder's `stop()`, as [parkedCount] counts them. They are read outside this lock
+     * (each bumps [epoch] under its own), and an unchanged epoch shows the read is still current.
      */
-    fun awaitQuiet(cameras: List<ScriptedFrameGrabber>) {
+    fun awaitQuiet(parkedCount: () -> Int) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(QUIET_TIMEOUT_SECONDS)
         while (true) {
             val seen = epoch
-            val parked = cameras.sumOf { it.parkedGrabs() }
+            val parked = parkedCount()
             lock.withLock {
                 if (epoch == seen) {
                     if (queued == 0 && running <= parked) return
