@@ -122,6 +122,8 @@ internal class AppleCameraEngine(
     internal val custom: CustomCameraController,
     /** How the device is held now; tests answer for the simulator, which cannot be turned. */
     private val readDeviceOrientation: () -> UIDeviceOrientation = { UIDevice.currentDevice.orientation },
+    /** Begins (true) or ends (false) UIDevice's orientation notifications; tests count the calls. */
+    private val generateOrientationNotifications: (Boolean) -> Unit = ::generateDeviceOrientationNotifications,
     private val enumerateLenses: () -> List<LensInfo> = custom::getCameraCapabilities,
 ) : CameraEngine,
     LegacyControllerAccess {
@@ -154,6 +156,11 @@ internal class AppleCameraEngine(
     /** The zoom ratio the engine re-applies after each start and camera switch. */
     @Volatile
     private var desiredZoom = 1f
+
+    internal val desiredZoomRatio: Float get() = desiredZoom
+
+    /** The torch the engine applies at start and after each camera switch. */
+    internal val desiredTorchMode: TorchMode get() = TODO("I2 carry-over 1: the engine keeps no torch of its own")
 
     private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
     override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
@@ -802,18 +809,14 @@ internal class AppleCameraEngine(
             true
         }
         if (!added) return
-        dispatch_async(dispatch_get_main_queue()) {
-            UIDevice.currentDevice.beginGeneratingDeviceOrientationNotifications()
-        }
+        generateOrientationNotifications(true)
         platformCallback("reading the device orientation") { updateDeviceOrientation() }
     }
 
     private fun stopObservingOrientation() {
         val observer = locked { orientationObserver.also { orientationObserver = null } } ?: return
         center.removeObserver(observer)
-        dispatch_async(dispatch_get_main_queue()) {
-            UIDevice.currentDevice.endGeneratingDeviceOrientationNotifications()
-        }
+        generateOrientationNotifications(false)
     }
 
     /** Face up, face down and unknown name no orientation, so they keep the last one. */
@@ -1035,6 +1038,17 @@ internal fun TorchMode.toAVCaptureTorchMode(): AVCaptureTorchMode = when (this) 
     TorchMode.ON -> AVCaptureTorchModeOn
     TorchMode.OFF -> AVCaptureTorchModeOff
     TorchMode.AUTO -> AVCaptureTorchModeAuto
+}
+
+/** UIDevice's orientation notifications, begun or ended on main, where UIKit wants them. */
+private fun generateDeviceOrientationNotifications(on: Boolean) {
+    dispatch_async(dispatch_get_main_queue()) {
+        if (on) {
+            UIDevice.currentDevice.beginGeneratingDeviceOrientationNotifications()
+        } else {
+            UIDevice.currentDevice.endGeneratingDeviceOrientationNotifications()
+        }
+    }
 }
 
 private fun runningIosMajorVersion(): Int =

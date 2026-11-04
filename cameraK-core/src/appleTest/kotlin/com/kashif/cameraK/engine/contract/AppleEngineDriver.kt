@@ -118,6 +118,20 @@ internal class AppleEngineDriver(
     var frontPhotoFlashModes: List<AVCaptureFlashMode> =
         listOf(AVCaptureFlashModeOff, AVCaptureFlashModeAuto, AVCaptureFlashModeOn)
 
+    private val orientationNotificationLock = platform.Foundation.NSLock()
+    private val orientationNotificationCalls = mutableListOf<Boolean>()
+
+    /** Each begin (true) and end (false) of UIDevice's orientation notifications the engine asked for, in order. */
+    val orientationNotifications: List<Boolean>
+        get() {
+            orientationNotificationLock.lock()
+            try {
+                return orientationNotificationCalls.toList()
+            } finally {
+                orientationNotificationLock.unlock()
+            }
+        }
+
     /** How the device is held, as the engine's orientation reader answers. */
     @Volatile
     var deviceOrientation: UIDeviceOrientation = UIDeviceOrientation.UIDeviceOrientationPortrait
@@ -168,7 +182,20 @@ internal class AppleEngineDriver(
         val onScheduler = checkNotNull(dispatcher) { "createEngine runs inside runCase" }
         val environment = CameraKEnvironment(dispatchers = CameraKDispatchers(onScheduler, onScheduler, onScheduler))
         environment.runtime = EngineRuntime(tracer = tracer, osVersion = osVersion)
-        engine = AppleCameraEngine(config, environment, custom, readDeviceOrientation = { deviceOrientation }) {
+        engine = AppleCameraEngine(
+            config,
+            environment,
+            custom,
+            readDeviceOrientation = { deviceOrientation },
+            generateOrientationNotifications = { on ->
+                orientationNotificationLock.lock()
+                try {
+                    orientationNotificationCalls += on
+                } finally {
+                    orientationNotificationLock.unlock()
+                }
+            },
+        ) {
             enumerations.incrementAndGet()
             lenses
         }
