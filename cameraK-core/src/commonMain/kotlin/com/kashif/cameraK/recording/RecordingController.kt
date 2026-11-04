@@ -13,7 +13,6 @@ import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.CameraKPermissionChecker
 import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
-import com.kashif.cameraK.result.getOrNull
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CommandRunner
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -102,8 +101,8 @@ internal class RecordingController(
     private var clock: RecordingClock? = null
     private var ticker: Job? = null
 
-    // What the engine reported for the start in flight: its Started, or an end before it.
-    private val startSignal = MutableStateFlow<EngineRecordingEvent?>(null)
+    // What the engine reported for the start in flight: the Recording its Started made, or an end before it.
+    private val startSignal = MutableStateFlow<StartSignal?>(null)
 
     init {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -255,18 +254,30 @@ internal class RecordingController(
             is CameraKResult.Failure -> return started.also { backToIdle() }
             is CameraKResult.Success -> started.value
         }
-        return when (val milestone = startSignal.filterNotNull().first()) {
-            is EngineRecordingEvent.Started -> CameraKResult.Success(
-                _state.value as? RecordingState.Recording ?: becomeRecording(id, milestone.path, milestone.hasAudio),
+        return when (val signal = startSignal.filterNotNull().first()) {
+            // The recording started; the platform may have ended it since, which Finished and RecordingEnded say.
+            is StartSignal.Started -> CameraKResult.Success(signal.recording)
+            is StartSignal.Ended -> endedBeforeStarted(id, path, signal.finalized)
+        }
+    }
+
+    // A Finalized before any Started fails the start, unless it left a playable file (§5, partial files).
+    private fun endedBeforeStarted(
+        id: Long,
+        path: String,
+        finalized: EngineRecordingEvent.Finalized,
+    ): CameraKResult<RecordingState.Recording> = when (val result = finalized.result) {
+        is CameraKResult.Failure -> result.also { backToIdle() }
+        is CameraKResult.Success -> {
+            val recording = RecordingState.Recording(
+                id,
+                path,
+                timeSource.markNow(),
+                Duration.ZERO,
+                result.value.hasAudio,
             )
-            is EngineRecordingEvent.Finalized -> {
-                // The platform confirmed the start and ended the recording before reporting it running.
-                val hasAudio = milestone.result.getOrNull()?.hasAudio ?: config.enableAudio
-                val recording = RecordingState.Recording(id, path, timeSource.markNow(), Duration.ZERO, hasAudio)
-                finish(id, milestone.result, milestone.reason)
-                CameraKResult.Success(recording)
-            }
-            else -> error("Only Started and Finalized signal a start")
+            finish(id, result, finalized.reason)
+            CameraKResult.Success(recording)
         }
     }
 
@@ -304,14 +315,13 @@ internal class RecordingController(
         when (event) {
             is EngineRecordingEvent.Started -> synchronized(lock) {
                 if (_state.value !is RecordingState.Starting) return
-                becomeRecording(startingId, event.path, event.hasAudio)
-                startSignal.value = event
+                startSignal.value = StartSignal.Started(becomeRecording(startingId, event.path, event.hasAudio))
             }
             is EngineRecordingEvent.Finalized -> {
                 val ended = synchronized(lock) {
                     when (val current = _state.value) {
                         is RecordingState.Starting -> {
-                            startSignal.value = event
+                            startSignal.value = StartSignal.Ended(event)
                             null
                         }
                         is RecordingState.Recording -> current.recordingId
@@ -394,6 +404,12 @@ internal class RecordingController(
     }
 
     private fun nowNanos(): Long = origin.elapsedNow().inWholeNanoseconds
+
+    private sealed interface StartSignal {
+        class Started(val recording: RecordingState.Recording) : StartSignal
+
+        class Ended(val finalized: EngineRecordingEvent.Finalized) : StartSignal
+    }
 
     private companion object {
         const val TAG = "CameraK"
