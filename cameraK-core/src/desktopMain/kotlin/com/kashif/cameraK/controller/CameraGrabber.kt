@@ -329,7 +329,10 @@ internal fun createDefaultGrabber(os: OperatingSystem, size: Pair<Int, Int>?): F
         CameraKLogger.d("CameraK", "Using video device: $videoDevice")
         FFmpegFrameGrabber(videoDevice)
     }
-}.apply {
+}.askFor(size)
+
+/** Asks this grabber for [size] at CameraK's frame rate; null leaves the camera at its own mode. */
+internal fun FrameGrabber.askFor(size: Pair<Int, Int>?): FrameGrabber = apply {
     if (size != null) {
         frameRate = DEFAULT_CAMERA_FRAME_RATE
         imageWidth = size.first
@@ -362,16 +365,15 @@ internal fun currentOperatingSystem(): OperatingSystem {
  * falls back to its sysfs `index`: 0 for a camera's capture node and 1 for its UVC metadata node,
  * which streams no pictures, so a node whose index is not 0 is skipped. A node with neither is kept.
  */
-internal fun findBestVideoDevice(devDir: File, sysDir: File, udevDataDir: File): String {
-    val candidates =
-        devDir
-            .listFiles { file -> VIDEO_NODE.matches(file.name) && file.canRead() }
-            .orEmpty()
-            .filter { isCaptureNode(File(sysDir, it.name), udevDataDir) }
-            .sortedBy { it.name.removePrefix("video").toIntOrNull() ?: Int.MAX_VALUE }
+internal fun findBestVideoDevice(devDir: File, sysDir: File, udevDataDir: File): String =
+    captureNodes(devDir, sysDir, udevDataDir).firstOrNull()?.path ?: File(devDir, "video0").path
 
-    return candidates.firstOrNull()?.path ?: File(devDir, "video0").path
-}
+/** Every readable `videoN` node in [devDir] that captures video, as [findBestVideoDevice] decides it, by number. */
+internal fun captureNodes(devDir: File, sysDir: File, udevDataDir: File): List<File> = devDir
+    .listFiles { file -> VIDEO_NODE.matches(file.name) && file.canRead() }
+    .orEmpty()
+    .filter { isCaptureNode(File(sysDir, it.name), udevDataDir) }
+    .sortedBy { it.name.removePrefix("video").toIntOrNull() ?: Int.MAX_VALUE }
 
 private fun isCaptureNode(sysNode: File, udevDataDir: File): Boolean {
     udevCapabilities(sysNode, udevDataDir)?.let { return "capture" in it }

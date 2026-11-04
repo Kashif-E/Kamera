@@ -4,8 +4,8 @@ package com.kashif.cameraK.controller
  * The Objective-C runtime of a Mac with [devices] attached, answering the messages macOS camera
  * enumeration sends: `+[AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo]`, the array's
  * `count` and `objectAtIndex:`, each device's `uniqueID`, `localizedName`, `position` and
- * `deviceType`, and `+defaultDeviceWithMediaType:`. Pointers are made-up addresses; a message it
- * does not know answers nil, as a message to nil would.
+ * `deviceType` (each answering `respondsToSelector:`), and `+defaultDeviceWithMediaType:`.
+ * Pointers are made-up addresses; a message it does not know answers nil, as a message to nil would.
  */
 internal class FakeMacCameras(
     @Volatile var devices: List<Device>,
@@ -33,6 +33,8 @@ internal class FakeMacCameras(
         receiver == DEVICE_CLASS && selector == sel("defaultDeviceWithMediaType:") && argument == VIDEO ->
             devices.indexOfFirst { it.uniqueId == defaultId }.let { if (it < 0) 0 else DEVICE + it }
         receiver == ARRAY && selector == sel("objectAtIndex:") && argument in devices.indices -> DEVICE + argument
+        receiver - DEVICE in devices.indices && selector == sel("respondsToSelector:") ->
+            if (argument in DEVICE_SELECTORS.map(::sel)) 1 else 0
         else -> 0
     }
 
@@ -76,7 +78,9 @@ internal class FakeMacCameras(
             "localizedName",
             "position",
             "deviceType",
+            "respondsToSelector:",
         )
+        private val DEVICE_SELECTORS = listOf("uniqueID", "localizedName", "position", "deviceType")
 
         const val BUILT_IN = "AVCaptureDeviceTypeBuiltInWideAngleCamera"
         const val EXTERNAL = "AVCaptureDeviceTypeExternal"

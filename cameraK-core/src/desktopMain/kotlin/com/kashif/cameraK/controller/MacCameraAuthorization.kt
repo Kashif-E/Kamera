@@ -40,39 +40,42 @@ internal enum class MacMediaType(val constant: String) {
  * read through the Objective-C runtime over JNA (Decision 15). JNA is compile-only: an app that
  * does not ship it gets NotDetermined, which the desktop permission checker allows to open, so the
  * open itself shows macOS's prompt. Authorized is Granted, Denied is PermanentlyDenied (macOS never
- * asks again), Restricted is Restricted. Only the error mapper reads it in D1'; PM''s desktop
- * permission checker reads it too.
+ * asks again), Restricted is Restricted. The error mapper reads the camera's; PM''s desktop
+ * permission checker reads the camera's and, through [status], the microphone's with the same
+ * mapping and the same rule without JNA.
  */
 internal class MacCameraAuthorization(
     // A lambda, not a constructor reference, so nothing resolves JnaObjCRuntime before the read.
     private val runtime: () -> ObjCRuntime = { JnaObjCRuntime() },
 ) : CameraAuthorization {
-    fun status(type: MacMediaType): PermissionStatus = TODO("D2'")
-
-    override fun cameraStatus(): PermissionStatus {
+    /** The authorization status of [type]; NotDetermined whenever it cannot be read. */
+    fun status(type: MacMediaType): PermissionStatus {
         val objc = try {
             runtime()
         } catch (e: LinkageError) {
-            CameraKLogger.w(TAG, "JNA is not available, so the camera authorization reads as not determined", e)
+            CameraKLogger.w(TAG, "JNA is not available, so the AVFoundation authorization reads as not determined", e)
             return PermissionStatus.NotDetermined
         }
         return try {
             // Reading the constant loads AVFoundation, which registers AVCaptureDevice with the runtime.
-            val video = objc.pointerConstant("AVFoundation", "AVMediaTypeVideo")
+            val mediaType = objc.pointerConstant("AVFoundation", type.constant)
             val device = objc.getClass("AVCaptureDevice")
-            if (device == 0L || video == 0L) {
-                CameraKLogger.w(TAG, "AVFoundation is not loaded, so the camera authorization reads as not determined")
+            if (device == 0L || mediaType == 0L) {
+                CameraKLogger.w(TAG, "AVFoundation is not loaded, so the authorization reads as not determined")
                 return PermissionStatus.NotDetermined
             }
-            statusOf(objc.sendLong(device, objc.selector("authorizationStatusForMediaType:"), video))
+            statusOf(objc.sendLong(device, objc.selector("authorizationStatusForMediaType:"), mediaType))
         } catch (e: Exception) {
-            CameraKLogger.w(TAG, "Reading the camera authorization failed; it reads as not determined", e)
+            CameraKLogger.w(TAG, "Reading an AVFoundation authorization failed; it reads as not determined", e)
             PermissionStatus.NotDetermined
         } catch (e: LinkageError) {
-            CameraKLogger.w(TAG, "Reading the camera authorization failed; it reads as not determined", e)
+            CameraKLogger.w(TAG, "Reading an AVFoundation authorization failed; it reads as not determined", e)
             PermissionStatus.NotDetermined
         }
     }
+
+    /** The camera's status: [status] of [MacMediaType.VIDEO]. */
+    override fun cameraStatus(): PermissionStatus = status(MacMediaType.VIDEO)
 
     private fun statusOf(raw: Long): PermissionStatus = when (raw) {
         AUTHORIZED -> PermissionStatus.Granted
@@ -108,7 +111,12 @@ internal class JnaObjCRuntime : ObjCRuntime {
     override fun pointerConstant(library: String, symbol: String): Long =
         Pointer.nativeValue(NativeLibrary.getInstance(library).getGlobalVariableAddress(symbol).getPointer(0))
 
-    override fun send(receiver: Long, selector: Long): Long = TODO("D2'")
+    override fun send(receiver: Long, selector: Long): Long =
+        objc.getFunction("objc_msgSend").invokeLong(arrayOf(Pointer(receiver), Pointer(selector)))
 
-    override fun string(string: Long): String? = TODO("D2'")
+    override fun string(string: Long): String? {
+        if (string == 0L) return null
+        val utf8 = send(string, selector("UTF8String"))
+        return if (utf8 == 0L) null else Pointer(utf8).getString(0, "UTF-8")
+    }
 }
