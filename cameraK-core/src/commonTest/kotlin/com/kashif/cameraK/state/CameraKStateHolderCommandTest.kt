@@ -11,6 +11,8 @@ import com.kashif.cameraK.controls.toggleLens
 import com.kashif.cameraK.controls.toggleTorch
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraEngineFactory
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -139,6 +141,22 @@ class CameraKStateHolderCommandTest {
         override suspend fun closeAndJoin() {
             order += "engine close"
             fake.closeAndJoin()
+        }
+    }
+
+    /** Records the desired hardware each start receives and each target orientation the engine is sent. */
+    private class RecordingArgumentsEngine(val fake: FakeCameraEngine) : CameraEngine by fake {
+        val starts = mutableListOf<DesiredHardware>()
+        val orientations = mutableListOf<DeviceOrientation?>()
+
+        override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> {
+            starts += desired
+            return fake.start(desired)
+        }
+
+        override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> {
+            orientations += orientation
+            return fake.setTargetOrientation(orientation)
         }
     }
 
@@ -430,6 +448,57 @@ class CameraKStateHolderCommandTest {
         val byId = holder.selectCamera(FakeCapabilities.BACK_ID)
         assertEquals(FakeCapabilities.BACK_ID, assertIs<CameraKResult.Success<LensInfo>>(byId).value.id)
         assertEquals(2, fake.calls.count { it == "selectCamera" }, "engine calls: ${fake.calls}")
+    }
+
+    @Test
+    fun desiredHardwareSurvivesARestart() = runTest {
+        val engine = RecordingArgumentsEngine(FakeCameraEngine())
+        val holder = readyHolder(engine)
+
+        assertEquals(CameraKResult.Success(FlashMode.ON), holder.setFlashMode(FlashMode.ON))
+        assertEquals(CameraKResult.Success(TorchMode.ON), holder.setTorchMode(TorchMode.ON))
+        assertEquals(CameraKResult.Success(ZoomState(3f, 1f, 10f)), holder.setZoom(3f))
+        assertIs<CameraKResult.Success<LensInfo>>(holder.selectCamera(FakeCapabilities.BACK_ID))
+        holder.stop()
+        runCurrent()
+        holder.start()
+        runCurrent()
+
+        assertIs<CameraKState.Ready>(holder.cameraState.value)
+        assertEquals(2, engine.starts.size, "starts: ${engine.starts.size}")
+        val restart = engine.starts.last()
+        assertEquals(FlashMode.ON, restart.flashMode, "flash")
+        assertEquals(TorchMode.ON, restart.torchMode, "torch")
+        assertEquals(3f, restart.zoomRatio, "zoom")
+        assertEquals(CameraSelection.ById(FakeCapabilities.BACK_ID), restart.selection, "camera")
+    }
+
+    @Test
+    fun setTargetOrientationWhileReadyReachesTheEngine() = runTest {
+        val engine = RecordingArgumentsEngine(FakeCameraEngine())
+        val holder = readyHolder(engine)
+
+        val result = holder.setTargetOrientation(DeviceOrientation.LANDSCAPE_LEFT)
+
+        assertEquals(CameraKResult.Success(Unit), result)
+        assertEquals(listOf<DeviceOrientation?>(DeviceOrientation.LANDSCAPE_LEFT), engine.orientations)
+    }
+
+    @Test
+    fun twoRapidSetTargetOrientationCallsConflateToTheLatest() = runTest {
+        val engine = RecordingArgumentsEngine(FakeCameraEngine())
+        val holder = readyHolder(engine)
+
+        val first = async { holder.setTargetOrientation(DeviceOrientation.LANDSCAPE_LEFT) }
+        val latest = async { holder.setTargetOrientation(DeviceOrientation.LANDSCAPE_RIGHT) }
+
+        assertEquals(CameraKResult.Success(Unit), first.await(), "the superseded call")
+        assertEquals(CameraKResult.Success(Unit), latest.await(), "the latest call")
+        assertEquals(
+            listOf<DeviceOrientation?>(DeviceOrientation.LANDSCAPE_RIGHT),
+            engine.orientations,
+            "the engine got a superseded orientation",
+        )
     }
 
     @Test
