@@ -2,10 +2,7 @@ package com.kashif.cameraK.controller
 
 import android.content.Context
 import android.content.pm.PackageManager
-import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
-import androidx.camera.video.Quality
-import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
 import androidx.core.content.ContextCompat
@@ -86,21 +83,7 @@ internal class VideoRecorder(
 
     private fun configureVideoCapture(quality: VideoQuality) {
         try {
-            val cameraXQuality = when (quality) {
-                VideoQuality.SD -> Quality.SD
-                VideoQuality.HD -> Quality.HD
-                VideoQuality.FHD -> Quality.FHD
-                VideoQuality.UHD -> Quality.UHD
-            }
-            val recorder = Recorder.Builder()
-                .setQualitySelector(
-                    QualitySelector.from(
-                        cameraXQuality,
-                        FallbackStrategy.higherQualityOrLowerThan(cameraXQuality),
-                    ),
-                )
-                .build()
-            videoCapture = VideoCapture.withOutput(recorder)
+            videoCapture = backend.buildVideoCapture(quality, bitrateBps = null)
         } catch (e: Exception) {
             CameraKLogger.w(TAG, "Building the VideoCapture use case failed; binding without it", e)
             videoCapture = null
@@ -169,6 +152,7 @@ internal class VideoRecorder(
                     withAudio = configuration.enableAudio && hasAudioPermission,
                     executor = ContextCompat.getMainExecutor(context),
                 ) { event ->
+                    if (event !is RecordingFinalized) return@startRecording
                     outcome.complete(finalizedResult(event, outputFile))
                     // stopRecording() clears activeRecording before it waits, so a recording that
                     // is still active here was ended by CameraX, with no stop call to restore the

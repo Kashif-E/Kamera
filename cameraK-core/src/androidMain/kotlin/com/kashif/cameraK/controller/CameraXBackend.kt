@@ -10,17 +10,23 @@ import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfo
+import androidx.camera.core.DynamicRange
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.lifecycle.LifecycleOwner
+import com.kashif.cameraK.video.VideoQuality
 import java.util.concurrent.Executor
 
 /**
@@ -49,10 +55,24 @@ internal interface RecordingSession {
 }
 
 /**
+ * A milestone CameraX reports for a recording, reduced to what the engine reads: its
+ * [VideoRecordEvent.Start], [VideoRecordEvent.Pause], [VideoRecordEvent.Resume] and
+ * [VideoRecordEvent.Finalize]. Status events are not passed on.
+ */
+internal sealed interface RecordingEvent {
+    data object Started : RecordingEvent
+
+    data object Paused : RecordingEvent
+
+    data object Resumed : RecordingEvent
+}
+
+/**
  * How a recording ended: CameraX's [VideoRecordEvent.Finalize], reduced to what the controller reads.
  * [error] is one of the `VideoRecordEvent.Finalize.ERROR_*` codes.
  */
-internal class RecordingFinalized(val error: Int, val cause: Throwable?, val recordedDurationNanos: Long) {
+internal class RecordingFinalized(val error: Int, val cause: Throwable?, val recordedDurationNanos: Long) :
+    RecordingEvent {
     val hasError: Boolean get() = error != VideoRecordEvent.Finalize.ERROR_NONE
 }
 
@@ -75,8 +95,8 @@ internal interface CameraXBackend {
     )
 
     /**
-     * Starts recording [videoCapture] into [output] and runs [onFinalized] on [executor] when the
-     * recording ends, however it ends.
+     * Starts recording [videoCapture] into [output] and runs [onEvent] on [executor] for each of its
+     * milestones: when it starts, pauses and resumes, and when it ends, however it ends.
      */
     fun startRecording(
         videoCapture: VideoCapture<Recorder>,
@@ -84,8 +104,32 @@ internal interface CameraXBackend {
         output: FileOutputOptions,
         withAudio: Boolean,
         executor: Executor,
-        onFinalized: (RecordingFinalized) -> Unit,
+        onEvent: (RecordingEvent) -> Unit,
     ): RecordingSession
+
+    /**
+     * A VideoCapture over a new Recorder for [quality], with [bitrateBps] as the encoder's target
+     * video bitrate when it is set. Builds no platform session, so it may run off the main thread.
+     */
+    fun buildVideoCapture(quality: VideoQuality, bitrateBps: Int?): VideoCapture<Recorder> {
+        val cameraXQuality = quality.toCameraXQuality()
+        val recorder = Recorder.Builder()
+            .setQualitySelector(
+                QualitySelector.from(cameraXQuality, FallbackStrategy.higherQualityOrLowerThan(cameraXQuality)),
+            )
+            .apply { bitrateBps?.let { setTargetVideoEncodingBitRate(it) } }
+            .build()
+        return VideoCapture.withOutput(recorder)
+    }
+
+    /**
+     * The qualities the camera behind [cameraInfo] records in SDR. It reads the camera's encoder
+     * profiles and the codec list, so it runs off the main thread.
+     */
+    fun videoQualities(cameraInfo: CameraInfo): Set<VideoQuality> =
+        Recorder.getVideoCapabilities(cameraInfo).getSupportedQualities(DynamicRange.SDR)
+            .mapNotNull { quality -> VideoQuality.entries.firstOrNull { it.toCameraXQuality() == quality } }
+            .toSet()
 
     /** Makes [analyzer] the consumer of [analysis]'s frames, run on [executor]. */
     fun setAnalyzer(analysis: ImageAnalysis, executor: Executor, analyzer: ImageAnalysis.Analyzer)
@@ -146,15 +190,19 @@ internal interface CameraXBackend {
             output: FileOutputOptions,
             withAudio: Boolean,
             executor: Executor,
-            onFinalized: (RecordingFinalized) -> Unit,
+            onEvent: (RecordingEvent) -> Unit,
         ): RecordingSession {
             val pending = videoCapture.output.prepareRecording(context, output)
             if (withAudio) pending.withAudioEnabled()
             val recording = pending.start(executor) { event ->
-                if (event is VideoRecordEvent.Finalize) {
-                    onFinalized(
+                when (event) {
+                    is VideoRecordEvent.Start -> onEvent(RecordingEvent.Started)
+                    is VideoRecordEvent.Pause -> onEvent(RecordingEvent.Paused)
+                    is VideoRecordEvent.Resume -> onEvent(RecordingEvent.Resumed)
+                    is VideoRecordEvent.Finalize -> onEvent(
                         RecordingFinalized(event.error, event.cause, event.recordingStats.recordedDurationNanos),
                     )
+                    else -> Unit
                 }
             }
             return object : RecordingSession {
@@ -179,4 +227,11 @@ private class ProcessCameraBinding(private val provider: ProcessCameraProvider) 
 
     @OptIn(ExperimentalCamera2Interop::class)
     override fun cameraIdOf(camera: Camera): String = Camera2CameraInfo.from(camera.cameraInfo).cameraId
+}
+
+private fun VideoQuality.toCameraXQuality(): Quality = when (this) {
+    VideoQuality.SD -> Quality.SD
+    VideoQuality.HD -> Quality.HD
+    VideoQuality.FHD -> Quality.FHD
+    VideoQuality.UHD -> Quality.UHD
 }

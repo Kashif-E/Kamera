@@ -4,8 +4,10 @@ package com.kashif.cameraK.controller
 
 import android.content.ContentValues
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.Looper
 import android.provider.MediaStore
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraControl
@@ -43,7 +45,9 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.video.VideoQuality
 import kotlinx.coroutines.Dispatchers
+import org.robolectric.shadows.ShadowMediaMetadataRetriever
 import java.io.File
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
@@ -66,6 +70,35 @@ internal class FakeCameraXBackend : CameraXBackend {
 
     /** When set, CameraX refuses to start a recording with this, as Recorder does when it is in use. */
     var startFailure: RuntimeException? = null
+
+    /**
+     * When true, a new recording waits for [FakeRecording.deliverStarted]; otherwise CameraX reports
+     * its Start on the callback executor right after the start, as it does once the encoder runs.
+     */
+    var holdRecordingStart = false
+
+    /** When true, pause() and resume() wait for the test to deliver CameraX's Pause and Resume events. */
+    var holdPauseResume = false
+
+    /** The qualities [videoQualities] reports for every camera; all four unless a test narrows them. */
+    var supportedQualities: Set<VideoQuality> = VideoQuality.entries.toSet()
+
+    /** The thread each video-quality query ran on, oldest first. */
+    val qualityQueryThreads = mutableListOf<Thread>()
+
+    /** The quality, bitrate and thread of each VideoCapture built, oldest first. */
+    val videoCaptureBuilds = mutableListOf<VideoCaptureBuild>()
+
+    override fun buildVideoCapture(quality: VideoQuality, bitrateBps: Int?): VideoCapture<Recorder> {
+        val built = super.buildVideoCapture(quality, bitrateBps)
+        videoCaptureBuilds += VideoCaptureBuild(quality, bitrateBps, Thread.currentThread(), built)
+        return built
+    }
+
+    override fun videoQualities(cameraInfo: CameraInfo): Set<VideoQuality> {
+        qualityQueryThreads += Thread.currentThread()
+        return supportedQualities
+    }
 
     /** The per-frame callback of each preview built, oldest first. */
     val previewFrameCallbacks = mutableListOf<() -> Unit>()
@@ -113,26 +146,47 @@ internal class FakeCameraXBackend : CameraXBackend {
         output: FileOutputOptions,
         withAudio: Boolean,
         executor: Executor,
-        onFinalized: (RecordingFinalized) -> Unit,
+        onEvent: (RecordingEvent) -> Unit,
     ): RecordingSession {
         startFailure?.let { throw it }
-        return FakeRecording(output, executor, onFinalized).also { recordings += it }
+        val recording = FakeRecording(output, withAudio, executor, holdPauseResume, onEvent).also { recordings += it }
+        if (!holdRecordingStart) recording.deliverStarted()
+        return recording
     }
 }
+
+/** A VideoCapture the engine had built: for [quality] at [bitrateBps], on [thread]. */
+internal class VideoCaptureBuild(
+    val quality: VideoQuality,
+    val bitrateBps: Int?,
+    val thread: Thread,
+    val videoCapture: VideoCapture<Recorder>,
+)
 
 /**
  * A recording CameraX is running. It ends only when the test finalizes it, as CameraX ends a
  * recording with a Finalize event on the callback executor, whether or not stop() was called.
+ * Unless [holdPauseResume], pause() and resume() report CameraX's Pause and Resume events on that
+ * executor, as CameraX does once the encoder has paused or resumed.
  */
 internal class FakeRecording(
     /** What the controller asked CameraX to record into: the file and its limits. */
     val output: FileOutputOptions,
+    /** Whether the controller asked for an audio track. */
+    val withAudio: Boolean,
     private val executor: Executor,
-    private val onFinalized: (RecordingFinalized) -> Unit,
+    private val holdPauseResume: Boolean,
+    private val onEvent: (RecordingEvent) -> Unit,
 ) : RecordingSession {
     val outputFile: File get() = output.file
 
     var stopCalls = 0
+        private set
+
+    var pauseCalls = 0
+        private set
+
+    var resumeCalls = 0
         private set
 
     /** When set, stop() throws this, as Recording.stop() can once CameraX has torn the recorder down. */
@@ -143,21 +197,46 @@ internal class FakeRecording(
         stopFailure?.let { throw it }
     }
 
-    override fun pause() = Unit
+    override fun pause() {
+        pauseCalls++
+        if (!holdPauseResume) deliverPaused()
+    }
 
-    override fun resume() = Unit
+    override fun resume() {
+        resumeCalls++
+        if (!holdPauseResume) deliverResumed()
+    }
+
+    /** CameraX reports the recording started. */
+    fun deliverStarted() = executor.execute { onEvent(RecordingEvent.Started) }
+
+    /** CameraX reports the recording paused. */
+    fun deliverPaused() = executor.execute { onEvent(RecordingEvent.Paused) }
+
+    /** CameraX reports the recording resumed. */
+    fun deliverResumed() = executor.execute { onEvent(RecordingEvent.Resumed) }
 
     /**
-     * CameraX ends the recording with [error]. [written] is what reached the file first; null
-     * leaves no file behind.
+     * CameraX ends the recording with [error], keeping [cause]. [written] is what reached the file
+     * first; null leaves no file behind. A [playable] file is one MediaMetadataRetriever reads a
+     * duration from, as a real MP4 would give; by default every file written is.
      */
     fun finalize(
         error: Int = VideoRecordEvent.Finalize.ERROR_NONE,
         written: ByteArray? = byteArrayOf(0, 0, 0, 24),
         recordedDurationNanos: Long = 1_500_000_000L,
+        playable: Boolean = written != null,
+        cause: Throwable? = null,
     ) {
         if (written != null) outputFile.writeBytes(written) else outputFile.delete()
-        executor.execute { onFinalized(RecordingFinalized(error, null, recordedDurationNanos)) }
+        if (playable) {
+            ShadowMediaMetadataRetriever.addMetadata(
+                outputFile.absolutePath,
+                MediaMetadataRetriever.METADATA_KEY_DURATION,
+                (recordedDurationNanos / 1_000_000).coerceAtLeast(1L).toString(),
+            )
+        }
+        executor.execute { onEvent(RecordingFinalized(error, cause, recordedDurationNanos)) }
     }
 }
 
@@ -269,6 +348,7 @@ internal class FakeCameraBinding : CameraBinding {
     private val owners = mutableMapOf<UseCase, LifecycleOwner>()
 
     override fun unbind(vararg useCases: UseCase) {
+        checkMainThread("unbind")
         if (useCases.any { owners[it]?.lifecycle?.currentState == Lifecycle.State.DESTROYED }) releaseCount++
         useCases.forEach { owners -= it }
         bound.removeAll(useCases.toSet())
@@ -288,7 +368,13 @@ internal class FakeCameraBinding : CameraBinding {
 
     override fun cameraIdOf(camera: Camera): String = cameras.last { it.camera === camera }.id
 
+    // CameraX 1.5.3 throws off the main thread (design §2.4), so a test fails where a device would.
+    private fun checkMainThread(call: String) {
+        check(Looper.myLooper() == Looper.getMainLooper()) { "$call must be called on the main thread" }
+    }
+
     private fun bind(owner: LifecycleOwner, resolved: ResolvedCamera, useCases: List<UseCase>): Camera {
+        checkMainThread("bindToLifecycle")
         require(owner.lifecycle.currentState != Lifecycle.State.DESTROYED) {
             "Trying to create use case mediator with destroyed lifecycle."
         }
