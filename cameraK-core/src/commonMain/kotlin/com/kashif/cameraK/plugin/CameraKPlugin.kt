@@ -1,71 +1,56 @@
 package com.kashif.cameraK.state
 
+import com.kashif.cameraK.plugin.CameraKPluginContext
+
 /**
- * Interface that all camera plugins must implement.
+ * A camera plugin: QR scanning, OCR, frame analysis, saving captures. The holder attaches it once
+ * the first session reaches Ready (at once when the plugin is added later) and detaches it when it
+ * is removed or the holder closes.
  *
- * Plugins extend camera functionality (QR scanning, OCR, face detection, etc.).
- * The StateHolder manages plugin lifecycle automatically.
- *
- * **Auto-Activation Pattern (Recommended):**
- * Plugins observe camera state and self-activate when Ready.
- *
- * @example
- * ```kotlin
- * class QRScannerPlugin : CameraKPlugin {
- *     private var scanningJob: Job? = null
- *
- *     override fun onAttach(stateHolder: CameraKStateHolder) {
- *         // Self-activate when camera becomes Ready
- *         scanningJob = stateHolder.pluginScope.launch {
- *             stateHolder.cameraState
- *                 .filterIsInstance<CameraKState.Ready>()
- *                 .collect { ready ->
- *                     startScanning(ready.controller)
- *                 }
- *         }
- *     }
- *
- *     override fun onDetach() {
- *         scanningJob?.cancel()
- *     }
- * }
- * ```
- *
- * **Alternative Pattern (Suspend Until Ready):**
- * For simpler plugins, wait for camera ready before setting up.
+ * A plugin works through its [CameraKPluginContext]: its own scope, the holder's state flows, the
+ * frame source and its own failure. The context has no commands; a plugin cannot shut the camera
+ * down or write the holder's state.
  *
  * @example
  * ```kotlin
- * class SimpleSaverPlugin : CameraKPlugin {
- *     override fun onAttach(stateHolder: CameraKStateHolder) {
- *         stateHolder.pluginScope.launch {
- *             val controller = stateHolder.getReadyCameraController()
- *             controller?.setupSaving()
+ * class LumaPlugin : CameraKPlugin {
+ *     override fun onAttach(context: CameraKPluginContext) {
+ *         context.launchPerSession {
+ *             context.frames.register(FrameSpec(maxFps = 5f)) { frame -> measure(frame) }
+ *                 .use { awaitCancellation() }
  *         }
  *     }
  *
- *     override fun onDetach() {}
- * }
- * ```
- *
- *     private suspend fun onQRCodeDetected(qrCode: String) {
- *         stateHolder?.emitEvent(CameraKEvent.QRCodeScanned(qrCode))
- *     }
+ *     override fun onDetach() = Unit
  * }
  * ```
  */
 interface CameraKPlugin {
-    /**
-     * Called when the plugin is attached to a camera controller.
-     * Initialize plugin resources here.
-     *
-     * @param stateHolder The [CameraKStateHolder] to interact with.
-     */
-    fun onAttach(stateHolder: CameraKStateHolder)
+    /** Names this plugin in [CameraKEvent.PluginFailed]. Defaults to the class's simple name. */
+    val id: String get() = this::class.simpleName ?: "CameraKPlugin"
 
     /**
-     * Called when the plugin is detached from the camera controller.
-     * Clean up plugin resources here.
+     * True for a plugin that registers frame analyzers. A holder created with such a plugin binds
+     * frame analysis at start (`CameraConfiguration.frameAnalysis`), so the first registration
+     * needs no rebind. A plugin that never reads frames returns false.
      */
+    val needsFrames: Boolean get() = true
+
+    /**
+     * Called once per attachment, outside any lock, with a new [context]. Throwing here sets that
+     * context's `failure` and emits [CameraKEvent.PluginFailed]; the camera and the other plugins
+     * carry on.
+     *
+     * The default forwards to the deprecated `onAttach(stateHolder)`, so a 1.x plugin keeps working.
+     */
+    fun onAttach(context: CameraKPluginContext) {
+        TODO("P1: forward to onAttach(stateHolder)")
+    }
+
+    /** The 1.x attach. The holder calls [onAttach] with a context, whose default calls this. */
+    @Deprecated("Implement onAttach(context: CameraKPluginContext); the context gives the plugin its scope and state.")
+    fun onAttach(stateHolder: CameraKStateHolder): Unit = Unit
+
+    /** Called when the plugin is detached. Its context's scope is cancelled right after. */
     fun onDetach()
 }

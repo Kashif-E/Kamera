@@ -1,7 +1,10 @@
 package com.kashif.cameraK.plugin
 
+import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.coroutines.isFatal
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.frames.FrameSource
+import com.kashif.cameraK.recording.RecordingState
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
@@ -14,6 +17,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.job
 
 /**
@@ -37,6 +41,9 @@ internal fun effectiveConfig(config: CameraConfiguration, plugins: List<CameraKP
 internal class PluginHost(
     private val holder: CameraKStateHolder,
     private val holderScope: CoroutineScope,
+    private val dispatchers: CameraKDispatchers,
+    private val frames: FrameSource,
+    private val recordingState: StateFlow<RecordingState>,
     private val emit: (CameraKEvent) -> Unit,
 ) {
     // A plugin coroutine that throws must not reach the platform's uncaught-exception handler, which

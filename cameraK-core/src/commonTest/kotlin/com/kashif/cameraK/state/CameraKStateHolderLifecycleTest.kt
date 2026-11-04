@@ -505,7 +505,8 @@ class CameraKStateHolderLifecycleTest {
             cameraKTestEnvironment(),
         )
 
-        assertEquals(config, received, "the configuration the engine factory got")
+        // CountingPlugin keeps CameraKPlugin's default needsFrames = true, so Decision 14 sets frameAnalysis.
+        assertEquals(config.copy(frameAnalysis = true), received, "the configuration the engine factory got")
     }
 
     @Test

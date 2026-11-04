@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class ImageSaverPluginLifecycleTest {
     private class NoOpSaver(config: ImageSaverConfig) : ImageSaverPlugin(config) {
@@ -39,6 +40,12 @@ class ImageSaverPluginLifecycleTest {
             plugin.onDetach()
             assertEquals(0, holder.activePluginJobs(), "onDetach must cancel the auto-save collector")
         }
+    }
+
+    // A holder created with only the saver must not bind frame analysis for it (Decision 14).
+    @Test
+    fun theSaverNeedsNoFrames() {
+        assertFalse(NoOpSaver(ImageSaverConfig(isAutoSave = true)).needsFrames, "the saver asked for frame analysis")
     }
 }
 

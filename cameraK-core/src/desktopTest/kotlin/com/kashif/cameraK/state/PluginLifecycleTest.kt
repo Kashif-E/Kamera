@@ -1,3 +1,6 @@
+@file:OptIn(CameraKEngineApi::class)
+@file:Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+
 package com.kashif.cameraK.state
 
 import com.kashif.cameraK.controller.CameraController
@@ -5,6 +8,9 @@ import com.kashif.cameraK.controller.FakeFrameGrabber
 import com.kashif.cameraK.controller.defaultCameraOverride
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
+import com.kashif.cameraK.testing.FakeCameraEngine
+import com.kashif.cameraK.testing.cameraKTestEnvironment
+import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +20,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.TimeUnit
@@ -26,9 +34,10 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Verifies the plugin lifecycle contract on the real (desktop) CameraController, running on a fake
- * camera so no test opens the host's webcam. initialize() starts the session on the fake grabber,
- * and shutdown() ends it, so attach/detach/shutdown/scope-cancellation run deterministically.
+ * The plugin lifecycle contract for a 1.x plugin: attach once, at most once per plugin, at once
+ * after the first Ready, detach once, and shutdown cancels what the plugin launched. Over
+ * FakeCameraEngine, except the cases that read the 1.x controller: those run the real desktop
+ * CameraController on a fake camera, so no test opens the host's webcam.
  */
 class PluginLifecycleTest {
 
@@ -83,10 +92,14 @@ class PluginLifecycleTest {
         }
     }
 
+    // The lifecycle cases need no controller, so they run on FakeCameraEngine and the test scheduler.
+
+    private fun TestScope.fakeHolder(): CameraKStateHolder =
+        CameraKStateHolder(CameraConfiguration(), { _, _ -> FakeCameraEngine() }, emptyList(), cameraKTestEnvironment())
+
     @Test
-    fun initialize_attachesEachPluginOnce() = runBlocking {
-        val scope = CoroutineScope(Dispatchers.Unconfined)
-        val sut = holder(scope)
+    fun initialize_attachesEachPluginOnce() = runTest {
+        val sut = fakeHolder()
         val plugin = FakePlugin()
 
         sut.attachPlugin(plugin)
@@ -95,13 +108,11 @@ class PluginLifecycleTest {
         assertEquals(1, plugin.attachCount, "onAttach should fire exactly once on initialize")
 
         sut.shutdown()
-        scope.cancel()
     }
 
     @Test
-    fun attachPlugin_ignoresDuplicate() = runBlocking {
-        val scope = CoroutineScope(Dispatchers.Unconfined)
-        val sut = holder(scope)
+    fun attachPlugin_ignoresDuplicate() = runTest {
+        val sut = fakeHolder()
         val plugin = FakePlugin()
 
         sut.attachPlugin(plugin)
@@ -111,13 +122,11 @@ class PluginLifecycleTest {
         assertEquals(1, plugin.attachCount, "a duplicate attach must not double-attach the plugin")
 
         sut.shutdown()
-        scope.cancel()
     }
 
     @Test
-    fun attachPlugin_afterInitialize_attachesImmediately() = runBlocking {
-        val scope = CoroutineScope(Dispatchers.Unconfined)
-        val sut = holder(scope)
+    fun attachPlugin_afterInitialize_attachesImmediately() = runTest {
+        val sut = fakeHolder()
         sut.initialize()
 
         val plugin = FakePlugin()
@@ -126,13 +135,11 @@ class PluginLifecycleTest {
         assertEquals(1, plugin.attachCount, "attaching after initialize should attach immediately")
 
         sut.shutdown()
-        scope.cancel()
     }
 
     @Test
-    fun detachPlugin_callsOnDetachOnceAndRemoves() = runBlocking {
-        val scope = CoroutineScope(Dispatchers.Unconfined)
-        val sut = holder(scope)
+    fun detachPlugin_callsOnDetachOnceAndRemoves() = runTest {
+        val sut = fakeHolder()
         val plugin = FakePlugin()
         sut.attachPlugin(plugin)
         sut.initialize()
@@ -143,13 +150,11 @@ class PluginLifecycleTest {
         assertEquals(1, plugin.detachCount, "onDetach should fire exactly once")
 
         sut.shutdown()
-        scope.cancel()
     }
 
     @Test
-    fun shutdown_detachesPlugins_andCancelsPluginScope() = runBlocking {
-        val scope = CoroutineScope(Dispatchers.Unconfined)
-        val sut = holder(scope)
+    fun shutdown_detachesPlugins_andCancelsPluginScope() = runTest {
+        val sut = fakeHolder()
         val plugin = FakePlugin(launchInScope = true)
         sut.attachPlugin(plugin)
         sut.initialize()
@@ -161,9 +166,10 @@ class PluginLifecycleTest {
 
         assertEquals(1, plugin.detachCount, "shutdown should detach the plugin")
         assertTrue(plugin.launchedJob!!.isCancelled, "shutdown should cancel coroutines launched in pluginScope")
-
-        scope.cancel()
     }
+
+    // The cases below read the 1.x controller, which only the real desktop engine has. They run it on
+    // FakeFrameGrabber until the plugin slices stop reading Ready.controller.
 
     @Test
     fun getReadyCameraController_returnsControllerWhenReady() = runBlocking {

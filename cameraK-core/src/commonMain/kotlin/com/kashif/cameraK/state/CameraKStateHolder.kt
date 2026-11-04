@@ -25,10 +25,12 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
+import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.permissions.platformPermissionChecker
 import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.plugin.PluginHost
 import com.kashif.cameraK.plugin.effectiveConfig
+import com.kashif.cameraK.recording.RecordingState
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.onSuccess
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -57,6 +59,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -214,7 +217,21 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
      */
     public val capabilities: StateFlow<CameraCapabilities> = engine.capabilities
 
-    private val pluginHost = PluginHost(this, scope) { _events.tryEmit(it) }
+    private val pluginHost = PluginHost(
+        holder = this,
+        holderScope = scope,
+        dispatchers = environment.dispatchers,
+        frames = engine.frames,
+        // The recording controller's state replaces this placeholder.
+        recordingState = MutableStateFlow<RecordingState>(RecordingState.Idle).asStateFlow(),
+    ) { _events.tryEmit(it) }
+
+    /**
+     * The camera's one source of analysis frames, for an app's own analysis: frames reach an
+     * analyzer only while the camera is Ready. Plugins get the same source from their context.
+     */
+    public val frames: FrameSource
+        get() = TODO("P1: the engine's frame source")
 
     private val lifecycle = SessionLifecycle(
         engine = engine,
