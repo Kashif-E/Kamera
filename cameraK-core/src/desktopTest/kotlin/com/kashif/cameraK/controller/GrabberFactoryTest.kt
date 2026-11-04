@@ -22,6 +22,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
@@ -32,7 +33,9 @@ import kotlin.test.assertIs
  * A platform context's [DesktopGrabberFactory] replaces only how a device is opened (§2.4 desktop):
  * the engine still enumerates, every open calls the factory with the selected device's id, and
  * with no local device a factory engine offers the one default entry, so a machine without a
- * camera can open a stream. Without a factory and with no device there is no camera.
+ * camera can open a stream. Without a factory and with no device there is no camera. The factory's
+ * grabber is started as returned: CameraK sets no input format on it, even on macOS, where the 1.x
+ * `customGrabber` had its format overwritten with AVFoundation's.
  */
 class GrabberFactoryTest {
     private val requested = CopyOnWriteArrayList<String>()
@@ -104,6 +107,27 @@ class GrabberFactoryTest {
         }
     }
 
+    @Test
+    fun aFactoryFfmpegGrabberIsStartedAsReturnedOnMac() = runTest {
+        val stream = FormatRecordingGrabber("rtsp://camera.test/stream")
+        val source = FactoryGrabberSource(DesktopGrabberFactory { stream })
+
+        source.open(webcam("usb-a"), own = {}, release = {}, os = OperatingSystem.MAC)
+
+        assertEquals(1, stream.starts, "starts")
+        assertEquals(null, stream.formatAtStart, "the input format the factory's grabber was started with")
+    }
+
+    @Test
+    fun aCustomFfmpegGrabberStillReadsMacCamerasThroughAvfoundation() = runTest {
+        val grabber = FormatRecordingGrabber("0")
+
+        CustomGrabberSource(grabber).open(desktopLensInfo(), own = {}, release = {}, os = OperatingSystem.MAC)
+
+        assertEquals(1, grabber.starts, "starts")
+        assertEquals("avfoundation", grabber.formatAtStart, "the 1.x customGrabber's format on macOS")
+    }
+
     private fun factoryEngine(rig: DesktopEngineRig, local: LocalDevices) = desktopEngine(
         CameraConfiguration(),
         CameraKPlatformContext(
@@ -145,6 +169,22 @@ class GrabberFactoryTest {
             opens++
             error("the engine opened the local device '$id'")
         }
+    }
+
+    /** An FFmpeg grabber that records the input format it is started with and touches no native. */
+    private class FormatRecordingGrabber(input: String) : FFmpegFrameGrabber(input) {
+        @Volatile var starts = 0
+
+        @Volatile var formatAtStart: String? = null
+
+        override fun start() {
+            starts++
+            formatAtStart = format
+        }
+
+        override fun stop() = Unit
+
+        override fun release() = Unit
     }
 
     private companion object {
