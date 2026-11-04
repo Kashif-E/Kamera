@@ -62,7 +62,8 @@ internal fun captureInputWithoutCamera(): AVCaptureInput = memScoped {
  * at once, unless [holdReports] is set: then a set reaches only what the device last received
  * ([lastTorchSet], [lastZoomSet]), and the report waits for [report], as the contract kit's driver
  * needs. A zoom set outside [minVideoZoomFactor]..[maxVideoZoomFactor] is recorded in
- * [outOfRangeZoomSets], where AVFoundation would raise an exception nothing can catch.
+ * [outOfRangeZoomSets], and a torch mode the device lacks in [unsupportedTorchSets]: AVFoundation
+ * raises an exception nothing can catch for either.
  */
 internal class FakeDevice(
     override val isFront: Boolean = false,
@@ -88,6 +89,7 @@ internal class FakeDevice(
     private val recorded = mutableListOf<Call>()
     private val observers = mutableListOf<() -> Unit>()
     private val outOfRange = mutableListOf<Double>()
+    private val unsupportedTorch = mutableListOf<AVCaptureTorchMode>()
     private var locked = false
     private var torch: AVCaptureTorchMode = AVCaptureTorchModeOff
     private var torchActive = false
@@ -108,6 +110,9 @@ internal class FakeDevice(
     /** Every zoom factor set outside the device's range. */
     val outOfRangeZoomSets: List<Double> get() = guarded { outOfRange.toList() }
 
+    /** Every torch mode set on a device without a torch, or one its torch does not support. */
+    val unsupportedTorchSets: List<AVCaptureTorchMode> get() = guarded { unsupportedTorch.toList() }
+
     /** Key-value observers registered and not yet closed. */
     val hardwareObservers: Int get() = guarded { observers.size }
 
@@ -124,7 +129,10 @@ internal class FakeDevice(
     override fun unlockForConfiguration() = record("unlockForConfiguration", null) { locked = false }
 
     override fun setTorchMode(mode: AVCaptureTorchMode) {
-        record("setTorchMode", mode) { setTorch = mode }
+        record("setTorchMode", mode) {
+            setTorch = mode
+            if (!hasTorch || mode !in supportedTorchModes) unsupportedTorch += mode
+        }
         if (!holdReports) report(torch = mode)
     }
 

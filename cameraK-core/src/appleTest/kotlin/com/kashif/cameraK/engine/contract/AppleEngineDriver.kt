@@ -52,14 +52,15 @@ import kotlin.concurrent.Volatile
 /**
  * The contract kit's driver over the iOS engine on a [FakeSessionOps]. Its fake platform has two
  * cameras, back and front. With [adjustableBack] the back camera has a flash, a torch (off and on)
- * and a zoom range of 1 to 4, so every hardware step of the kit runs; the front camera has none of
- * them and a fixed zoom of 1. Without it, the back camera is like the front one (the I1' platform).
+ * and a zoom range of 1 to 4, so every hardware step of the kit runs; with [adjustableFront] the front
+ * camera has a flash, a torch (off and on) and a zoom range of 1 to 2, so the steps after a camera
+ * switch run too. Without them a camera has none of these and a fixed zoom of 1 (the I1' platform).
  *
  * The devices hold their torch and zoom reports until [changeHardware], as the kit's
  * `commandsLeaveHardwareUntilThePlatformReports` needs, and [boundSettings] reads what they were last
  * given. Flash has no observer on iOS: the engine reads the photo output's mode back itself
- * ([ReadBackFlashDriver]), and the fake photo output supports [backPhotoFlashModes] with the back
- * camera behind it and only off with the front one.
+ * ([ReadBackFlashDriver]), and the fake photo output supports [backPhotoFlashModes] or
+ * [frontPhotoFlashModes] with an adjustable camera behind it, and only off otherwise.
  *
  * The engine runs on the case's test scheduler, and AVFoundation's side on the engine's own session
  * queue; [settle] drains the session queue and the main queue, then runs the scheduler's current
@@ -71,6 +72,8 @@ internal class AppleEngineDriver(
     /** The back camera has a flash, a torch and a zoom range; the front camera has none of them. */
     private val adjustableBack: Boolean = false,
     backTorchModes: Set<AVCaptureTorchMode> = setOf(AVCaptureTorchModeOff, AVCaptureTorchModeOn),
+    /** The front camera has a flash, a torch and a zoom range too. */
+    private val adjustableFront: Boolean = false,
 ) : ThrowingCallbackDriver,
     PreOpenInterruptionDriver,
     ReadBackFlashDriver {
@@ -85,8 +88,9 @@ internal class AppleEngineDriver(
     val front = FakeDevice(
         isFront = true,
         uniqueId = FRONT_ID,
-        hasTorch = false,
-        maxVideoZoomFactor = 1.0,
+        hasTorch = adjustableFront,
+        supportedTorchModes = setOf(AVCaptureTorchModeOff, AVCaptureTorchModeOn),
+        maxVideoZoomFactor = if (adjustableFront) FRONT_MAX_ZOOM.toDouble() else 1.0,
         holdReports = true,
     )
     val lenses = listOf(
@@ -96,12 +100,22 @@ internal class AppleEngineDriver(
             hasFlash = adjustableBack,
             maxZoom = if (adjustableBack) BACK_MAX_ZOOM else 1f,
         ),
-        lensInfo(FRONT_ID, CameraLens.FRONT),
+        lensInfo(
+            FRONT_ID,
+            CameraLens.FRONT,
+            hasFlash = adjustableFront,
+            maxZoom = if (adjustableFront) FRONT_MAX_ZOOM else 1f,
+        ),
     )
 
     /** The flash modes the photo output supports while the back camera is behind it. */
     @Volatile
     var backPhotoFlashModes: List<AVCaptureFlashMode> =
+        listOf(AVCaptureFlashModeOff, AVCaptureFlashModeAuto, AVCaptureFlashModeOn)
+
+    /** The flash modes the photo output supports while the front camera is behind it. */
+    @Volatile
+    var frontPhotoFlashModes: List<AVCaptureFlashMode> =
         listOf(AVCaptureFlashModeOff, AVCaptureFlashModeAuto, AVCaptureFlashModeOn)
 
     /** How the device is held, as the engine's orientation reader answers. */
@@ -110,7 +124,11 @@ internal class AppleEngineDriver(
 
     val photoCapturer = FakePhotoCapturer().also { capturer ->
         capturer.flashModes = {
-            if (adjustableBack && custom.currentDevice === back) backPhotoFlashModes else listOf(AVCaptureFlashModeOff)
+            when {
+                adjustableBack && custom.currentDevice === back -> backPhotoFlashModes
+                adjustableFront && custom.currentDevice === front -> frontPhotoFlashModes
+                else -> listOf(AVCaptureFlashModeOff)
+            }
         }
     }
 
@@ -229,6 +247,7 @@ internal class AppleEngineDriver(
         const val BACK_ID = "back"
         const val FRONT_ID = "front"
         const val BACK_MAX_ZOOM = 4f
+        const val FRONT_MAX_ZOOM = 2f
 
         fun lensInfo(id: String, lens: CameraLens, hasFlash: Boolean = false, maxZoom: Float = 1f) = LensInfo(
             id = id,

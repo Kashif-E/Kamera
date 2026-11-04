@@ -127,6 +127,30 @@ class TargetOrientationTest {
     }
 
     @Test
+    fun startSetsTheTargetFromItsDesiredHardware() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.setTargetOrientation(DeviceOrientation.LANDSCAPE_LEFT))
+
+        assertEquals(
+            CameraKResult.Success(Unit),
+            engine.start(backCameraFacing(DeviceOrientation.PORTRAIT_UPSIDE_DOWN)),
+        )
+        assertEquals(
+            DeviceOrientation.PORTRAIT_UPSIDE_DOWN,
+            engine.hardware.value.targetOrientation,
+            "the start's target, not the one stored before it",
+        )
+        assertEquals(AVCaptureVideoOrientationPortraitUpsideDown, driver.custom.captureOrientation(), "photos")
+
+        engine.stop()
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCameraFacing(null)))
+        assertNull(engine.hardware.value.targetOrientation, "a start with no target clears the stored one")
+        engine.close()
+    }
+
+    @Test
     fun beforeOpenIsStoredAndAppliedAtStart() = driver.runCase {
         val engine = driver.createEngine()
         driver.settle()
