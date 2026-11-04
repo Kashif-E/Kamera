@@ -153,4 +153,36 @@ class RememberCameraKPermissionStateAndroidTest {
 
         assertEquals(listOf(Manifest.permission.CAMERA), registry.launches.single().second, "the launch's permissions")
     }
+
+    @Test
+    fun readsThePermissionRecordOffTheMainLooper() {
+        // A denial recorded by an earlier session: reading it loads the record's preferences file.
+        val record = PermissionRequestRecord(app)
+        record.recordResult(Manifest.permission.CAMERA, granted = false, shouldShowRationale = true)
+        record.recordResult(Manifest.permission.CAMERA, granted = false, shouldShowRationale = false)
+        val reads = CopyOnWriteArrayList<Boolean>()
+        val application = object : ContextWrapper(app) {
+            override fun getApplicationContext(): Context = this
+
+            override fun getSharedPreferences(name: String, mode: Int) =
+                super.getSharedPreferences(name, mode).also { reads += Looper.myLooper() == Looper.getMainLooper() }
+        }
+        val context = object : ContextWrapper(activity) {
+            override fun getApplicationContext(): Context = application
+        }
+
+        // The first read, a request and its result, and a resume: each reads the record.
+        val state = compose(CameraKPermission.CAMERA, context = context)
+        awaitMain("the first read") { state.statuses[CameraKPermission.CAMERA] == PermissionStatus.PermanentlyDenied }
+        state.launchRequest()
+        registry.answer(0, mapOf(Manifest.permission.CAMERA to false))
+        awaitMain("the result") { results.size == 1 }
+        val beforeResume = reads.size
+        controller.pause().resume()
+        awaitMain("the read on resume") { reads.size > beforeResume }
+
+        assertEquals(PermissionStatus.PermanentlyDenied, state.statuses[CameraKPermission.CAMERA])
+        val onMain = reads.count { it }
+        assertEquals(0, onMain, "read the permission record on the main looper $onMain of ${reads.size} times")
+    }
 }
