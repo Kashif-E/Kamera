@@ -18,10 +18,12 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
+import com.kashif.cameraK.plugin.CameraKPluginContext
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.COMMAND_DRAIN_TIMEOUT
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKEvent
+import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.testing.FakeCameraEngine
@@ -55,6 +57,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -932,5 +935,51 @@ class RecordingControllerTest {
         assertEquals(started.recordingId, ended.recordingId)
         assertEquals(RecordingEndReason.INTERRUPTED, ended.reason)
         assertEquals(CameraKState.Idle, holder.cameraState.value)
+    }
+
+    @Test
+    fun pluginContextRecordingStateIsTheHolders() = runTest {
+        var context: CameraKPluginContext? = null
+        val plugin = object : CameraKPlugin {
+            override val needsFrames: Boolean = false
+
+            override fun onAttach(attached: CameraKPluginContext) {
+                context = attached
+            }
+
+            override fun onDetach() = Unit
+        }
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val holder = CameraKStateHolder(
+            CameraConfiguration(),
+            CameraEngineFactory { _, _ -> fake },
+            listOf(plugin),
+            cameraKTestEnvironment(),
+        )
+        holder.start()
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value)
+        val seen = mutableListOf<RecordingState>()
+        val pluginContext = assertNotNull(context, "the plugin was not attached")
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            pluginContext.recordingState.collect { seen += it }
+        }
+
+        val start = async { holder.startRecording() }
+        runCurrent()
+        assertIs<RecordingState.Starting>(pluginContext.recordingState.value, "the plugin's view while Starting")
+        fake.deliverRecordingStarted()
+        runCurrent()
+        assertIs<CameraKResult.Success<RecordingState.Recording>>(start.await())
+        assertSame(holder.recordingState.value, pluginContext.recordingState.value, "the plugin's view while Recording")
+        assertIs<CameraKResult.Success<RecordedVideo>>(holder.stopRecording())
+        runCurrent()
+
+        assertSame(holder.recordingState.value, pluginContext.recordingState.value, "the plugin's view once Finished")
+        assertEquals(
+            listOf("Idle", "Starting", "Recording", "Finished"),
+            seen.map { it::class.simpleName }.filter { it != "Stopping" },
+            "what the plugin saw",
+        )
     }
 }
