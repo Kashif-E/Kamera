@@ -761,6 +761,18 @@ internal class AppleCameraEngine(
         }
     }
 
+    /**
+     * The flash mode the 1.x facade keeps for [mode]: OFF when the Open camera does not support it, as
+     * 1.x's setFlashMode stored for a camera without a flash; [mode] while none is Open.
+     */
+    internal fun facadeFlashMode(mode: FlashMode): FlashMode {
+        if (_state.value != EngineState.Open) return mode
+        val camera = custom.currentDevice?.let(::lensInfo) ?: return mode
+        if (mode in capabilities.value.supportedFlashModes(camera.id)) return mode
+        CameraKLogger.w(TAG, "CameraK: the camera does not support flash mode $mode; using OFF")
+        return FlashMode.OFF
+    }
+
     /** The facade's target orientation: stored in any state, as 1.x did, and reported while a camera is bound. */
     internal fun storeTargetOrientation(orientation: DeviceOrientation?) {
         target.value = orientation

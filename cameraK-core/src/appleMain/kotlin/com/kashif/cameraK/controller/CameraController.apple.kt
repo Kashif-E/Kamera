@@ -522,14 +522,16 @@ actual class CameraController private constructor(
 
     /**
      * Kept for the next start in any state; while Open, set through the engine. Before Open the mode is
-     * also stored as the capture parameter, as 1.x did, which the engine's start sets again.
+     * also stored as the capture parameter, as 1.x did, which the engine's start sets again. A mode the
+     * Open camera does not support is kept as OFF, as 1.x did.
      */
     actual fun setFlashMode(mode: FlashMode) {
-        updateDesired(flashMode = mode)
+        val kept = engine.facadeFlashMode(mode)
+        updateDesired(flashMode = kept)
         engine.launchFacadeCommand(
             "setting the flash mode",
-            whenNotOpen = { customCameraController.setFlashMode(mode.toAVCaptureFlashMode()) },
-        ) { setFlashMode(mode) }
+            whenNotOpen = { customCameraController.setFlashMode(kept.toAVCaptureFlashMode()) },
+        ) { setFlashMode(kept) }
     }
 
     actual fun getFlashMode(): FlashMode? = desired.value.flashMode
