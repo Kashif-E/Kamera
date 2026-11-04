@@ -10,12 +10,12 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertTrue
 
 /**
- * Captures overlap, as on Android: up to three can be in flight, each gets its own photo whatever
- * order AVFoundation finishes them in, and a fourth is rejected. QUALITY asks for the camera's
- * largest photo through maxPhotoDimensions, not the high-resolution flags deprecated since iOS 16.
+ * Captures overlap, as on Android: three in flight each get their own photo whatever order
+ * AVFoundation finishes them in (the holder alone limits how many are in flight; PlatformCounterGoneTest).
+ * QUALITY asks for the camera's largest photo through maxPhotoDimensions, not the high-resolution
+ * flags deprecated since iOS 16.
  */
 class CaptureFormatTest {
     private val photoSizes =
@@ -28,13 +28,9 @@ class CaptureFormatTest {
     private fun photo(seed: Int) = ByteArray(48) { (it + seed).toByte() }
 
     @Test
-    fun threeCapturesCanBeInFlightAndEachGetsItsOwnPhoto() {
+    fun threeCapturesInFlightEachGetTheirOwnPhoto() {
         rig.start()
         val captures = List(3) { rig.capture() }
-
-        val rejected = rig.Capture()
-        val rejection = assertIs<ImageCaptureResult.Error>(rejected.awaitResult(), "a fourth capture was accepted")
-        assertTrue("Burst queue full" in rejection.exception.message.orEmpty(), "unexpected rejection: $rejection")
 
         // AVFoundation may finish them in any order.
         captures.withIndex().reversed().forEach { (i, pair) ->
@@ -45,7 +41,7 @@ class CaptureFormatTest {
             val result = assertIs<ImageCaptureResult.SuccessWithFile>(capture.awaitResult(), "capture $i failed")
             assertContentEquals(photo(i), fileBytes(result.filePath), "capture $i got another capture's photo")
         }
-        awaitTrue("every slot to be released") { rig.controller.capturesInFlight == 0 }
+        awaitTrue("every capture delegate to be released") { rig.custom.outstandingPhotoDelegates == 0 }
     }
 
     @Test

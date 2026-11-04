@@ -21,6 +21,7 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
@@ -28,6 +29,7 @@ import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.InterruptionReason
+import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
@@ -58,6 +60,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCaptureFlashModeAuto
 import platform.AVFoundation.AVCaptureFlashModeOff
@@ -75,12 +78,15 @@ import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspect
+import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
 import platform.Foundation.NSNotification
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
 import platform.Foundation.NSProcessInfo
+import platform.Foundation.NSUUID
+import platform.Foundation.dataWithContentsOfFile
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIDeviceOrientationDidChangeNotification
@@ -113,8 +119,10 @@ import kotlin.coroutines.resume
  * - The device orientation is observed from UIDeviceOrientationDidChangeNotification between start
  *   and stop.
  *
- * Until I3', `capture` and the recording calls return `InvalidState`; the 1.x facade
- * ([legacyController]) still does them on the session this engine owns.
+ * - A capture is one session-queue block, written to app-owned storage ([capture]).
+ *
+ * Until the rest of I3', the recording calls return `InvalidState`; the 1.x facade
+ * ([legacyController]) still records on the session this engine owns.
  */
 internal class AppleCameraEngine(
     private val config: CameraConfiguration,
@@ -129,6 +137,7 @@ internal class AppleCameraEngine(
     LegacyControllerAccess {
     private val osVersion: Int = environment.runtime.osVersion ?: runningIosMajorVersion()
     private val tracer = environment.runtime.tracer ?: signpostTracer()
+    private val dispatchers = environment.dispatchers
 
     /** The failure every call returns below iOS 16; null from 16 on. */
     private val unsupported: CameraKError? =
@@ -208,6 +217,15 @@ internal class AppleCameraEngine(
     private val facade = atomic<CameraController?>(null)
     private val refusedOperations = atomic(emptySet<CameraOperation>())
 
+    /** Captures waiting on AVFoundation, which close completes with Closed. Under [lock]. */
+    private val pendingStills = mutableSetOf<StillRequest>()
+    private val heicRefusalLogged = atomic(false)
+    private val galleryDirectoryLogged = atomic(false)
+
+    /** The 1.x facade's image-capture listeners: each still's bytes as written. */
+    @Volatile
+    internal var stillListener: ((NSData) -> Unit)? = null
+
     /** The session, made now so the preview has it before the first start; null below iOS 16. */
     private val session: CaptureSessionOps? = if (unsupported == null) custom.prepareSession() else null
 
@@ -216,6 +234,8 @@ internal class AppleCameraEngine(
 
     init {
         custom.captureOrientation = ::captureVideoOrientation
+        custom.photoFormat = config.imageFormat
+        custom.turnsDeferredStartOff = osVersion >= DEFERRED_START_IOS
         if (unsupported == null) {
             scope.launch { enumerate() }
         } else {
@@ -384,6 +404,7 @@ internal class AppleCameraEngine(
             pendingStart.also { pendingStart = null }
         }
         cut?.continuation?.resume(CLOSED)
+        locked { pendingStills.toList().also { pendingStills.clear() } }.forEach { it.settle(CLOSED) }
         observers.forEach(center::removeObserver)
         stopObservingOrientation()
         orientationListener.value = null
@@ -620,7 +641,135 @@ internal class AppleCameraEngine(
         }
     }
 
-    override suspend fun capture(): CameraKResult<CapturedImage> = refuse(CameraOperation.CAPTURE)
+    /**
+     * Takes one still (design §2.4): a session-queue block builds the settings from the photo output
+     * as it is then and hands them to it; AVFoundation's callbacks stay on its own queue. The photo is
+     * written to app-owned storage ([writeStill]) off the session queue. One `CameraK.capture`
+     * interval covers the call. Close completes a capture still waiting with Closed; a cancelled
+     * capture's delegate lives on until AVFoundation's last callback, and its photo goes nowhere.
+     */
+    override suspend fun capture(): CameraKResult<CapturedImage> {
+        notOpen()?.let { return it }
+        return tracer.beginInterval(TraceNames.CAPTURE).use { takeStill() }
+    }
+
+    private suspend fun takeStill(): CameraKResult<CapturedImage> {
+        val photo = suspendCancellableCoroutine { continuation ->
+            val request = StillRequest(continuation)
+            if (!locked { !closed && pendingStills.add(request) }) {
+                continuation.resume(CLOSED)
+                return@suspendCancellableCoroutine
+            }
+            continuation.invokeOnCancellation { request.detach() }
+            custom.afterQueuedSessionWork {
+                val outcome = try {
+                    stillRefusal() ?: if (custom.capturePhotoOnQueue(request)) null else failure(CameraKError.NotReady)
+                } catch (e: Exception) {
+                    CameraKLogger.e(TAG, "CameraK: issuing a capture failed", e)
+                    failure(CameraKError.Internal(e))
+                }
+                outcome?.let(request::settle)
+            }
+        }
+        val data = when (photo) {
+            is CameraKResult.Failure -> return photo
+            is CameraKResult.Success -> photo.value
+        }
+        return withContext(dispatchers.io) { saveStill(data) }
+    }
+
+    /** Session queue: why no capture can be issued now; null when one can. */
+    private fun stillRefusal(): CameraKResult.Failure? {
+        unusable()?.let { return it }
+        if (config.imageFormat != ImageFormat.HEIC || custom.canCaptureHeic) return null
+        if (heicRefusalLogged.compareAndSet(expect = false, update = true)) {
+            CameraKLogger.e(TAG, "CameraK: this camera cannot encode HEIC (no HEVC photo codec); captures are refused")
+        }
+        return failure(CameraKError.Unsupported(CameraFeature.IMAGE_FORMAT))
+    }
+
+    /** Writes [photo] where the configuration says, in its format and aspect ratio. Runs off the session queue. */
+    private fun saveStill(photo: NSData): CameraKResult<CapturedImage> {
+        val format = config.imageFormat
+        if (config.directory != Directory.DOCUMENTS && galleryDirectoryLogged.compareAndSet(false, true)) {
+            CameraKLogger.w(
+                TAG,
+                "CameraK: Directory.${config.directory} is ignored; captures are app-owned files, and " +
+                    "publishing them to Photos is the media saver's job",
+            )
+        }
+        val path = try {
+            "${appOwnedDirectory(config.outputDirectory)}/IMG_${NSUUID().UUIDString}.${format.extension}"
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "CameraK: creating the capture's directory failed", e)
+            return failure(CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = e))
+        }
+        val written = writeStill(photo, format, config.aspectRatio, path).getOrElse { e ->
+            CameraKLogger.e(TAG, "CameraK: writing the captured photo failed", e)
+            removeFileIfPresent(path)
+            val onDisk = e.cause is NSErrorException
+            return failure(
+                if (onDisk) CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = e) else CameraKError.Internal(e),
+            )
+        }
+        stillListener?.let { listener ->
+            val bytes = if (format == ImageFormat.JPEG &&
+                written.asDelivered
+            ) {
+                photo
+            } else {
+                NSData.dataWithContentsOfFile(path)
+            }
+            bytes?.let(listener) ?: CameraKLogger.e(TAG, "CameraK: reading the written photo back for listeners failed")
+        }
+        return CameraKResult.Success(CapturedImage(path, format, written.width, written.height))
+    }
+
+    /**
+     * One capture's AVFoundation callbacks, which arrive here and only here. It settles once: with the
+     * photo, the error that prevented it, or Closed; a detached (cancelled) capture's photo goes nowhere.
+     */
+    private inner class StillRequest(private val continuation: CancellableContinuation<CameraKResult<NSData>>) :
+        PhotoCaptureCallbacks {
+        private val settled = atomic(false)
+        private val detached = atomic(false)
+
+        fun detach() {
+            detached.value = true
+        }
+
+        fun settle(result: CameraKResult<NSData>) {
+            if (!settled.compareAndSet(expect = false, update = true)) return
+            locked { pendingStills.remove(this) }
+            if (detached.value) {
+                CameraKLogger.d(TAG, "CameraK: discarding the photo of a cancelled capture")
+                return
+            }
+            continuation.resume(result)
+        }
+
+        override fun photoProcessed(data: NSData?, error: NSError?) = settle(
+            when {
+                error != null -> failure(photoError(error))
+                data == null -> failure(CameraKError.Internal(IllegalStateException("AVFoundation delivered no photo")))
+                else -> CameraKResult.Success(data)
+            },
+        )
+
+        override fun captureFinished(error: NSError?) = settle(
+            failure(
+                error?.let(::photoError)
+                    ?: CameraKError.Internal(
+                        IllegalStateException("AVFoundation finished the capture without a photo"),
+                    ),
+            ),
+        )
+    }
+
+    private fun photoError(error: NSError): CameraKError {
+        CameraKLogger.e(TAG, "CameraK: the photo capture failed", NSErrorException(error))
+        return cameraKErrorFor(error)
+    }
 
     /**
      * Clamps [ratio] into the camera's available zoom range on the session queue before the device sees
@@ -1019,6 +1168,7 @@ internal class AppleCameraEngine(
         const val TAG = "CameraK"
         const val MINIMUM_IOS = 16
         const val PAUSE_RESUME_IOS = 18
+        const val DEFERRED_START_IOS = 26
         val CLOSED = CameraKResult.Failure(CameraKError.Closed)
 
         fun failure(error: CameraKError) = CameraKResult.Failure(error)

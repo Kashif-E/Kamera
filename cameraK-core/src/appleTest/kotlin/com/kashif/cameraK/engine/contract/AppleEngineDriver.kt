@@ -11,6 +11,7 @@ import com.kashif.cameraK.controller.FakeDevice
 import com.kashif.cameraK.controller.FakePhotoCapturer
 import com.kashif.cameraK.controller.FakeSessionOps
 import com.kashif.cameraK.controller.PhotoDimensions
+import com.kashif.cameraK.controller.orientedJpeg
 import com.kashif.cameraK.controller.spinUntil
 import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.engine.CameraEngine
@@ -80,7 +81,8 @@ internal class AppleEngineDriver(
     frontPhotoSizes: List<PhotoDimensions> = emptyList(),
 ) : ThrowingCallbackDriver,
     PreOpenInterruptionDriver,
-    ReadBackFlashDriver {
+    ReadBackFlashDriver,
+    CaptureDriver {
     val back = FakeDevice(
         isFront = false,
         uniqueId = BACK_ID,
@@ -262,6 +264,16 @@ internal class AppleEngineDriver(
     }
 
     override fun throwFromNextCallback() = session.throwOnNextInterruptedRead()
+
+    // The fake photo output never finishes a capture on its own, so every capture is held.
+    override fun holdNextCapture() = Unit
+
+    /** AVFoundation delivers the last capture's photo and its last callback. */
+    override fun releaseCapture() {
+        val request = photoCapturer.requests.lastOrNull() ?: return
+        request.callbacks.photoProcessed(orientedJpeg(width = 4, height = 3, orientation = 1), null)
+        request.callbacks.captureFinished(null)
+    }
 
     private fun drainSessionQueueThenMain() {
         val drained = atomic(false)

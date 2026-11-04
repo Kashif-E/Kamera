@@ -4,6 +4,7 @@ import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
@@ -21,10 +22,8 @@ import platform.Foundation.NSLock
 import platform.Foundation.NSThread
 import platform.UIKit.UIDevice
 import platform.UIKit.UIView
-import platform.darwin.DISPATCH_QUEUE_PRIORITY_HIGH
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
-import platform.darwin.dispatch_get_global_queue
 import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_get_specific
 import platform.darwin.dispatch_queue_create
@@ -181,9 +180,17 @@ class CustomCameraController(
     @Volatile
     internal var captureOrientation: () -> AVCaptureVideoOrientation = { currentVideoOrientation() }
 
-    /** Whether a recording is in progress; CameraController answers from its movie file output. */
+    /** Whether a recording is in progress; the engine answers from its recorder. */
     @Volatile
     internal var recordingInProgress: () -> Boolean = { false }
+
+    /** The format captures are taken in: HEIC asks the photo output for HEVC where it can encode it. */
+    @Volatile
+    internal var photoFormat: ImageFormat = ImageFormat.JPEG
+
+    /** Whether outputs get their deferred start turned off (iOS 26 and later); the engine sets it. */
+    @Volatile
+    internal var turnsDeferredStartOff: Boolean = false
 
     var onPhotoCapture: ((NSData?) -> Unit)? = null
     var onError: ((CameraException) -> Unit)? = null
@@ -375,6 +382,17 @@ class CustomCameraController(
     internal val captureFlashModes: List<AVCaptureFlashMode>
         get() = photoOutput?.let(photoCapturer::supportedFlashModes).orEmpty()
 
+    /** The codecs the photo output can encode a photo in with the camera now in use; none before setup. */
+    internal val availablePhotoCodecs: List<String>
+        get() = photoOutput?.let(photoCapturer::availablePhotoCodecTypes).orEmpty()
+
+    /** Whether a HEIC capture can be taken: the photo output can encode HEVC with the camera now in use. */
+    internal val canCaptureHeic: Boolean get() = AVVideoCodecTypeHEVC in availablePhotoCodecs
+
+    /** The codec a capture asks for: HEVC for [photoFormat] HEIC where the output has it, JPEG otherwise. */
+    private val photoCodec: String
+        get() = if (photoFormat == ImageFormat.HEIC && canCaptureHeic) AVVideoCodecTypeHEVC!! else AVVideoCodecJPEG!!
+
     /** [mode] when the photo output supports it, otherwise off (devices without a flash, such as iPads). */
     private fun supportedFlashMode(mode: AVCaptureFlashMode): AVCaptureFlashMode =
         if (mode in captureFlashModes) mode else AVCaptureFlashModeOff
@@ -382,6 +400,7 @@ class CustomCameraController(
     private fun setupPhotoOutput() {
         photoOutput = AVCapturePhotoOutput()
         avQualityPrioritization?.let { photoOutput?.setMaxPhotoQualityPrioritization(it) }
+        if (turnsDeferredStartOff) photoOutput?.let(photoCapturer::disableDeferredStart)
 
         if (session?.canAddOutput(photoOutput!!) == true) {
             session?.addOutput(photoOutput!!)
@@ -814,14 +833,16 @@ class CustomCameraController(
      * The photo goes to [onPhotoCapture], a failure to [onError].
      */
     fun captureImage() {
-        val issued = capturePhoto(
-            object : PhotoCaptureCallbacks {
-                override fun photoProcessed(data: NSData?, error: NSError?) = deliverPhoto(data, error)
+        dispatch_async(sessionQueue) {
+            val issued = capturePhotoOnQueue(
+                object : PhotoCaptureCallbacks {
+                    override fun photoProcessed(data: NSData?, error: NSError?) = deliverPhoto(data, error)
 
-                override fun captureFinished(error: NSError?) = Unit
-            },
-        )
-        if (!issued) onError?.invoke(CameraException.ConfigurationError("Camera not ready for capture"))
+                    override fun captureFinished(error: NSError?) = Unit
+                },
+            )
+            if (!issued) reportError(CameraException.ConfigurationError("Camera not ready for capture"))
+        }
     }
 
     /**
@@ -832,7 +853,7 @@ class CustomCameraController(
     private fun photoSettings(): AVCapturePhotoSettings {
         val settings = AVCapturePhotoSettings.photoSettingsWithFormat(
             mapOf(
-                AVVideoCodecKey to AVVideoCodecJPEG,
+                AVVideoCodecKey to photoCodec,
             ),
         )
 
@@ -849,11 +870,13 @@ class CustomCameraController(
 
     /**
      * Issues one capture whose photo and completion go only to [callbacks], through a delegate of its
-     * own that is kept alive until AVFoundation's last callback for it. Returns false, without calling
-     * [callbacks], when the camera is not ready.
+     * own that is kept alive until AVFoundation's last callback for it. Session queue only: the
+     * settings are built from the photo output as it is now, after every piece of session work queued
+     * before (a lens switch, a flash change), and handed to it in the same block (design §2.4). Returns
+     * false, without calling [callbacks], when the camera is not ready.
      */
     @OptIn(ExperimentalForeignApi::class)
-    internal fun capturePhoto(callbacks: PhotoCaptureCallbacks): Boolean {
+    internal fun capturePhotoOnQueue(callbacks: PhotoCaptureCallbacks): Boolean {
         val output = photoOutput
         if (output == null || session?.isRunning != true) return false
 
@@ -881,9 +904,7 @@ class CustomCameraController(
             },
         )
         retainPhotoDelegate(delegate)
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u)) {
-            photoCapturer.capture(output, settings, orientation, mirrored, delegate)
-        }
+        photoCapturer.capture(output, settings, orientation, mirrored, delegate)
         return true
     }
 
@@ -1051,6 +1072,20 @@ class CustomCameraController(
     // AVCam keeps each capture's delegate alive until AVFoundation's last callback for it.
     private val photoDelegatesLock = NSLock()
     private val photoDelegates = mutableSetOf<PhotoCaptureDelegate>()
+
+    /**
+     * Capture delegates retained until AVFoundation's last callback for their capture: AVFoundation
+     * does not retain a photo delegate, so a cancelled capture's delegate must outlive its caller.
+     */
+    internal val outstandingPhotoDelegates: Int
+        get() {
+            photoDelegatesLock.lock()
+            try {
+                return photoDelegates.size
+            } finally {
+                photoDelegatesLock.unlock()
+            }
+        }
 
     private fun retainPhotoDelegate(delegate: PhotoCaptureDelegate) {
         photoDelegatesLock.lock()
