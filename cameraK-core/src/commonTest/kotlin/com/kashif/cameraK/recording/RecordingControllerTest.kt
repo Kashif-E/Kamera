@@ -10,6 +10,7 @@ import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraEngineFactory
 import com.kashif.cameraK.engine.CameraKEnvironment
+import com.kashif.cameraK.engine.EngineRecordingEvent
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.error.CameraFeature
@@ -34,6 +35,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -397,6 +401,98 @@ class RecordingControllerTest {
             events.filterIsInstance<CameraKEvent.RecordingEnded>(),
             "a start's failure is its result",
         )
+    }
+
+    @Test
+    fun startedThenFinalizedBeforeTheStartResumesStaysFinished() = runTest {
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val holder = readyHolder(fake)
+        val events = collectEvents(holder)
+
+        val start = async { holder.startRecording() }
+        runCurrent()
+        // Android: VideoRecordEvent.Start, then at once an error Finalize, both before the start resumes.
+        val error = CameraKError.Hardware(platformCode = 7)
+        fake.deliverRecordingStarted()
+        fake.finishRecording(CameraKResult.Failure(error), RecordingEndReason.ERROR)
+        runCurrent()
+
+        val started = assertIs<CameraKResult.Success<RecordingState.Recording>>(start.await()).value
+        val finished = assertIs<RecordingState.Finished>(holder.recordingState.value, "the ended recording came back")
+        assertEquals(started.recordingId, finished.recordingId)
+        assertEquals(CameraKResult.Failure(error), finished.result)
+        assertEquals(RecordingEndReason.ERROR, finished.reason)
+        val ended = events.filterIsInstance<CameraKEvent.RecordingEnded>().single()
+        assertEquals(started.recordingId, ended.recordingId)
+        assertEquals(RecordingEndReason.ERROR, ended.reason)
+
+        advanceTimeBy(1.seconds)
+        runCurrent()
+        @Suppress("DEPRECATION")
+        val shown = holder.uiState.value.let { it.isRecording to it.recordingDurationMs }
+        assertEquals(false to 0L, shown, "uiState's isRecording and recordingDurationMs a second after the end")
+        assertSame(finished, holder.recordingState.value, "the state moved after the end")
+
+        fake.autoStartRecording = true
+        val next = holder.startRecording()
+        assertIs<CameraKResult.Success<RecordingState.Recording>>(next, "a new start after the end: $next")
+    }
+
+    /** Reports the recording's end before any Started, then returns Success: the order §5's Finalized row covers. */
+    private class EndsBeforeStartedEngine(
+        val fake: FakeCameraEngine,
+        private val end: EngineRecordingEvent.Finalized,
+    ) : CameraEngine by fake {
+        private val ends = MutableSharedFlow<EngineRecordingEvent>(extraBufferCapacity = 1)
+        override val recordingEvents: Flow<EngineRecordingEvent> = merge(fake.recordingEvents, ends)
+
+        override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> {
+            ends.emit(end)
+            return CameraKResult.Success("/fake/ended.mp4")
+        }
+    }
+
+    @Test
+    fun finalizedFailureBeforeStartedFailsStartRecordingAfterTheEngineReturned() = runTest {
+        val error = CameraKError.Hardware(platformCode = 7)
+        val engine = EndsBeforeStartedEngine(
+            FakeCameraEngine(),
+            EngineRecordingEvent.Finalized(CameraKResult.Failure(error), RecordingEndReason.ERROR),
+        )
+        val holder = readyHolder(engine)
+        val events = collectEvents(holder)
+
+        val start = holder.startRecording()
+
+        assertEquals(CameraKResult.Failure(error), start, "§5: Finalized before Started fails startRecording")
+        assertEquals(RecordingState.Idle, holder.recordingState.value)
+        assertEquals(
+            emptyList(),
+            events.filterIsInstance<CameraKEvent.RecordingEnded>(),
+            "a start's failure is its result",
+        )
+    }
+
+    @Test
+    fun finalizedWithAPlayableFileBeforeStartedReturnsTheFile() = runTest {
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val holder = readyHolder(fake)
+        val events = collectEvents(holder)
+
+        val start = async { holder.startRecording() }
+        runCurrent()
+        val video = FakeCaptures.video(path = "/fake/VID_0001.mp4")
+        fake.finishRecording(CameraKResult.Success(video), RecordingEndReason.MAX_DURATION)
+        runCurrent()
+
+        // §5 partial files: a recording that ends with a playable file returns it, whatever ended it.
+        val started = assertIs<CameraKResult.Success<RecordingState.Recording>>(start.await()).value
+        val finished = assertIs<RecordingState.Finished>(holder.recordingState.value)
+        assertEquals(started.recordingId, finished.recordingId)
+        assertEquals(CameraKResult.Success(video), finished.result)
+        assertEquals(RecordingEndReason.MAX_DURATION, finished.reason)
+        val ended = events.filterIsInstance<CameraKEvent.RecordingEnded>().single()
+        assertEquals(CameraKResult.Success(video), ended.result)
     }
 
     @Test

@@ -73,6 +73,7 @@ kotlin {
 
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
             @OptIn(ExperimentalComposeLibrary::class)
             implementation(compose.uiTest)
         }
