@@ -1,6 +1,12 @@
 package com.kashif.cameraK.controller
 
 import androidx.camera.video.VideoRecordEvent
+import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.recording.RecordingEndReason
+import com.kashif.cameraK.result.CameraKResult
+
+/** How the engine reports a recording CameraX finalized: its outcome and why it ended. */
+internal class MappedFinalize(val result: CameraKResult<RecordedVideo>, val reason: RecordingEndReason)
 
 /** What a recording's Finalize means for the caller. */
 internal sealed interface FinalizeOutcome {
@@ -33,4 +39,15 @@ internal object FinalizeMapper {
             endedBy = event.error.takeIf { event.hasError },
         )
     }
+
+    /** Every `VideoRecordEvent.Finalize.ERROR_*` code the mapper has a row for (A3'). */
+    val handledCodes: Set<Int> get() = TODO("A3': the exhaustive Finalize table")
+
+    /** The engine's outcome for [event] over [video], as §4.1's Android table maps it (A3'). */
+    fun mapRecording(
+        event: RecordingFinalized,
+        playable: Boolean,
+        video: RecordedVideo,
+        requested: RecordingEndReason,
+    ): MappedFinalize = TODO("A3': the exhaustive Finalize table")
 }

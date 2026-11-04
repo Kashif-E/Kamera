@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import org.robolectric.Shadows.shadowOf
+import java.util.concurrent.ExecutorService
 
 /**
  * The Android engine's fake platform: [FakeCameraXBackend] with the cameras [lenses] describes, the
@@ -58,22 +59,37 @@ internal class FakeAndroidPlatform(
         config: CameraConfiguration = CameraConfiguration(),
         background: CoroutineDispatcher? = null,
         runtime: EngineRuntime? = null,
+        imageProcessing: ExecutorService? = null,
     ): AndroidCameraEngine {
         val main = StandardTestDispatcher(scheduler)
         val environment = CameraKEnvironment(
             dispatchers = CameraKDispatchers(main = main, default = background ?: main, io = background ?: main),
         )
         runtime?.let { environment.runtime = it }
-        return AndroidCameraEngine(
-            config = config,
-            context = context,
-            environment = environment,
-            backend = backend,
-            lensSource = {
-                enumerations += Thread.currentThread()
-                lenses.map { AndroidLensDescriptor(it, isPhysicalChild = false, parentLogicalId = null) }
-            },
+        return engineIn(environment, config, imageProcessing)
+    }
+
+    /** An engine on [environment]'s dispatchers, as a holder's factory builds it. */
+    fun engineIn(
+        environment: CameraKEnvironment,
+        config: CameraConfiguration = CameraConfiguration(),
+        imageProcessing: ExecutorService? = null,
+    ): AndroidCameraEngine = if (imageProcessing == null) {
+        AndroidCameraEngine(config, context, environment, backend, lensSource)
+    } else {
+        AndroidCameraEngine(
+            config,
+            context,
+            environment,
+            backend,
+            lensSource,
+            imageProcessingExecutor = imageProcessing,
         )
+    }
+
+    private val lensSource: () -> List<AndroidLensDescriptor> = {
+        enumerations += Thread.currentThread()
+        lenses.map { AndroidLensDescriptor(it, isPhysicalChild = false, parentLogicalId = null) }
     }
 
     /** Runs what the engine queued on the scheduler and the main looper until both are idle. */

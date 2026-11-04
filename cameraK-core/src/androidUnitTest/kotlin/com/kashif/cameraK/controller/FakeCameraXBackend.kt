@@ -83,6 +83,9 @@ internal class FakeCameraXBackend : CameraXBackend {
     /** The qualities [videoQualities] reports for every camera; all four unless a test narrows them. */
     var supportedQualities: Set<VideoQuality> = VideoQuality.entries.toSet()
 
+    /** When set, the qualities of the camera with that id, in place of [supportedQualities]. */
+    var qualitiesById: Map<String, Set<VideoQuality>>? = null
+
     /** The thread each video-quality query ran on, oldest first. */
     val qualityQueryThreads = mutableListOf<Thread>()
 
@@ -97,7 +100,9 @@ internal class FakeCameraXBackend : CameraXBackend {
 
     override fun videoQualities(cameraInfo: CameraInfo): Set<VideoQuality> {
         qualityQueryThreads += Thread.currentThread()
-        return supportedQualities
+        val byId = qualitiesById ?: return supportedQualities
+        val id = binding.cameras.last { it.camera.cameraInfo === cameraInfo }.id
+        return byId[id].orEmpty()
     }
 
     /** The per-frame callback of each preview built, oldest first. */
@@ -149,7 +154,9 @@ internal class FakeCameraXBackend : CameraXBackend {
         onEvent: (RecordingEvent) -> Unit,
     ): RecordingSession {
         startFailure?.let { throw it }
-        val recording = FakeRecording(output, withAudio, executor, holdPauseResume, onEvent).also { recordings += it }
+        val recording = FakeRecording(output, withAudio, executor, {
+            holdPauseResume
+        }, onEvent).also { recordings += it }
         if (!holdRecordingStart) recording.deliverStarted()
         return recording
     }
@@ -166,7 +173,7 @@ internal class VideoCaptureBuild(
 /**
  * A recording CameraX is running. It ends only when the test finalizes it, as CameraX ends a
  * recording with a Finalize event on the callback executor, whether or not stop() was called.
- * Unless [holdPauseResume], pause() and resume() report CameraX's Pause and Resume events on that
+ * Unless [holdPauseResume] says so, pause() and resume() report CameraX's Pause and Resume events on that
  * executor, as CameraX does once the encoder has paused or resumed.
  */
 internal class FakeRecording(
@@ -175,7 +182,7 @@ internal class FakeRecording(
     /** Whether the controller asked for an audio track. */
     val withAudio: Boolean,
     private val executor: Executor,
-    private val holdPauseResume: Boolean,
+    private val holdPauseResume: () -> Boolean,
     private val onEvent: (RecordingEvent) -> Unit,
 ) : RecordingSession {
     val outputFile: File get() = output.file
@@ -199,12 +206,12 @@ internal class FakeRecording(
 
     override fun pause() {
         pauseCalls++
-        if (!holdPauseResume) deliverPaused()
+        if (!holdPauseResume()) deliverPaused()
     }
 
     override fun resume() {
         resumeCalls++
-        if (!holdPauseResume) deliverResumed()
+        if (!holdPauseResume()) deliverResumed()
     }
 
     /** CameraX reports the recording started. */
@@ -341,6 +348,12 @@ internal class FakeCameraBinding : CameraBinding {
     /** The next camera to open stays OPENING until the test reports it open. */
     var holdNextOpen = false
 
+    /**
+     * When true, a group that includes a VideoCapture is refused with IllegalArgumentException, as
+     * CameraX refuses a combination of streams the camera cannot run.
+     */
+    var refuseVideoCapture = false
+
     /** Unbinds of use cases whose owner was already destroyed: an owner's final release of its camera. */
     var releaseCount = 0
         private set
@@ -356,8 +369,13 @@ internal class FakeCameraBinding : CameraBinding {
             .forEach { it.closeForUnbind() }
     }
 
-    override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, useCaseGroup: UseCaseGroup): Camera =
-        bind(owner, camera, useCaseGroup.useCases).also { viewPorts += useCaseGroup.viewPort }
+    override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, useCaseGroup: UseCaseGroup): Camera {
+        if (refuseVideoCapture && useCaseGroup.useCases.any { it is VideoCapture<*> }) {
+            checkMainThread("bindToLifecycle")
+            throw IllegalArgumentException("No supported surface combination for these use cases")
+        }
+        return bind(owner, camera, useCaseGroup.useCases).also { viewPorts += useCaseGroup.viewPort }
+    }
 
     override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, vararg useCases: UseCase): Camera =
         bind(owner, camera, useCases.toList())
