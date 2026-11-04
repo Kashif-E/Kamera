@@ -10,6 +10,7 @@ import com.kashif.cameraK.controller.CustomCameraController
 import com.kashif.cameraK.controller.FakeDevice
 import com.kashif.cameraK.controller.FakePhotoCapturer
 import com.kashif.cameraK.controller.FakeSessionOps
+import com.kashif.cameraK.controller.PhotoDimensions
 import com.kashif.cameraK.controller.spinUntil
 import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.engine.CameraEngine
@@ -74,6 +75,9 @@ internal class AppleEngineDriver(
     backTorchModes: Set<AVCaptureTorchMode> = setOf(AVCaptureTorchModeOff, AVCaptureTorchModeOn),
     /** The front camera has a flash, a torch and a zoom range too. */
     private val adjustableFront: Boolean = false,
+    /** The photo sizes each camera's active format can deliver. */
+    backPhotoSizes: List<PhotoDimensions> = emptyList(),
+    frontPhotoSizes: List<PhotoDimensions> = emptyList(),
 ) : ThrowingCallbackDriver,
     PreOpenInterruptionDriver,
     ReadBackFlashDriver {
@@ -83,6 +87,7 @@ internal class AppleEngineDriver(
         hasTorch = adjustableBack,
         supportedTorchModes = backTorchModes,
         maxVideoZoomFactor = if (adjustableBack) BACK_MAX_ZOOM.toDouble() else 1.0,
+        supportedMaxPhotoDimensions = backPhotoSizes,
         holdReports = true,
     )
     val front = FakeDevice(
@@ -91,6 +96,7 @@ internal class AppleEngineDriver(
         hasTorch = adjustableFront,
         supportedTorchModes = setOf(AVCaptureTorchModeOff, AVCaptureTorchModeOn),
         maxVideoZoomFactor = if (adjustableFront) FRONT_MAX_ZOOM.toDouble() else 1.0,
+        supportedMaxPhotoDimensions = frontPhotoSizes,
         holdReports = true,
     )
     val lenses = listOf(
@@ -172,6 +178,8 @@ internal class AppleEngineDriver(
         custom = CustomCameraController(
             qualityPrioritization = config.qualityPrioritization,
             initialCameraLens = config.cameraLens,
+            aspectRatio = config.aspectRatio,
+            targetResolution = config.targetResolution,
             sessionFactory = {
                 sessions.incrementAndGet()
                 ops

@@ -1,10 +1,12 @@
 package com.kashif.cameraK.controller
 
 import platform.AVFoundation.AVCaptureFlashMode
+import platform.AVFoundation.AVCaptureOutput
 import platform.AVFoundation.AVCapturePhotoCaptureDelegateProtocol
 import platform.AVFoundation.AVCapturePhotoOutput
 import platform.AVFoundation.AVCapturePhotoSettings
 import platform.AVFoundation.AVCaptureVideoOrientation
+import platform.AVFoundation.AVVideoCodecTypeJPEG
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
 import platform.Foundation.NSThread
@@ -42,6 +44,33 @@ internal class FakePhotoCapturer : PhotoCapturer {
     var flashModes: (() -> List<AVCaptureFlashMode>)? = null
 
     private val flashModeQueues = mutableListOf<String>()
+    private val deferredStartOff = mutableListOf<AVCaptureOutput>()
+
+    /** The codecs the output can encode a photo in; JPEG only unless a test adds HEVC. */
+    @Volatile
+    var codecTypes: List<String> = listOf(AVVideoCodecTypeJPEG!!)
+
+    override fun availablePhotoCodecTypes(output: AVCapturePhotoOutput): List<String> = codecTypes
+
+    /** Every output whose deferred start was turned off, in order. */
+    val deferredStartDisabled: List<AVCaptureOutput>
+        get() {
+            lock.lock()
+            try {
+                return deferredStartOff.toList()
+            } finally {
+                lock.unlock()
+            }
+        }
+
+    override fun disableDeferredStart(output: AVCaptureOutput) {
+        lock.lock()
+        try {
+            deferredStartOff += output
+        } finally {
+            lock.unlock()
+        }
+    }
 
     /** The queue of every supportedFlashModes read, in order. */
     val flashModeReads: List<String>

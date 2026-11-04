@@ -11,5 +11,10 @@ package com.kashif.cameraK.engine.contract
 internal class AppleCameraEngineContractTest :
     CameraEngineContractTest(
         driver = AppleEngineDriver(adjustableBack = true, adjustableFront = true),
-        requires = setOf(ThrowingCallbackDriver::class, PreOpenInterruptionDriver::class, ReadBackFlashDriver::class),
+        requires = setOf(
+            ThrowingCallbackDriver::class,
+            PreOpenInterruptionDriver::class,
+            ReadBackFlashDriver::class,
+            CaptureDriver::class,
+        ),
     )

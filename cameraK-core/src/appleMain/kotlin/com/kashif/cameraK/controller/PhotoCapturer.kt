@@ -5,6 +5,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.cValue
 import kotlinx.cinterop.useContents
 import platform.AVFoundation.AVCaptureFlashMode
+import platform.AVFoundation.AVCaptureOutput
 import platform.AVFoundation.AVCapturePhoto
 import platform.AVFoundation.AVCapturePhotoCaptureDelegateProtocol
 import platform.AVFoundation.AVCapturePhotoOutput
@@ -50,6 +51,15 @@ internal interface PhotoCapturer {
 
     /** The flash modes [output] supports with the camera now behind it. */
     fun supportedFlashModes(output: AVCapturePhotoOutput): List<AVCaptureFlashMode>
+
+    /** The codecs (AVVideoCodecType) [output] can encode a photo in with the camera now behind it. */
+    fun availablePhotoCodecTypes(output: AVCapturePhotoOutput): List<String>
+
+    /**
+     * Turns [output]'s deferred start off (iOS 26 and later only), so a capture right after the
+     * session starts never waits on an output AVFoundation chose to start late.
+     */
+    fun disableDeferredStart(output: AVCaptureOutput)
 }
 
 @OptIn(ExperimentalForeignApi::class)
@@ -81,6 +91,13 @@ internal object AVPhotoCapturer : PhotoCapturer {
         completion: (Boolean, NSError?) -> Unit,
     ) {
         output.setPreparedPhotoSettingsArray(settings, completionHandler = completion)
+    }
+
+    override fun availablePhotoCodecTypes(output: AVCapturePhotoOutput): List<String> =
+        output.availablePhotoCodecTypes.filterIsInstance<String>()
+
+    override fun disableDeferredStart(output: AVCaptureOutput) {
+        output.deferredStartEnabled = false
     }
 
     override fun supportedFlashModes(output: AVCapturePhotoOutput): List<AVCaptureFlashMode> =

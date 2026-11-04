@@ -35,6 +35,7 @@ internal class FakeSessionOps : CaptureSessionOps {
     private val inputList = mutableListOf<AVCaptureInput>()
     private val refused = mutableSetOf<AVCaptureInput>()
     private val outputList = mutableListOf<AVCaptureOutput>()
+    private val presetList = mutableListOf<String>()
 
     override val avSession: AVCaptureSession = AVCaptureSession()
     override val isRunning: Boolean get() = locked { running }
@@ -59,7 +60,10 @@ internal class FakeSessionOps : CaptureSessionOps {
 
     override fun canSetSessionPreset(preset: String): Boolean = true
 
-    override fun setSessionPreset(preset: String) = Unit
+    override fun setSessionPreset(preset: String) = locked { presetList += preset }
+
+    /** Every preset the session was given, in order. */
+    val presets: List<String> get() = locked { presetList.toList() }
 
     override fun canAddInput(input: AVCaptureInput): Boolean = locked { input !in inputList && input !in refused }
 
