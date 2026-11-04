@@ -22,6 +22,7 @@ import org.robolectric.Shadows.shadowOf
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.microseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -56,6 +57,14 @@ class RecordingLimitsTest {
         val output = backend.recordings.single().output
         assertEquals(0L, output.durationLimitMillis)
         assertEquals(0L, output.fileSizeLimit)
+    }
+
+    @Test
+    fun subMillisecondDurationLimit_isOneMillisecond() {
+        start(VideoConfiguration(enableAudio = false, maxDuration = 500.microseconds))
+
+        // CameraX reads 0 as no limit, so a positive limit under a millisecond must not round down to it.
+        assertEquals(1L, backend.recordings.single().output.durationLimitMillis, "the limit became unlimited")
     }
 
     @Test
