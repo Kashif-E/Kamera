@@ -12,11 +12,15 @@ import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import org.bytedeco.javacv.Frame
+import org.bytedeco.javacv.FrameGrabber
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -24,7 +28,8 @@ import kotlin.test.assertIs
 /**
  * `selectCamera(ById)` on an open desktop engine moves the grab loop to that enumerated device and
  * returns once its first frame arrives, with the new camera reported; an id the engine did not
- * enumerate is NoCamera and leaves the open camera as it was (§2.4 desktop, §4.1 row 2).
+ * enumerate is NoCamera and leaves the open camera as it was (§2.4 desktop, §4.1 row 2). A device
+ * that does not open returns its open error, and the engine reopens the camera it had.
  */
 class SelectCameraByIdTest {
     private val first = webcam("usb-first")
@@ -70,6 +75,53 @@ class SelectCameraByIdTest {
         } finally {
             sut.close()
         }
+    }
+
+    @Test
+    fun aDeviceThatDoesNotOpenReturnsItsErrorAndThePreviousCameraReopens() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val refused = FrameGrabber.Exception("avformat_open_input() error -5: Could not open input \"1\".")
+        val source = object : GrabberSource {
+            override fun deviceKey(device: LensInfo): Any = device.id
+
+            override val canRelax: Boolean = false
+
+            override fun create(device: LensInfo, constrained: Boolean): FrameGrabber =
+                if (device.id == second.id) RefusesToOpen(refused) else rig.camera
+        }
+        val sut = DesktopCameraEngine(
+            CameraConfiguration(),
+            rig.environment(),
+            source,
+            authorization = { PermissionStatus.Granted },
+            enumerate = { CameraCapabilities(listOf(first, second)) },
+        )
+        try {
+            open(rig, sut, CameraSelection.ById(first.id))
+
+            val switched = async { sut.selectCamera(CameraSelection.ById(second.id)) }
+            rig.settle()
+
+            val error = assertIs<CameraKError.Hardware>(assertIs<CameraKResult.Failure>(switched.await()).error)
+            assertEquals(-5, error.platformCode)
+            assertEquals(EngineState.Open, sut.state.value, "the engine after a switch that failed")
+            assertEquals(first, sut.hardware.value.camera, "the camera after a switch that failed")
+            assertEquals(2, rig.camera.startCount, "the previous camera was not reopened")
+        } finally {
+            sut.close()
+        }
+    }
+
+    private class RefusesToOpen(private val failure: Exception) : FrameGrabber() {
+        override fun start(): Unit = throw failure
+
+        override fun stop() = Unit
+
+        override fun trigger() = Unit
+
+        override fun grab(): Frame? = null
+
+        override fun release() = Unit
     }
 
     private suspend fun TestScope.open(rig: DesktopEngineRig, sut: DesktopCameraEngine, selection: CameraSelection) {
