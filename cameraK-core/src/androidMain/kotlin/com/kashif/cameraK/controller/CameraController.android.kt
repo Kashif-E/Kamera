@@ -25,6 +25,8 @@ import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -38,9 +40,13 @@ import java.util.concurrent.ExecutorService
 /**
  * The 1.x Android controller: a deprecated facade over an [AndroidCameraEngine] until 2.0's holder
  * commands replace it. Session and binding belong to the engine; nothing here binds or opens a
- * camera on its own. [startSession], [stopSession], [cleanup], the lens and device-type switches and
- * the preview go through the engine; the members that act on what is bound (capture, recording,
- * analyzers, flash, torch and zoom) keep their 1.x bodies on the engine's collaborators.
+ * camera on its own. [startSession], [stopSession], [cleanup], the lens and device-type switches,
+ * the preview, flash, torch, zoom and the target orientation go through the engine; capture,
+ * recording and analyzers keep their 1.x bodies on the engine's collaborators.
+ *
+ * The facade holds one desired flash, torch and zoom. Its setters change it in any state but closed;
+ * while the engine is open they also run the engine's command, and before that they only store the
+ * value, which [startSession] passes to the engine and the open applies.
  *
  * A controller built with a public constructor builds and owns its engine. Its session runs while
  * [startSession] has been called and the host's lifecycle is at least STARTED, as the 1.x camera
@@ -128,6 +134,17 @@ actual class CameraController internal constructor(
     internal val imageFormat: ImageFormat get() = config.imageFormat
 
     private val hardware: HardwareControls get() = engine.hardwareControls
+
+    // The desired hardware a 1.x caller set, from any thread; the target orientation is the engine's own.
+    @Volatile
+    private var flashMode: FlashMode = config.flashMode
+
+    @Volatile
+    private var torchMode: TorchMode = config.torchMode
+
+    @Volatile
+    private var zoomRatio: Float = 1f
+
     private val frames: FramePipeline get() = engine.framePipeline
     private val stillCapturer: StillCapturer get() = engine.stillCapturer
     private val videoRecorder: VideoRecorder get() = engine.videoRecorder
@@ -267,23 +284,69 @@ actual class CameraController internal constructor(
         return stillCapturer.takePictureToFile()
     }
 
-    actual fun toggleFlashMode() = hardware.toggleFlashMode()
+    actual fun toggleFlashMode() {
+        setFlashMode(
+            when (flashMode) {
+                FlashMode.OFF -> FlashMode.ON
+                FlashMode.ON -> FlashMode.AUTO
+                FlashMode.AUTO -> FlashMode.OFF
+            },
+        )
+    }
 
-    actual fun setFlashMode(mode: FlashMode) = hardware.setFlashMode(mode)
+    actual fun setFlashMode(mode: FlashMode) {
+        if (engine.isClosed) return
+        flashMode = mode
+        applyHardware("FlashMode.$mode", { engine.storeDesired(flashMode = mode) }) { engine.setFlashMode(mode) }
+    }
 
+    /** The flash mode the bound capture reports, or null before a bind. */
     actual fun getFlashMode(): FlashMode? = hardware.boundFlashMode()
 
-    actual fun toggleTorchMode() = hardware.toggleTorchMode()
+    // Android has no AUTO torch, so the cycle is OFF and ON.
+    actual fun toggleTorchMode() = setTorchMode(if (torchMode == TorchMode.ON) TorchMode.OFF else TorchMode.ON)
 
-    actual fun setTorchMode(mode: TorchMode) = hardware.setTorchMode(mode)
+    actual fun setTorchMode(mode: TorchMode) {
+        if (engine.isClosed) return
+        if (mode == TorchMode.AUTO) {
+            CameraKLogger.w(TAG, "TorchMode.AUTO is not supported on Android; the torch stays $torchMode")
+            return
+        }
+        torchMode = mode
+        applyHardware("TorchMode.$mode", { engine.storeDesired(torchMode = mode) }) { engine.setTorchMode(mode) }
+    }
 
-    actual fun setZoom(zoomRatio: Float) = hardware.setZoom(zoomRatio)
+    actual fun setZoom(zoomRatio: Float) {
+        if (engine.isClosed) return
+        this.zoomRatio = zoomRatio
+        applyHardware("Zoom $zoomRatio", { engine.storeDesired(zoomRatio = zoomRatio) }) { engine.setZoom(zoomRatio) }
+    }
 
     actual fun getZoom(): Float = hardware.getZoom()
 
     actual fun getMaxZoom(): Float = hardware.getMaxZoom()
 
-    actual fun getTorchMode(): TorchMode? = hardware.torchMode
+    /** The torch mode last set, or configured; the camera reports its own through the holder's uiState. */
+    actual fun getTorchMode(): TorchMode? = torchMode
+
+    // Runs [command] while the engine is open, else stores the value for the next open. A 1.x setter
+    // returns nothing, so a refused command is logged here.
+    private fun applyHardware(what: String, store: () -> Unit, command: suspend () -> CameraKResult<*>) {
+        engine.launch {
+            if (!engine.isOpen) {
+                store()
+                return@launch
+            }
+            val result = command()
+            if (result is CameraKResult.Failure) CameraKLogger.w(TAG, "$what was not applied: ${reason(result.error)}")
+        }
+    }
+
+    private fun reason(error: CameraKError): String = when {
+        error is CameraKError.Unsupported && hardware.hasFlashUnit() == false -> "this camera has no flash unit"
+        error is CameraKError.Unsupported -> "${error.feature} is not supported on this camera"
+        else -> error::class.simpleName ?: "the engine refused it"
+    }
 
     actual fun toggleCameraLens() {
         // A lens switch unbinds and rebinds, which would tear down a live recording session.
@@ -352,10 +415,9 @@ actual class CameraController internal constructor(
 
     private fun desired() = DesiredHardware(
         selection = CameraSelection.ByLens(cameraLens, cameraDeviceType),
-        flashMode = hardware.flashMode,
-        torchMode = hardware.torchMode,
-        // The zoom the user asked for stays in HardwareControls, which applies it after every bind.
-        zoomRatio = 1f,
+        flashMode = flashMode,
+        torchMode = torchMode,
+        zoomRatio = zoomRatio,
         targetOrientation = engine.orientation.targetOrientation,
     )
 
@@ -393,17 +455,13 @@ actual class CameraController internal constructor(
         orientationListener = callback
     }
 
+    /**
+     * Sets the engine's one target orientation, in any state, as 1.x did: applied to the bound
+     * outputs, reported by the engine while open, and passed by [startSession] to the next start.
+     * Null follows the display rotation again.
+     */
     actual fun setTargetOrientation(orientation: DeviceOrientation?) {
-        engine.orientation.targetOrientation = orientation
-        // applyCaptureRotation honors the override when set, and otherwise uses the DISPLAY rotation
-        // (consistent with auto mode) — so clearing the override (null) immediately reverts to the
-        // display rotation instead of a possibly-stale sensor orientation. Fall back to the sensor
-        // orientation only if nothing is bound yet.
-        if (engine.isBound) {
-            engine.applyCaptureRotation()
-        } else {
-            engine.applyRotation((orientation ?: engine.orientation.deviceOrientation).toSurfaceRotation())
-        }
+        engine.onMain { engine.applyTargetOrientation(orientation) }
     }
 
     /**

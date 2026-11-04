@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraState
 import androidx.camera.core.ImageCapture
+import androidx.camera.core.TorchState
 import androidx.camera.core.UseCase
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -36,6 +37,7 @@ import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.frames.FrameSource
@@ -97,10 +99,16 @@ private const val TAG = "CameraK"
  * reaches the state only while its session is live, so nothing a stopped, closed or failed session's
  * camera says changes it.
  *
+ * [hardware] and [zoom] are what CameraX reports: torch and zoom from the bound camera's
+ * `torchState` and `zoomState`, flash from a read-back of the bound ImageCapture after each set and
+ * each bind (design §2.3 rule 5). Flash, torch and zoom are commands for an open camera, NotReady
+ * otherwise; the target orientation is configuration, taken in any state but closed. The desired
+ * hardware is re-applied once the camera opens and after every bind made while it runs.
+ *
  * The 1.x [CameraController] is a facade over this engine ([legacyController]); its members that act
- * on what is bound run on the collaborators below, as in 1.x, until A2, A3' and A4' give the engine
- * those commands. Until then [setZoom], [setTorchMode], [setTargetOrientation], [capture] and the
- * recording calls are refused with `InvalidState`, each kind logged once.
+ * on what is bound run on the collaborators below, as in 1.x, until A3' and A4' give the engine those
+ * commands. Until then [capture] and the recording calls are refused with `InvalidState`, each kind
+ * logged once.
  */
 internal class AndroidCameraEngine(
     private val config: CameraConfiguration,
@@ -146,7 +154,6 @@ internal class AndroidCameraEngine(
     private val _hardware = MutableStateFlow(HardwareState(FlashMode.OFF, TorchMode.OFF, null, null))
     override val hardware: StateFlow<HardwareState> = _hardware.asStateFlow()
 
-    // Zoom read-back from cameraInfo.zoomState comes with A2.
     private val _zoom = MutableStateFlow(ZoomState(1f, 1f, 1f))
     override val zoom: StateFlow<ZoomState> = _zoom.asStateFlow()
 
@@ -199,6 +206,7 @@ internal class AndroidCameraEngine(
         torchMode = config.torchMode,
         camera = { binder.camera },
         imageCapture = { stillCapturer.imageCapture },
+        readFlash = backend::flashModeOf,
     )
     internal val framePipeline = FramePipeline(backend, analyzerExecutor)
     internal val videoRecorder = VideoRecorder(context, backend, files, VideoHost())
@@ -226,7 +234,7 @@ internal class AndroidCameraEngine(
     // observer of that camera's state.
     private var session: Session? = null
     private var boundCamera: ResolvedCamera? = null
-    private var observed: Pair<LiveData<CameraState>, Observer<CameraState>>? = null
+    private val observers = mutableListOf<() -> Unit>()
 
     // The facade's onCameraReady callbacks, run once the next bind has a camera.
     private val bindListeners = mutableListOf<() -> Unit>()
@@ -295,8 +303,8 @@ internal class AndroidCameraEngine(
                 )
                 if (error != null) return fail(live, error)
             } else {
-                // A half turn keeps the ViewPort but not the capture rotation.
-                if (orientation.targetOrientation == null) applyCaptureRotation()
+                // A half turn keeps the ViewPort but not the capture rotation, and the target may have changed.
+                applyCaptureRotation()
             }
             if (session !== live) return live.opened.await()
             orientation.start(::onDeviceOrientation)
@@ -333,7 +341,7 @@ internal class AndroidCameraEngine(
                     CameraKLogger.w(TAG, "Ignoring lens switch while recording")
                     CameraKResult.Failure(CameraKError.Busy(CameraOperation.LENS))
                 }
-                else -> switchTo(live, selection)
+                else -> tracer.beginInterval(TraceNames.LENS_SWITCH).use { switchTo(live, selection) }
             }
         }
     }
@@ -354,28 +362,75 @@ internal class AndroidCameraEngine(
         return CameraKResult.Success(camera)
     }
 
-    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> {
-        if (closed.value) return CLOSED
-        return withContext(mainImmediate) {
-            val live = session
-            if (live == null || live.failed) {
-                CameraKResult.Failure(CameraKError.NotReady)
-            } else {
-                // The flash is a setting of the bound ImageCapture; hardware reports it from the next bind.
-                hardwareControls.setFlashMode(mode)
+    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = command {
+        if (mode != FlashMode.OFF && hardwareControls.hasFlashUnit() != true) {
+            val feature = if (mode == FlashMode.AUTO) CameraFeature.FLASH_AUTO else CameraFeature.FLASH_ON
+            return@command CameraKResult.Failure(CameraKError.Unsupported(feature))
+        }
+        // No observer reports flash: the bound ImageCapture's mode, read back, is the report.
+        val readBack = hardwareControls.setFlashMode(mode) ?: return@command CameraKResult.Failure(
+            CameraKError.Internal(IllegalStateException("an open camera has no ImageCapture")),
+        )
+        publishHardware(flashMode = readBack)
+        CameraKResult.Success(readBack)
+    }
+
+    override suspend fun capture(): CameraKResult<CapturedImage> = refuse(CameraOperation.CAPTURE)
+
+    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = command {
+        val range = hardwareControls.reportedZoomRange()
+            ?: _hardware.value.camera?.let { it.minZoom..it.maxZoom }
+            ?: 1f..1f
+        val min = range.start
+        val max = range.endInclusive
+        when {
+            // A fixed zoom has nothing to clamp to: its one ratio, or nothing.
+            min >= max && ratio != min -> CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.ZOOM))
+            else -> {
+                // CameraX fails setZoomRatio out of range; a pinch overshoots its ends, so clamp.
+                val clamped = ratio.coerceIn(min, max)
+                hardwareControls.setZoom(clamped)
+                CameraKResult.Success(ZoomState(clamped, min, max))
+            }
+        }
+    }
+
+    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = command {
+        when {
+            mode == TorchMode.AUTO -> CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.TORCH))
+            mode == TorchMode.ON && hardwareControls.hasFlashUnit() != true ->
+                CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.TORCH))
+            else -> {
+                // hardware follows CameraX's torchState, not this request.
+                hardwareControls.setTorchMode(mode)
                 CameraKResult.Success(mode)
             }
         }
     }
 
-    override suspend fun capture(): CameraKResult<CapturedImage> = refuse(CameraOperation.CAPTURE)
+    override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> {
+        if (closed.value) return CLOSED
+        return withContext(mainImmediate) {
+            if (closed.value) {
+                CLOSED
+            } else {
+                applyTargetOrientation(orientation)
+                CameraKResult.Success(Unit)
+            }
+        }
+    }
 
-    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = refuse(CameraOperation.ZOOM)
-
-    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = refuse(CameraOperation.TORCH)
-
-    override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> =
-        refuse(CameraOperation.ORIENTATION)
+    // A hardware command: run on the main thread while the camera is open, NotReady otherwise.
+    private suspend fun <T> command(block: () -> CameraKResult<T>): CameraKResult<T> {
+        if (closed.value) return CLOSED
+        return withContext(mainImmediate) {
+            when {
+                closed.value -> CLOSED
+                !isOpen -> NOT_READY
+                else -> block()
+            }
+        }
+    }
 
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> =
         refuse(CameraOperation.RECORD_PREPARE)
@@ -412,6 +467,33 @@ internal class AndroidCameraEngine(
     /** Launches [block] on the engine's scope on the main dispatcher, at once when already there. */
     internal fun launch(block: suspend () -> Unit) {
         scope.launch(mainImmediate) { block() }
+    }
+
+    /** Whether the live session's camera is open, the only state that takes hardware commands. Main thread. */
+    internal val isOpen: Boolean get() = session?.failed == false && _state.value == EngineState.Open
+
+    /**
+     * Sets the one target orientation captures follow, applies it to the bound outputs and, while
+     * Open, reports it; before Open the next bind applies it and the open reports it. The 1.x facade's
+     * setter calls this too. Main thread.
+     */
+    internal fun applyTargetOrientation(target: DeviceOrientation?) {
+        if (closed.value) return
+        orientation.targetOrientation = target
+        if (binder.camera != null) applyCaptureRotation()
+        if (_state.value == EngineState.Open) publishHardware(targetOrientation = target)
+    }
+
+    /**
+     * Stores desired hardware for the next open or bind without asking the camera for anything: the
+     * 1.x facade's setters before Open, which keep their values as 1.x did. Main thread.
+     */
+    internal fun storeDesired(
+        flashMode: FlashMode = hardwareControls.flashMode,
+        torchMode: TorchMode = hardwareControls.torchMode,
+        zoomRatio: Float = hardwareControls.zoomRatio,
+    ) {
+        if (!closed.value) hardwareControls.store(flashMode, torchMode, zoomRatio)
     }
 
     /** Runs [block] once the camera is bound: at once when it is, else after the next bind. Main thread. */
@@ -452,11 +534,9 @@ internal class AndroidCameraEngine(
 
     // ── Session ────────────────────────────────────────────────────────────────────────────────
 
+    // Stored only: the camera's control is inactive until it opens, which applies them.
     private fun applyDesired(desired: DesiredHardware) {
-        hardwareControls.setFlashMode(desired.flashMode)
-        hardwareControls.setTorchMode(desired.torchMode)
-        // Every bind gives CameraX a camera at 1x, so 1x needs no request.
-        if (desired.zoomRatio != 1f) hardwareControls.setZoom(desired.zoomRatio)
+        hardwareControls.store(desired.flashMode, desired.torchMode, desired.zoomRatio)
         orientation.targetOrientation = desired.targetOrientation
     }
 
@@ -509,14 +589,16 @@ internal class AndroidCameraEngine(
             return CameraKError.Internal(e)
         }
         boundCamera = resolved
-        observe(camera)
-        hardwareControls.applyDesiredHardwareState(camera)
         _hardware.value = HardwareState(
             flashMode = hardwareControls.boundFlashMode() ?: hardwareControls.flashMode,
-            torchMode = TorchMode.OFF,
-            camera = reportedLens(resolved, camera, binding),
+            torchMode = if (camera.cameraInfo.torchState.value == TorchState.ON) TorchMode.ON else TorchMode.OFF,
+            camera = withFlashUnitOf(camera, reportedLens(resolved, camera, binding)),
             targetOrientation = orientation.targetOrientation,
         )
+        observe(camera)
+        // A bind while the engine runs attaches the use cases at once; the first bind of a start waits
+        // for the camera to open, which applies them.
+        if (registry.currentState == Lifecycle.State.RESUMED) hardwareControls.applyDesiredHardwareState(camera)
         val ready = bindListeners.toList()
         bindListeners.clear()
         ready.forEach(::runCameraReady)
@@ -534,22 +616,68 @@ internal class AndroidCameraEngine(
         return _capabilities.value.allLenses.firstOrNull { it.id == id }
     }
 
+    // The bound camera, as CameraInfo.hasFlashUnit describes it: the value CameraX acts on, which the
+    // enumeration's FLASH_INFO_AVAILABLE only estimated. A disagreement corrects the capabilities.
+    private fun withFlashUnitOf(camera: Camera, lens: LensInfo?): LensInfo? {
+        lens ?: return null
+        val flashUnit = try {
+            camera.cameraInfo.hasFlashUnit()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Reading the bound camera's flash unit failed", e)
+            return lens
+        }
+        if (flashUnit == lens.hasFlash) return lens
+        val corrected = LensInfo(
+            lens.id,
+            lens.deviceType,
+            lens.lens,
+            lens.minZoom,
+            lens.maxZoom,
+            flashUnit,
+            lens.isLogical,
+            lens.isExternal,
+        )
+        _capabilities.value =
+            androidCapabilities(_capabilities.value.allLenses.map { if (it.id == lens.id) corrected else it })
+        return corrected
+    }
+
+    // The camera's state, torch and zoom, for as long as it is the bound one.
     private fun observe(camera: Camera) {
-        val data = camera.cameraInfo.cameraState
-        val observer = Observer<CameraState> { value ->
+        val info = camera.cameraInfo
+        observeOn(camera, info.cameraState, "camera state") { onCameraState(camera, it) }
+        observeOn(camera, info.torchState, "torch") { torch ->
+            publishHardware(torchMode = if (torch == TorchState.ON) TorchMode.ON else TorchMode.OFF)
+        }
+        observeOn(camera, info.zoomState, "zoom") { zoom ->
+            _zoom.value = ZoomState(zoom.zoomRatio, zoom.minZoomRatio, zoom.maxZoomRatio)
+        }
+    }
+
+    private fun <T> observeOn(camera: Camera, data: LiveData<T>, report: String, onValue: (T) -> Unit) {
+        val observer = Observer<T> { value ->
+            if (closed.value || camera !== binder.camera) return@Observer
             try {
-                onCameraState(camera, value)
+                onValue(value)
             } catch (e: Exception) {
-                CameraKLogger.e(TAG, "Handling a camera state report failed", e)
+                CameraKLogger.e(TAG, "Handling a $report report failed", e)
             }
         }
-        observed = data to observer
+        observers += { data.removeObserver(observer) }
         data.observeForever(observer)
     }
 
     private fun stopObserving() {
-        observed?.let { (data, observer) -> data.removeObserver(observer) }
-        observed = null
+        observers.forEach { it() }
+        observers.clear()
+    }
+
+    private fun publishHardware(
+        flashMode: FlashMode = _hardware.value.flashMode,
+        torchMode: TorchMode = _hardware.value.torchMode,
+        targetOrientation: DeviceOrientation? = _hardware.value.targetOrientation,
+    ) {
+        _hardware.value = HardwareState(flashMode, torchMode, _hardware.value.camera, targetOrientation)
     }
 
     private fun onCameraState(camera: Camera, value: CameraState) {
@@ -560,7 +688,16 @@ internal class AndroidCameraEngine(
             CameraXSignal.Open -> {
                 live.recovery?.cancel()
                 live.recovery = null
+                val opened = _state.value != EngineState.Open
                 _state.value = EngineState.Open
+                if (opened) {
+                    // The camera's control is active from here: apply what is desired and report it.
+                    hardwareControls.applyDesiredHardwareState(camera)
+                    publishHardware(
+                        flashMode = hardwareControls.boundFlashMode() ?: _hardware.value.flashMode,
+                        targetOrientation = orientation.targetOrientation,
+                    )
+                }
                 accept(live)
             }
             is CameraXSignal.Interrupted -> {
@@ -781,6 +918,7 @@ internal class AndroidCameraEngine(
         val RECOVERY_TIMEOUT: Duration = 10.seconds
 
         private val CLOSED = CameraKResult.Failure(CameraKError.Closed)
+        private val NOT_READY = CameraKResult.Failure(CameraKError.NotReady)
 
         private fun immediateFormOf(dispatcher: CoroutineDispatcher): CoroutineDispatcher {
             val main = dispatcher as? MainCoroutineDispatcher ?: return dispatcher
@@ -803,7 +941,9 @@ internal class AndroidCameraEngine(
 
 /**
  * The capabilities the engine reports for [lenses] until each member's slice fills it (design §6.3):
- * the 1.x shape's values, with pause and resume supported, which CameraX's Recorder does.
+ * flash OFF, AUTO and ON and torch OFF and ON on a lens with a flash unit, OFF only otherwise (CameraX
+ * has no AUTO torch); pause and resume supported, which CameraX's Recorder does; the 1.x shape's
+ * values for the rest.
  */
 @OptIn(CameraKEngineApi::class)
 internal fun androidCapabilities(lenses: List<LensInfo>): CameraCapabilities {

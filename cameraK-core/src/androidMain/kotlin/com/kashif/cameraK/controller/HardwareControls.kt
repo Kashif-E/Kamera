@@ -13,8 +13,11 @@ import com.kashif.cameraK.utils.CameraKLogger
 private const val TAG = "CameraK"
 
 /**
- * Zoom, torch and flash: what the configuration or the user asked for, applied to the bound camera
- * and capture, and re-applied to every camera a bind returns.
+ * The engine's desired zoom, torch and flash, and the CameraX calls that apply them. Flash is a
+ * setting of the bound ImageCapture, given to every one a bind builds and read back through
+ * [readFlash]. Torch and zoom go to the camera's control, which CameraX accepts only while the
+ * camera's use cases are attached: the engine applies them once the camera is open, and again after
+ * every bind made while it runs.
  */
 internal class HardwareControls(
     private val context: Context,
@@ -22,6 +25,7 @@ internal class HardwareControls(
     torchMode: TorchMode,
     private val camera: () -> Camera?,
     private val imageCapture: () -> ImageCapture?,
+    private val readFlash: (ImageCapture) -> Int,
 ) {
     var flashMode: FlashMode = flashMode
         private set
@@ -29,54 +33,41 @@ internal class HardwareControls(
     var torchMode: TorchMode = torchMode
         private set
 
-    // The zoom ratio the user last asked for; null until they do. Re-applied after every bind,
-    // because each bind gives CameraX a camera at 1x.
+    // Each bind gives CameraX a camera at 1x, so 1x needs no request.
     @Volatile
-    private var desiredZoom: Float? = null
+    var zoomRatio: Float = 1f
+        private set
 
-    fun toggleFlashMode() {
-        setFlashMode(
-            when (flashMode) {
-                FlashMode.OFF -> FlashMode.ON
-                FlashMode.ON -> FlashMode.AUTO
-                FlashMode.AUTO -> FlashMode.OFF
-            },
-        )
+    /** Stores what the next open or bind applies, without asking the camera for anything. */
+    fun store(
+        flashMode: FlashMode = this.flashMode,
+        torchMode: TorchMode = this.torchMode,
+        zoomRatio: Float = this.zoomRatio,
+    ) {
+        this.flashMode = flashMode
+        this.torchMode = torchMode
+        this.zoomRatio = zoomRatio
+        // An ImageCapture kept across a stop is the one the next start uses.
+        imageCapture()?.flashMode = flashMode.toCameraXFlashMode()
     }
 
-    fun setFlashMode(mode: FlashMode) {
+    /** Sets [mode] on the bound ImageCapture and returns its read-back, or null before a bind. */
+    fun setFlashMode(mode: FlashMode): FlashMode? {
         flashMode = mode
         imageCapture()?.flashMode = mode.toCameraXFlashMode()
+        return boundFlashMode()
     }
 
-    /** The flash mode of the bound capture, or null before a bind. */
-    fun boundFlashMode(): FlashMode? = when (imageCapture()?.flashMode) {
-        ImageCapture.FLASH_MODE_ON -> FlashMode.ON
-        ImageCapture.FLASH_MODE_OFF -> FlashMode.OFF
-        ImageCapture.FLASH_MODE_AUTO -> FlashMode.AUTO
-        else -> null
-    }
-
-    fun toggleTorchMode() {
-        setTorchMode(
-            when (torchMode) {
-                TorchMode.OFF -> TorchMode.ON
-                TorchMode.ON -> TorchMode.AUTO
-                TorchMode.AUTO -> TorchMode.OFF
-            },
-        )
-    }
+    /** The flash mode the bound ImageCapture reports, or null before a bind. */
+    fun boundFlashMode(): FlashMode? = imageCapture()?.let { fromCameraXFlashMode(readFlash(it)) }
 
     fun setTorchMode(mode: TorchMode) {
         torchMode = mode
-        if (mode == TorchMode.AUTO) {
-            CameraKLogger.w(TAG, "TorchMode.AUTO not natively supported, using ON")
-        }
         camera()?.let { applyTorch(it) }
     }
 
     fun setZoom(zoomRatio: Float) {
-        desiredZoom = zoomRatio
+        this.zoomRatio = zoomRatio
         camera()?.let { applyZoom(it, zoomRatio) }
     }
 
@@ -84,21 +75,32 @@ internal class HardwareControls(
 
     fun getMaxZoom(): Float = camera()?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 1f
 
+    /** Whether the bound camera has a flash unit, as CameraX reports it; null before a bind. */
+    fun hasFlashUnit(): Boolean? = camera()?.cameraInfo?.hasFlashUnit()
+
+    /** The zoom range the bound camera reports, or null before a bind. */
+    fun reportedZoomRange(): ClosedFloatingPointRange<Float>? =
+        camera()?.cameraInfo?.zoomState?.value?.let { it.minZoomRatio..it.maxZoomRatio }
+
     /**
-     * Applies the torch and zoom the configuration or the user asked for to a freshly bound camera:
-     * CameraX opens every bound camera with the torch off and no zoom.
+     * Applies the desired torch and zoom to [camera], whose control has just become active: CameraX
+     * opens every camera with the torch off and at 1x, so only other values need a request.
      */
     fun applyDesiredHardwareState(camera: Camera) {
         if (torchMode != TorchMode.OFF) applyTorch(camera)
-        desiredZoom?.let { applyZoom(camera, it) }
+        if (zoomRatio != 1f) applyZoom(camera, zoomRatio)
     }
 
-    /** Asks [camera] for [torchMode], if it has a flash unit; CameraX has no AUTO torch, so AUTO is on. */
+    /** Asks [camera] for [torchMode], if it has a flash unit. CameraX has no AUTO torch. */
     private fun applyTorch(camera: Camera) {
         val mode = torchMode
-        val on = mode != TorchMode.OFF
+        if (mode == TorchMode.AUTO) {
+            CameraKLogger.w(TAG, "TorchMode.AUTO is not supported on Android; the torch stays off")
+            return
+        }
+        val on = mode == TorchMode.ON
         if (!camera.cameraInfo.hasFlashUnit()) {
-            if (on) CameraKLogger.w(TAG, "TorchMode.$mode requested, but this camera has no flash unit")
+            if (on) CameraKLogger.w(TAG, "TorchMode.ON requested, but this camera has no flash unit")
             return
         }
         logIfFailed(if (on) "Turning the torch on" else "Turning the torch off") {
@@ -143,4 +145,11 @@ internal fun FlashMode.toCameraXFlashMode(): Int = when (this) {
     FlashMode.ON -> ImageCapture.FLASH_MODE_ON
     FlashMode.OFF -> ImageCapture.FLASH_MODE_OFF
     FlashMode.AUTO -> ImageCapture.FLASH_MODE_AUTO
+}
+
+// FLASH_MODE_SCREEN, the front-screen flash, is not a mode CameraK sets; it reads as OFF.
+private fun fromCameraXFlashMode(mode: Int): FlashMode = when (mode) {
+    ImageCapture.FLASH_MODE_ON -> FlashMode.ON
+    ImageCapture.FLASH_MODE_AUTO -> FlashMode.AUTO
+    else -> FlashMode.OFF
 }
