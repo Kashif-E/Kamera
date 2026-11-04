@@ -892,7 +892,7 @@ internal class AppleCameraEngine(
         hardwareObservation = device.observeHardware {
             platformCallback("a torch or zoom report") {
                 custom.afterQueuedSessionWork {
-                    platformCallback("a torch or zoom report") { onHardwareReport(device) }
+                    platformCallback("a torch or zoom report") { onHardwareReport() }
                 }
             }
         }
@@ -905,9 +905,12 @@ internal class AppleCameraEngine(
         observedDevice = null
     }
 
-    /** Session queue: a key-value report from [device], published while it is the live camera. */
-    private fun onHardwareReport(device: CaptureDeviceOps) {
-        if (custom.currentDevice !== device) return
+    /**
+     * Session queue: a key-value report, published while a generation is starting or live. A report from
+     * a camera switched away from, queued before its observation closed, publishes the live camera's
+     * values again, which [publishHardware] reads from the device in use, so it changes nothing.
+     */
+    private fun onHardwareReport() {
         if (!locked { !closed && (phase == Phase.STARTING || phase == Phase.LIVE) }) return
         publishHardware()
     }
