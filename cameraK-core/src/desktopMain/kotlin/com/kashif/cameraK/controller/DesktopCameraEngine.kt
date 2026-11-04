@@ -323,6 +323,8 @@ internal class DesktopCameraEngine(
             val session = run.session
             if (!isCurrentRun(run)) return
             run.error = openError
+            // A switch's device that does not open: the reopen below goes back to the device it had.
+            if (run.switching && !run.firstFrame.isCompleted) run.revertTo?.let { session.device = it }
             run.firstFrame.complete(false)
             when {
                 // Missing natives, and a camera that never opened: no reopen fixes either.
@@ -457,7 +459,7 @@ internal class DesktopCameraEngine(
      * device's first frame arrives; while opening the new device replaces the one being opened, and
      * while interrupted the recovery reopens the new one. Without a live session there is nothing
      * to move, and the next start opens what its own selection names. A device that fails to open
-     * returns its open error.
+     * returns its open error, and the engine reopens the device it had.
      */
     override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> {
         if (isClosed()) return CameraKResult.Failure(CameraKError.Closed)
@@ -469,9 +471,10 @@ internal class DesktopCameraEngine(
             val live = session?.takeUnless { it.ended } ?: return CameraKResult.Success(device)
             if (live.device?.id == device.id) return CameraKResult.Success(device)
             val waitForFrame = _state.value == EngineState.Open
+            val previous = live.device
             live.device = device
             when {
-                waitForFrame -> device to launchRunLocked(live, switching = true)
+                waitForFrame -> device to launchRunLocked(live, switching = true).also { it.revertTo = previous }
                 _state.value is EngineState.Interrupted -> return CameraKResult.Success(device)
                 else -> {
                     launchRunLocked(live)
@@ -538,6 +541,9 @@ internal class DesktopCameraEngine(
 
         /** The open error of a run that failed before its first frame. */
         var error: CameraKError? = null
+
+        /** The device a switch moved away from, reopened when the switch's device does not open. */
+        var revertTo: LensInfo? = null
     }
 
     private inner class RunListener(private val run: Run) : GrabLoopListener {
