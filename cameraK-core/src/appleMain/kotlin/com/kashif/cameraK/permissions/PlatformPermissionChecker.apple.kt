@@ -53,23 +53,16 @@ private object SystemPermissionPlatform : ApplePermissionPlatform {
     override fun captureStatus(mediaType: AVMediaType): AVAuthorizationStatus =
         AVCaptureDevice.authorizationStatusForMediaType(mediaType)
 
-    // The access levels arrived in iOS 14; before it the library has one level, the full one.
-    override fun photoStatus(accessLevel: PHAccessLevel): PHAuthorizationStatus = if (isOsAtLeast(14)) {
+    // Called only where photoAccessLevels holds: both are iOS 14 API.
+    override fun photoStatus(accessLevel: PHAccessLevel): PHAuthorizationStatus =
         PHPhotoLibrary.authorizationStatusForAccessLevel(accessLevel)
-    } else {
-        PHPhotoLibrary.authorizationStatus()
-    }
 
     override fun requestCapture(mediaType: AVMediaType, completion: (granted: Boolean) -> Unit) {
         AVCaptureDevice.requestAccessForMediaType(mediaType) { granted -> completion(granted) }
     }
 
     override fun requestPhoto(accessLevel: PHAccessLevel, completion: (PHAuthorizationStatus) -> Unit) {
-        if (isOsAtLeast(14)) {
-            PHPhotoLibrary.requestAuthorizationForAccessLevel(accessLevel) { status -> completion(status) }
-        } else {
-            PHPhotoLibrary.requestAuthorization { status -> completion(status) }
-        }
+        PHPhotoLibrary.requestAuthorizationForAccessLevel(accessLevel) { status -> completion(status) }
     }
 }
 
@@ -78,8 +71,10 @@ internal var applePermissionPlatform: ApplePermissionPlatform = SystemPermission
 /**
  * iOS's status of [permission]: AVFoundation's for the camera (`AVMediaTypeVideo`) and the
  * microphone (`AVMediaTypeAudio`), and the photo library's add-only level for the gallery, which is
- * all a capture saved to Photos needs. Denied is PermanentlyDenied, because iOS shows its prompt only
- * once. The holder's checker and `:cameraK`'s permission state both read this.
+ * all a capture saved to Photos needs. Below iOS 14 there is no add-only level, and the library reads
+ * no photo status: the gallery is NotDetermined, and a save's `performChanges` raises the system's
+ * add-only prompt. Denied is PermanentlyDenied, because iOS shows its prompt only once. The holder's
+ * checker and `:cameraK`'s permission state both read this.
  */
 @InternalCameraKApi
 public fun platformPermissionStatus(context: CameraKPlatformContext, permission: CameraKPermission): PermissionStatus {
@@ -87,14 +82,19 @@ public fun platformPermissionStatus(context: CameraKPlatformContext, permission:
     return when (permission) {
         CameraKPermission.CAMERA -> captureStatusOf(platform.captureStatus(AVMediaTypeVideo))
         CameraKPermission.MICROPHONE -> captureStatusOf(platform.captureStatus(AVMediaTypeAudio))
-        CameraKPermission.GALLERY_ADD -> photoStatusOf(platform.photoStatus(PHAccessLevelAddOnly))
+        CameraKPermission.GALLERY_ADD -> if (platform.photoAccessLevels) {
+            photoStatusOf(platform.photoStatus(PHAccessLevelAddOnly))
+        } else {
+            PermissionStatus.NotDetermined
+        }
     }
 }
 
 /**
  * Shows the system prompt for each of [permissions] iOS has not asked about yet, one after another,
  * then calls [onResult] on the main thread with every status. A permission already answered gets no
- * prompt: iOS never shows one twice, and the user changes it in Settings.
+ * prompt: iOS never shows one twice, and the user changes it in Settings. Below iOS 14 the gallery
+ * gets none either: the only request there is for full access, and a save asks for add-only itself.
  */
 @InternalCameraKApi
 public fun requestPlatformPermissions(
@@ -104,8 +104,8 @@ public fun requestPlatformPermissions(
 ) {
     val platform = applePermissionPlatform
     val unasked = permissions.distinct().filter {
-        platformPermissionStatus(context, it) ==
-            PermissionStatus.NotDetermined
+        (it != CameraKPermission.GALLERY_ADD || platform.photoAccessLevels) &&
+            platformPermissionStatus(context, it) == PermissionStatus.NotDetermined
     }
 
     fun requestFrom(index: Int) {
