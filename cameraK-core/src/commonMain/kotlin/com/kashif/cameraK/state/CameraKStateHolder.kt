@@ -231,7 +231,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
      * analyzer only while the camera is Ready. Plugins get the same source from their context.
      */
     public val frames: FrameSource
-        get() = TODO("P1: the engine's frame source")
+        get() = engine.frames
 
     private val lifecycle = SessionLifecycle(
         engine = engine,

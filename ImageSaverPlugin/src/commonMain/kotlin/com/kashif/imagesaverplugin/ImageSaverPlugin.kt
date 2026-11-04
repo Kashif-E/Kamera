@@ -94,6 +94,9 @@ sealed class ImageSaveResult {
  */
 @Stable
 abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
+    /** The saver reads captures, never analysis frames, so a holder created with it binds no frame analysis. */
+    override val needsFrames: Boolean get() = false
+
     private var stateHolder: CameraKStateHolder? = null
     private var autoSaveJob: Job? = null
 

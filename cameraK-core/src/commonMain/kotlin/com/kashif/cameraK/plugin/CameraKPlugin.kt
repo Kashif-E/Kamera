@@ -1,6 +1,7 @@
 package com.kashif.cameraK.state
 
 import com.kashif.cameraK.plugin.CameraKPluginContext
+import com.kashif.cameraK.plugin.stateHolderOrNull
 
 /**
  * A camera plugin: QR scanning, OCR, frame analysis, saving captures. The holder attaches it once
@@ -44,7 +45,11 @@ interface CameraKPlugin {
      * The default forwards to the deprecated `onAttach(stateHolder)`, so a 1.x plugin keeps working.
      */
     fun onAttach(context: CameraKPluginContext) {
-        TODO("P1: forward to onAttach(stateHolder)")
+        val holder = checkNotNull(context.stateHolderOrNull) {
+            "A plugin that implements only onAttach(stateHolder) needs a context its holder made"
+        }
+        @Suppress("DEPRECATION")
+        onAttach(holder)
     }
 
     /** The 1.x attach. The holder calls [onAttach] with a context, whose default calls this. */
