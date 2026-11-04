@@ -250,7 +250,10 @@ internal class AppleCameraEngine(
                 locked { phase == Phase.LIVE } -> CameraKResult.Success(Unit)
                 else -> {
                     startObservingOrientation()
-                    tracer.beginInterval(TraceNames.START).use { openGeneration(desired) }
+                    val started = tracer.beginInterval(TraceNames.START).use { openGeneration(desired) }
+                    // Observed between a start and a stop: a start that failed has nothing to stop.
+                    if (started is CameraKResult.Failure) stopObservingOrientation()
+                    started
                 }
             }
         }
