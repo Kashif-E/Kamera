@@ -48,14 +48,24 @@ internal class HardwareControls(
         this.torchMode = torchMode
         this.zoomRatio = zoomRatio
         // An ImageCapture kept across a stop is the one the next start uses.
-        imageCapture()?.flashMode = flashMode.toCameraXFlashMode()
+        revalidateFlash()
     }
 
     /** Sets [mode] on the bound ImageCapture and returns its read-back, or null before a bind. */
     fun setFlashMode(mode: FlashMode): FlashMode? {
         flashMode = mode
-        imageCapture()?.flashMode = mode.toCameraXFlashMode()
+        revalidateFlash()
         return boundFlashMode()
+    }
+
+    /**
+     * Gives the bound ImageCapture the desired flash, validated against the bound camera (design
+     * §6.2): a camera without a flash unit takes FLASH_MODE_OFF, and the desired mode is kept for the
+     * next camera that has one. Each bind calls this once CameraX has returned the camera.
+     */
+    fun revalidateFlash() {
+        val capture = imageCapture() ?: return
+        capture.flashMode = if (hasFlashUnit() == false) ImageCapture.FLASH_MODE_OFF else flashMode.toCameraXFlashMode()
     }
 
     /** The flash mode the bound ImageCapture reports, or null before a bind. */

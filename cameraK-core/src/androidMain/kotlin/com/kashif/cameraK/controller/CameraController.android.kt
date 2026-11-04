@@ -304,7 +304,17 @@ actual class CameraController internal constructor(
     actual fun setFlashMode(mode: FlashMode) {
         if (engine.isClosed) return
         flashMode = mode
-        applyHardware("FlashMode.$mode", { engine.storeDesired(flashMode = mode) }) { engine.setFlashMode(mode) }
+        val store = { engine.storeDesired(flashMode = mode) }
+        applyHardware("FlashMode.$mode", store) {
+            // A camera without a flash unit refuses it; 1.x kept the mode for the next camera with one.
+            engine.setFlashMode(mode).also {
+                if (it is CameraKResult.Failure &&
+                    it.error is CameraKError.Unsupported
+                ) {
+                    store()
+                }
+            }
+        }
     }
 
     /** The flash mode the bound capture reports, or null before a bind. */

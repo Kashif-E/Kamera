@@ -534,10 +534,11 @@ internal class AndroidCameraEngine(
 
     // ── Session ────────────────────────────────────────────────────────────────────────────────
 
-    // Stored only: the camera's control is inactive until it opens, which applies them.
+    // Stored only: the camera's control is inactive until it opens, which applies them. A start that
+    // names no target orientation keeps the one stored while the engine was closed or stopped.
     private fun applyDesired(desired: DesiredHardware) {
         hardwareControls.store(desired.flashMode, desired.torchMode, desired.zoomRatio)
-        orientation.targetOrientation = desired.targetOrientation
+        desired.targetOrientation?.let { orientation.targetOrientation = it }
     }
 
     private fun resolve(selection: CameraSelection): ResolvedCamera? = when (selection) {
@@ -589,6 +590,7 @@ internal class AndroidCameraEngine(
             return CameraKError.Internal(e)
         }
         boundCamera = resolved
+        hardwareControls.revalidateFlash()
         _hardware.value = HardwareState(
             flashMode = hardwareControls.boundFlashMode() ?: hardwareControls.flashMode,
             torchMode = if (camera.cameraInfo.torchState.value == TorchState.ON) TorchMode.ON else TorchMode.OFF,
