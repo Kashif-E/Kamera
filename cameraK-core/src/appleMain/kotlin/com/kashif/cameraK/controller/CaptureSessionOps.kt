@@ -45,6 +45,12 @@ internal interface CaptureSessionOps {
 
     fun stopRunning()
 
+    /**
+     * Whether the session sets the app's AVAudioSession up for its audio input. AVFoundation's default
+     * is true; CameraK keeps it true only while an audio recording is configured.
+     */
+    fun setAutomaticallyConfiguresApplicationAudioSession(configures: Boolean)
+
     /** Releases the session for good: the engine calls it once, when it closes. */
     fun tearDown() {
         if (isRunning) stopRunning()
@@ -82,4 +88,8 @@ internal class AVCaptureSessionOps(override val avSession: AVCaptureSession = AV
     override fun startRunning() = avSession.startRunning()
 
     override fun stopRunning() = avSession.stopRunning()
+
+    override fun setAutomaticallyConfiguresApplicationAudioSession(configures: Boolean) {
+        avSession.automaticallyConfiguresApplicationAudioSession = configures
+    }
 }

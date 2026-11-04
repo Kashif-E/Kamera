@@ -18,10 +18,17 @@ internal class FakeMovieRecorder : MovieRecorder {
         val url: NSURL,
         val orientation: AVCaptureVideoOrientation,
         val delegate: VideoRecordingDelegate,
+        val queue: String,
     )
 
     /** Whether pause takes effect; a pause the output does not apply leaves isPaused false. */
     var pauseTakesEffect = true
+
+    /** Whether the output's audio connection is active, for a recording whose microphone was added. */
+    var audioConnectionActive = true
+
+    /** Runs inside each start, before it is recorded: a test reads the session as AVFoundation finds it. */
+    var onStart: (() -> Unit)? = null
 
     private val lock = NSLock()
     private val startList = mutableListOf<Start>()
@@ -41,9 +48,14 @@ internal class FakeMovieRecorder : MovieRecorder {
         url: NSURL,
         orientation: AVCaptureVideoOrientation,
         delegate: AVCaptureFileOutputRecordingDelegateProtocol,
-    ) = locked {
-        startList += Start(output, url, orientation, delegate as VideoRecordingDelegate)
-        recording = true
+    ) {
+        onStart?.invoke()
+        val queue = currentQueueLabel()
+        locked {
+            startList += Start(output, url, orientation, delegate as VideoRecordingDelegate, queue)
+            recording = true
+            paused = false
+        }
     }
 
     override fun stop(output: AVCaptureMovieFileOutput) {
@@ -58,6 +70,8 @@ internal class FakeMovieRecorder : MovieRecorder {
     override fun resume(output: AVCaptureMovieFileOutput) = locked { paused = false }
 
     override fun isPaused(output: AVCaptureMovieFileOutput): Boolean = locked { paused }
+
+    override fun hasActiveAudioConnection(output: AVCaptureMovieFileOutput): Boolean = audioConnectionActive
 
     /** AVFoundation's didStartRecording callback for [start]. */
     fun reportStarted(start: Start) {

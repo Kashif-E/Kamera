@@ -65,6 +65,7 @@ import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCaptureFlashModeAuto
 import platform.AVFoundation.AVCaptureFlashModeOff
 import platform.AVFoundation.AVCaptureFlashModeOn
+import platform.AVFoundation.AVCaptureInput
 import platform.AVFoundation.AVCaptureSessionDidStartRunningNotification
 import platform.AVFoundation.AVCaptureSessionErrorKey
 import platform.AVFoundation.AVCaptureSessionInterruptionEndedNotification
@@ -78,6 +79,7 @@ import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspect
+import platform.Foundation.NSBundle
 import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
@@ -132,6 +134,8 @@ internal class AppleCameraEngine(
     private val readDeviceOrientation: () -> UIDeviceOrientation = { UIDevice.currentDevice.orientation },
     /** Begins (true) or ends (false) UIDevice's orientation notifications; tests count the calls. */
     private val generateOrientationNotifications: (Boolean) -> Unit = ::generateDeviceOrientationNotifications,
+    /** Whether the app's Info.plist has [key]: a test bundle's cannot change per test. */
+    private val hasUsageDescription: (key: String) -> Boolean = ::hasInfoPlistKey,
     private val enumerateLenses: () -> List<LensInfo> = custom::getCameraCapabilities,
 ) : CameraEngine,
     LegacyControllerAccess {
@@ -178,6 +182,12 @@ internal class AppleCameraEngine(
     override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
 
     override val recordingEvents: Flow<EngineRecordingEvent> = emptyFlow()
+
+    /** The movie-file-output calls recordings make; tests record them. */
+    internal var movieRecorder: MovieRecorder = AVMovieRecorder
+
+    /** The microphone's session input for a recording with audio, or why there is none. */
+    internal var microphoneInput: () -> Result<AVCaptureInput> = { TODO("I3': engine recording") }
     override val frames: FrameSource = InactiveFrameSource()
 
     private val scope = CoroutineScope(
@@ -1199,6 +1209,9 @@ internal fun TorchMode.toAVCaptureTorchMode(): AVCaptureTorchMode = when (this) 
     TorchMode.OFF -> AVCaptureTorchModeOff
     TorchMode.AUTO -> AVCaptureTorchModeAuto
 }
+
+/** Whether the main bundle's Info.plist has [key]. */
+private fun hasInfoPlistKey(key: String): Boolean = NSBundle.mainBundle.objectForInfoDictionaryKey(key) != null
 
 /** UIDevice's orientation notifications, begun or ended on main, where UIKit wants them. */
 private fun generateDeviceOrientationNotifications(on: Boolean) {

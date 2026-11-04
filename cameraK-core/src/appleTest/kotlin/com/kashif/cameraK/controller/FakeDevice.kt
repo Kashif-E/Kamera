@@ -81,6 +81,8 @@ internal class FakeDevice(
     private val inputError: NSError? = null,
     override val minVideoZoomFactor: Double = 1.0,
     val holdReports: Boolean = false,
+    /** The session presets the camera can deliver; null for every preset. */
+    var supportedPresets: Set<String>? = null,
 ) : CaptureDeviceOps {
     class Call(val op: String, val value: Any?, val queue: String, val onMainThread: Boolean, val locked: Boolean) {
         override fun toString(): String = "$op($value) on '$queue'${if (onMainThread) " (main thread)" else ""}" +
@@ -123,6 +125,8 @@ internal class FakeDevice(
     val hardwareObservers: Int get() = guarded { observers.size }
 
     override fun isTorchModeSupported(mode: AVCaptureTorchMode): Boolean = mode in supportedTorchModes
+
+    override fun supportsSessionPreset(preset: String): Boolean = supportedPresets?.contains(preset) ?: true
 
     override fun lockForConfiguration(): Throwable? = if (lockSucceeds) {
         record("lockForConfiguration", null) { locked = true }

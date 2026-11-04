@@ -3,6 +3,7 @@ package com.kashif.cameraK.controller
 import platform.AVFoundation.AVCaptureFileOutputRecordingDelegateProtocol
 import platform.AVFoundation.AVCaptureMovieFileOutput
 import platform.AVFoundation.AVCaptureVideoOrientation
+import platform.AVFoundation.AVMediaTypeAudio
 import platform.AVFoundation.AVMediaTypeVideo
 import platform.Foundation.NSURL
 
@@ -32,6 +33,9 @@ internal interface MovieRecorder {
 
     /** iOS 18+ only. */
     fun isPaused(output: AVCaptureMovieFileOutput): Boolean
+
+    /** Whether [output]'s audio connection is active: the recording has an audio track. */
+    fun hasActiveAudioConnection(output: AVCaptureMovieFileOutput): Boolean
 }
 
 internal object AVMovieRecorder : MovieRecorder {
@@ -56,4 +60,7 @@ internal object AVMovieRecorder : MovieRecorder {
     override fun resume(output: AVCaptureMovieFileOutput) = output.resumeRecording()
 
     override fun isPaused(output: AVCaptureMovieFileOutput): Boolean = output.isRecordingPaused()
+
+    override fun hasActiveAudioConnection(output: AVCaptureMovieFileOutput): Boolean =
+        output.connectionWithMediaType(AVMediaTypeAudio)?.let { it.isActive() && it.isEnabled() } == true
 }

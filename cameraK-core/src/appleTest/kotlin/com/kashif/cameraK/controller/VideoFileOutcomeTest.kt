@@ -1,6 +1,14 @@
+@file:OptIn(com.kashif.cameraK.utils.CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.engine.contract.AppleEngineDriver
 import com.kashif.cameraK.enums.Directory
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.StorageFailure
+import com.kashif.cameraK.recording.RecordingEndReason
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -10,6 +18,8 @@ import kotlinx.coroutines.launch
 import platform.AVFoundation.AVErrorDiskFull
 import platform.AVFoundation.AVErrorMaximumDurationReached
 import platform.AVFoundation.AVErrorRecordingSuccessfullyFinishedKey
+import platform.AVFoundation.AVErrorSessionWasInterrupted
+import platform.AVFoundation.AVErrorUnknown
 import platform.AVFoundation.AVFoundationErrorDomain
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.Foundation.NSCocoaErrorDomain
@@ -23,6 +33,7 @@ import platform.Foundation.timeIntervalSince1970
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
@@ -42,6 +53,7 @@ class VideoFileOutcomeTest {
     private val recorder = FakeMovieRecorder()
     private val scope = MainScope()
     private val written = mutableListOf<String>()
+    private val engineDriver = AppleEngineDriver()
 
     @AfterTest
     fun tearDown() {
@@ -234,5 +246,59 @@ class VideoFileOutcomeTest {
 
         assertIs<VideoCaptureResult.Error>(result, "a video Photos never imported was reported as $result")
         assertTrue(NSFileManager.defaultManager.fileExistsAtPath(started.url.path!!), "the video was deleted")
+    }
+
+    // The partial-file rule of design §5 on the engine: AVFoundation's playable verdict decides.
+
+    @Test
+    fun unplayableFileIsDeletedAndFailure() = engineDriver.runCase {
+        val engine = engineDriver.createEngine()
+        engineDriver.settle()
+        val events = recordingEventsOf(engine)
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        val recording = startEngineRecording(engineDriver, engine).also { written += it.path }
+
+        finishRecording(engineDriver, recording, avError(AVErrorUnknown, successfullyFinished = false))
+
+        val finalized = events.finalized().single()
+        assertIs<CameraKError.Hardware>(assertIs<CameraKResult.Failure>(finalized.result).error)
+        assertEquals(RecordingEndReason.ERROR, finalized.reason)
+        assertFalse(NSFileManager.defaultManager.fileExistsAtPath(recording.path), "the unplayable file was kept")
+        engine.close()
+    }
+
+    @Test
+    fun playableInterruptedIsSuccessInterrupted() = engineDriver.runCase {
+        val engine = engineDriver.createEngine()
+        engineDriver.settle()
+        val events = recordingEventsOf(engine)
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        val recording = startEngineRecording(engineDriver, engine).also { written += it.path }
+
+        finishRecording(engineDriver, recording, avError(AVErrorSessionWasInterrupted, successfullyFinished = true))
+
+        val finalized = events.finalized().single()
+        assertEquals(recording.path, assertIs<CameraKResult.Success<RecordedVideo>>(finalized.result).value.path)
+        assertEquals(RecordingEndReason.INTERRUPTED, finalized.reason)
+        assertTrue(NSFileManager.defaultManager.fileExistsAtPath(recording.path), "the playable file was deleted")
+        engine.close()
+    }
+
+    @Test
+    fun diskFullKeepsPlayableFile() = engineDriver.runCase {
+        val engine = engineDriver.createEngine()
+        engineDriver.settle()
+        val events = recordingEventsOf(engine)
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        val recording = startEngineRecording(engineDriver, engine).also { written += it.path }
+
+        finishRecording(engineDriver, recording, avError(AVErrorDiskFull, successfullyFinished = true))
+
+        val finalized = events.finalized().single()
+        val full = assertIs<CameraKError.Storage>(assertIs<CameraKResult.Failure>(finalized.result).error)
+        assertEquals(StorageFailure.FULL, full.kind)
+        assertEquals(recording.path, full.keptFilePath, "the playable file's path")
+        assertTrue(NSFileManager.defaultManager.fileExistsAtPath(recording.path), "the playable file was deleted")
+        engine.close()
     }
 }

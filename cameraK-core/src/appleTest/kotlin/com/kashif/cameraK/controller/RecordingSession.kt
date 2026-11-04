@@ -90,6 +90,9 @@ internal class RecordingSession : CaptureSessionOps {
 
     override fun stopRunning() = record("stopRunning") { running = false }
 
+    override fun setAutomaticallyConfiguresApplicationAudioSession(configures: Boolean) =
+        record("setAutomaticallyConfiguresApplicationAudioSession", configures) {}
+
     private fun record(op: String, subject: Any? = null, mutate: () -> Unit) {
         val overlapped = inFlight.incrementAndGet() > 1
         try {

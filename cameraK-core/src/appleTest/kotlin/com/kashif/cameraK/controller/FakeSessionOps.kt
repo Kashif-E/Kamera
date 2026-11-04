@@ -36,6 +36,9 @@ internal class FakeSessionOps : CaptureSessionOps {
     private val refused = mutableSetOf<AVCaptureInput>()
     private val outputList = mutableListOf<AVCaptureOutput>()
     private val presetList = mutableListOf<String>()
+    private val audioSessionSettings = mutableListOf<Boolean>()
+    private var depth = 0
+    private var begins = 0
 
     override val avSession: AVCaptureSession = AVCaptureSession()
     override val isRunning: Boolean get() = locked { running }
@@ -54,9 +57,29 @@ internal class FakeSessionOps : CaptureSessionOps {
     val startCount: Int get() = locked { starts }
     val tearDownCount: Int get() = locked { teardowns }
 
-    override fun beginConfiguration() = Unit
+    override fun beginConfiguration() = locked {
+        depth++
+        begins++
+        Unit
+    }
 
-    override fun commitConfiguration() = Unit
+    override fun commitConfiguration() = locked {
+        depth--
+        Unit
+    }
+
+    /** Configuration transactions open now, and begun since the session was made. */
+    val openConfigurations: Int get() = locked { depth }
+    val configurationsBegun: Int get() = locked { begins }
+
+    override fun setAutomaticallyConfiguresApplicationAudioSession(configures: Boolean) =
+        locked { audioSessionSettings += configures }
+
+    /** Every automaticallyConfiguresApplicationAudioSession value set, in order. */
+    val audioSessionConfigurations: List<Boolean> get() = locked { audioSessionSettings.toList() }
+
+    /** What AVFoundation's session would do with the app's audio session now: its default is true. */
+    val configuresTheAppAudioSession: Boolean get() = locked { audioSessionSettings.lastOrNull() ?: true }
 
     override fun canSetSessionPreset(preset: String): Boolean = true
 

@@ -8,9 +8,11 @@ import com.kashif.cameraK.controller.CameraDeviceProvider
 import com.kashif.cameraK.controller.CaptureDeviceOps
 import com.kashif.cameraK.controller.CustomCameraController
 import com.kashif.cameraK.controller.FakeDevice
+import com.kashif.cameraK.controller.FakeMovieRecorder
 import com.kashif.cameraK.controller.FakePhotoCapturer
 import com.kashif.cameraK.controller.FakeSessionOps
 import com.kashif.cameraK.controller.PhotoDimensions
+import com.kashif.cameraK.controller.captureInputWithoutCamera
 import com.kashif.cameraK.controller.orientedJpeg
 import com.kashif.cameraK.controller.spinUntil
 import com.kashif.cameraK.coroutines.CameraKDispatchers
@@ -79,6 +81,8 @@ internal class AppleEngineDriver(
     /** The photo sizes each camera's active format can deliver. */
     backPhotoSizes: List<PhotoDimensions> = emptyList(),
     frontPhotoSizes: List<PhotoDimensions> = emptyList(),
+    /** Whether the app's Info.plist has a key, as the engine reads NSMicrophoneUsageDescription. */
+    private val hasUsageDescription: (String) -> Boolean = { true },
 ) : ThrowingCallbackDriver,
     PreOpenInterruptionDriver,
     ReadBackFlashDriver,
@@ -154,6 +158,20 @@ internal class AppleEngineDriver(
         }
     }
 
+    /** The movie output's calls; recordings start and finish when a test reports them. */
+    val movieRecorder = FakeMovieRecorder()
+
+    /** The microphone's input, which the session accepts unless a test refuses it. */
+    val microphone = captureInputWithoutCamera()
+
+    /** Times the engine asked for the microphone's input. */
+    val microphoneRequests: Int get() = microphoneAsks.value
+    private val microphoneAsks = atomic(0)
+
+    /** What the microphone's input answers; the microphone unless a test makes it fail. */
+    @Volatile
+    var microphoneAnswer: () -> Result<platform.AVFoundation.AVCaptureInput> = { Result.success(microphone) }
+
     private val sessions = atomic(0)
     private val enumerations = atomic(0)
     private var dispatcher: TestDispatcher? = null
@@ -197,6 +215,7 @@ internal class AppleEngineDriver(
             environment,
             custom,
             readDeviceOrientation = { deviceOrientation },
+            hasUsageDescription = hasUsageDescription,
             generateOrientationNotifications = { on ->
                 orientationNotificationLock.lock()
                 try {
@@ -208,6 +227,11 @@ internal class AppleEngineDriver(
         ) {
             enumerations.incrementAndGet()
             lenses
+        }
+        engine.movieRecorder = movieRecorder
+        engine.microphoneInput = {
+            microphoneAsks.incrementAndGet()
+            microphoneAnswer()
         }
         return engine
     }

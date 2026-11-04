@@ -44,6 +44,9 @@ internal interface CaptureDeviceOps {
 
     fun isTorchModeSupported(mode: AVCaptureTorchMode): Boolean
 
+    /** Whether the device can deliver the session preset [preset] (an AVCaptureSessionPreset). */
+    fun supportsSessionPreset(preset: String): Boolean
+
     /** Takes the device's configuration lock; returns what prevented it, or null when the lock is held. */
     fun lockForConfiguration(): Throwable?
 
@@ -92,6 +95,8 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
             .mapNotNull { (it as? NSValue)?.CMVideoDimensionsValue?.toPhotoDimensions() }
 
     override fun isTorchModeSupported(mode: AVCaptureTorchMode): Boolean = device.isTorchModeSupported(mode)
+
+    override fun supportsSessionPreset(preset: String): Boolean = device.supportsAVCaptureSessionPreset(preset)
 
     override fun lockForConfiguration(): Throwable? = memScoped {
         val error = alloc<ObjCObjectVar<NSError?>>()

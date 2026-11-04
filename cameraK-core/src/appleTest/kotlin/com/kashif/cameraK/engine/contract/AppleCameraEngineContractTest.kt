@@ -16,5 +16,6 @@ internal class AppleCameraEngineContractTest :
             PreOpenInterruptionDriver::class,
             ReadBackFlashDriver::class,
             CaptureDriver::class,
+            RecordingDriver::class,
         ),
     )
