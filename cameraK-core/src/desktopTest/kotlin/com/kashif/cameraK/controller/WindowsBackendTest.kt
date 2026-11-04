@@ -1,12 +1,30 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.EngineState
+import com.kashif.cameraK.engine.desktopEngine
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.FlashMode
+import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.platform.CameraKPlatformContext
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.utils.CameraKEngineApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 
@@ -15,7 +33,8 @@ import kotlin.test.assertSame
  * (Decision 17). The check that videoinput loads against javacpp 1.5.12 cannot run on this host,
  * so FFmpeg dshow is the default: its ids are dshow's "alternative names" from
  * `avdevice_list_input_sources`, which dshow accepts in place of the friendly name in `video=`.
- * These run on any host, over fakes of the native listing.
+ * These run on any host, over fakes of the native listing. A camera unplugged after enumeration is
+ * gone at open: dshow is never asked for it, and the start is NoCamera (D2' carry-over 4).
  */
 class WindowsBackendTest {
     @Test
@@ -74,6 +93,53 @@ class WindowsBackendTest {
             requests,
         )
     }
+
+    @Test
+    fun dshowOpenOfAnIdThatNoLongerEnumeratesIsNoCamera() = runTest {
+        val webcam = PNP + """usb#vid_046d&pid_082d&mi_00#6&2d6b1f5e&0&0000""" + VIDEO_CLASS
+        var listed = listOf(DshowSource(webcam, "HD Pro Webcam C920", isVideo = true))
+        val requests = CopyOnWriteArrayList<DeviceInput>()
+        val rig = DesktopEngineRig(testScheduler)
+        val dshow = DshowCaptureBackend(
+            sources = { listed },
+            openInput = { input, _ ->
+                requests += input
+                rig.camera
+            },
+        )
+        val sut = desktopEngine(
+            config = CameraConfiguration(),
+            context = CameraKPlatformContext(),
+            environment = rig.environment(),
+            os = OperatingSystem.WINDOWS,
+            devices = dshow,
+        )
+        try {
+            runCurrent()
+            assertEquals(listOf(webcam), sut.capabilities.value.allLenses.map { it.id })
+
+            // Unplugged after enumeration.
+            listed = emptyList()
+            assertFailsWith<DeviceGoneException> { dshow.open(webcam, null) }
+            val start = async { sut.start(desiredOn(CameraSelection.ById(webcam))) }
+            rig.settle()
+
+            assertIs<CameraKError.NoCamera>(assertIs<CameraKResult.Failure>(start.await()).error)
+            assertIs<CameraKError.NoCamera>(assertIs<EngineState.Failed>(sut.state.value).error)
+            assertEquals(emptyList(), requests.toList(), "dshow was asked to open a camera that is gone")
+            assertEquals(0, rig.camera.startCount)
+        } finally {
+            sut.close()
+        }
+    }
+
+    private fun desiredOn(selection: CameraSelection) = DesiredHardware(
+        selection = selection,
+        flashMode = FlashMode.OFF,
+        torchMode = TorchMode.OFF,
+        zoomRatio = 1f,
+        targetOrientation = null,
+    )
 
     private fun webcam(id: String) = LensInfo(
         id = id,
