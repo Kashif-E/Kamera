@@ -22,17 +22,16 @@ internal fun interface MacAuthorizationRead {
 internal class JnaMacAuthorizationRead(
     private val read: (MacMediaType) -> PermissionStatus = MacCameraAuthorization()::status,
 ) : MacAuthorizationRead {
-    override fun status(permission: CameraKPermission): PermissionStatus = when (permission) {
-        CameraKPermission.CAMERA -> read(MacMediaType.VIDEO)
-        // The AVMediaTypeAudio read comes with the desktop device work; until then the microphone,
-        // unused while desktop audio is unsupported, reads as the open would find it: not determined.
-        CameraKPermission.MICROPHONE -> PermissionStatus.NotDetermined
-        CameraKPermission.GALLERY_ADD -> PermissionStatus.Granted
-    }
+    override fun status(permission: CameraKPermission): PermissionStatus =
+        macMediaTypeOf(permission)?.let(read) ?: PermissionStatus.Granted
 }
 
 /** The AVFoundation media type whose authorization is [permission]'s on macOS; null for the gallery, a folder. */
-internal fun macMediaTypeOf(permission: CameraKPermission): MacMediaType? = TODO("PM' repair: the macOS media type")
+internal fun macMediaTypeOf(permission: CameraKPermission): MacMediaType? = when (permission) {
+    CameraKPermission.CAMERA -> MacMediaType.VIDEO
+    CameraKPermission.MICROPHONE -> MacMediaType.AUDIO
+    CameraKPermission.GALLERY_ADD -> null
+}
 
 /**
  * The desktop checker (Decision 15). Linux and Windows have no camera permission, so every status is
