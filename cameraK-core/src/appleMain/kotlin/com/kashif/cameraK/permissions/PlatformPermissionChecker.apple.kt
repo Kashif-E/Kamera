@@ -30,6 +30,12 @@ internal actual fun platformPermissionChecker(context: CameraKPlatformContext): 
 
 /** The AVFoundation and Photos calls behind the iOS statuses and requests. Tests replace it; the simulator's own cannot be scripted. */
 internal interface ApplePermissionPlatform {
+    /**
+     * Whether Photos has access levels, which arrived in iOS 14. Below it the library reads and asks
+     * nothing for the gallery: a save's `performChanges` raises the system's add-only prompt itself.
+     */
+    val photoAccessLevels: Boolean
+
     fun captureStatus(mediaType: AVMediaType): AVAuthorizationStatus
 
     fun photoStatus(accessLevel: PHAccessLevel): PHAuthorizationStatus
@@ -42,6 +48,8 @@ internal interface ApplePermissionPlatform {
 }
 
 private object SystemPermissionPlatform : ApplePermissionPlatform {
+    override val photoAccessLevels: Boolean get() = isOsAtLeast(14)
+
     override fun captureStatus(mediaType: AVMediaType): AVAuthorizationStatus =
         AVCaptureDevice.authorizationStatusForMediaType(mediaType)
 

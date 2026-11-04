@@ -22,11 +22,13 @@ import kotlin.test.fail
 /**
  * AVFoundation and Photos as the checker sees them: statuses by media type, one photo status, and
  * requests that answer [grant] from a background queue, as the system's completion handlers do.
+ * [photoAccessLevels] false is iOS 13, which has no add-only level.
  */
 internal class FakeApplePermissionPlatform(
     val capture: MutableMap<AVMediaType, AVAuthorizationStatus> = mutableMapOf(),
     var photo: PHAuthorizationStatus = PHAuthorizationStatusNotDetermined,
     private val grant: Boolean = true,
+    override val photoAccessLevels: Boolean = true,
 ) : ApplePermissionPlatform {
     val captureReads = mutableListOf<AVMediaType>()
     val photoReads = mutableListOf<PHAccessLevel>()

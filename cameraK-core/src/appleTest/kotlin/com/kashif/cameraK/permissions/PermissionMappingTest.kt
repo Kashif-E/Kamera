@@ -94,6 +94,39 @@ class PermissionMappingTest {
     }
 
     @Test
+    fun galleryAddBelowIos14ReadsNothing() {
+        // Below iOS 14 the library calls no authorization API for the gallery (least privilege): the
+        // saver's performChanges raises the system's add-only prompt, so the status is not yet known.
+        val platform = FakeApplePermissionPlatform(photo = PHAuthorizationStatusAuthorized, photoAccessLevels = false)
+
+        withPlatform(platform) {
+            assertEquals(PermissionStatus.NotDetermined, platformPermissionStatus(context, CameraKPermission.GALLERY_ADD))
+            assertEquals(
+                PermissionStatus.NotDetermined,
+                platformPermissionChecker(context).status(CameraKPermission.GALLERY_ADD),
+                "the holder's checker",
+            )
+        }
+
+        assertEquals(emptyList(), platform.photoReads, "read the photo library's full-access status below iOS 14")
+    }
+
+    @Test
+    fun galleryAddBelowIos14RequestsNothing() {
+        // The fake fails on any photo request: below iOS 14 that would be requestAuthorization, full access.
+        val platform = FakeApplePermissionPlatform(photoAccessLevels = false)
+        val result = atomic<Map<CameraKPermission, PermissionStatus>?>(null)
+
+        withPlatform(platform) {
+            requestPlatformPermissions(context, listOf(CameraKPermission.GALLERY_ADD)) { result.value = it }
+            awaitOnMain("the request's result") { result.value != null }
+        }
+
+        assertEquals(mapOf(CameraKPermission.GALLERY_ADD to PermissionStatus.NotDetermined), result.value)
+        assertEquals(emptyList(), platform.photoReads)
+    }
+
+    @Test
     fun requestCallbackRunsOnMain() {
         val platform = FakeApplePermissionPlatform()
         val onMain = atomic<Boolean?>(null)
