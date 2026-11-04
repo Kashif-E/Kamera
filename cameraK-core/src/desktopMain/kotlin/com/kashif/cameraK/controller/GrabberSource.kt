@@ -30,14 +30,16 @@ internal class OpenedDevice(val grabber: FrameGrabber, val relaxed: Boolean)
  * without that mode never opened). [own] is told which grabber the caller must release if this
  * throws or is cancelled, as `start()` is called on it: an open cancelled before that leaves nothing
  * to release. The first grabber of a retried open is released here. Each `start()` runs
- * interruptibly, so cancelling the open interrupts it. Missing natives are not retried.
+ * interruptibly, so cancelling the open interrupts it. Missing natives are not retried. [os] decides
+ * how an FFmpeg grabber reads the camera.
  */
 internal suspend fun GrabberSource.open(
     device: LensInfo,
     own: (FrameGrabber?) -> Unit,
     release: (FrameGrabber) -> Unit,
+    os: OperatingSystem = currentOperatingSystem(),
 ): OpenedDevice {
-    val constrained = create(device, constrained = true).also(::prepare)
+    val constrained = create(device, constrained = true).also { prepare(it, os) }
     try {
         blockingCall {
             own(constrained)
@@ -49,7 +51,7 @@ internal suspend fun GrabberSource.open(
         CameraKLogger.w(TAG, "Opening the camera at CameraK's size and frame rate failed; retrying at its own mode", e)
         own(null)
         release(constrained)
-        val relaxed = create(device, constrained = false).also(::prepare)
+        val relaxed = create(device, constrained = false).also { prepare(it, os) }
         try {
             blockingCall {
                 own(relaxed)
@@ -64,8 +66,8 @@ internal suspend fun GrabberSource.open(
 }
 
 // FFmpeg reads macOS cameras through AVFoundation; the 1.x loop set the format on every FFmpeg grabber.
-private fun prepare(grabber: FrameGrabber) {
-    if (grabber is FFmpegFrameGrabber && currentOperatingSystem() == OperatingSystem.MAC) {
+private fun prepare(grabber: FrameGrabber, os: OperatingSystem) {
+    if (grabber is FFmpegFrameGrabber && os == OperatingSystem.MAC) {
         grabber.format = "avfoundation"
     }
 }
