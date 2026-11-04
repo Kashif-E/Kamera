@@ -230,6 +230,10 @@ internal class AppleCameraEngine(
     /** Each bound camera's flash modes, as the photo output reported them with that camera behind it. */
     private val boundFlashModes = mutableMapOf<String, Set<FlashMode>>()
 
+    /** The image formats and recording qualities of the camera bound last; JPEG and PNG and none before. */
+    private var boundImageFormats: Set<ImageFormat> = setOf(ImageFormat.JPEG, ImageFormat.PNG)
+    private var boundVideoQualities: Set<VideoQuality> = emptySet()
+
     // Session queue only: the device whose torch and zoom the engine observes, and the observation.
     private var observedDevice: CaptureDeviceOps? = null
     private var hardwareObservation: AutoCloseable? = null
@@ -1064,19 +1068,28 @@ internal class AppleCameraEngine(
     private fun publishCapabilities() {
         val capabilities = locked {
             if (closed) return
-            capabilitiesOf(enumeratedLenses, torchModesById, boundFlashModes.toMap())
+            capabilitiesOf(
+                enumeratedLenses,
+                torchModesById,
+                boundFlashModes.toMap(),
+                boundImageFormats,
+                boundVideoQualities,
+            )
         }
         _capabilities.value = capabilities
     }
 
     /**
      * A lens's flash modes are the photo output's once the lens has been bound, and come from its
-     * hasFlash before; its torch modes are its device's.
+     * hasFlash before; its torch modes are its device's. The image formats and recording qualities are
+     * the bound camera's.
      */
     private fun capabilitiesOf(
         lenses: List<LensInfo>,
         torchModes: Map<String, Set<TorchMode>>,
         boundFlash: Map<String, Set<FlashMode>>,
+        imageFormats: Set<ImageFormat>,
+        videoQualities: Set<VideoQuality>,
     ) = CameraCapabilities(
         allLenses = lenses,
         flashModes = lenses.associate {
@@ -1088,12 +1101,16 @@ internal class AppleCameraEngine(
         torchModes = lenses.associate { it.id to (torchModes[it.id] ?: setOf(TorchMode.OFF)) },
         // AVCaptureFileOutput pauses from iOS 18.
         supportsPauseResume = osVersion >= PAUSE_RESUME_IOS,
-        supportedVideoQualities = emptySet(),
+        // The qualities whose preset the bound camera delivers; none before the first bind.
+        supportedVideoQualities = videoQualities,
+        // AVCaptureMovieFileOutput records at its session preset's rate; no bitrate is applied (§6.3).
         supportsVideoBitrate = false,
-        supportedAspectRatios = setOf(AspectRatio.RATIO_4_3, AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16),
-        supportedImageFormats = setOf(ImageFormat.JPEG),
+        // 16:9 and 1:1 are crops of the full-resolution photo (StillWriter), so 1:1 is a true square.
+        supportedAspectRatios = AspectRatio.entries.toSet(),
+        // HEIC where the bound camera's photo output can encode HEVC.
+        supportedImageFormats = imageFormats,
         supportedAnalysisFormats = emptySet(),
-        supportsSquareCapture = false,
+        supportsSquareCapture = true,
     )
 
     private fun resolve(selection: CameraSelection): CaptureDeviceOps? = when (selection) {
@@ -1102,12 +1119,20 @@ internal class AppleCameraEngine(
     }
 
     /**
-     * Session queue, after [device] became the session's camera: its flash modes from the photo output
-     * now behind it, and the device's torch and zoom observed in place of the previous camera's.
+     * Session queue, after [device] became the session's camera: its flash modes, image formats and
+     * recording qualities from the photo output and the device now behind it, and the device's torch and
+     * zoom observed in place of the previous camera's.
      */
     private fun bindHardware(device: CaptureDeviceOps) {
         val flash = custom.captureFlashModes.map { it.toFlashMode() }.toSet() + FlashMode.OFF
-        locked { boundFlashModes[device.uniqueId] = flash }
+        val formats =
+            setOf(ImageFormat.JPEG, ImageFormat.PNG) + listOfNotNull(ImageFormat.HEIC.takeIf { custom.canCaptureHeic })
+        val qualities = boundQualities()
+        locked {
+            boundFlashModes[device.uniqueId] = flash
+            boundImageFormats = formats
+            boundVideoQualities = qualities
+        }
         publishCapabilities()
         if (observedDevice === device) return
         stopObservingHardware()
