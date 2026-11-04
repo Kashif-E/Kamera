@@ -25,6 +25,18 @@ internal fun allLensDeviceTypes(): List<String> = listOfNotNull(
 )
 
 /**
+ * The AVCaptureDeviceTypes that can stand for [type] facing [lens], best first. On the front, DEFAULT
+ * is the built-in ultra-wide where the device has one and the wide-angle otherwise: the iPhone 17
+ * family's front camera, a square sensor for Center Stage, is an ultra-wide to AVFoundation, and its
+ * wide-angle-only DEFAULT squashed the preview (#170). Elsewhere DEFAULT is the wide-angle.
+ */
+internal fun preferredDeviceTypes(lens: CameraLens?, type: CameraDeviceType): List<String> = when {
+    type == CameraDeviceType.DEFAULT && lens == CameraLens.FRONT ->
+        listOfNotNull(AVCaptureDeviceTypeBuiltInUltraWideCamera, AVCaptureDeviceTypeBuiltInWideAngleCamera)
+    else -> type.toAVCaptureDeviceType()?.let { listOf(it) } ?: allLensDeviceTypes()
+}
+
+/**
  * The cameras setup and the lens switches open, found with AVCaptureDevice discovery. [discover]
  * answers for AVCaptureDeviceDiscoverySession: the cameras of the given types at the given position.
  * With no lens given and nothing discovered, the system's default video device.
@@ -45,8 +57,11 @@ internal class DiscoveryCameraDeviceProvider(
             CameraLens.BACK -> AVCaptureDevicePositionBack
             null -> AVCaptureDevicePositionUnspecified
         }
-        val types = type.toAVCaptureDeviceType()?.let { listOf(it) } ?: allLensDeviceTypes()
-        return discover(types, position).firstOrNull()?.camera ?: defaultCamera().takeIf { lens == null }
+        val types = preferredDeviceTypes(lens, type)
+        val discovered = discover(types, position)
+        // The discovery session promises no order, so the preference is applied here.
+        val preferred = types.firstNotNullOfOrNull { wanted -> discovered.firstOrNull { it.deviceType == wanted } }
+        return (preferred ?: discovered.firstOrNull())?.camera ?: defaultCamera().takeIf { lens == null }
     }
 
     override fun findById(id: String): CaptureDeviceOps? = cameraWithId(id)
