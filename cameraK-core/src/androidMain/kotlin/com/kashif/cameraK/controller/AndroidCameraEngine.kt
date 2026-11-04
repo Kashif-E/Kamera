@@ -31,9 +31,11 @@ import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.TraceNames
 import com.kashif.cameraK.engine.Tracer
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
@@ -49,8 +51,8 @@ import com.kashif.cameraK.state.ZoomState
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
+import com.kashif.cameraK.video.VideoQuality
 import kotlinx.atomicfu.atomic
-import kotlinx.atomicfu.getAndUpdate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -60,6 +62,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainCoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
@@ -68,12 +71,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadFactory
@@ -105,10 +108,15 @@ private const val TAG = "CameraK"
  * otherwise; the target orientation is configuration, taken in any state but closed. The desired
  * hardware is re-applied once the camera opens and after every bind made while it runs.
  *
- * The 1.x [CameraController] is a facade over this engine ([legacyController]); its members that act
- * on what is bound run on the collaborators below, as in 1.x, until A3' and A4' give the engine those
- * commands. Until then [capture] and the recording calls are refused with `InvalidState`, each kind
- * logged once.
+ * Stills and recordings are files in app-owned storage only (Decision 10): `outputDirectory`, else
+ * `filesDir/CameraK`; a gallery [com.kashif.cameraK.enums.Directory] is ignored with a warning, and
+ * publishing is the media saver plugin's job. [capture] returns the written file, a real PNG for a
+ * PNG configuration; HEIC fails [start] with `Unsupported(IMAGE_FORMAT)`. Each recording is observed
+ * from CameraX's Start to its Finalize on [recordingEvents] (§5); VideoCapture is built off Main and
+ * bound only for a recording or from [prepareRecording] until the engine stops (§2.4).
+ *
+ * The 1.x [CameraController] is a facade over this engine ([legacyController]): its capture and
+ * recording run on the engine's own paths; frame analysis runs on the collaborators below until A4'.
  */
 internal class AndroidCameraEngine(
     private val config: CameraConfiguration,
@@ -163,9 +171,10 @@ internal class AndroidCameraEngine(
     private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
     override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
 
-    // The engine's own recording milestones and frame source come with A3' and A4'; until then the
-    // 1.x facade records and feeds analyzers through the collaborators below.
-    override val recordingEvents: Flow<EngineRecordingEvent> = emptyFlow()
+    override val recordingEvents: Flow<EngineRecordingEvent> get() = videoRecorder.events
+
+    // The engine's own frame source comes with A4'; until then the 1.x facade feeds analyzers through
+    // the frame pipeline below.
     override val frames: FrameSource = InactiveFrameSource()
 
     private val previewSource = EnginePreviewSource(onMain = ::onMain, onDisplayAttached = ::onDisplayChanged)
@@ -187,18 +196,19 @@ internal class AndroidCameraEngine(
         onDisplayChanged = ::onDisplayChanged,
     )
 
-    // CameraX's file output always encodes JPEG, so that is what every capture file holds, whatever
-    // imageFormat asks for; its name and MIME type follow the bytes.
-    private val outputFormat = ImageFormat.JPEG
-    private val files = OutputFileFactory(context, config.directory, outputFormat)
+    private val files = OutputFileFactory(context, config.outputDirectory, environment.dispatchers.io)
+    private val imageProcessing = imageProcessingExecutor.asCoroutineDispatcher()
     internal val stillCapturer = StillCapturer(
-        context = context,
         backend = backend,
         files = files,
         imageProcessingExecutor = imageProcessingExecutor,
+        callbackExecutor = mainExecutor,
         qualityPriority = config.qualityPrioritization,
+        format = config.imageFormat,
+        tracer = { tracer },
         isReleased = { closed.value },
         metadata = ::captureMetadata,
+        boundLens = { boundLens },
     )
     internal val hardwareControls = HardwareControls(
         context = context,
@@ -209,7 +219,8 @@ internal class AndroidCameraEngine(
         readFlash = backend::flashModeOf,
     )
     internal val framePipeline = FramePipeline(backend, analyzerExecutor)
-    internal val videoRecorder = VideoRecorder(context, backend, files, VideoHost())
+    internal val videoRecorder =
+        VideoRecorder(context, backend, files, VideoHost(), environment.dispatchers.default, mainExecutor)
 
     /** The physical lens every use case of the current bind pins, or null. */
     internal var pinnedPhysicalId: String? = null
@@ -244,17 +255,21 @@ internal class AndroidCameraEngine(
     private var pendingViewPortRebind = false
 
     private var teardown: Job? = null
-    private val refusedOperations = atomic(emptySet<CameraOperation>())
     private val awaitingFirstFrame = AtomicBoolean(false)
+
+    // The bound camera's video qualities (§6.3), queried off Main after every bind.
+    private var boundQualities: Set<VideoQuality> = emptySet()
+    private var qualityQuery: Deferred<Set<VideoQuality>>? = null
 
     init {
         // Declared up front, so the first bind includes the ImageAnalysis and a plugin that registers
         // later only joins it (Decision 14).
         if (config.frameAnalysis) framePipeline.requestAnalysis()
-        if (config.imageFormat != outputFormat && config.imageFormat != ImageFormat.HEIC) {
+        if (config.directory != Directory.DOCUMENTS) {
             CameraKLogger.w(
                 TAG,
-                "ImageFormat.${config.imageFormat} is not supported for Android captures; saving JPEG instead",
+                "Directory.${config.directory} no longer publishes to the gallery: captures and recordings stay " +
+                    "in app-owned storage; save them with the media saver plugin",
             )
         }
     }
@@ -281,6 +296,13 @@ internal class AndroidCameraEngine(
         val live = Session()
         session = live
         _state.value = EngineState.Opening
+        // Android cannot write HEIC, and a start never accepts a format it would ignore (§6.1).
+        if (config.imageFormat == ImageFormat.HEIC) {
+            CameraKLogger.e(TAG, "ImageFormat.HEIC is not supported on Android")
+            return fail(live, CameraKError.Unsupported(CameraFeature.IMAGE_FORMAT))
+        }
+        // Created off Main ahead of the first capture, which then claims its file without waiting.
+        scope.launch { files.ensureDirectory(files.defaultDirectory) }
         live.startTrace = tracer.beginInterval(TraceNames.START)
         live.firstFrameTrace = tracer.beginInterval(TraceNames.FIRST_FRAME)
         awaitingFirstFrame.set(true)
@@ -292,7 +314,7 @@ internal class AndroidCameraEngine(
                 ?: return fail(live, CameraKError.NoCamera(lensOf(desired.selection)))
             // The display listener runs only while started, so a display that turned while stopped
             // left the ViewPort stale: the start rebinds then, even on the same camera.
-            if (resolved != boundCamera || viewPortStale()) {
+            if (resolved != boundCamera || viewPortStale() || videoRecorder.videoBindStale) {
                 val bindProvider = awaitUnlessEnded(live, providerAsync()) ?: return live.opened.await()
                 val error = bindProvider.fold(
                     onSuccess = { bind(resolved, it) },
@@ -320,6 +342,8 @@ internal class AndroidCameraEngine(
     override suspend fun stop() {
         if (closed.value) return
         withContext(mainImmediate) {
+            // A recording is finalized before the camera closes (§2.3 rule 7).
+            withContext(NonCancellable) { videoRecorder.stopForShutdown() }
             val live = session
             if (live != null) endSession(live) else _state.value = EngineState.Closed
         }
@@ -375,7 +399,22 @@ internal class AndroidCameraEngine(
         CameraKResult.Success(readBack)
     }
 
-    override suspend fun capture(): CameraKResult<CapturedImage> = refuse(CameraOperation.CAPTURE)
+    override suspend fun capture(): CameraKResult<CapturedImage> = openCommand {
+        when (val saved = stillCapturer.capture()) {
+            is CameraKResult.Failure -> saved
+            is CameraKResult.Success -> {
+                val file = saved.value
+                // Read from the written file, so a 1:1 capture reports the square CameraX wrote.
+                val (width, height) = withContext(imageProcessing) {
+                    uprightSize(file, jpeg = stillCapturer.format != ImageFormat.PNG)
+                }
+                CameraKResult.Success(CapturedImage(file.absolutePath, stillCapturer.format, width, height))
+            }
+        }
+    }
+
+    /** The 1.x facade's capture: the written file, with no size read. */
+    internal suspend fun captureFile(): CameraKResult<File> = openCommand { stillCapturer.capture() }
 
     override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = command {
         val range = hardwareControls.reportedZoomRange()
@@ -420,6 +459,24 @@ internal class AndroidCameraEngine(
         }
     }
 
+    // A command that needs the camera open, which may suspend: on the main thread, NotReady otherwise.
+    private suspend fun <T> openCommand(block: suspend () -> CameraKResult<T>): CameraKResult<T> {
+        if (closed.value) return CLOSED
+        return withContext(mainImmediate) {
+            when {
+                closed.value -> CLOSED
+                !isOpen -> NOT_READY
+                else -> block()
+            }
+        }
+    }
+
+    // A command on what is already recording, in any state but closed: on the main thread.
+    private suspend fun <T> recordingCommand(block: suspend () -> T): T? {
+        if (closed.value) return null
+        return withContext(mainImmediate) { if (closed.value) null else block() }
+    }
+
     // A hardware command: run on the main thread while the camera is open, NotReady otherwise.
     private suspend fun <T> command(block: () -> CameraKResult<T>): CameraKResult<T> {
         if (closed.value) return CLOSED
@@ -433,16 +490,26 @@ internal class AndroidCameraEngine(
     }
 
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> =
-        refuse(CameraOperation.RECORD_PREPARE)
+        openCommand { videoRecorder.prepare(config) }
 
     override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> =
-        refuse(CameraOperation.RECORD_START)
+        openCommand { videoRecorder.start(config, legacy = false) }
 
-    override suspend fun stopRecording(): CameraKResult<RecordedVideo> = refuse(CameraOperation.RECORD_STOP)
+    override suspend fun stopRecording(): CameraKResult<RecordedVideo> =
+        recordingCommand { videoRecorder.stop() } ?: CLOSED
 
-    override suspend fun pauseRecording(): CameraKResult<Unit> = refuse(CameraOperation.RECORD_PAUSE)
+    override suspend fun pauseRecording(): CameraKResult<Unit> = recordingCommand { videoRecorder.pause() } ?: CLOSED
 
-    override suspend fun resumeRecording(): CameraKResult<Unit> = refuse(CameraOperation.RECORD_RESUME)
+    override suspend fun resumeRecording(): CameraKResult<Unit> = recordingCommand { videoRecorder.resume() } ?: CLOSED
+
+    /** The 1.x facade's start: a recording whose unclaimed outcome its next stop reports. */
+    internal suspend fun startRecordingForFacade(config: VideoConfiguration): CameraKResult<String> =
+        openCommand { videoRecorder.start(config, legacy = true) }
+
+    /** The 1.x facade's stop: the active or last unclaimed facade recording's outcome, or null. */
+    internal suspend fun stopRecordingForFacade(): RecordingOutcome? = recordingCommand {
+        videoRecorder.stopForFacade()
+    }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
@@ -561,8 +628,9 @@ internal class AndroidCameraEngine(
         val preview = binder.buildPreview(resolutionSelector, pinned) { backend.onPreviewFrame(it, ::onPreviewFrame) }
         previewSource.bindTo(preview)
         stillCapturer.configure(resolutionSelector, hardwareControls.flashMode, pinned)
-        // VideoCapture is built only while a recording needs it.
-        videoRecorder.configureForBind()
+        // VideoCapture joins the group only while a recording needs it or it was prepared.
+        val video = videoRecorder.useCaseForBind()
+        boundQualities = emptySet()
         // Rebuilt rather than reused: its Camera2Interop pin belongs to the bind it was built for.
         framePipeline.analysis = if (framePipeline.analysisRequested) framePipeline.build(pinned) else null
         applyCaptureRotation()
@@ -570,7 +638,7 @@ internal class AndroidCameraEngine(
         val useCases = buildList<UseCase> {
             add(preview)
             add(checkNotNull(stillCapturer.imageCapture))
-            videoRecorder.useCaseForBind()?.let { add(it) }
+            video?.let { add(it) }
             framePipeline.analysis?.let { add(it) }
         }
         val camera = try {
@@ -583,6 +651,11 @@ internal class AndroidCameraEngine(
                 e,
             )
         } catch (e: IllegalArgumentException) {
+            if (video != null) {
+                // CameraX found no stream combination that includes VideoCapture (§4.1).
+                CameraKLogger.e(TAG, "CameraX refused the use cases with VideoCapture", e)
+                return CameraKError.Unsupported(CameraFeature.VIDEO_QUALITY, e)
+            }
             CameraKLogger.e(TAG, "No camera matches the selection", e)
             return CameraKError.NoCamera(resolved.lens, e)
         } catch (e: Exception) {
@@ -590,6 +663,8 @@ internal class AndroidCameraEngine(
             return CameraKError.Internal(e)
         }
         boundCamera = resolved
+        if (video == null) videoRecorder.onBoundWithoutVideo()
+        queryVideoQualities(camera)
         hardwareControls.revalidateFlash()
         _hardware.value = HardwareState(
             flashMode = hardwareControls.boundFlashMode() ?: hardwareControls.flashMode,
@@ -639,9 +714,49 @@ internal class AndroidCameraEngine(
             lens.isLogical,
             lens.isExternal,
         )
-        _capabilities.value =
-            androidCapabilities(_capabilities.value.allLenses.map { if (it.id == lens.id) corrected else it })
+        _capabilities.value = androidCapabilities(
+            _capabilities.value.allLenses.map { if (it.id == lens.id) corrected else it },
+            boundQualities,
+        )
         return corrected
+    }
+
+    // The bound camera's video qualities, read off Main (the encoder profiles and codec list, §2.4)
+    // and published once they are in, unless another bind replaced the camera meanwhile.
+    private fun queryVideoQualities(camera: Camera) {
+        val query = scope.async(environment.dispatchers.default) {
+            try {
+                backend.videoQualities(camera.cameraInfo)
+            } catch (e: Exception) {
+                CameraKLogger.e(TAG, "Reading the bound camera's video qualities failed", e)
+                emptySet()
+            }
+        }
+        qualityQuery = query
+        scope.launch(mainImmediate) {
+            val qualities = query.await()
+            if (closed.value || camera !== binder.camera) return@launch
+            boundQualities = qualities
+            _capabilities.value = androidCapabilities(_capabilities.value.allLenses, qualities)
+        }
+    }
+
+    /**
+     * Rebinds the bound camera with VideoCapture in the group, its main-thread part one
+     * `CameraK.videoBind` interval (B1 records it). When CameraX refuses the group, the photo session
+     * is bound again without VideoCapture and the error is returned. Main thread.
+     */
+    private fun bindWithVideo(): CameraKError? {
+        val live = session ?: return CameraKError.NotReady
+        val camera = boundCamera ?: return CameraKError.NotReady
+        val binding = provider ?: return CameraKError.NotReady
+        val error = tracer.beginInterval(VIDEO_BIND_TRACE).use { bind(camera, binding) } ?: return null
+        videoRecorder.dropVideoCapture()
+        bind(camera, binding)?.let { rollback ->
+            fail<Unit>(live, rollback)
+            return rollback
+        }
+        return error
     }
 
     // The camera's state, torch and zoom, for as long as it is the bound one.
@@ -847,6 +962,10 @@ internal class AndroidCameraEngine(
 
         override val isBound: Boolean get() = this@AndroidCameraEngine.isBound
 
+        override fun bindWithVideo(): CameraKError? = this@AndroidCameraEngine.bindWithVideo()
+
+        override suspend fun videoQualities(): Set<VideoQuality> = qualityQuery?.await() ?: boundQualities
+
         // Dispatched, never run inline: a caller that gives up before the bind runs leaves nothing bound.
         override suspend fun rebindAndAwait() {
             withTimeoutOrNull(STOP_FINALIZE_TIMEOUT_MS) { withContext(main) { rebind() } }
@@ -868,10 +987,16 @@ internal class AndroidCameraEngine(
 
     // ── Close ──────────────────────────────────────────────────────────────────────────────────
 
-    // Main thread. Releases everything once: the sensor, frame delivery and a recording first, then
-    // the registry and this engine's use cases, then what the 1.x callers were waiting on. A step that
-    // throws is logged and the steps after it still run.
-    private fun release() {
+    // Main thread. Releases everything once: a recording first, finalized while the camera is still
+    // open (§2.3 rule 7), then the sensor and frame delivery, the registry and this engine's use
+    // cases, then what the 1.x callers were waiting on. A step that throws is logged and the steps
+    // after it still run.
+    private suspend fun release() {
+        try {
+            videoRecorder.stopForShutdown()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Stopping the recording on release failed", e)
+        }
         releaseStep("Ending the session") { session?.let(::endSession) }
         releaseStep("Removing the camera observers") { stopObserving() }
         releaseStep("Releasing the orientation sensor") { orientation.release() }
@@ -879,7 +1004,6 @@ internal class AndroidCameraEngine(
         // Stop frame delivery before anything it uses goes away, and stop a recording while its
         // VideoCapture is still bound so it finalizes cleanly.
         releaseStep("Stopping frame delivery on release") { framePipeline.stopDelivery() }
-        releaseStep("Stopping the recording on release") { videoRecorder.stopForRelease() }
         releaseStep("Destroying the engine lifecycle") {
             if (registry.currentState == Lifecycle.State.INITIALIZED) registry.currentState = Lifecycle.State.CREATED
             registry.currentState = Lifecycle.State.DESTROYED
@@ -887,7 +1011,6 @@ internal class AndroidCameraEngine(
         releaseStep("Unbinding use cases on release") { binder.unbindOwnUseCases() }
         releaseStep("Dropping the frame consumers") { framePipeline.clearConsumers() }
         releaseStep("Dropping the capture listeners") { stillCapturer.clearListeners() }
-        releaseStep("Failing the unclaimed recording outcome") { videoRecorder.failUnclaimedOutcome() }
         // A capture still in flight would otherwise wait for a callback that is now ignored.
         releaseStep("Failing the captures in flight") { stillCapturer.failInFlight() }
         bindListeners.clear()
@@ -904,20 +1027,12 @@ internal class AndroidCameraEngine(
         }
     }
 
-    private fun <T> refuse(operation: CameraOperation): CameraKResult<T> {
-        if (closed.value) return CLOSED
-        if (operation !in refusedOperations.getAndUpdate { it + operation }) {
-            CameraKLogger.w(
-                TAG,
-                "The Android engine refuses the $operation command until its slice lands; issue it on Ready.controller",
-            )
-        }
-        return CameraKResult.Failure(CameraKError.InvalidState(operation))
-    }
-
     internal companion object {
         /** How long CameraX may take to reopen after a recoverable error before the session fails. */
         val RECOVERY_TIMEOUT: Duration = 10.seconds
+
+        /** The main-thread part of a VideoCapture bind, the Pixel 7 rule's device marker (§2.4). */
+        const val VIDEO_BIND_TRACE = "CameraK.videoBind"
 
         private val CLOSED = CameraKResult.Failure(CameraKError.Closed)
         private val NOT_READY = CameraKResult.Failure(CameraKError.NotReady)
@@ -942,24 +1057,29 @@ internal class AndroidCameraEngine(
 }
 
 /**
- * The capabilities the engine reports for [lenses] until each member's slice fills it (design §6.3):
- * flash OFF, AUTO and ON and torch OFF and ON on a lens with a flash unit, OFF only otherwise (CameraX
- * has no AUTO torch); pause and resume supported, which CameraX's Recorder does; the 1.x shape's
- * values for the rest.
+ * The capabilities the engine reports for [lenses] (design §6.3): flash OFF, AUTO and ON and torch
+ * OFF and ON on a lens with a flash unit, OFF only otherwise (CameraX has no AUTO torch); pause and
+ * resume, which CameraX's Recorder supports; [videoQualities], the bound camera's own (empty before
+ * the first bind), each recorded at its `VideoQuality.bitrateBps` as the encoder's target rate; JPEG
+ * and PNG; every aspect ratio, 1:1 as the square file the 1:1 ViewPort crops from a 4:3 stream; the
+ * 1.x shape's analysis formats until A4'.
  */
 @OptIn(CameraKEngineApi::class)
-internal fun androidCapabilities(lenses: List<LensInfo>): CameraCapabilities {
+internal fun androidCapabilities(
+    lenses: List<LensInfo>,
+    videoQualities: Set<VideoQuality> = emptySet(),
+): CameraCapabilities {
     val legacy = CameraCapabilities(lenses)
     return CameraCapabilities(
         allLenses = lenses,
         flashModes = lenses.associate { it.id to legacy.supportedFlashModes(it.id) },
         torchModes = lenses.associate { it.id to legacy.supportedTorchModes(it.id) },
         supportsPauseResume = true,
-        supportedVideoQualities = legacy.supportedVideoQualities,
-        supportsVideoBitrate = legacy.supportsVideoBitrate,
-        supportedAspectRatios = legacy.supportedAspectRatios,
-        supportedImageFormats = legacy.supportedImageFormats,
+        supportedVideoQualities = videoQualities,
+        supportsVideoBitrate = true,
+        supportedAspectRatios = AspectRatio.entries.toSet(),
+        supportedImageFormats = setOf(ImageFormat.JPEG, ImageFormat.PNG),
         supportedAnalysisFormats = legacy.supportedAnalysisFormats,
-        supportsSquareCapture = legacy.supportsSquareCapture,
+        supportsSquareCapture = true,
     )
 }

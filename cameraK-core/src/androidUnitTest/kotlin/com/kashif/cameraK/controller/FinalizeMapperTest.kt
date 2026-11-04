@@ -18,49 +18,11 @@ import kotlin.test.assertSame
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Every CameraX Finalize code ends the recording. A normal stop keeps the file; the errors that
- * stop a recording early but leave a playable file (the camera taken away, a size or duration limit,
- * a full disk) keep it only when it is playable; every other error fails the recording.
- *
- * From A3' the mapper gives the engine's outcome (§4.1's Android table): it is exhaustive over
- * CameraX's Finalize codes, every recording row follows the playable probe, and the Finalize cause
- * is kept.
+ * Every CameraX Finalize code ends the recording, and the mapper gives the engine's outcome as §4.1's
+ * Android table does: it is exhaustive over CameraX's Finalize codes, every recording row follows the
+ * playable probe, and the Finalize cause is kept.
  */
 class FinalizeMapperTest {
-    @Test
-    fun mapsEachHandledCode() {
-        val keptWhenPlayable = listOf(
-            Finalize.ERROR_SOURCE_INACTIVE,
-            Finalize.ERROR_FILE_SIZE_LIMIT_REACHED,
-            Finalize.ERROR_DURATION_LIMIT_REACHED,
-            Finalize.ERROR_INSUFFICIENT_STORAGE,
-        )
-        val failed = listOf(
-            Finalize.ERROR_UNKNOWN,
-            Finalize.ERROR_INVALID_OUTPUT_OPTIONS,
-            Finalize.ERROR_ENCODING_FAILED,
-            Finalize.ERROR_RECORDER_ERROR,
-            Finalize.ERROR_NO_VALID_DATA,
-            Finalize.ERROR_RECORDING_GARBAGE_COLLECTED,
-        )
-
-        for (playable in listOf(true, false)) {
-            assertEquals(
-                FinalizeOutcome.Recorded(durationMs = 2_000L, endedBy = null),
-                map(Finalize.ERROR_NONE, playable),
-                "a normal stop, playable = $playable",
-            )
-        }
-        for (code in keptWhenPlayable) {
-            assertEquals(FinalizeOutcome.Recorded(durationMs = 2_000L, endedBy = code), map(code, true), "code $code")
-            assertEquals(FinalizeOutcome.Failed(code), map(code, false), "code $code without a playable file")
-        }
-        for (code in failed) {
-            assertEquals(FinalizeOutcome.Failed(code), map(code, true), "code $code with a playable file")
-            assertEquals(FinalizeOutcome.Failed(code), map(code, false), "code $code")
-        }
-    }
-
     @Test
     fun everyFinalizeErrorCodeIsMapped() {
         val codes = Finalize::class.java.fields
@@ -162,9 +124,6 @@ class FinalizeMapperTest {
 
     private fun finalized(code: Int, cause: Throwable? = null) =
         RecordingFinalized(code, cause, recordedDurationNanos = 2_000_000_000L)
-
-    private fun map(code: Int, playable: Boolean) =
-        FinalizeMapper.map(RecordingFinalized(code, null, recordedDurationNanos = 2_000_000_000L), playable)
 
     private companion object {
         const val PATH = "/data/CameraK/VID_1.mp4"

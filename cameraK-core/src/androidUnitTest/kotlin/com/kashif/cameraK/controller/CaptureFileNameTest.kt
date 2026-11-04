@@ -2,7 +2,6 @@ package com.kashif.cameraK.controller
 
 import android.content.Context
 import android.os.Looper
-import android.provider.MediaStore
 import androidx.camera.view.PreviewView
 import androidx.test.core.app.ApplicationProvider
 import com.kashif.cameraK.enums.Directory
@@ -19,7 +18,6 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
-import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
@@ -68,25 +66,6 @@ class CaptureFileNameTest {
         captureTwice(Directory.DOCUMENTS)
 
         assertNotEquals(backend.captures[0].outputFile, backend.captures[1].outputFile)
-    }
-
-    @Test
-    fun twoGalleryCapturesInFlight_getDifferentNames() {
-        captureTwice(Directory.PICTURES)
-
-        val names = backend.captures.map {
-            it.options.contentValues!!.getAsString(MediaStore.MediaColumns.DISPLAY_NAME)
-        }
-        assertEquals(2, names.toSet().size, "both captures were named $names")
-    }
-
-    @Test
-    @Config(sdk = [28])
-    fun twoGalleryCapturesInFlight_belowApi29_writeToDifferentFiles() {
-        captureTwice(Directory.PICTURES)
-
-        val paths = backend.captures.map { it.options.contentValues!!.getAsString(MediaStore.MediaColumns.DATA) }
-        assertEquals(2, paths.toSet().size, "both captures were given $paths")
     }
 
     private fun captureTwice(directory: Directory) {

@@ -20,11 +20,11 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertTrue
 
 /**
- * At most three stills are in flight at once; a fourth is rejected. Each capture holds one of those
- * slots until it is settled, by its result, its error or its cancellation, and gives it back once.
+ * The 1.x facade's captures over the engine. The limit of three in flight is the holder's alone since
+ * A3' (PlatformCounterGoneTest); a batch that finishes leaves room for another, and a capture whose
+ * caller has already left never reaches CameraX.
  */
 @RunWith(RobolectricTestRunner::class)
 class PendingCapturesTest {
@@ -36,31 +36,6 @@ class PendingCapturesTest {
     @After
     fun tearDown() {
         hostScope.cancel()
-    }
-
-    @Test
-    fun captureCancelledBeforeCameraXFinishes_givesItsSlotBackOnce() {
-        controller.bindCamera(PreviewView(context))
-        idleMainLooper()
-
-        val cancelled = hostScope.launch(start = CoroutineStart.UNDISPATCHED) { controller.takePictureToFile() }
-        cancelled.cancel()
-        // CameraX does not know the caller left: it still writes the still and reports it.
-        backend.captures.single().deliverSaved(byteArrayOf(1))
-        idleMainLooper()
-
-        val captures = List(MAX_IN_FLIGHT + 1) {
-            hostScope.async(start = CoroutineStart.UNDISPATCHED) { controller.takePictureToFile() }
-        }
-
-        assertEquals(
-            1 + MAX_IN_FLIGHT,
-            backend.captures.size,
-            "more than $MAX_IN_FLIGHT captures reached CameraX at once",
-        )
-        val rejected = captures.last()
-        assertTrue(rejected.isCompleted, "the capture over the limit was not rejected at once")
-        assertIs<ImageCaptureResult.Error>(runBlocking { rejected.await() })
     }
 
     @Test

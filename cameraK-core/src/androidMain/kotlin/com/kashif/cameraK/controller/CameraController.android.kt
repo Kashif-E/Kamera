@@ -11,7 +11,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.kashif.cameraK.capabilities.CameraCapabilities
-import com.kashif.cameraK.capture.heicCaptureUnsupported
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
@@ -42,8 +41,13 @@ import java.util.concurrent.ExecutorService
  * The 1.x Android controller: a deprecated facade over an [AndroidCameraEngine] until 2.0's holder
  * commands replace it. Session and binding belong to the engine; nothing here binds or opens a
  * camera on its own. [startSession], [stopSession], [cleanup], the lens and device-type switches,
- * the preview, flash, torch, zoom and the target orientation go through the engine; capture,
- * recording and analyzers keep their 1.x bodies on the engine's collaborators.
+ * the preview, flash, torch, zoom, the target orientation, capture and recording go through the
+ * engine; analyzers keep their 1.x bodies on the engine's frame pipeline until A4'.
+ *
+ * Captures and recordings are app-owned files, whatever the [Directory] (Decision 10). The engine's
+ * recording outcome reaches the 1.x result as 1.x reported a playable file: a recording, or one a
+ * full disk cut short whose file was kept, is [VideoCaptureResult.Success]; anything else is an
+ * error.
  *
  * The facade holds one desired flash, torch and zoom. Its setters change it in any state but closed;
  * while the engine is open they also run the engine's command, and before that they only store the
@@ -286,9 +290,9 @@ actual class CameraController internal constructor(
         }
     }
 
-    actual suspend fun takePictureToFile(): ImageCaptureResult {
-        if (!engine.isClosed && imageFormat == ImageFormat.HEIC) return heicCaptureUnsupported(TAG)
-        return stillCapturer.takePictureToFile()
+    actual suspend fun takePictureToFile(): ImageCaptureResult = when (val saved = engine.captureFile()) {
+        is CameraKResult.Success -> ImageCaptureResult.SuccessWithFile(saved.value.absolutePath)
+        is CameraKResult.Failure -> ImageCaptureResult.Error(exceptionFor("The capture", saved.error))
     }
 
     actual fun toggleFlashMode() {
@@ -453,16 +457,63 @@ actual class CameraController internal constructor(
     }
 
     actual suspend fun startRecording(configuration: VideoConfiguration): String =
-        videoRecorder.startRecording(configuration)
+        when (val started = engine.startRecordingForFacade(configuration)) {
+            is CameraKResult.Success -> started.value
+            is CameraKResult.Failure -> throw exceptionFor("The recording", started.error)
+        }
 
-    actual suspend fun stopRecording(): VideoCaptureResult = videoRecorder.stopRecording()
+    actual suspend fun stopRecording(): VideoCaptureResult {
+        if (engine.isClosed) return VideoCaptureResult.Error(controllerReleased())
+        val outcome = engine.stopRecordingForFacade()
+            ?: return VideoCaptureResult.Error(IllegalStateException("No active recording"))
+        val kept = when (val result = outcome.result) {
+            is CameraKResult.Success -> result.value.path
+            // A full disk keeps a playable file, which 1.x reported as the recording.
+            is CameraKResult.Failure -> (result.error as? CameraKError.Storage)?.keptFilePath
+                ?: return VideoCaptureResult.Error(exceptionFor("The recording", result.error))
+        }
+        return VideoCaptureResult.Success(filePath = kept, durationMs = outcome.durationMs)
+    }
 
     actual suspend fun pauseRecording() {
-        videoRecorder.pauseRecording()
+        val paused = engine.pauseRecording()
+        if (paused is CameraKResult.Failure) {
+            CameraKLogger.w(
+                TAG,
+                "Pausing the recording failed: ${describe(paused.error)}",
+            )
+        }
     }
 
     actual suspend fun resumeRecording() {
-        videoRecorder.resumeRecording()
+        val resumed = engine.resumeRecording()
+        if (resumed is CameraKResult.Failure) {
+            CameraKLogger.w(
+                TAG,
+                "Resuming the recording failed: ${describe(resumed.error)}",
+            )
+        }
+    }
+
+    // A 1.x call reports failure as an exception; the error's cause is kept.
+    private fun exceptionFor(what: String, error: CameraKError): Exception = if (error is CameraKError.Closed) {
+        controllerReleased()
+    } else {
+        IllegalStateException(
+            "$what failed: ${describe(error)}",
+            error.cause,
+        )
+    }
+
+    private fun describe(error: CameraKError): String = when (error) {
+        is CameraKError.Unsupported -> "${error.feature} is not supported"
+        is CameraKError.Storage -> "storage ${error.kind}"
+        is CameraKError.Hardware -> "camera error ${error.platformCode}"
+        is CameraKError.Timeout -> "${error.operation} timed out"
+        is CameraKError.Busy -> "${error.operation} is busy"
+        is CameraKError.InvalidState -> "${error.operation} does not apply now"
+        CameraKError.NotReady -> "the camera is not open"
+        else -> error::class.simpleName ?: "the engine refused it"
     }
 
     actual fun getDeviceOrientation(): DeviceOrientation = engine.orientation.deviceOrientation

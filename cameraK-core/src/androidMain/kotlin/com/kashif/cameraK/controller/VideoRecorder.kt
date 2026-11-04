@@ -1,37 +1,61 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.MediaMetadataRetriever
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
 import androidx.core.content.ContextCompat
+import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.engine.EngineRecordingEvent
+import com.kashif.cameraK.error.CameraFeature
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.CameraOperation
+import com.kashif.cameraK.recording.RecordingEndReason
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import java.util.concurrent.Executor
+import kotlin.time.Duration.Companion.nanoseconds
 
 private const val TAG = "CameraK"
 
-/** How long a stop waits for CameraX's Finalize, and a recording bind for the camera to be bound. */
+/** How long a stop waits for CameraX's Finalize, and a start, pause or resume for CameraX's report. */
 internal const val STOP_FINALIZE_TIMEOUT_MS = 5000L
 
-/** What [VideoRecorder] needs from the session that binds the camera. */
+private const val EVENT_BUFFER = 64
+
+/** What [VideoRecorder] needs from the session that binds the camera. Main thread. */
 internal interface VideoSessionHost {
     val isReleased: Boolean
 
     /** Whether a bind has given the session its camera. */
     val isBound: Boolean
 
-    /** Rebinds the bound camera and waits for the bind, for at most [STOP_FINALIZE_TIMEOUT_MS]. */
+    /**
+     * Rebinds the bound camera with [VideoRecorder.useCaseForBind] in the group; null when bound.
+     * When CameraX refuses the group, the host binds it again without VideoCapture and returns
+     * `Unsupported(VIDEO_QUALITY)`.
+     */
+    fun bindWithVideo(): CameraKError?
+
+    /** Rebinds the bound camera with the current use cases and waits for the bind. */
     suspend fun rebindAndAwait()
 
     /** CameraX ended the active recording by itself and VideoCapture was dropped: rebind for full-FOV stills. */
@@ -39,225 +63,451 @@ internal interface VideoSessionHost {
 
     /** No recording is active any more. */
     fun onNoActiveRecording()
+
+    /** The qualities the bound camera records, once the last bind's query has returned. */
+    suspend fun videoQualities(): Set<VideoQuality>
 }
 
+/** How one recording ended, with what the 1.x facade also reports. */
+internal class RecordingOutcome(
+    val result: CameraKResult<RecordedVideo>,
+    val reason: RecordingEndReason,
+    val durationMs: Long,
+)
+
 /**
- * Video recording: a VideoCapture bound only while a recording needs it, one CameraX recording per
- * start, and its Finalize mapped by [FinalizeMapper] into the result the next stop returns.
+ * Video recording (design §5, §2.4): one CameraX recording per start, observed from its Start to its
+ * Finalize, and every milestone on [events]. VideoCapture joins the bind only when a recording needs
+ * it, or from [prepare] until the engine stops (#136: while bound, stills crop to its field of view).
+ * The Recorder and its VideoCapture are built on [background]; only the bind runs on Main. Each
+ * Finalize is mapped by [FinalizeMapper] over the playable probe, and a recording whose file is not
+ * kept leaves no file.
+ *
+ * Every recording the engine started yields exactly one `Finalized`, in start order, whoever ended
+ * it. A start that returns Failure started none. A start whose caller gave up after it reached
+ * CameraX stays the active recording, so the next stop ends it and it still yields its `Finalized`.
+ *
+ * The 1.x facade records here too ([start] with `legacy`): a recording it started whose outcome no
+ * facade stop claimed is kept for the next facade stop, as 1.x reported it.
  */
 internal class VideoRecorder(
     private val context: Context,
     private val backend: CameraXBackend,
     private val files: OutputFileFactory,
     private val host: VideoSessionHost,
+    private val background: CoroutineDispatcher,
+    private val callbackExecutor: Executor,
 ) {
-    /** The VideoCapture use case of the current bind, or null when it has none. */
+    /** The VideoCapture of the current bind, or null when it has none. */
     var videoCapture: VideoCapture<Recorder>? = null
         private set
 
-    private var activeRecording: RecordingSession? = null
+    // The quality videoCapture records in, and whether it stays bound after its recording (prepare).
+    private var videoQuality: VideoQuality? = null
+    private var prepared = false
 
-    // The outcome of the current recording, completed by its Finalize however the recording ended,
-    // and kept until a stopRecording() claims it. A recording CameraX ends by itself (source
-    // inactive, disk full, a limit reached) is still reported by the next stop.
-    private var recordingOutcome: CompletableDeferred<VideoCaptureResult>? = null
+    // Set when the engine stopped with VideoCapture bound: the next start binds the photo session again.
+    var videoBindStale = false
+        private set
 
-    // VideoCapture is only bound while recording. A 16:9 VideoCapture in the photo UseCaseGroup
-    // shares the ViewPort and shrinks the common field of view, so every still gets cropped/zoomed
-    // (#136) — unless StreamSharing happens to merge it. Binding it lazily keeps photos full-FOV.
-    @Volatile
-    private var includeVideoUseCase = false
+    // The recording CameraX is running, from its start until a stop or its Finalize.
+    private var active: Run? = null
 
-    @Volatile
-    private var pendingVideoQuality = VideoQuality.FHD
+    // A recording the 1.x facade started, ended, and whose outcome no facade stop has claimed yet.
+    private var unclaimed: Run? = null
 
-    val isRecording: Boolean get() = activeRecording != null
+    private val _events = MutableSharedFlow<EngineRecordingEvent>(extraBufferCapacity = EVENT_BUFFER)
+    val events: SharedFlow<EngineRecordingEvent> = _events.asSharedFlow()
 
-    /** Builds the VideoCapture for the next bind when a recording needs one, and drops it otherwise. */
-    fun configureForBind() {
-        if (includeVideoUseCase) configureVideoCapture(pendingVideoQuality) else videoCapture = null
-    }
+    val isRecording: Boolean get() = active != null
 
     /** The VideoCapture the next bind's use-case group includes, or null. */
-    fun useCaseForBind(): VideoCapture<Recorder>? = if (includeVideoUseCase) videoCapture else null
+    fun useCaseForBind(): VideoCapture<Recorder>? = videoCapture
 
-    private fun configureVideoCapture(quality: VideoQuality) {
+    /** Takes VideoCapture out of the next bind: CameraX refused the group that had it. */
+    fun dropVideoCapture() {
+        videoCapture = null
+        videoQuality = null
+    }
+
+    /** The engine bound the photo session again without VideoCapture. */
+    fun onBoundWithoutVideo() {
+        videoBindStale = false
+    }
+
+    /** Binds VideoCapture for [config] ahead of a start; it stays until the engine stops. Main thread. */
+    suspend fun prepare(config: VideoConfiguration): CameraKResult<Unit> {
+        if (active != null) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_PREPARE))
+        unsupportedQuality(config)?.let { return it }
+        bindVideoCapture(config.quality)?.let { return CameraKResult.Failure(it) }
+        prepared = true
+        return CameraKResult.Success(Unit)
+    }
+
+    /**
+     * Starts a recording and returns its file's path once CameraX reports the start. Main thread.
+     * [legacy] marks a 1.x facade recording, whose unclaimed outcome is kept for the next facade stop.
+     */
+    suspend fun start(config: VideoConfiguration, legacy: Boolean): CameraKResult<String> {
+        if (active != null) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_START))
+        unsupportedQuality(config)?.let { return it }
+        if (legacy && unclaimed != null) {
+            CameraKLogger.w(TAG, "The last recording's outcome was never claimed by stopRecording(); discarding it")
+            unclaimed = null
+        }
+        val lazyBind = videoCapture == null || videoQuality != config.quality
+        var started = false
         try {
-            videoCapture = backend.buildVideoCapture(quality, bitrateBps = null)
-        } catch (e: Exception) {
-            CameraKLogger.w(TAG, "Building the VideoCapture use case failed; binding without it", e)
-            videoCapture = null
+            if (lazyBind) bindVideoCapture(config.quality)?.let { return CameraKResult.Failure(it) }
+            val file = when (val claimed = files.videoFile(config)) {
+                is CameraKResult.Failure -> return claimed
+                is CameraKResult.Success -> claimed.value
+            }
+            val run = Run(file, config, withAudio = config.enableAudio && hasAudioPermission(), legacy)
+            active = run
+            try {
+                run.session = backend.startRecording(
+                    videoCapture = checkNotNull(videoCapture) { "a recording starts on a bound VideoCapture" },
+                    context = context,
+                    output = outputOptions(file, config),
+                    withAudio = run.withAudio,
+                    executor = callbackExecutor,
+                ) { event -> onEvent(run, event) }
+            } catch (e: Exception) {
+                CameraKLogger.e(TAG, "CameraX refused to start the recording", e)
+                if (active === run) active = null
+                file.delete()
+                return CameraKResult.Failure(CameraKError.Internal(e))
+            }
+            return awaitStart(run).also { started = it is CameraKResult.Success }
+        } catch (e: CancellationException) {
+            started = active != null
+            throw e
+        } finally {
+            // A start that began nothing drops the VideoCapture it bound, so stills are full-FOV (#136).
+            if (!started && !prepared && active == null && videoCapture != null) {
+                withContext(NonCancellable) { dropVideoCaptureAndRebind() }
+            }
         }
     }
 
-    suspend fun startRecording(configuration: VideoConfiguration): String {
-        // Reject a second start: starting again would overwrite activeRecording and orphan the
-        // first recording's session (it could never be stopped/finalized).
-        if (activeRecording != null) throw IllegalStateException("A recording is already in progress")
-        // VideoCapture is bound lazily (it isn't part of the photo session — see includeVideoUseCase).
-        // Bind it now and wait for the rebind before recording.
-        val videoBind = videoCapture == null
-        if (videoBind) {
-            if (!host.isBound) throw IllegalStateException("Camera preview not ready for recording")
-            pendingVideoQuality = configuration.quality
-            includeVideoUseCase = true
-        }
-        return try {
-            // Don't hang forever if the bind fails. On timeout, startRecordingInternal reports a
-            // clean error.
-            if (videoBind) host.rebindAndAwait()
-            startRecordingInternal(configuration)
-        } catch (e: Exception) {
-            // Recording never started, whether it failed or the caller was cancelled during the bind:
-            // drop the lazily-bound VideoCapture and rebind, otherwise the flag stays set and every
-            // later photo silently reverts to the cropped FOV (#136).
-            if (includeVideoUseCase) {
-                includeVideoUseCase = false
-                withContext(NonCancellable) { if (host.isBound) host.rebindAndAwait() }
+    private suspend fun awaitStart(run: Run): CameraKResult<String> {
+        run.awaitingStart = true
+        val ended = try {
+            withTimeoutOrNull(STOP_FINALIZE_TIMEOUT_MS) {
+                select<RecordingOutcome?> {
+                    run.started.onAwait { null }
+                    run.finalized.onAwait { it }
+                }
+            }
+        } catch (e: CancellationException) {
+            // The caller gave up after CameraX was asked: the next stop ends this recording, which then
+            // yields its Finalized. A 1.x caller never stops what it gave up on, so it is stopped now.
+            run.awaitingStart = false
+            if (run.legacy) {
+                if (active === run) active = null
+                stopSession(run, RecordingEndReason.USER)
             }
             throw e
         }
+        run.awaitingStart = false
+        return when {
+            run.startConfirmed -> CameraKResult.Success(run.file.absolutePath)
+            ended != null -> CameraKResult.Failure(
+                (ended.result as? CameraKResult.Failure)?.error
+                    ?: CameraKError.Internal(
+                        IllegalStateException("CameraX finalized the recording before it started"),
+                    ),
+            )
+            else -> {
+                CameraKLogger.w(TAG, "CameraX did not report the recording's start in time; stopping it")
+                run.startFailed = true
+                if (active === run) active = null
+                stopSession(run, RecordingEndReason.ERROR)
+                CameraKResult.Failure(CameraKError.Timeout(CameraOperation.RECORD_START))
+            }
+        }
     }
 
-    private suspend fun startRecordingInternal(configuration: VideoConfiguration): String =
-        suspendCancellableCoroutine { cont ->
-            val vc = videoCapture ?: run {
-                cont.resumeWithException(IllegalStateException("VideoCapture use case not available"))
-                return@suspendCancellableCoroutine
+    /** Stops the active recording and returns how it ended; `InvalidState` when nothing records. Main thread. */
+    suspend fun stop(): CameraKResult<RecordedVideo> {
+        val run = active ?: return CameraKResult.Failure(CameraKError.InvalidState(CameraOperation.RECORD_STOP))
+        return stopRun(run, RecordingEndReason.USER, rebind = true).result
+    }
+
+    /**
+     * The 1.x facade's stop: the active recording's outcome, or the last one it started that ended
+     * unclaimed, or null when there is neither. A cancelled caller leaves the outcome for the next stop.
+     */
+    suspend fun stopForFacade(): RecordingOutcome? {
+        unclaimed?.let { run ->
+            if (active == null) {
+                unclaimed = null
+                return run.finalized.await()
             }
-
-            val outputFile = files.videoFile(configuration)
-            val outcome = CompletableDeferred<VideoCaptureResult>()
-            // CameraX stops at either limit and finalizes a playable file (see FinalizeMapper). Its 0
-            // means no limit, so a positive duration under a millisecond is kept as 1 ms.
-            val durationLimitMillis = configuration.maxDuration?.takeIf { it.isPositive() }
-                ?.inWholeMilliseconds?.coerceAtLeast(1L) ?: 0L
-            val outputOptions = FileOutputOptions.Builder(outputFile)
-                .setDurationLimitMillis(durationLimitMillis)
-                .setFileSizeLimit(configuration.maxFileSizeBytes ?: 0L)
-                .build()
-
-            val hasAudioPermission = ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.RECORD_AUDIO,
-            ) == PackageManager.PERMISSION_GRANTED
-
-            // Finalize always arrives on the main executor, after the session below is assigned.
-            var session: RecordingSession? = null
-            session = try {
-                backend.startRecording(
-                    videoCapture = vc,
-                    context = context,
-                    output = outputOptions,
-                    withAudio = configuration.enableAudio && hasAudioPermission,
-                    executor = ContextCompat.getMainExecutor(context),
-                ) { event ->
-                    if (event !is RecordingFinalized) return@startRecording
-                    outcome.complete(finalizedResult(event, outputFile))
-                    // stopRecording() clears activeRecording before it waits, so a recording that
-                    // is still active here was ended by CameraX, with no stop call to restore the
-                    // session. A late Finalize of an earlier recording must not touch a newer one.
-                    if (activeRecording === session) {
-                        activeRecording = null
-                        if (includeVideoUseCase && !host.isReleased) {
-                            // Drop VideoCapture so stills are full-FOV again (#136).
-                            includeVideoUseCase = false
-                            host.rebindAfterRecordingEndedByCameraX()
-                        }
-                    }
-                    if (activeRecording == null) host.onNoActiveRecording()
-                }
-            } catch (e: Exception) {
-                // CameraX refused to start: nothing records, so nothing is left for a stop to await.
-                cont.resumeWithException(e)
-                return@suspendCancellableCoroutine
-            }
-
-            if (recordingOutcome != null) {
-                CameraKLogger.w(TAG, "The last recording's outcome was never claimed by stopRecording(); discarding it")
-            }
-            recordingOutcome = outcome
-            activeRecording = session
-            cont.resume(outputFile.absolutePath)
         }
+        val run = active ?: return null
+        val outcome = stopRun(run, RecordingEndReason.USER, rebind = true)
+        run.claimed = true
+        if (unclaimed === run) unclaimed = null
+        return outcome
+    }
 
-    suspend fun stopRecording(): VideoCaptureResult {
-        val outcome = recordingOutcome
-            ?: return VideoCaptureResult.Error(IllegalStateException("No active recording"))
-        recordingOutcome = null
-        activeRecording?.stop()
-        activeRecording = null
-        var claimed = false
+    /**
+     * Finalizes the active recording before the camera stops or closes (§2.3 rule 7): it ends with
+     * SHUTDOWN, and the VideoCapture it used goes with the session. Main thread.
+     */
+    suspend fun stopForShutdown() {
+        active?.let { stopRun(it, RecordingEndReason.SHUTDOWN, rebind = false) }
+        if (videoCapture != null) {
+            videoCapture = null
+            videoQuality = null
+            prepared = false
+            videoBindStale = true
+        }
+    }
+
+    private suspend fun stopRun(run: Run, reason: RecordingEndReason, rebind: Boolean): RecordingOutcome {
+        if (active === run) active = null
         try {
-            // Don't wait forever: if the CameraX finalize event never arrives this would hang the
-            // caller and leave isRecording stuck true.
-            val result = withTimeoutOrNull(STOP_FINALIZE_TIMEOUT_MS) { outcome.await() }
-                ?: VideoCaptureResult.Error(IllegalStateException("Timed out waiting for recording to finalize"))
-            claimed = true
-            return result
+            stopSession(run, reason)
+            val outcome = withTimeoutOrNull(STOP_FINALIZE_TIMEOUT_MS) { run.finalized.await() }
+            if (outcome == null) CameraKLogger.w(TAG, "CameraX did not finalize the recording in time")
+            return outcome ?: RecordingOutcome(
+                CameraKResult.Failure(CameraKError.Timeout(CameraOperation.RECORD_STOP)),
+                RecordingEndReason.ERROR,
+                durationMs = 0,
+            )
         } finally {
-            // A cancelled caller did not claim the outcome: keep it for the next stop, unless a new
-            // recording has already started.
-            if (!claimed && recordingOutcome == null && activeRecording == null) recordingOutcome = outcome
-            // Drop VideoCapture and rebind back to the full-FOV photo session, also when the caller
-            // was cancelled. Await the rebind before returning: a fire-and-forget rebind lets an
-            // immediate photo (or a quick startRecording) race the pending bind — capturing on the
-            // old UseCaseGroup, or the late rebind unbinding a freshly-started recording's use cases.
-            if (includeVideoUseCase) {
-                includeVideoUseCase = false
-                withContext(NonCancellable) { if (host.isBound) host.rebindAndAwait() }
+            // Back to the full-FOV photo session before returning, also for a cancelled caller, so an
+            // immediate still or start never races a pending bind (#136).
+            if (rebind && !prepared && active == null && videoCapture != null) {
+                withContext(NonCancellable) { dropVideoCaptureAndRebind() }
             }
+            if (active == null) host.onNoActiveRecording()
         }
     }
 
-    /** What a Finalize means for the caller; a recording ended by an error but still playable is logged. */
-    private fun finalizedResult(event: RecordingFinalized, file: File): VideoCaptureResult {
-        val playable = file.isFile && file.length() > 0
-        return when (val outcome = FinalizeMapper.map(event, playable)) {
-            is FinalizeOutcome.Failed -> {
-                CameraKLogger.e(TAG, "Recording failed with CameraX error ${outcome.error}", event.cause)
-                VideoCaptureResult.Error(Exception("Recording error code: ${outcome.error}", event.cause))
-            }
-            is FinalizeOutcome.Recorded -> {
-                outcome.endedBy?.let {
-                    CameraKLogger.w(TAG, "Recording ended by CameraX error $it; its file is playable", event.cause)
-                }
-                // Notify MediaStore so video appears in Gallery
-                notifyMediaStoreVideo(file)
-                VideoCaptureResult.Success(filePath = file.absolutePath, durationMs = outcome.durationMs)
-            }
-        }
-    }
-
-    fun pauseRecording() {
-        activeRecording?.pause()
-    }
-
-    fun resumeRecording() {
-        activeRecording?.resume()
-    }
-
-    private fun notifyMediaStoreVideo(file: File) {
+    // Asks CameraX to stop [run] once. A stop CameraX throws from (its recorder already torn down)
+    // will never finalize, so the recording ends here.
+    private fun stopSession(run: Run, reason: RecordingEndReason) {
+        if (run.stopReason == null) run.stopReason = reason
+        val session = run.session ?: return
         try {
-            android.media.MediaScannerConnection.scanFile(
-                context,
-                arrayOf(file.absolutePath),
-                arrayOf("video/mp4"),
-                null,
+            session.stop()
+        } catch (e: Exception) {
+            val operation = if (reason == RecordingEndReason.SHUTDOWN) "on release" else "on request"
+            CameraKLogger.e(TAG, "Stopping the recording $operation failed", e)
+            finish(run, RecordingOutcome(CameraKResult.Failure(CameraKError.Internal(e)), reason, durationMs = 0))
+        }
+    }
+
+    /** Pauses the active recording and returns once CameraX reports the pause. Main thread. */
+    suspend fun pause(): CameraKResult<Unit> = pauseOrResume(CameraOperation.RECORD_PAUSE, pausing = true)
+
+    /** Resumes the paused recording and returns once CameraX reports the resume. Main thread. */
+    suspend fun resume(): CameraKResult<Unit> = pauseOrResume(CameraOperation.RECORD_RESUME, pausing = false)
+
+    private suspend fun pauseOrResume(operation: CameraOperation, pausing: Boolean): CameraKResult<Unit> {
+        val run = active?.takeIf { it.startConfirmed }
+            ?: return CameraKResult.Failure(CameraKError.InvalidState(operation))
+        if (run.paused == pausing) return CameraKResult.Success(Unit)
+        val confirmed = CompletableDeferred<Unit>()
+        run.pendingToggle = confirmed
+        try {
+            if (pausing) run.session?.pause() else run.session?.resume()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Asking CameraX to ${if (pausing) "pause" else "resume"} the recording failed", e)
+            run.pendingToggle = null
+            return CameraKResult.Failure(CameraKError.Internal(e))
+        }
+        val reported = withTimeoutOrNull(STOP_FINALIZE_TIMEOUT_MS) { confirmed.await() }
+        if (run.pendingToggle === confirmed) run.pendingToggle = null
+        return when {
+            reported == null -> CameraKResult.Failure(CameraKError.Timeout(operation))
+            run.done -> CameraKResult.Failure(CameraKError.InvalidState(operation))
+            else -> CameraKResult.Success(Unit)
+        }
+    }
+
+    // On the callback executor, the engine's main dispatcher: every milestone of [run], in order.
+    private fun onEvent(run: Run, event: RecordingEvent) {
+        try {
+            when (event) {
+                RecordingEvent.Started -> {
+                    if (run.startFailed || run.done) return
+                    run.startConfirmed = true
+                    emit(EngineRecordingEvent.Started(run.file.absolutePath, run.withAudio))
+                    run.started.complete(Unit)
+                }
+                RecordingEvent.Paused, RecordingEvent.Resumed -> {
+                    if (!run.startConfirmed || run.done) return
+                    run.paused = event == RecordingEvent.Paused
+                    emit(if (run.paused) EngineRecordingEvent.Paused else EngineRecordingEvent.Resumed)
+                    run.pendingToggle?.complete(Unit)
+                }
+                is RecordingFinalized -> onFinalized(run, event)
+            }
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Handling a recording report failed", e)
+        }
+    }
+
+    private fun onFinalized(run: Run, event: RecordingFinalized) {
+        if (run.done) return
+        // Finalized before CameraX reported the start, while the start still waits: it started nothing.
+        if (!run.startConfirmed && run.awaitingStart) run.startFailed = true
+        val probe = probe(run.file)
+        val video = RecordedVideo(
+            path = run.file.absolutePath,
+            duration = event.recordedDurationNanos.nanoseconds,
+            width = probe.width ?: run.config.quality.width,
+            height = probe.height ?: run.config.quality.height,
+            bitrateBps = probe.bitrateBps,
+            hasAudio = run.withAudio,
+        )
+        val mapped = FinalizeMapper.mapRecording(
+            event,
+            probe.playable,
+            video,
+            run.stopReason ?: RecordingEndReason.USER,
+        )
+        logFinalize(event, mapped)
+        val keptFile = mapped.result is CameraKResult.Success ||
+            ((mapped.result as CameraKResult.Failure).error as? CameraKError.Storage)?.keptFilePath != null
+        if (!keptFile || run.startFailed) run.file.delete()
+        val endedByCameraX = run.stopReason == null
+        finish(run, RecordingOutcome(mapped.result, mapped.reason, event.recordedDurationNanos / 1_000_000))
+        if (endedByCameraX && active == null && !prepared && videoCapture != null && !host.isReleased) {
+            // Drop VideoCapture so stills are full-FOV again (#136).
+            videoCapture = null
+            videoQuality = null
+            host.rebindAfterRecordingEndedByCameraX()
+        }
+        if (active == null) host.onNoActiveRecording()
+    }
+
+    // Ends [run] once: its outcome, and its one Finalized unless its start returned Failure.
+    private fun finish(run: Run, outcome: RecordingOutcome) {
+        if (run.done) return
+        run.done = true
+        if (active === run) active = null
+        if (run.legacy && !run.claimed && !run.startFailed) unclaimed = run
+        if (!run.startFailed) emit(EngineRecordingEvent.Finalized(outcome.result, outcome.reason))
+        run.pendingToggle?.complete(Unit)
+        run.finalized.complete(outcome)
+    }
+
+    private fun emit(event: EngineRecordingEvent) {
+        if (!_events.tryEmit(event)) CameraKLogger.e(TAG, "A recording event was dropped: no room in the event buffer")
+    }
+
+    private fun logFinalize(event: RecordingFinalized, mapped: MappedFinalize) {
+        if (!event.hasError) return
+        when {
+            event.error in FinalizeMapper.bugCodes ->
+                CameraKLogger.e(
+                    TAG,
+                    "CameraX ended the recording with error ${event.error}, a CameraK bug",
+                    event.cause,
+                )
+            mapped.result is CameraKResult.Success ->
+                CameraKLogger.w(
+                    TAG,
+                    "Recording ended by CameraX error ${event.error}; its file is playable",
+                    event.cause,
+                )
+            else -> CameraKLogger.e(TAG, "Recording failed with CameraX error ${event.error}", event.cause)
+        }
+    }
+
+    // CameraX's quality, from the bound camera's own set (§6.3); the bitrate is the quality's.
+    private suspend fun unsupportedQuality(config: VideoConfiguration): CameraKResult.Failure? {
+        if (config.quality in host.videoQualities()) return null
+        return CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.VIDEO_QUALITY))
+    }
+
+    // Builds the Recorder and VideoCapture off Main, then binds them on Main; null when bound.
+    private suspend fun bindVideoCapture(quality: VideoQuality): CameraKError? {
+        if (!host.isBound) return CameraKError.NotReady
+        val built = try {
+            withContext(background) { backend.buildVideoCapture(quality, quality.bitrateBps) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Building the VideoCapture use case failed", e)
+            return CameraKError.Internal(e)
+        }
+        videoCapture = built
+        videoQuality = quality
+        val error = host.bindWithVideo()
+        if (error != null) {
+            videoCapture = null
+            videoQuality = null
+        }
+        return error
+    }
+
+    private suspend fun dropVideoCaptureAndRebind() {
+        videoCapture = null
+        videoQuality = null
+        if (host.isBound && !host.isReleased) host.rebindAndAwait()
+    }
+
+    private fun outputOptions(file: File, config: VideoConfiguration): FileOutputOptions {
+        // CameraX stops at either limit and finalizes a playable file (see FinalizeMapper). Its 0
+        // means no limit, so a positive duration under a millisecond is kept as 1 ms.
+        val durationLimitMillis = config.maxDuration?.takeIf { it.isPositive() }
+            ?.inWholeMilliseconds?.coerceAtLeast(1L) ?: 0L
+        return FileOutputOptions.Builder(file)
+            .setDurationLimitMillis(durationLimitMillis)
+            .setFileSizeLimit(config.maxFileSizeBytes ?: 0L)
+            .build()
+    }
+
+    private fun hasAudioPermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private class Probe(val playable: Boolean, val width: Int?, val height: Int?, val bitrateBps: Int?)
+
+    // §4.1's playable probe: the file exists and MediaMetadataRetriever reads a duration above zero.
+    private fun probe(file: File): Probe {
+        if (!file.isFile || file.length() == 0L) return Probe(false, null, null, null)
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            fun read(key: Int) = retriever.extractMetadata(key)?.toLongOrNull()
+            Probe(
+                playable = (read(MediaMetadataRetriever.METADATA_KEY_DURATION) ?: 0L) > 0L,
+                width = read(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt(),
+                height = read(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt(),
+                bitrateBps = read(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toInt(),
             )
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Notifying MediaStore of a recorded video failed", e)
+            CameraKLogger.w(TAG, "Reading the recorded file's metadata failed; treating it as not playable", e)
+            Probe(false, null, null, null)
+        } finally {
+            try {
+                retriever.release()
+            } catch (e: Exception) {
+                CameraKLogger.w(TAG, "Releasing the metadata reader failed", e)
+            }
         }
     }
 
-    /** Stops the active recording while its VideoCapture is still bound, so it finalizes cleanly. */
-    fun stopForRelease() {
-        activeRecording?.stop()
-        activeRecording = null
-    }
-
-    /** Completes an outcome no stop has claimed with the released-controller error. */
-    fun failUnclaimedOutcome() {
-        recordingOutcome?.complete(VideoCaptureResult.Error(controllerReleased()))
+    /** One recording CameraX is running or ran. Main thread. */
+    private class Run(val file: File, val config: VideoConfiguration, val withAudio: Boolean, val legacy: Boolean) {
+        var session: RecordingSession? = null
+        val started = CompletableDeferred<Unit>()
+        val finalized = CompletableDeferred<RecordingOutcome>()
+        var startConfirmed = false
+        var awaitingStart = false
+        var startFailed = false
+        var stopReason: RecordingEndReason? = null
+        var paused = false
+        var pendingToggle: CompletableDeferred<Unit>? = null
+        var claimed = false
+        var done = false
     }
 }

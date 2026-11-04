@@ -1,8 +1,5 @@
 package com.kashif.cameraK.controller
 
-import android.content.Context
-import android.net.Uri
-import android.provider.MediaStore
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
@@ -10,37 +7,48 @@ import androidx.camera.core.ExperimentalZeroShutterLag
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.core.content.ContextCompat
+import com.kashif.cameraK.engine.TraceNames
+import com.kashif.cameraK.engine.Tracer
+import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
+import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
-import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.StorageFailure
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKLogger
-import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.sync.Semaphore
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.RejectedExecutionException
 import kotlin.coroutines.resume
 
 private const val TAG = "CameraK"
-private const val MAX_CONCURRENT_CAPTURES = 3
 
 /**
- * The ImageCapture use case and every still taken through it: one continuation per request, a soft
- * cap on captures in flight, and the capture listeners each saved image is delivered to.
+ * The ImageCapture use case and every still taken through it: one continuation per request, written
+ * to a file in app-owned storage and nowhere else (Decision 10), and the capture listeners each saved
+ * image is delivered to. CameraX's file output always writes JPEG; a PNG configuration gets a real
+ * PNG, transcoded on [imageProcessingExecutor] ([PngTranscoder]). The holder counts captures in
+ * flight; nothing here limits them.
  */
 internal class StillCapturer(
-    private val context: Context,
     private val backend: CameraXBackend,
     private val files: OutputFileFactory,
     private val imageProcessingExecutor: ExecutorService,
+    private val callbackExecutor: Executor,
     private val qualityPriority: QualityPrioritization,
+    /** JPEG or PNG; the engine refuses every other format at start. */
+    val format: ImageFormat,
+    private val tracer: () -> Tracer,
     private val isReleased: () -> Boolean,
     private val metadata: () -> ImageCapture.Metadata,
+    private val boundLens: () -> CameraLens?,
 ) {
     /** The ImageCapture use case of the current bind, or null before the first one. */
     var imageCapture: ImageCapture? = null
@@ -52,12 +60,8 @@ internal class StillCapturer(
 
     // Captures whose CameraX callback has not arrived yet. Whoever removes a continuation (the
     // callback or failInFlight()) is the one that resumes it.
-    private val inFlight: MutableSet<CancellableContinuation<ImageCaptureResult>> =
+    private val inFlight: MutableSet<CancellableContinuation<CameraKResult<File>>> =
         Collections.newSetFromMap(ConcurrentHashMap())
-
-    // One permit per capture in flight. Each capture gives its permit back exactly once, through
-    // its CaptureSlot, whichever of success, error or cancellation settles it first.
-    private val slots = Semaphore(MAX_CONCURRENT_CAPTURES)
 
     /**
      * Builds the image capture use case for the next bind. [QualityPrioritization.NONE] states no
@@ -81,134 +85,110 @@ internal class StillCapturer(
             .build()
     }
 
-    suspend fun takePictureToFile(): ImageCaptureResult = suspendCancellableCoroutine { cont ->
-        if (isReleased()) {
-            cont.resume(ImageCaptureResult.Error(controllerReleased()))
-            return@suspendCancellableCoroutine
-        }
-        if (!slots.tryAcquire()) {
-            CameraKLogger.w(TAG, "Burst queue full, dropping frame")
-            cont.resume(ImageCaptureResult.Error(Exception("Burst queue full, capture rejected")))
-            return@suspendCancellableCoroutine
-        }
-        val slot = CaptureSlot()
-        // Registered before the capture starts, so a cancellation at any point releases the slot.
-        cont.invokeOnCancellation {
-            inFlight.remove(cont)
-            slot.release()
-        }
-        // A caller that had already left was cancelled on entry, and the handler above released its slot.
-        if (!cont.isActive) return@suspendCancellableCoroutine
-
-        performCaptureToFile(cont, slot)
-    }
-
-    /** A capture's hold on one of [slots]; the first [release] gives it back, later ones do nothing. */
-    private inner class CaptureSlot {
-        private val settled = atomic(false)
-
-        fun release() {
-            if (settled.compareAndSet(false, true)) slots.release()
-        }
-    }
-
     /**
-     * Perform fast file-based capture without ByteArray processing.
-     * Directly saves to final destination and returns file path.
+     * Takes one still into a new app-owned file and returns that file, a PNG for a PNG
+     * configuration. Main thread. A caller that leaves before CameraX is asked sends nothing; one that
+     * leaves later does not stop CameraX, whose file still reaches the capture listeners.
      */
-    private fun performCaptureToFile(continuation: CancellableContinuation<ImageCaptureResult>, slot: CaptureSlot) {
-        val capture = imageCapture ?: run {
-            slot.release()
-            continuation.resume(ImageCaptureResult.Error(Exception("ImageCapture use case is not initialized.")))
-            return
+    suspend fun capture(): CameraKResult<File> {
+        if (isReleased()) return CameraKResult.Failure(CameraKError.Closed)
+        val capture = imageCapture ?: return CameraKResult.Failure(CameraKError.NotReady)
+        val file = when (val claimed = files.photoFile("jpg")) {
+            is CameraKResult.Failure -> return claimed
+            is CameraKResult.Success -> claimed.value
         }
-        // A destination that cannot be created fails this capture instead of escaping takePictureToFile.
-        val destination = try {
-            files.photoDestination()
-        } catch (e: java.io.IOException) {
-            CameraKLogger.e(TAG, "Creating the capture file failed", e)
-            slot.release()
-            continuation.resume(ImageCaptureResult.Error(e))
-            return
+        val trace = tracer().beginInterval(TraceNames.CAPTURE)
+        return try {
+            suspendCancellableCoroutine { continuation ->
+                continuation.invokeOnCancellation { inFlight.remove(continuation) }
+                // A caller that had already left never reaches CameraX.
+                if (!continuation.isActive) {
+                    file.delete()
+                    return@suspendCancellableCoroutine
+                }
+                inFlight += continuation
+                val options = ImageCapture.OutputFileOptions.Builder(file).setMetadata(metadata()).build()
+                backend.takePicture(capture, options, callbackExecutor, SavedCallback(continuation, file))
+            }
+        } finally {
+            trace.close()
         }
-        val outputFile = destination.file
-        val galleryValues = destination.galleryValues
-        val options = if (galleryValues != null) {
-            ImageCapture.OutputFileOptions.Builder(
-                context.contentResolver,
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                galleryValues,
-            )
-        } else {
-            ImageCapture.OutputFileOptions.Builder(checkNotNull(outputFile))
-        }.setMetadata(metadata()).build()
-
-        inFlight.add(continuation)
-        backend.takePicture(
-            capture,
-            options,
-            ContextCompat.getMainExecutor(context),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    slot.release()
-                    val galleryUri = if (outputFile == null) output.savedUri else null
-                    if (isReleased()) {
-                        // The release already told the caller this capture failed; don't leave an
-                        // unreported file or gallery entry behind or post to the shut-down executor.
-                        CameraKLogger.d(TAG, "Discarding a capture saved after the controller was released")
-                        outputFile?.delete()
-                        galleryUri?.let(files::deleteGalleryEntry)
-                        return
-                    }
-
-                    val result = when {
-                        outputFile != null -> ImageCaptureResult.SuccessWithFile(outputFile.absolutePath)
-                        galleryUri != null -> ImageCaptureResult.SuccessWithUri(galleryUri.toString())
-                        else -> {
-                            CameraKLogger.e(TAG, "CameraX saved a gallery capture without reporting its entry")
-                            ImageCaptureResult.Error(IllegalStateException("The saved capture has no gallery entry"))
-                        }
-                    }
-
-                    // Notify capture listeners (e.g. ImageSaverPlugin auto-save) off the main
-                    // thread, reading the just-saved image only when someone is listening.
-                    if (result !is ImageCaptureResult.Error && listeners.isNotEmpty()) {
-                        imageProcessingExecutor.execute { deliverToListeners(outputFile, galleryUri) }
-                    }
-
-                    if (inFlight.remove(continuation)) {
-                        continuation.resume(result)
-                    }
-                }
-
-                override fun onError(exc: ImageCaptureException) {
-                    CameraKLogger.e(TAG, "Image capture failed", exc)
-                    slot.release()
-                    outputFile?.delete() // Clean up failed capture file
-                    val reportError = {
-                        if (inFlight.remove(continuation)) {
-                            continuation.resume(ImageCaptureResult.Error(exc))
-                        }
-                    }
-                    if (galleryValues == null) {
-                        reportError()
-                        return
-                    }
-                    runOffMain {
-                        files.deleteFailedGalleryCapture(galleryValues)
-                        reportError()
-                    }
-                }
-            },
-        )
     }
 
-    /** Runs MediaStore and file work off the main thread, or here once the controller has shut down. */
-    private fun runOffMain(block: () -> Unit) {
+    private inner class SavedCallback(
+        private val continuation: CancellableContinuation<CameraKResult<File>>,
+        private val file: File,
+    ) : ImageCapture.OnImageSavedCallback {
+        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+            if (isReleased()) {
+                // The release already told the caller this capture failed; leave no unreported file.
+                CameraKLogger.d(TAG, "Discarding a capture saved after the camera was closed")
+                file.delete()
+                return
+            }
+            if (format != ImageFormat.PNG) {
+                finish(CameraKResult.Success(file))
+                return
+            }
+            onImageProcessing {
+                finish(
+                    try {
+                        transcoded(file)
+                    } catch (e: Exception) {
+                        CameraKLogger.e(TAG, "Writing the PNG capture failed", e)
+                        file.delete()
+                        CameraKResult.Failure(CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = e))
+                    },
+                )
+            }
+        }
+
+        override fun onError(exc: ImageCaptureException) {
+            CameraKLogger.e(TAG, "Image capture failed", exc)
+            file.delete()
+            resume(CameraKResult.Failure(captureError(exc)))
+        }
+
+        private fun transcoded(jpeg: File): CameraKResult<File> {
+            val png = when (val claimed = files.siblingFile(jpeg, "png")) {
+                is CameraKResult.Failure -> return claimed.also { jpeg.delete() }
+                is CameraKResult.Success -> claimed.value
+            }
+            try {
+                PngTranscoder.transcode(jpeg, png)
+            } catch (e: Exception) {
+                png.delete()
+                throw e
+            }
+            return CameraKResult.Success(png)
+        }
+
+        private fun finish(result: CameraKResult<File>) {
+            if (result is CameraKResult.Success && listeners.isNotEmpty()) {
+                onImageProcessing { deliverToListeners(result.value) }
+            }
+            resume(result)
+        }
+
+        private fun resume(result: CameraKResult<File>) {
+            if (inFlight.remove(continuation)) continuation.resume(result)
+        }
+    }
+
+    private fun captureError(exc: ImageCaptureException): CameraKError = when (exc.imageCaptureError) {
+        ImageCapture.ERROR_FILE_IO -> CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = exc)
+        ImageCapture.ERROR_CAMERA_CLOSED -> CameraKError.NotReady
+        ImageCapture.ERROR_CAPTURE_FAILED -> CameraKError.Hardware(exc.imageCaptureError, exc)
+        ImageCapture.ERROR_INVALID_CAMERA -> CameraKError.NoCamera(boundLens(), exc)
+        else -> CameraKError.Internal(exc)
+    }
+
+    /** Runs [block] on the image-processing executor, or here once that has shut down. */
+    private fun onImageProcessing(block: () -> Unit) {
         try {
             imageProcessingExecutor.execute(block)
-        } catch (e: java.util.concurrent.RejectedExecutionException) {
-            CameraKLogger.w(TAG, "Image processing has shut down; cleaning up the capture on the calling thread", e)
+        } catch (e: RejectedExecutionException) {
+            CameraKLogger.w(TAG, "Image processing has shut down; finishing the capture on the calling thread", e)
             block()
         }
     }
@@ -217,14 +197,9 @@ internal class StillCapturer(
      * Runs on [imageProcessingExecutor]. Nothing may escape: an exception here reaches the thread's
      * uncaught handler and kills the host process. Each listener is isolated from the others.
      */
-    private fun deliverToListeners(file: File?, galleryUri: Uri?) {
+    private fun deliverToListeners(file: File) {
         val bytes = try {
-            file?.readBytes()
-                ?: galleryUri?.let { uri ->
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: throw java.io.IOException("The gallery capture could not be opened")
-                }
-                ?: return
+            file.readBytes()
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Reading the captured image for capture listeners failed", e)
             return
@@ -259,12 +234,10 @@ internal class StillCapturer(
     /** Fails every capture still waiting for a CameraX callback, which is now ignored. */
     fun failInFlight() {
         inFlight.toList().forEach { continuation ->
-            if (inFlight.remove(continuation)) {
-                continuation.resume(ImageCaptureResult.Error(controllerReleased()))
-            }
+            if (inFlight.remove(continuation)) continuation.resume(CameraKResult.Failure(CameraKError.Closed))
         }
     }
 }
 
-/** The error every call made on, or still waiting in, a released controller reports. */
+/** The error every 1.x call made on, or still waiting in, a released controller reports. */
 internal fun controllerReleased() = IllegalStateException("Camera controller was released")

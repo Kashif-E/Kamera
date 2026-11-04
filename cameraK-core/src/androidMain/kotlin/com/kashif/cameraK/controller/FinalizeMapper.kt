@@ -1,53 +1,82 @@
 package com.kashif.cameraK.controller
 
-import androidx.camera.video.VideoRecordEvent
+import androidx.camera.video.VideoRecordEvent.Finalize
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.utils.CameraKEngineApi
 
 /** How the engine reports a recording CameraX finalized: its outcome and why it ended. */
 internal class MappedFinalize(val result: CameraKResult<RecordedVideo>, val reason: RecordingEndReason)
 
-/** What a recording's Finalize means for the caller. */
-internal sealed interface FinalizeOutcome {
-    /** The file holds the recording. [endedBy] is the CameraX error that ended it early, or null. */
-    data class Recorded(val durationMs: Long, val endedBy: Int?) : FinalizeOutcome
-
-    /** The recording failed with CameraX error [error] and its file is not kept. */
-    data class Failed(val error: Int) : FinalizeOutcome
-}
-
 /**
- * Maps CameraX's Finalize to a [FinalizeOutcome]. Several errors end the recording but leave a
- * playable file (the camera was taken away, a size or duration limit or a full disk stopped it);
- * those keep the file when it is playable.
+ * Maps CameraX's Finalize to the engine's outcome, as design §4.1's Android table does, under §5's
+ * partial-file rule: a recording that ends on a platform error is a Success when its file is
+ * [playable] and the row's Failure when it is not; a full disk is `Storage(FULL)` with the kept file;
+ * codes that by definition leave no file are always a Failure. The Finalize cause is every Failure's
+ * cause. A code newer than this table (CameraX added one) maps as ERROR_UNKNOWN does.
  */
+@OptIn(CameraKEngineApi::class)
 internal object FinalizeMapper {
-    // CameraX stops at either configured limit and finalizes a playable file.
-    private val PLAYABLE_FINALIZE_ERRORS = setOf(
-        VideoRecordEvent.Finalize.ERROR_SOURCE_INACTIVE,
-        VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED,
-        VideoRecordEvent.Finalize.ERROR_DURATION_LIMIT_REACHED,
-        VideoRecordEvent.Finalize.ERROR_INSUFFICIENT_STORAGE,
+    /** Every `VideoRecordEvent.Finalize.ERROR_*` code the table has a row for. */
+    val handledCodes: Set<Int> = setOf(
+        Finalize.ERROR_NONE,
+        Finalize.ERROR_UNKNOWN,
+        Finalize.ERROR_FILE_SIZE_LIMIT_REACHED,
+        Finalize.ERROR_INSUFFICIENT_STORAGE,
+        Finalize.ERROR_SOURCE_INACTIVE,
+        Finalize.ERROR_INVALID_OUTPUT_OPTIONS,
+        Finalize.ERROR_ENCODING_FAILED,
+        Finalize.ERROR_RECORDER_ERROR,
+        Finalize.ERROR_NO_VALID_DATA,
+        Finalize.ERROR_DURATION_LIMIT_REACHED,
+        Finalize.ERROR_RECORDING_GARBAGE_COLLECTED,
     )
 
-    fun map(event: RecordingFinalized, fileIsPlayable: Boolean): FinalizeOutcome {
-        val keepsFile = !event.hasError || (event.error in PLAYABLE_FINALIZE_ERRORS && fileIsPlayable)
-        if (!keepsFile) return FinalizeOutcome.Failed(event.error)
-        return FinalizeOutcome.Recorded(
-            durationMs = event.recordedDurationNanos / 1_000_000,
-            endedBy = event.error.takeIf { event.hasError },
-        )
-    }
+    /** Codes that mean a CameraK bug: CameraX knows nothing better, or the recording was leaked. */
+    val bugCodes: Set<Int> = setOf(Finalize.ERROR_UNKNOWN, Finalize.ERROR_RECORDING_GARBAGE_COLLECTED)
 
-    /** Every `VideoRecordEvent.Finalize.ERROR_*` code the mapper has a row for (A3'). */
-    val handledCodes: Set<Int> get() = TODO("A3': the exhaustive Finalize table")
-
-    /** The engine's outcome for [event] over [video], as §4.1's Android table maps it (A3'). */
+    /**
+     * The outcome of [event] over [video], the file it recorded into. [requested] is why the engine
+     * stopped it, USER or SHUTDOWN, which is the reason of a recording that ended without an error.
+     */
     fun mapRecording(
         event: RecordingFinalized,
         playable: Boolean,
         video: RecordedVideo,
         requested: RecordingEndReason,
-    ): MappedFinalize = TODO("A3': the exhaustive Finalize table")
+    ): MappedFinalize {
+        val code = event.error
+        val cause = event.cause
+        fun ended(reason: RecordingEndReason, otherwise: () -> CameraKError) =
+            if (playable) MappedFinalize(CameraKResult.Success(video), reason) else failed(otherwise(), reason)
+        val hardware = { CameraKError.Hardware(code, cause) }
+        val internal = { CameraKError.Internal(cause) }
+        return when (code) {
+            Finalize.ERROR_NONE -> ended(requested) {
+                CameraKError.Internal(
+                    cause ?: IllegalStateException("CameraX finalized a recording that is not playable"),
+                )
+            }
+            Finalize.ERROR_DURATION_LIMIT_REACHED -> ended(RecordingEndReason.MAX_DURATION, hardware)
+            Finalize.ERROR_FILE_SIZE_LIMIT_REACHED -> ended(RecordingEndReason.MAX_FILE_SIZE, hardware)
+            Finalize.ERROR_SOURCE_INACTIVE -> ended(RecordingEndReason.INTERRUPTED, hardware)
+            Finalize.ERROR_INSUFFICIENT_STORAGE -> failed(
+                CameraKError.Storage(StorageFailure.FULL, keptFilePath = video.path.takeIf { playable }, cause = cause),
+                RecordingEndReason.ERROR,
+            )
+            Finalize.ERROR_ENCODING_FAILED, Finalize.ERROR_RECORDER_ERROR -> ended(RecordingEndReason.ERROR, hardware)
+            Finalize.ERROR_NO_VALID_DATA -> failed(internal(), RecordingEndReason.ERROR)
+            Finalize.ERROR_INVALID_OUTPUT_OPTIONS -> failed(
+                CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = cause),
+                RecordingEndReason.ERROR,
+            )
+            else -> ended(RecordingEndReason.ERROR, internal)
+        }
+    }
+
+    private fun failed(error: CameraKError, reason: RecordingEndReason) =
+        MappedFinalize(CameraKResult.Failure(error), reason)
 }
