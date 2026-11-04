@@ -50,8 +50,9 @@ import kotlin.time.TimeSource
 internal val RECORDING_START_TIMEOUT: Duration = 5.seconds
 
 /**
- * How long `close()` waits for the recording to finalize before it goes on to close the camera, so
- * a platform that never finalizes cannot keep the holder open. A host stop is bounded by it too.
+ * How long a stop waits for the platform to finalize the recording: past it, the recording ends as
+ * `Timeout(RECORD_STOP)`. `close()` and a host stop also wait at most this long for the recording
+ * step as a whole, so a platform that never finalizes cannot keep the camera open.
  */
 internal val SHUTDOWN_STOP_TIMEOUT: Duration = 5.seconds
 
@@ -62,11 +63,17 @@ internal val RECORDING_TICK: Duration = 250.milliseconds
  * The holder's one recording: the owner of [state] and the only path to the engine's recording
  * calls, and, for a host stop, to `engine.stop()`. Transitions that wait on the platform hold one
  * [Mutex], so a stop during a start waits for the start to resolve and then stops. Calls that only
- * read the state (a second start, a camera switch) answer at once.
+ * read the state (a second start, a camera switch) answer at once. Each state change is one critical
+ * section of [lock] that checks the phase it expects for that recording before it writes.
  *
  * The engine's recording events are collected for the holder's lifetime, so a recording the platform
  * ends on its own (a limit, an error, an interruption) always reaches [state] as Finished and the
  * app as [CameraKEvent.RecordingEnded]. A stop the caller asked for returns its outcome instead.
+ *
+ * The engine yields one `Finalized` per recording it started, in start order, possibly after
+ * `stopRecording` returned (`CameraEngine.recordingEvents`). A recording the holder ended before its
+ * `Finalized` arrived owes one, and the next `Finalized` pays the oldest debt: it is drained, so a
+ * late end never reaches the recording after it.
  *
  * @param commands Runs each platform call as a command job in the holder's scope, on its default
  *   dispatcher, so a caller that is cancelled never cancels a finalization.
@@ -95,11 +102,17 @@ internal class RecordingController(
     // Guarded by lock.
     private var lastId = 0L
     private var startingId = 0L
+    private var startAbandoned = false
     private var startJob: Job? = null
     private var stopJob: Deferred<CameraKResult<RecordedVideo>>? = null
     private var hasAudio = false
     private var clock: RecordingClock? = null
     private var ticker: Job? = null
+
+    // Guarded by lock: the Finalized events still owed by recordings already ended, and whether the
+    // current recording's own has arrived.
+    private var owedFinalizes = 0
+    private var finalizeSeen = false
 
     // What the engine reported for the start in flight: the Recording its Started made, or an end before it.
     private val startSignal = MutableStateFlow<StartSignal?>(null)
@@ -133,6 +146,8 @@ internal class RecordingController(
             }
             val id = ++lastId
             startingId = id
+            startAbandoned = false
+            finalizeSeen = false
             startSignal.value = null
             _state.value = RecordingState.Starting(config)
             commands.start(CameraOperation.RECORD_START) { startUnderLock(config, id) }.also { startJob = it }
@@ -223,19 +238,21 @@ internal class RecordingController(
             try {
                 microphoneRefusal(config)?.let {
                     outcome = it
-                    return@withLock it.also { backToIdle() }
+                    return@withLock it.also { backToIdle(id) }
                 }
                 engineCalled = true
                 val started = withTimeoutOrNull(RECORDING_START_TIMEOUT) { confirmedStart(config, id) }
                 outcome = started ?: run {
-                    withContext(NonCancellable) { stopUnconfirmed("timed out") }
+                    withContext(NonCancellable) { stopUnconfirmed(id, "timed out") }
                     CameraKResult.Failure(CameraKError.Timeout(CameraOperation.RECORD_START))
                 }
                 outcome
             } finally {
                 // A throwable or close's cancellation: the start ends with no recording left running.
                 if (outcome == null) {
-                    withContext(NonCancellable) { if (engineCalled) stopUnconfirmed("was abandoned") else backToIdle() }
+                    withContext(NonCancellable) {
+                        if (engineCalled) stopUnconfirmed(id, "was abandoned") else backToIdle(id)
+                    }
                 }
                 synchronized(lock) { startJob = null }
             }
@@ -251,7 +268,8 @@ internal class RecordingController(
     // The engine's start, then its Started milestone, which the event collector turns into Recording.
     private suspend fun confirmedStart(config: VideoConfiguration, id: Long): CameraKResult<RecordingState.Recording> {
         val path = when (val started = engine.startRecording(config)) {
-            is CameraKResult.Failure -> return started.also { backToIdle() }
+            // The engine started nothing, so no Finalized is owed.
+            is CameraKResult.Failure -> return started.also { backToIdle(id) }
             is CameraKResult.Success -> started.value
         }
         return when (val signal = startSignal.filterNotNull().first()) {
@@ -267,7 +285,7 @@ internal class RecordingController(
         path: String,
         finalized: EngineRecordingEvent.Finalized,
     ): CameraKResult<RecordingState.Recording> = when (val result = finalized.result) {
-        is CameraKResult.Failure -> result.also { backToIdle() }
+        is CameraKResult.Failure -> result.also { backToIdle(id) }
         is CameraKResult.Success -> {
             val recording = RecordingState.Recording(
                 id,
@@ -276,16 +294,38 @@ internal class RecordingController(
                 Duration.ZERO,
                 result.value.hasAudio,
             )
-            finish(id, result, finalized.reason)
+            val end = synchronized(lock) {
+                if (_state.value is RecordingState.Starting && startingId == id) {
+                    finishLocked(id, result, finalized.reason)
+                } else {
+                    CameraKLogger.w(TAG, "A recording start ended after its state had moved on; the state stays")
+                    null
+                }
+            }
+            end?.let(::announce)
             CameraKResult.Success(recording)
         }
     }
 
     // A start that was not confirmed may still be running on the platform: stop it, and go back to Idle.
-    private suspend fun stopUnconfirmed(why: String) {
+    // The platform began nothing only when it answers that there is nothing to stop; anything else
+    // (a file, another failure, no answer) means that recording still owes its Finalized.
+    private suspend fun stopUnconfirmed(id: Long, why: String) {
+        synchronized(lock) { startAbandoned = true }
         CameraKLogger.w(TAG, "A recording start $why; stopping what the platform began")
-        withTimeoutOrNull(SHUTDOWN_STOP_TIMEOUT) { engine.stopRecording() }
-        backToIdle()
+        val stopped = withTimeoutOrNull(SHUTDOWN_STOP_TIMEOUT) { engineStop() }
+        val nothingBegan = stopped is CameraKResult.Failure && stopped.error is CameraKError.InvalidState
+        synchronized(lock) {
+            if (!nothingBegan && !finalizeSeen) owedFinalizes++
+        }
+        backToIdle(id)
+    }
+
+    private suspend fun engineStop(): CameraKResult<RecordedVideo> = suspendRunCatching {
+        engine.stopRecording()
+    }.getOrElse { e ->
+        CameraKLogger.e(TAG, "Stopping the recording threw; it ends as Internal", e)
+        CameraKResult.Failure(CameraKError.Internal(e))
     }
 
     private suspend fun stopUnderLock(reason: RecordingEndReason): CameraKResult<RecordedVideo> = transitions.withLock {
@@ -298,40 +338,52 @@ internal class RecordingController(
             stopping?.also { _state.value = it }
         } ?: return@withLock CameraKResult.Failure(CameraKError.InvalidState(CameraOperation.RECORD_STOP))
         val result = try {
-            suspendRunCatching { engine.stopRecording() }.getOrElse { e ->
-                CameraKLogger.e(TAG, "Stopping the recording threw; it ends as Internal", e)
-                CameraKResult.Failure(CameraKError.Internal(e))
-            }
+            withTimeoutOrNull(SHUTDOWN_STOP_TIMEOUT) { engineStop() }
         } catch (e: CancellationException) {
             // Only the holder's own end cancels a stop; the recording still ends, without its file.
-            finish(stopping.recordingId, CameraKResult.Failure(CameraKError.Closed), reason)
+            finishStop(stopping, CameraKResult.Failure(CameraKError.Closed), reason)
             throw e
         }
-        finish(stopping.recordingId, result, reason)
+        if (result == null) {
+            // The platform may still finalize it; that Finalized is owed, and drained when it comes.
+            CameraKLogger.e(
+                TAG,
+                "Stopping the recording timed out; it ends as Timeout",
+                RecordingStopTimeoutException(SHUTDOWN_STOP_TIMEOUT),
+            )
+            val timedOut = CameraKResult.Failure(CameraKError.Timeout(CameraOperation.RECORD_STOP))
+            finishStop(stopping, timedOut, RecordingEndReason.ERROR)
+            return@withLock timedOut
+        }
+        finishStop(stopping, result, reason)
         result
+    }
+
+    // The stop's end, only if the recording is still the Stopping this stop wrote.
+    private fun finishStop(
+        stopping: RecordingState.Stopping,
+        result: CameraKResult<RecordedVideo>,
+        reason: RecordingEndReason,
+    ) {
+        val end = synchronized(lock) {
+            if (_state.value !== stopping) {
+                CameraKLogger.w(TAG, "A recording stop returned after the recording had ended; its outcome is dropped")
+                return
+            }
+            if (!finalizeSeen) owedFinalizes++
+            finishLocked(stopping.recordingId, result, reason)
+        }
+        announce(end)
     }
 
     private fun onEngineEvent(event: EngineRecordingEvent) {
         when (event) {
+            // A Started is always the current start's: only Finalized events can arrive late.
             is EngineRecordingEvent.Started -> synchronized(lock) {
-                if (_state.value !is RecordingState.Starting) return
+                if (_state.value !is RecordingState.Starting || startAbandoned) return
                 startSignal.value = StartSignal.Started(becomeRecording(startingId, event.path, event.hasAudio))
             }
-            is EngineRecordingEvent.Finalized -> {
-                val ended = synchronized(lock) {
-                    when (val current = _state.value) {
-                        is RecordingState.Starting -> {
-                            startSignal.value = StartSignal.Ended(event)
-                            null
-                        }
-                        is RecordingState.Recording -> current.recordingId
-                        is RecordingState.Paused -> current.recordingId
-                        // Stopping: the stop's own return is the outcome.
-                        else -> null
-                    }
-                }
-                if (ended != null) finish(ended, event.result, event.reason)
-            }
+            is EngineRecordingEvent.Finalized -> onFinalized(event)
             // The pause and resume commands move the state when the engine returns.
             EngineRecordingEvent.Paused, EngineRecordingEvent.Resumed -> Unit
         }
@@ -378,16 +430,70 @@ internal class RecordingController(
         )
     }
 
-    // Any end: Finished for display, and RecordingEnded unless the caller asked for it.
-    private fun finish(id: Long, result: CameraKResult<RecordedVideo>, reason: RecordingEndReason) {
-        synchronized(lock) {
-            stopTicking()
-            _state.value = RecordingState.Finished(id, result, reason)
+    // The oldest owed Finalized is drained; otherwise it belongs to the recording live now.
+    private fun onFinalized(event: EngineRecordingEvent.Finalized) {
+        val end = synchronized(lock) {
+            if (owedFinalizes > 0) {
+                owedFinalizes--
+                CameraKLogger.d(TAG, "A recording that had already ended reported its finalization; it is drained")
+                return
+            }
+            when (val current = _state.value) {
+                is RecordingState.Starting -> {
+                    finalizeSeen = true
+                    startSignal.value = StartSignal.Ended(event)
+                    null
+                }
+                is RecordingState.Recording -> {
+                    finalizeSeen = true
+                    finishLocked(current.recordingId, event.result, event.reason)
+                }
+                is RecordingState.Paused -> {
+                    finalizeSeen = true
+                    finishLocked(current.recordingId, event.result, event.reason)
+                }
+                // The stop holds the transition; its own return is the outcome.
+                is RecordingState.Stopping -> {
+                    finalizeSeen = true
+                    null
+                }
+                RecordingState.Idle, is RecordingState.Finished -> {
+                    CameraKLogger.w(TAG, "A recording finalization arrived with no recording live; it is dropped")
+                    null
+                }
+            }
         }
-        if (reason != RecordingEndReason.USER) emit(CameraKEvent.RecordingEnded(id, result, reason))
+        end?.let(::announce)
     }
 
-    private fun backToIdle() = synchronized(lock) {
+    // Any end, under lock: Finished for display. The caller announces it once the lock is released.
+    private fun finishLocked(
+        id: Long,
+        result: CameraKResult<RecordedVideo>,
+        reason: RecordingEndReason,
+    ): RecordingState.Finished {
+        stopTicking()
+        return RecordingState.Finished(id, result, reason).also { _state.value = it }
+    }
+
+    // RecordingEnded, unless the caller asked for the end.
+    private fun announce(end: RecordingState.Finished) {
+        if (end.reason != RecordingEndReason.USER) {
+            emit(CameraKEvent.RecordingEnded(end.recordingId, end.result, end.reason))
+        }
+    }
+
+    // Only from this start's own Starting, or the Recording a Started made after it gave up.
+    private fun backToIdle(id: Long) = synchronized(lock) {
+        val ours = when (val current = _state.value) {
+            is RecordingState.Starting -> startingId == id
+            is RecordingState.Recording -> current.recordingId == id
+            else -> false
+        }
+        if (!ours) {
+            CameraKLogger.w(TAG, "A recording start ended after its state had moved on; the state stays")
+            return@synchronized
+        }
         stopTicking()
         _state.value = RecordingState.Idle
     }

@@ -535,7 +535,9 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     /**
      * Stops the recording and returns the finished file. A stop while a start is resolving stops once
      * it has; every stop while one is in flight returns the same outcome. `Failure(InvalidState)`
-     * when nothing is recording.
+     * when nothing is recording. A stop the platform does not finalize within five seconds returns
+     * `Failure(Timeout(RECORD_STOP))`; the recording is then Finished with that failure and reason
+     * ERROR, and [CameraKEvent.RecordingEnded] reports it.
      */
     public suspend fun stopRecording(): CameraKResult<RecordedVideo> {
         commands.refused()?.let { return it }

@@ -80,7 +80,19 @@ public interface CameraEngine {
     /** [CameraCapabilities.EMPTY] until the engine has enumerated its cameras; start and selectCamera wait for it. */
     public val capabilities: StateFlow<CameraCapabilities>
 
-    /** Platform-confirmed recording milestones, observed for the whole recording. */
+    /**
+     * Platform-confirmed recording milestones, observed for the whole recording.
+     *
+     * Every recording the engine started yields exactly one [EngineRecordingEvent.Finalized],
+     * whether the app ended it ([stopRecording], [stop], [close]) or the platform did. These arrive in
+     * start order and may come after [stopRecording] returns. A recording is started once
+     * [startRecording] returns Success or [EngineRecordingEvent.Started] is emitted; a
+     * [startRecording] that returns Failure started none, and any Finalized it emitted came before it
+     * returned. After a [startRecording] the holder gave up on (it timed out or was cancelled), the
+     * holder calls [stopRecording]: `Failure(InvalidState(RECORD_STOP))` from it means nothing
+     * reached the platform and no Finalized follows; any other outcome means that recording yields
+     * its one Finalized like any other.
+     */
     public val recordingEvents: Flow<EngineRecordingEvent>
 
     public val frames: FrameSource
