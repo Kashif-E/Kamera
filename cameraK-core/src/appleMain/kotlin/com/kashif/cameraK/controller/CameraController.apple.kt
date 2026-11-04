@@ -7,6 +7,7 @@ import com.kashif.cameraK.capture.heicCaptureUnsupported
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -534,7 +535,8 @@ actual class CameraController private constructor(
         ) { setFlashMode(kept) }
     }
 
-    actual fun getFlashMode(): FlashMode? = desired.value.flashMode
+    /** The flash the photo output will use while the camera is Open; the facade's desired flash otherwise. */
+    actual fun getFlashMode(): FlashMode? = if (isOpen) engine.hardware.value.flashMode else desired.value.flashMode
 
     actual fun toggleTorchMode() {
         setTorchMode(
@@ -552,24 +554,32 @@ actual class CameraController private constructor(
         engine.launchFacadeCommand("setting the torch") { setTorchMode(mode) }
     }
 
-    actual fun getTorchMode(): TorchMode? = desired.value.torchMode
+    /** The torch as the device reports it while the camera is Open; the facade's desired torch otherwise. */
+    actual fun getTorchMode(): TorchMode? = if (isOpen) engine.hardware.value.torchMode else desired.value.torchMode
 
     /**
-     * Kept for the next start in any state, clamped to the camera in use as 1.x did; while Open, set
-     * through the engine, which clamps it on the session queue.
+     * Kept for the next start in any state, clamped to the camera in use as 1.x did (a fixed-zoom
+     * camera keeps its only ratio); while Open, set through the engine, which clamps it on the session
+     * queue.
      */
     actual fun setZoom(zoomRatio: Float) {
         val camera = customCameraController.currentDevice
-        val kept = if (camera != null && camera.maxAvailableVideoZoomFactor > camera.minVideoZoomFactor) {
-            zoomRatio.coerceIn(camera.minVideoZoomFactor.toFloat(), camera.maxAvailableVideoZoomFactor.toFloat())
-        } else {
-            zoomRatio
+        val kept = when {
+            camera == null -> zoomRatio
+            camera.maxAvailableVideoZoomFactor > camera.minVideoZoomFactor -> zoomRatio.coerceIn(
+                camera.minVideoZoomFactor.toFloat(),
+                camera.maxAvailableVideoZoomFactor.toFloat(),
+            )
+            else -> camera.minVideoZoomFactor.toFloat()
         }
         updateDesired(zoomRatio = kept)
-        engine.launchFacadeCommand("setting the zoom") { setZoom(zoomRatio) }
+        engine.launchFacadeCommand("setting the zoom") { setZoom(kept) }
     }
 
-    actual fun getZoom(): Float = desired.value.zoomRatio
+    /** The zoom the device reports while the camera is Open; the facade's desired zoom otherwise. */
+    actual fun getZoom(): Float = if (isOpen) engine.zoom.value.ratio else desired.value.zoomRatio
+
+    private val isOpen: Boolean get() = engine.state.value == EngineState.Open
 
     actual fun getMaxZoom(): Float = customCameraController.getMaxZoom()
 
@@ -626,7 +636,10 @@ actual class CameraController private constructor(
     actual fun getCameraCapabilities(): CameraCapabilities =
         CameraCapabilities(customCameraController.getCameraCapabilities())
 
-    /** Starts this facade's engine on its lens and desired hardware, and the engine's target; no view is needed. */
+    /**
+     * Starts this facade's engine on its lens and desired hardware, and the engine's target; no view is
+     * needed. Once the camera opens, the facade's flash is validated against it, as 1.x's setter did.
+     */
     actual fun startSession() {
         val wanted = desired.value
         engine.launchStart(
@@ -637,7 +650,7 @@ actual class CameraController private constructor(
                 zoomRatio = wanted.zoomRatio,
                 targetOrientation = engine.targetOrientation,
             ),
-        )
+        ) { updateDesired(flashMode = engine.facadeFlashMode(desired.value.flashMode)) }
     }
 
     actual fun stopSession() {

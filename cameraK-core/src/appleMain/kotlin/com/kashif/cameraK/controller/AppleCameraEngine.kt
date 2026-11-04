@@ -160,7 +160,10 @@ internal class AppleCameraEngine(
     internal val desiredZoomRatio: Float get() = desiredZoom
 
     /** The torch the engine applies at start and after each camera switch. */
-    internal val desiredTorchMode: TorchMode get() = TODO("I2 carry-over 1: the engine keeps no torch of its own")
+    @Volatile
+    private var desiredTorch = TorchMode.OFF
+
+    internal val desiredTorchMode: TorchMode get() = desiredTorch
 
     private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
     override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
@@ -302,8 +305,9 @@ internal class AppleCameraEngine(
         if (failure != null) return fail(generation, errorFor(failure, selection.lens()))
         target.value = desired.targetOrientation
         desiredZoom = desired.zoomRatio
+        desiredTorch = desired.torchMode
         custom.setFlashMode(desired.flashMode.toAVCaptureFlashMode())
-        custom.torchMode = desired.torchMode.toAVCaptureTorchMode()
+        custom.torchMode = desiredTorch.toAVCaptureTorchMode()
         bindHardware(device)
         // A stop or close since the block was queued wins: the session is not started for nobody.
         if (!isCurrent(generation, Phase.STARTING)) return
@@ -660,6 +664,7 @@ internal class AppleCameraEngine(
             custom.setTorchOnQueue(device, avMode)?.let {
                 return@onSessionQueue hardwareFailure("setting the torch", it)
             }
+            desiredTorch = mode
             custom.torchMode = avMode
             CameraKResult.Success(mode)
         }
@@ -730,13 +735,18 @@ internal class AppleCameraEngine(
 
     // ─── The facade's session calls ─────────────────────────────────────────────────────────────
 
-    /** The facade's startSession: starts after any facade call made before it. */
-    internal fun launchStart(desired: DesiredHardware) {
+    /**
+     * The facade's startSession: starts after any facade call made before it, then runs [started],
+     * before the next facade call, when the start succeeded.
+     */
+    internal fun launchStart(desired: DesiredHardware, started: () -> Unit = {}) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             facadeCalls.withLock {
                 val result = start(desired)
                 if (result is CameraKResult.Failure) {
                     CameraKLogger.e(TAG, "CameraK: starting the camera session failed", result.error.cause)
+                } else {
+                    started()
                 }
             }
         }

@@ -4,6 +4,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
+import com.kashif.cameraK.engine.contract.HardwareChange
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -100,6 +101,9 @@ class FacadeDesiredHardwareTest {
         assertEquals(4.0, driver.back.lastZoomSet, "the facade's zoom, clamped into the camera's range by the engine")
         assertEquals(emptyList(), driver.back.outOfRangeZoomSets, "the device was given a zoom outside its range")
         assertEquals(AVCaptureTorchModeOn, driver.back.lastTorchSet, "the facade's torch")
+        // While Open, getZoom reads what the device reports (I2 carry-over 4), so the device reports it.
+        driver.changeHardware(HardwareChange(zoomRatio = 4f))
+        driver.settle()
         assertEquals(4f, facade.getZoom(), "the facade's zoom after the engine clamped it")
         engine.close()
     }
