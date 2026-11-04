@@ -44,6 +44,9 @@ internal class RecordingSession : CaptureSessionOps {
     private val refusedPresets = mutableSetOf<String?>()
 
     val calls: List<Call> get() = locked { recorded.toList() }
+
+    /** Forgets the calls recorded so far. */
+    fun clearCalls() = locked { recorded.clear() }
     val openConfigurations: Int get() = locked { depth }
 
     override val avSession: AVCaptureSession? = null
