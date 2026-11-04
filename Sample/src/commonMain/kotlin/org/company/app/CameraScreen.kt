@@ -224,7 +224,7 @@ private fun CameraScreen(
     }
 
     var cameraMode by remember { mutableStateOf(CameraMode.Photo) }
-    var isRecording by remember { mutableStateOf(false) }
+    val isRecording by recording.isRecording.collectAsState()
     var recordingDurationMs by remember { mutableStateOf(0L) }
 
     var isQRScanningEnabled by remember { mutableStateOf(true) }
@@ -352,7 +352,7 @@ private fun CameraScreen(
                             }
                         },
                         onVideoToggle = {
-                            scope.launch { isRecording = recording.toggleRecording(cameraController, isRecording) }
+                            scope.launch { recording.toggleRecording(cameraController.asSampleRecorder()) }
                         },
                     )
                 }
