@@ -321,6 +321,17 @@ internal class RecordingController(
         synchronized(lock) { startAbandoned = true }
         CameraKLogger.w(TAG, "A recording start $why; stopping what the platform began")
         val stopped = withTimeoutOrNull(SHUTDOWN_STOP_TIMEOUT) { engineStop() }
+        when (stopped) {
+            null -> CameraKLogger.w(TAG, "The stop of an unconfirmed recording start did not answer in time")
+            is CameraKResult.Success -> CameraKLogger.d(
+                TAG,
+                "The stop of an unconfirmed recording start returned a file",
+            )
+            is CameraKResult.Failure -> CameraKLogger.d(
+                TAG,
+                "The stop of an unconfirmed recording start returned ${stopped.error::class.simpleName}",
+            )
+        }
         val nothingBegan = stopped is CameraKResult.Failure && stopped.error is CameraKError.InvalidState
         synchronized(lock) {
             if (!nothingBegan && !finalizeSeen) owedFinalizes++

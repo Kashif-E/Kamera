@@ -145,9 +145,12 @@ internal class VideoRecorder(
 
             val outputFile = files.videoFile(configuration)
             val outcome = CompletableDeferred<VideoCaptureResult>()
-            // CameraX stops at either limit and finalizes a playable file (see FinalizeMapper).
+            // CameraX stops at either limit and finalizes a playable file (see FinalizeMapper). Its 0
+            // means no limit, so a positive duration under a millisecond is kept as 1 ms.
+            val durationLimitMillis = configuration.maxDuration?.takeIf { it.isPositive() }
+                ?.inWholeMilliseconds?.coerceAtLeast(1L) ?: 0L
             val outputOptions = FileOutputOptions.Builder(outputFile)
-                .setDurationLimitMillis(configuration.maxDuration?.inWholeMilliseconds ?: 0L)
+                .setDurationLimitMillis(durationLimitMillis)
                 .setFileSizeLimit(configuration.maxFileSizeBytes ?: 0L)
                 .build()
 
