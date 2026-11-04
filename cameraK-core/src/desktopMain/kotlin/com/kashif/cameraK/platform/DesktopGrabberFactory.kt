@@ -14,9 +14,10 @@ import org.bytedeco.javacv.FrameGrabber
 public fun interface DesktopGrabberFactory {
     /**
      * Called off the main thread on every open, watchdog reopens and camera switches included, with
-     * the selected device's `LensInfo.id`. The grabber is started as returned, with no size or
-     * frame rate set by CameraK. The engine starts, stops and releases the grabber it returns; the
-     * factory never sees it again.
+     * the selected device's `LensInfo.id`. The grabber is started as returned, with no size, frame
+     * rate or input format set by CameraK (on macOS too, where CameraK reads its own cameras through
+     * AVFoundation). The engine starts, stops and releases the grabber it returns; the factory never
+     * sees it again.
      */
     public fun create(deviceId: String): FrameGrabber
 }

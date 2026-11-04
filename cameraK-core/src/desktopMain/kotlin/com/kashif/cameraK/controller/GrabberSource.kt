@@ -17,6 +17,12 @@ internal interface GrabberSource {
     /** Whether a failed open is retried once without CameraK's size and frame rate (§4.1 row 3). */
     val canRelax: Boolean
 
+    /**
+     * Whether an FFmpeg grabber from this source is set to read macOS cameras through AVFoundation,
+     * as the 1.x loop set every one. False for the app's factory, whose grabber is started as returned.
+     */
+    val formatsForMac: Boolean get() = true
+
     /** A new grabber for [device]; [constrained] asks for CameraK's size and frame rate. */
     fun create(device: LensInfo, constrained: Boolean): FrameGrabber
 }
@@ -66,8 +72,8 @@ internal suspend fun GrabberSource.open(
 }
 
 // FFmpeg reads macOS cameras through AVFoundation; the 1.x loop set the format on every FFmpeg grabber.
-private fun prepare(grabber: FrameGrabber, os: OperatingSystem) {
-    if (grabber is FFmpegFrameGrabber && os == OperatingSystem.MAC) {
+private fun GrabberSource.prepare(grabber: FrameGrabber, os: OperatingSystem) {
+    if (formatsForMac && grabber is FFmpegFrameGrabber && os == OperatingSystem.MAC) {
         grabber.format = "avfoundation"
     }
 }
@@ -138,14 +144,17 @@ internal class EnumeratedDeviceSource(
 
 /**
  * The app's [DesktopGrabberFactory]: every open, watchdog reopens included, asks it for the selected
- * device's id. Its grabber is opened as the app built it, like the 1.x `customGrabber`, so there is
- * no CameraK size or frame rate to drop on a retry. The lock is keyed on the id.
+ * device's id. Its grabber is started as the app built it: no CameraK size or frame rate, so nothing
+ * to drop on a retry, and, unlike the 1.x `customGrabber`, no AVFoundation format on macOS, so a
+ * stream such as `rtsp://` opens as a stream. The lock is keyed on the id.
  */
 @OptIn(CameraKPlatformApi::class)
 internal class FactoryGrabberSource(private val factory: DesktopGrabberFactory) : GrabberSource {
     override fun deviceKey(device: LensInfo): Any = device.id
 
     override val canRelax: Boolean get() = false
+
+    override val formatsForMac: Boolean get() = false
 
     override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = factory.create(device.id)
 }
