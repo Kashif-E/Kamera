@@ -862,7 +862,7 @@ class CustomCameraController(
      * Gets the maximum zoom level supported by the current camera.
      * @return Maximum zoom factor
      */
-    fun getMaxZoom(): Float = currentCamera?.maxVideoZoomFactor?.toFloat() ?: 1.0f
+    fun getMaxZoom(): Float = currentCamera?.maxAvailableVideoZoomFactor?.toFloat() ?: 1.0f
 
     /**
      * Capture an image. Output quality is governed by the configured [qualityPrioritization].

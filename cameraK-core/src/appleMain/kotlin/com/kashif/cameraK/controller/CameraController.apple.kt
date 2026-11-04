@@ -558,8 +558,8 @@ actual class CameraController private constructor(
      */
     actual fun setZoom(zoomRatio: Float) {
         val camera = customCameraController.currentDevice
-        val kept = if (camera != null && camera.maxVideoZoomFactor > camera.minVideoZoomFactor) {
-            zoomRatio.coerceIn(camera.minVideoZoomFactor.toFloat(), camera.maxVideoZoomFactor.toFloat())
+        val kept = if (camera != null && camera.maxAvailableVideoZoomFactor > camera.minVideoZoomFactor) {
+            zoomRatio.coerceIn(camera.minVideoZoomFactor.toFloat(), camera.maxAvailableVideoZoomFactor.toFloat())
         } else {
             zoomRatio
         }

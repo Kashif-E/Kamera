@@ -28,11 +28,15 @@ internal interface CaptureDeviceOps {
     val isTorchActive: Boolean get() = torchMode == AVCaptureTorchModeOn
     val videoZoomFactor: Double
 
-    /** The zoom range a set must stay inside: AVFoundation raises an uncatchable exception outside it. */
+    /**
+     * The zoom range: AVFoundation raises an exception nothing can catch below 1.0 and above the active
+     * format's maximum ([maxVideoZoomFactor]), and clamps a factor between 1.0 and the format's maximum
+     * into [minVideoZoomFactor]..[maxAvailableVideoZoomFactor] (AVCaptureDevice.h). The available range
+     * is narrower only on a virtual camera delivering depth data. The engine clamps into the available
+     * range, so the ratio it returns and reports is the one the camera takes.
+     */
     val minVideoZoomFactor: Double get() = 1.0
     val maxVideoZoomFactor: Double
-
-    /** The largest factor the device takes now. */
     val maxAvailableVideoZoomFactor: Double get() = maxVideoZoomFactor
 
     /** The photo sizes the camera's active format can deliver. */
@@ -82,6 +86,7 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
     override val videoZoomFactor: Double get() = device.videoZoomFactor
     override val minVideoZoomFactor: Double get() = device.minAvailableVideoZoomFactor
     override val maxVideoZoomFactor: Double get() = device.activeFormat.videoMaxZoomFactor
+    override val maxAvailableVideoZoomFactor: Double get() = device.maxAvailableVideoZoomFactor
     override val supportedMaxPhotoDimensions: List<PhotoDimensions>
         get() = device.activeFormat.supportedMaxPhotoDimensions
             .mapNotNull { (it as? NSValue)?.CMVideoDimensionsValue?.toPhotoDimensions() }

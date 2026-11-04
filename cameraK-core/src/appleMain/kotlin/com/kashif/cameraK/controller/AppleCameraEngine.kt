@@ -609,9 +609,10 @@ internal class AppleCameraEngine(
     override suspend fun capture(): CameraKResult<CapturedImage> = refuse(CameraOperation.CAPTURE)
 
     /**
-     * Clamps [ratio] into the camera's zoom range on the session queue before the device sees it, since
-     * AVFoundation raises an exception nothing can catch outside it, and returns the clamped ratio
-     * without waiting for the device's report. A camera with a fixed zoom takes only that ratio.
+     * Clamps [ratio] into the camera's available zoom range on the session queue before the device sees
+     * it, since AVFoundation raises an exception nothing can catch beyond the format's range and clamps
+     * silently to the available one ([CaptureDeviceOps.minVideoZoomFactor]), and returns the clamped
+     * ratio without waiting for the device's report. A camera with a fixed zoom takes only that ratio.
      */
     override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> {
         notOpen()?.let { return it }
@@ -619,7 +620,7 @@ internal class AppleCameraEngine(
         return onSessionQueue("setting the zoom") {
             val device = custom.currentDevice ?: return@onSessionQueue failure(CameraKError.NotReady)
             val min = device.minVideoZoomFactor
-            val max = device.maxVideoZoomFactor
+            val max = device.maxAvailableVideoZoomFactor
             if (max <= min) {
                 return@onSessionQueue if (ratio.toDouble() == min) {
                     CameraKResult.Success(ZoomState(min.toFloat(), min.toFloat(), max.toFloat()))
@@ -918,7 +919,7 @@ internal class AppleCameraEngine(
     /** Session queue: the desired zoom, clamped into [device]'s range, unless the device reports it already. */
     private fun applyDesiredZoom(device: CaptureDeviceOps) {
         val min = device.minVideoZoomFactor
-        val max = device.maxVideoZoomFactor
+        val max = device.maxAvailableVideoZoomFactor
         if (max < min) return
         val factor = desiredZoom.toDouble().coerceIn(min, max)
         if (device.videoZoomFactor == factor) return
@@ -948,7 +949,7 @@ internal class AppleCameraEngine(
         _zoom.value = ZoomState(
             device.videoZoomFactor.toFloat(),
             device.minVideoZoomFactor.toFloat(),
-            device.maxVideoZoomFactor.toFloat(),
+            device.maxAvailableVideoZoomFactor.toFloat(),
         )
     }
 
@@ -959,7 +960,7 @@ internal class AppleCameraEngine(
             deviceType = CameraDeviceType.DEFAULT,
             lens = device.lens(),
             minZoom = 1f,
-            maxZoom = device.maxVideoZoomFactor.toFloat(),
+            maxZoom = device.maxAvailableVideoZoomFactor.toFloat(),
             hasFlash = false,
             isLogical = false,
         )
