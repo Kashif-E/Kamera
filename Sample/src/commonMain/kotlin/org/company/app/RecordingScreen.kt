@@ -31,11 +31,13 @@ import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -64,6 +66,11 @@ internal fun CameraController.asSampleRecorder(): SampleRecorder {
  * The Sample's video recording: Full HD with audio, up to five minutes. It records on the 1.x
  * controller until the engines record (A3', I3', D3'); LC' moves it onto the holder.
  *
+ * The 1.x controller reports no end of its own, so the Sample stops the recording at
+ * [VideoConfiguration.maxDuration] itself, as the 1.x holder did; on Android and iOS the platform
+ * stops there too, and the stop collects its result. A recording the platform ends with an error is
+ * still shown until the next tap, whose stop reports it.
+ *
  * @param scope Where a recording's own work runs, so it outlives the tap that started it.
  * @param timeSource The clock of the elapsed time shown while recording.
  */
@@ -81,6 +88,12 @@ internal class RecordingFeature(
 
     // The elapsed time shown while recording: the Sample's own, from when the recording started.
     private var startedAt: TimeMark? = null
+
+    // Stops the recording at the configured limit.
+    private var limit: Job? = null
+
+    // Counts the recordings started, so a limit acts only on its own.
+    private var started = 0
 
     private val _isRecording = MutableStateFlow(false)
 
@@ -107,10 +120,24 @@ internal class RecordingFeature(
         startedAt = timeSource.markNow()
         _isRecording.value = true
         println("Recording started")
+        val recording = ++started
+        configuration.maxDuration?.let { maxDuration ->
+            limit = scope.launch {
+                delay(maxDuration)
+                transitions.withLock {
+                    if (_isRecording.value && started == recording) {
+                        limit = null
+                        stop(recorder)
+                    }
+                }
+            }
+        }
     }
 
     // The file is finalized even when the tap's coroutine goes away.
     private suspend fun stop(recorder: SampleRecorder) {
+        limit?.cancel()
+        limit = null
         val result = withContext(NonCancellable) { recorder.stopRecording() }
         startedAt = null
         _isRecording.value = false
