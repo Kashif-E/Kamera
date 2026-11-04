@@ -4,8 +4,11 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
+import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.utils.CameraKEngineApi
+import platform.AVFoundation.AVCaptureFlashModeOff
+import platform.AVFoundation.AVCaptureFlashModeOn
 import platform.AVFoundation.AVCaptureTorchModeOn
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -37,6 +40,47 @@ class FacadeDesiredHardwareTest {
 
         assertEquals(AVCaptureTorchModeOn, driver.back.lastTorchSet, "the torch set before start, at start")
         assertEquals(2.0, driver.back.lastZoomSet, "the zoom set before start, at start")
+        engine.close()
+    }
+
+    /**
+     * 1.x's setFlashMode stored OFF for a mode the camera in use lacks (iPads, most front cameras), so
+     * getFlashMode read OFF; a mode it has reads back as set.
+     */
+    @Test
+    fun aFlashModeTheOpenCameraLacksReadsOff() {
+        val noFlash = AppleEngineDriver()
+        noFlash.runCase {
+            val engine = noFlash.createEngine()
+            noFlash.settle()
+            val facade = noFlash.engine.legacyController
+            facade.startSession()
+            noFlash.settle()
+            assertEquals(EngineState.Open, engine.state.value)
+
+            facade.setFlashMode(FlashMode.ON)
+            noFlash.settle()
+
+            assertEquals(FlashMode.OFF, facade.getFlashMode(), "ON on a camera without a flash")
+            assertEquals(AVCaptureFlashModeOff, noFlash.custom.captureFlashMode, "the mode captures use")
+            engine.close()
+        }
+    }
+
+    @Test
+    fun aFlashModeTheOpenCameraHasReadsBackAsSet() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+        val facade = driver.engine.legacyController
+        facade.startSession()
+        driver.settle()
+        assertEquals(EngineState.Open, engine.state.value)
+
+        facade.setFlashMode(FlashMode.ON)
+        driver.settle()
+
+        assertEquals(FlashMode.ON, facade.getFlashMode())
+        assertEquals(AVCaptureFlashModeOn, driver.custom.captureFlashMode, "the mode captures use")
         engine.close()
     }
 

@@ -32,6 +32,9 @@ internal interface CaptureDeviceOps {
     val minVideoZoomFactor: Double get() = 1.0
     val maxVideoZoomFactor: Double
 
+    /** The largest factor the device takes now. */
+    val maxAvailableVideoZoomFactor: Double get() = maxVideoZoomFactor
+
     /** The photo sizes the camera's active format can deliver. */
     val supportedMaxPhotoDimensions: List<PhotoDimensions>
 

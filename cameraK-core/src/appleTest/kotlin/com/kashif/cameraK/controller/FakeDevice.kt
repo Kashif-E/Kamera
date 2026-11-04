@@ -26,6 +26,7 @@ import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
 import platform.Foundation.NSThread
+import kotlin.concurrent.Volatile
 
 /**
  * A real [AVCaptureInput] that needs no camera: an AVCaptureMetadataInput over a text metadata
@@ -61,7 +62,8 @@ internal fun captureInputWithoutCamera(): AVCaptureInput = memScoped {
  * What the device reports (the torch and zoom getters, and its key-value observers) follows each set
  * at once, unless [holdReports] is set: then a set reaches only what the device last received
  * ([lastTorchSet], [lastZoomSet]), and the report waits for [report], as the contract kit's driver
- * needs. A zoom set outside [minVideoZoomFactor]..[maxVideoZoomFactor] is recorded in
+ * needs. A factor above [maxAvailableVideoZoomFactor] but inside the format's maximum is reported
+ * clamped to it, as AVFoundation does. A zoom set outside [minVideoZoomFactor]..[maxVideoZoomFactor] is recorded in
  * [outOfRangeZoomSets], and a torch mode the device lacks in [unsupportedTorchSets]: AVFoundation
  * raises an exception nothing can catch for either.
  */
@@ -96,6 +98,10 @@ internal class FakeDevice(
     private var zoom = 1.0
     private var setTorch: AVCaptureTorchMode? = null
     private var setZoom: Double? = null
+
+    /** Below [maxVideoZoomFactor] on a virtual camera delivering depth data; tests lower it. */
+    @Volatile
+    override var maxAvailableVideoZoomFactor: Double = maxVideoZoomFactor
 
     val calls: List<Call> get() = guarded { recorded.toList() }
     val isLocked: Boolean get() = guarded { locked }
@@ -141,7 +147,7 @@ internal class FakeDevice(
             setZoom = factor
             if (factor < minVideoZoomFactor || factor > maxVideoZoomFactor) outOfRange += factor
         }
-        if (!holdReports) report(zoom = factor)
+        if (!holdReports) report(zoom = factor.coerceAtMost(maxAvailableVideoZoomFactor))
     }
 
     override fun observeHardware(onChange: () -> Unit): AutoCloseable {

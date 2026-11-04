@@ -2,10 +2,13 @@
 
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
+import kotlinx.coroutines.async
 import platform.Foundation.NSLock
 import platform.Foundation.NSNotificationCenter
 import platform.UIKit.UIDevice
@@ -13,6 +16,7 @@ import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 /**
  * The engine publishes how the device is held from UIDeviceOrientationDidChangeNotification, observed
@@ -93,6 +97,38 @@ class DeviceOrientationTest {
         }
         assertEquals(1, observers.queues.size, "orientation observers registered by one start")
         assertEquals(0, observers.leftBehind, "orientation observers left behind after stop")
+    }
+
+    @Test
+    fun aStartThatFailsStopsObserving() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+
+        val noCamera = engine.start(backCamera(CameraSelection.ById("no-such-camera")))
+        assertIs<CameraKError.NoCamera>(assertIs<CameraKResult.Failure>(noCamera).error)
+        turnTo(UIDeviceOrientation.UIDeviceOrientationLandscapeLeft)
+        driver.settle()
+        assertEquals(
+            DeviceOrientation.PORTRAIT,
+            engine.deviceOrientation.value,
+            "observed after a start found no camera",
+        )
+
+        driver.holdOpen()
+        val start = async { engine.start(backCamera()) }
+        driver.settle()
+        assertEquals(DeviceOrientation.LANDSCAPE_LEFT, engine.deviceOrientation.value, "read when the start began")
+        driver.failOpen()
+        driver.settle()
+        assertIs<CameraKResult.Failure>(start.await(), "a start whose session failed")
+        turnTo(UIDeviceOrientation.UIDeviceOrientationLandscapeRight)
+        driver.settle()
+        assertEquals(
+            DeviceOrientation.LANDSCAPE_LEFT,
+            engine.deviceOrientation.value,
+            "observed after a start whose session failed",
+        )
+        engine.close()
     }
 
     @Test

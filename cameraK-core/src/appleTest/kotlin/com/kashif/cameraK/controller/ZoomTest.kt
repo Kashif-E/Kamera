@@ -45,6 +45,36 @@ class ZoomTest {
         }
     }
 
+    /**
+     * AVFoundation raises an exception only outside 1...activeFormat.videoMaxZoomFactor; between
+     * maxAvailableVideoZoomFactor and that it clamps to maxAvailableVideoZoomFactor without saying so
+     * (AVCaptureDevice.h). The two differ on a virtual camera delivering depth data. The range a set is
+     * clamped into, and the one reported, ends at maxAvailableVideoZoomFactor, so the ratio setZoom
+     * returns is the one the camera takes.
+     */
+    @Test
+    fun theRangeEndsAtTheDevicesMaxAvailableFactor() {
+        val driver = AppleEngineDriver(adjustableBack = true)
+        driver.runCase {
+            driver.back.maxAvailableVideoZoomFactor = 3.0
+            val engine = driver.createEngine()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+
+            assertEquals(
+                CameraKResult.Success(ZoomState(3f, 1f, 3f)),
+                engine.setZoom(3.5f),
+                "a ratio above the available maximum but inside the format's",
+            )
+            assertEquals(3.0, driver.back.lastZoomSet, "the factor the device was given")
+
+            driver.back.report(zoom = 3.0)
+            driver.settle()
+            assertEquals(ZoomState(3f, 1f, 3f), engine.zoom.value, "the reported range")
+            engine.close()
+        }
+    }
+
     @Test
     fun fixedZoomCameraRefusesAnyOtherRatio() {
         val driver = AppleEngineDriver()
