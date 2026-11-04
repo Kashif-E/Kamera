@@ -102,6 +102,9 @@ class CameraGrabber(
         }
     }
 
+    /** Whether a grab loop is running. */
+    internal val isRunning: Boolean get() = job.value?.isActive == true
+
     /** A copy of the grab loop's next frame, or null if the loop is not running or none arrives in time. */
     internal suspend fun awaitSnapshot(): BufferedImage? {
         if (job.value?.isActive != true) return null

@@ -1,14 +1,18 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
 import org.bytedeco.javacv.FrameGrabber
+import org.bytedeco.javacv.FrameRecorder
+import java.io.IOException
 
 /**
  * The desktop error mapper (design §4.1): an ordered table over a JavaCV failure's cause chain, the
- * first matching row winning. Row 2 (no device for the selection) and rows 7 to 9 (a grab failure
- * after Open, capture and recording I/O) are decided by the engine, not here.
+ * first matching row winning. Row 2 (no device for the selection) and row 7 (a grab failure after
+ * Open) are decided by the engine; rows 8 and 9 (capture and recording failures) are here, the
+ * recording rows conditional on the playable probe the recording computes.
  */
 internal object JavaCvErrorMapper {
     /**
@@ -47,11 +51,35 @@ internal object JavaCvErrorMapper {
      * playable (the recording is `Success(partial)`), else the error. A full disk ([diskFull], or
      * FFmpeg's ENOSPC) is `Storage(FULL)` either way, keeping [path] when the file is playable.
      */
-    fun recordingFailure(failure: Throwable, playable: Boolean, path: String, diskFull: Boolean): CameraKError? =
-        TODO("D3'")
+    fun recordingFailure(failure: Throwable, playable: Boolean, path: String, diskFull: Boolean): CameraKError? {
+        val code = recorderCode(failure)
+        if (diskFull || code == ENOSPC) {
+            return CameraKError.Storage(StorageFailure.FULL, path.takeIf { playable }, failure)
+        }
+        if (playable) return null
+        if (isIoFailure(failure)) return CameraKError.Storage(StorageFailure.NOT_WRITABLE, null, failure)
+        return CameraKError.Hardware(code, failure)
+    }
 
-    /** Row 8 for a still that could not be written: `Storage(NOT_WRITABLE)`, or `FULL` when [diskFull]. */
-    fun captureFailure(failure: Throwable, diskFull: Boolean): CameraKError = TODO("D3'")
+    /**
+     * Row 8 for a still that could not be written: `Storage(NOT_WRITABLE)` for an I/O failure, or
+     * `FULL` when [diskFull]; anything else is a CameraK bug, `Internal`.
+     */
+    fun captureFailure(failure: Throwable, diskFull: Boolean): CameraKError = when {
+        diskFull -> CameraKError.Storage(StorageFailure.FULL, null, failure)
+        isIoFailure(failure) -> CameraKError.Storage(StorageFailure.NOT_WRITABLE, null, failure)
+        else -> CameraKError.Internal(failure)
+    }
+
+    // JavaCV's own exceptions extend IOException; only a file system's I/O failure is storage.
+    private fun isIoFailure(failure: Throwable): Boolean = failure.causes().any {
+        it is IOException && it !is FrameRecorder.Exception && it !is FrameGrabber.Exception
+    }
+
+    /** The code in an FFmpeg recorder's `<call>() error <code>` message anywhere in the cause chain, or null. */
+    private fun recorderCode(failure: Throwable): Int? = failure.causes().firstNotNullOfOrNull { cause ->
+        RECORDER_ERROR.find(cause.message.orEmpty())?.groupValues?.get(1)?.toIntOrNull()
+    }
 
     /** The code in FFmpeg's `avformat_open_input() error <code>` message anywhere in the cause chain, or null. */
     fun platformCode(failure: Throwable): Int? = failure.causes().firstNotNullOfOrNull { cause ->
@@ -82,6 +110,10 @@ internal object JavaCvErrorMapper {
 
     // V4L2's EBUSY, as FFmpeg reports it: AVERROR(EBUSY).
     private const val EBUSY = -16
+
+    // No space left on the device: AVERROR(ENOSPC).
+    private const val ENOSPC = -28
     private const val FAILED_TO_LOAD = "Failed to load"
     private val OPEN_ERROR = Regex("""avformat_open_input\(\) error (-?\d+)""")
+    private val RECORDER_ERROR = Regex("""\(\) error (-?\d+)""")
 }

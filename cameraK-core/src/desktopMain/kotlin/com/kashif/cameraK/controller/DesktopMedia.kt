@@ -142,6 +142,19 @@ internal fun writeImage(image: BufferedImage, format: ImageFormat, file: File) {
     }
 }
 
+/**
+ * Whether the volume that holds [folder], or its nearest existing parent, has almost no space left:
+ * the free-space check that tells a full disk from another write failure (§4.1 row 8).
+ */
+internal fun isDiskFull(folder: File): Boolean {
+    var existing: File? = folder.absoluteFile
+    while (existing != null && !existing.exists()) existing = existing.parentFile
+    return existing != null && existing.usableSpace < LOW_FREE_SPACE_BYTES
+}
+
+// Below this a write failure is a full disk.
+private const val LOW_FREE_SPACE_BYTES = 1L shl 20
+
 // The encoder's frame rate: a camera faster than this is recorded at this rate.
 private const val RECORDING_FRAME_RATE = 30.0
 
