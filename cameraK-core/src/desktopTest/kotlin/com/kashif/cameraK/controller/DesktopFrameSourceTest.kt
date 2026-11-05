@@ -9,6 +9,7 @@ import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FrameSpec
 import com.kashif.cameraK.frames.RetainedFrame
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.test.runTest
 import java.util.concurrent.CopyOnWriteArrayList
@@ -216,6 +217,74 @@ class DesktopFrameSourceTest {
             sut.close()
             rig.settle()
         }
+    }
+
+    @Test
+    fun analysisResolutionSizesYuvFramesWithoutStretching() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        // The default 16:9 crop leaves 64 x 36 of the 64 x 48 camera; a square analysis frame is the
+        // centred 36 x 36 of that, columns 14 to 49, so only the grey band reaches it.
+        rig.camera.fill { x, _ -> if (x in 14 until 50) 0xC8C8C8 else 0x000000 }
+        val steps = DesktopRecordingSteps(this, rig)
+        val sut = rig.engine(CameraConfiguration(analysisResolution = Resolution(20, 20)))
+        val seen = CopyOnWriteArrayList<String>()
+        try {
+            steps.open(sut)
+            sut.frames.register(FrameSpec()) { frame -> seen += frame.describe() }
+            steps.frameAt(1_000)
+
+            assertEquals(
+                listOf("YUV_420 20x20 crop=0,0,20,20 planes=[20/1/400, 10/1/100, 10/1/100] y=[200] uv=[128, 128]"),
+                seen.toList(),
+                "the analysis frame at analysisResolution 20 x 20",
+            )
+            assertEquals(64 to 36, sut.grabber.frameSize, "the preview's frame size")
+        } finally {
+            sut.close()
+            rig.settle()
+        }
+    }
+
+    @Test
+    fun analysisResolutionSizesRgbaFrames() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        rig.camera.fill { _, _ -> 0x102030 }
+        val steps = DesktopRecordingSteps(this, rig)
+        val sut = rig.engine(
+            CameraConfiguration(analysisFormat = FrameFormat.RGBA_8888, analysisResolution = Resolution(32, 18)),
+        )
+        val seen = CopyOnWriteArrayList<String>()
+        try {
+            steps.open(sut)
+            sut.frames.register(FrameSpec(synchronous = true)) { frame ->
+                val pixels = frame.pixels()
+                val distinct = (pixels.indices step 4).map { pixels.sliceArray(it until it + 4).toList() }.toSet()
+                seen += "${frame.format} ${frame.width}x${frame.height} " +
+                    "planes=${frame.planes.map { "${it.rowStride}/${it.pixelStride}/${it.size}" }} " +
+                    "rgba=${distinct.map { pixel -> pixel.map { it.toInt() and 0xFF } }}"
+            }
+            steps.frameAt(1_000)
+
+            assertEquals(
+                listOf("RGBA_8888 32x18 planes=[128/4/2304] rgba=[[16, 32, 48, 255]]"),
+                seen.toList(),
+                "the analysis frame at analysisResolution 32 x 18",
+            )
+        } finally {
+            sut.close()
+            rig.settle()
+        }
+    }
+
+    private fun CameraFrame.describe(): String {
+        val luma = ByteArray(width * height)
+        planes[0].copyTo(luma, 0, 0, luma.size)
+        val chroma = ByteArray(2)
+        planes[1].copyTo(chroma, 0, 0, 1)
+        planes[2].copyTo(chroma, 1, 0, 1)
+        return "$format ${width}x$height crop=${cropRect.left},${cropRect.top},${cropRect.right},${cropRect.bottom} " +
+            "planes=${planes.map { "${it.rowStride}/${it.pixelStride}/${it.size}" }} " +
+            "y=${luma.map { it.toInt() and 0xFF }.toSet()} uv=${chroma.map { it.toInt() and 0xFF }}"
     }
 
     private fun CameraFrame.pixels(): ByteArray = ByteArray(planes[0].size).also { planes[0].copyTo(it) }
