@@ -142,4 +142,36 @@ class LensSwitchNoFrameTest {
         )
         engine.close()
     }
+
+    @Test
+    fun aStopBetweenTheSwitchsLiveCheckAndItsCommitEndsTheSwitch() = driver.runCase {
+        driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.engine
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+
+        val inGap = atomic(false)
+        val stopCut = atomic(false)
+        engine.afterSwitchLiveCheck = {
+            inGap.value = true
+            check(spinUntil(10.0) { stopCut.value }) { "the stop's cut never came" }
+        }
+        // The stop's recording step goes first on the session queue; the switch's block runs next, and
+        // the stop's cut lands on the test thread while that block waits after its live check.
+        val stopping = launch { engine.stop() }
+        testScheduler.runCurrent()
+        engine.switchCamera(front) { }
+        awaitTrue("the switch's live check") { inGap.value }
+        testScheduler.runCurrent()
+        assertEquals(EngineState.Closed, engine.state.value, "the stop's cut, inside the switch's gap")
+        stopCut.value = true
+        driver.settle()
+        stopping.join()
+        assertEquals(
+            listOf("begin 1", noFrame, "end 1"),
+            tracer.events,
+            "a switch whose live check came before the stop, once the stop returned",
+        )
+        engine.close()
+    }
 }

@@ -298,6 +298,10 @@ internal class AppleCameraEngine(
     @Volatile
     internal var stillListener: ((NSData) -> Unit)? = null
 
+    /** Test seam: runs on the session queue between a lens switch's live check and its commit. */
+    @Volatile
+    internal var afterSwitchLiveCheck: () -> Unit = {}
+
     /** The session, made now so the preview has it before the first start; null below iOS 16. */
     private val session: CaptureSessionOps? = if (unsupported == null) custom.prepareSession() else null
 
@@ -794,6 +798,7 @@ internal class AppleCameraEngine(
     private fun switchOnQueue(selection: CameraSelection): CameraKResult<LensInfo> {
         unusable()?.let { return it }
         if (!locked { phase == Phase.LIVE }) return failure(CameraKError.NotReady)
+        afterSwitchLiveCheck()
         val device = resolve(selection) ?: return failure(CameraKError.NoCamera(selection.lens()))
         if (custom.recordingInProgress()) return failure(CameraKError.Busy(CameraOperation.LENS))
         // A refused input puts the previous camera back, inside the same transaction.
