@@ -212,6 +212,7 @@ internal class DesktopCameraEngine(
                 active == null -> Session(desired).also {
                     session = it
                     fresh = true
+                    frameSource.sessionBegan()
                     publishLocked(EngineState.Opening)
                 }
                 _state.value == EngineState.Open || _state.value is EngineState.Interrupted ->

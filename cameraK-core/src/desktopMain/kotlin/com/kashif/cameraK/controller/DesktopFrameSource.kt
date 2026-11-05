@@ -57,6 +57,11 @@ internal class DesktopFrameSource(
 
     @Volatile private var closed = false
 
+    // A size with no pixels (Resolution accepts one until CF' validates it) skips analysis.
+    private val analysisUsable = analysisSize == null || (analysisSize.width > 0 && analysisSize.height > 0)
+
+    @Volatile private var unusableLogged = false
+
     /** The slots the producer's pool may hold for the registrations now counted ([framePoolSize]). */
     @Volatile var poolSize: Int = framePoolSize(retainLimits = 0, analyzers = 0)
         private set
@@ -87,9 +92,21 @@ internal class DesktopFrameSource(
         if (pooled.remove(registration)) resizePool()
     }
 
+    /** A new session of the engine began: an unusable analysis size is logged again, once. */
+    fun sessionBegan() {
+        unusableLogged = false
+    }
+
     /** Hands [frame] to every idle registration. Producer thread only, while it holds a lease on [frame]. */
     fun deliver(frame: LeasedFrame) {
         if (registrations.isEmpty()) return
+        if (!analysisUsable) {
+            if (!unusableLogged) {
+                unusableLogged = true
+                CameraKLogger.w(TAG, "The analysis resolution has no pixels; analysis is skipped for this session")
+            }
+            return
+        }
         var planes: List<FramePlane>? = null
         for (registration in registrations) {
             val gate = registration.gate ?: continue
