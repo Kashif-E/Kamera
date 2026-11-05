@@ -108,8 +108,6 @@ class DesktopFrameSourceTest {
                     parked.set(1)
                     rig.workers.bump()
                     proceed.await()
-                    parked.set(0)
-                    rig.workers.bump()
                 }
             }
             sut.frames.register(FrameSpec()) { frame -> fast += frame.timestampNanos }
@@ -118,6 +116,9 @@ class DesktopFrameSourceTest {
             assertEquals(nanos(1_000, 1_040, 1_080, 1_120, 1_160), fast.toList(), "the other analyzer's frames")
             assertEquals(nanos(1_000), slow.toList(), "the busy analyzer's frames while busy")
 
+            // Unpark before releasing the analyzer, so settle waits for its task to end and frame 1_200 finds the gate free.
+            parked.set(0)
+            rig.workers.bump()
             proceed.countDown()
             rig.settle()
             steps.frameAt(1_200)
