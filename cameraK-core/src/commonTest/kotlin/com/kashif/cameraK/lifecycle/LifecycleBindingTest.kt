@@ -64,6 +64,34 @@ class LifecycleBindingTest {
     }
 
     @Test
+    fun droppingBelowStartedStopsTheHolderAndStartedStartsItAgain() = runTest {
+        val fake = FakeCameraEngine()
+        val holder = holderOver(fake, FakePermissionChecker())
+        val host = Host()
+        holder.bindToLifecycle(host.registry)
+
+        host.registry.currentState = Lifecycle.State.RESUMED
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value, "RESUMED did not start the holder")
+
+        // A pause alone keeps the camera: the host is still STARTED.
+        host.registry.currentState = Lifecycle.State.STARTED
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value, "a pause stopped the holder")
+        assertEquals(listOf("start"), fake.calls)
+
+        host.registry.currentState = Lifecycle.State.CREATED
+        runCurrent()
+        assertEquals(CameraKState.Idle, holder.cameraState.value, "dropping below STARTED did not stop the holder")
+        assertEquals(listOf("start", "stop"), fake.calls)
+
+        host.registry.currentState = Lifecycle.State.STARTED
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value, "a second STARTED did not start the holder again")
+        assertEquals(listOf("start", "stop", "start"), fake.calls)
+    }
+
+    @Test
     fun resumeRechecksPermission() = runTest {
         val checker = FakePermissionChecker(PermissionStatus.Denied(shouldShowRationale = true))
         val holder = holderOver(FakeCameraEngine(), checker)
