@@ -16,6 +16,7 @@ import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kashif.cameraK.engine.CameraEngineFactory
 import com.kashif.cameraK.engine.CameraKEnvironment
+import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
@@ -53,10 +54,15 @@ import kotlinx.coroutines.flow.combine
  * ```
  */
 @Composable
-expect fun rememberCameraKState(
+fun rememberCameraKState(
     config: CameraConfiguration = CameraConfiguration(),
     setupPlugins: suspend (CameraKStateHolder) -> Unit = {},
-): State<CameraKState>
+): State<CameraKState> {
+    // As in 1.x, the holder is remembered in this composition and closes with it, so setupPlugins runs once per holder.
+    val holder = rememberPlatformHolder(config, emptyList(), LocalLifecycleOwner.current, viewModelStoreOwner = null)
+    LaunchedEffect(holder) { setupPlugins(holder) }
+    return holder.collectCameraState()
+}
 
 /**
  * Creates and remembers a [CameraKStateHolder] over this platform's camera, created with [plugins].
@@ -84,11 +90,34 @@ expect fun rememberCameraKState(
  * stops the holder.
  */
 @Composable
-expect fun rememberCameraKStateHolder(
+fun rememberCameraKStateHolder(
     config: CameraConfiguration = CameraConfiguration(),
     plugins: List<CameraKPlugin> = emptyList(),
     lifecycleOwner: LifecycleOwner? = LocalLifecycleOwner.current,
-): CameraKStateHolder
+): CameraKStateHolder = rememberPlatformHolder(config, plugins, lifecycleOwner, LocalViewModelStoreOwner.current)
+
+/** This platform's context for the production holder constructor. */
+@Composable
+internal expect fun platformContext(): CameraKPlatformContext
+
+/** [CameraKStateHolder.cameraState] as Compose state: lifecycle-aware on Android and iOS, as in 1.x. */
+@Composable
+internal expect fun CameraKStateHolder.collectCameraState(): State<CameraKState>
+
+// The production holder over this platform's camera.
+@OptIn(InternalCameraKApi::class)
+@Composable
+private fun rememberPlatformHolder(
+    config: CameraConfiguration,
+    plugins: List<CameraKPlugin>,
+    lifecycleOwner: LifecycleOwner?,
+    viewModelStoreOwner: ViewModelStoreOwner?,
+): CameraKStateHolder {
+    val context = platformContext()
+    return rememberLifecycleHolder(config, plugins, lifecycleOwner, viewModelStoreOwner) { c, p, after ->
+        CameraKStateHolder(c, context, p, after)
+    }
+}
 
 /** The default Compose path over an engine factory and an environment: this module's tests use it with a fake engine. */
 @OptIn(InternalCameraKApi::class)

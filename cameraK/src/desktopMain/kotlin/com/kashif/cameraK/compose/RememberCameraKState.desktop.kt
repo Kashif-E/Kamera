@@ -3,48 +3,16 @@
 package com.kashif.cameraK.compose
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.kashif.cameraK.platform.CameraKPlatformContext
-import com.kashif.cameraK.state.CameraConfiguration
-import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.InternalCameraKApi
 
-/**
- * Desktop implementation of [rememberCameraKState], over the production constructor. As in 1.x, the
- * holder is remembered in this composition and closes with it, so [setupPlugins] runs once per holder.
- */
+/** The desktop camera, with no grabber factory: the holder opens the enumerated devices. */
 @Composable
-actual fun rememberCameraKState(
-    config: CameraConfiguration,
-    setupPlugins: suspend (CameraKStateHolder) -> Unit,
-): State<CameraKState> {
-    val holder = rememberPlatformHolder(config, emptyList(), LocalLifecycleOwner.current, viewModelStoreOwner = null)
-    LaunchedEffect(holder) { setupPlugins(holder) }
-    return holder.cameraState.collectAsState()
-}
-
-/** Desktop implementation of [rememberCameraKStateHolder]: the desktop camera, with no platform context to pass. */
-@Composable
-actual fun rememberCameraKStateHolder(
-    config: CameraConfiguration,
-    plugins: List<CameraKPlugin>,
-    lifecycleOwner: LifecycleOwner?,
-): CameraKStateHolder = rememberPlatformHolder(config, plugins, lifecycleOwner, LocalViewModelStoreOwner.current)
+internal actual fun platformContext(): CameraKPlatformContext = CameraKPlatformContext()
 
 @Composable
-private fun rememberPlatformHolder(
-    config: CameraConfiguration,
-    plugins: List<CameraKPlugin>,
-    lifecycleOwner: LifecycleOwner?,
-    viewModelStoreOwner: ViewModelStoreOwner?,
-): CameraKStateHolder = rememberLifecycleHolder(config, plugins, lifecycleOwner, viewModelStoreOwner) { c, p, after ->
-    CameraKStateHolder(c, CameraKPlatformContext(), p, after)
-}
+internal actual fun CameraKStateHolder.collectCameraState(): State<CameraKState> = cameraState.collectAsState()
