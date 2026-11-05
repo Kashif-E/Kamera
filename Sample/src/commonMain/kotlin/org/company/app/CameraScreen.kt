@@ -19,6 +19,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -449,6 +450,30 @@ private fun restoreCameraSettings(saved: Any): CameraSettings? {
 }
 
 private const val SETTINGS_FIELDS = 5
+
+/**
+ * The screen's own choices, which no holder keeps: the mode, the QR and OCR switches and the
+ * orientation lock. Saved, so a rotation brings them back with the holder it keeps.
+ */
+internal data class CameraScreenChoices(
+    val mode: CameraMode = CameraMode.Photo,
+    val qrScanning: Boolean = true,
+    val ocr: Boolean = true,
+    val lockedOrientation: DeviceOrientation? = null,
+)
+
+internal val CameraScreenChoicesSaver: Saver<CameraScreenChoices, Any> = Saver(
+    save = { TODO("LC'") },
+    restore = { TODO("LC'") },
+)
+
+/** The screen's choices, remembered across a recreation. */
+@Composable
+internal fun rememberCameraScreenChoices(): MutableState<CameraScreenChoices> =
+    remember { mutableStateOf(CameraScreenChoices()) }
+
+/** The mode the shutter and the mode switcher show. */
+internal fun CameraScreenChoices.shownMode(recordingLive: Boolean): CameraMode = mode
 
 /** The holder's capture, as the Sample's photo button uses it. */
 internal interface SampleCapturer {
