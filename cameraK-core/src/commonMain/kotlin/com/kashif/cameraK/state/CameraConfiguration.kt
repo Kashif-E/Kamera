@@ -3,6 +3,7 @@ package com.kashif.cameraK.state
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
@@ -72,4 +73,53 @@ data class CameraConfiguration(
     val frameAnalysis: Boolean = false,
     val analysisResolution: Resolution? = null,
     val analysisFormat: FrameFormat = FrameFormat.YUV_420,
-)
+) {
+    // CF' red stubs: the DSL's new fields and its builder, declared so CF''s tests compile.
+    val initialZoomRatio: Float get() = TODO("CF'")
+    val targetOrientation: DeviceOrientation? get() = TODO("CF'")
+
+    class Builder internal constructor() {
+        var cameraLens: CameraLens? = null
+        var cameraDeviceType: CameraDeviceType = CameraDeviceType.DEFAULT
+        var cameraId: String? = null
+        var flashMode: FlashMode = FlashMode.OFF
+        var torchMode: TorchMode = TorchMode.OFF
+        var initialZoomRatio: Float = 1f
+        var imageFormat: ImageFormat = ImageFormat.JPEG
+        var qualityPrioritization: QualityPrioritization = QualityPrioritization.BALANCED
+        var aspectRatio: AspectRatio = AspectRatio.RATIO_16_9
+        var targetResolution: Resolution? = null
+        var targetOrientation: DeviceOrientation? = null
+        var outputDirectory: String? = null
+        var mirrorFrontCamera: Boolean = false
+        var frameAnalysis: Boolean = false
+        var analysisResolution: Resolution? = null
+        var analysisFormat: FrameFormat = FrameFormat.YUV_420
+    }
+}
+
+/** CF' red stub. */
+fun CameraConfiguration(block: CameraConfiguration.Builder.() -> Unit): CameraConfiguration = TODO("CF'")
+
+/** CF' red stub. */
+fun CameraConfiguration.copy(block: CameraConfiguration.Builder.() -> Unit): CameraConfiguration = TODO("CF'")
+
+/** CF' red stub: the one defaults source. */
+internal object CameraDefaults {
+    val LENS: CameraLens? = null
+    val DEVICE_TYPE = CameraDeviceType.DEFAULT
+    val CAMERA_ID: String? = null
+    val FLASH = FlashMode.OFF
+    val TORCH = TorchMode.OFF
+    const val ZOOM_RATIO = 1f
+    val IMAGE_FORMAT = ImageFormat.JPEG
+    val QUALITY = QualityPrioritization.BALANCED
+    val ASPECT_RATIO = AspectRatio.RATIO_16_9
+    val TARGET_RESOLUTION: Resolution? = null
+    val TARGET_ORIENTATION: DeviceOrientation? = null
+    val OUTPUT_DIRECTORY: String? = null
+    const val MIRROR_FRONT_CAMERA = false
+    const val FRAME_ANALYSIS = false
+    val ANALYSIS_RESOLUTION: Resolution? = null
+    val ANALYSIS_FORMAT = FrameFormat.YUV_420
+}

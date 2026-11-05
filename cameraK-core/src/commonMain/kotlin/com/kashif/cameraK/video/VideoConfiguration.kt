@@ -45,7 +45,20 @@ data class VideoConfiguration(
         }
     }
 
+    /** CF' red stub. */
+    class Builder internal constructor() {
+        var quality: VideoQuality = VideoQuality.FHD
+        var enableAudio: Boolean = false
+        var maxDuration: Duration? = null
+        var outputDirectory: String? = null
+        var filePrefix: String = "VID"
+        var maxFileSizeBytes: Long? = null
+    }
+
     private companion object {
         val FILE_PREFIX = Regex("[A-Za-z0-9._-]{1,64}")
     }
 }
+
+/** CF' red stub. */
+fun VideoConfiguration(block: VideoConfiguration.Builder.() -> Unit): VideoConfiguration = TODO("CF'")
