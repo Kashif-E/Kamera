@@ -101,6 +101,34 @@ class GallerySaveTest {
         assertContentEquals(photoBytes, photo.readBytes(), "the capture itself changed")
     }
 
+    /** logging-pii-and-noise: one failed auto-save is one error log line, carrying its cause. */
+    @Test
+    @Config(sdk = [35])
+    fun aFailedAutoSaveIsLoggedOnce() = runTest {
+        writesToAnyRow(imagesCollection())
+        val errors = CopyOnWriteArrayList<Throwable?>()
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { level, _, _, throwable -> if (level == CameraKLogger.Level.ERROR) errors += throwable }
+        val missing =
+            CapturedImage(File(context.filesDir, "CameraK/IMG_missing.jpg").absolutePath, ImageFormat.JPEG, 4, 3)
+        val plugin = androidSaver(context, MediaSaverConfig { autoSave = true }, StandardTestDispatcher(testScheduler))
+        val engine = FakeCameraEngine().apply { captureResult = { CameraKResult.Success(missing) } }
+        val holder =
+            CameraKStateHolder(CameraConfiguration(), { _, _ -> engine }, listOf(plugin), cameraKTestEnvironment())
+        val results = mutableListOf<CameraKResult<SavedImage>>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { plugin.results.collect { results += it } }
+        holder.start()
+        runCurrent()
+
+        holder.capture()
+        runCurrent()
+
+        val failure = assertIs<CameraKResult.Failure>(results.single(), "the auto-save of a missing file")
+        val cause = failure.error.cause
+        assertEquals(1, errors.size, "error log lines for one failed auto-save: $errors")
+        assertTrue(cause != null && errors.single() === cause, "the failed auto-save was not logged with its cause")
+    }
+
     @Test
     @Config(sdk = [29])
     fun api29VideoSaveSucceeds() = runTest {

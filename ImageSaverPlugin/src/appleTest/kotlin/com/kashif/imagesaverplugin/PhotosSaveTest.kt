@@ -8,12 +8,19 @@ import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.testing.FakeCaptures
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.CameraKPlatformApi
 import com.kashif.cameraK.utils.toNSData
+import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.update
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -37,6 +44,8 @@ class PhotosSaveTest {
 
     @AfterTest
     fun tearDown() {
+        CameraKLogger.sink = null
+        CameraKLogger.enabled = false
         files.forEach(::deleteFile)
         background.cancel()
     }
@@ -205,6 +214,32 @@ class PhotosSaveTest {
         assertIs<CameraKResult.Success<SavedImage>>(saveImage(photos, "file://$path"))
 
         assertEquals(path, photos.imports.value.single().url.path)
+    }
+
+    /** logging-pii-and-noise: one failed auto-save is one error log line, carrying its cause. */
+    @Test
+    fun aFailedAutoSaveIsLoggedOnce() = runTest {
+        val errors = atomic(emptyList<Throwable?>())
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { level, _, _, throwable ->
+            if (level == CameraKLogger.Level.ERROR) errors.update { it + throwable }
+        }
+        val photos = FakePhotoLibrary(createdIdentifier = null, createError = photosError())
+        val plugin = ImageSaverPlugin(
+            MediaSaverConfig { autoSave = true },
+            AppleGalleryStore(photos, importTimeout = 200.milliseconds),
+            { PermissionStatus.Granted },
+        )
+        val outcome = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { plugin.results.first() }
+        val session = saverSession(plugin)
+        startReady(session)
+
+        session.holder.capture()
+        val failure = assertIs<CameraKResult.Failure>(outcome.await(), "the auto-save Photos refused")
+
+        val cause = assertNotNull(failure.error.cause)
+        assertEquals(1, errors.value.size, "error log lines for one failed auto-save: ${errors.value}")
+        assertSame(cause, errors.value.single(), "the failed auto-save was not logged with its cause")
     }
 
     /** PR #183: the deprecated read takes a capture's plain path as well as a `ph://` location. */

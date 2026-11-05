@@ -7,6 +7,9 @@ import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.testing.FakeCaptures
 import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
@@ -19,6 +22,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -83,6 +87,27 @@ class JVMImageSaverPluginCallbackTest {
         assertTrue(messages.isNotEmpty() && messages.none { it.isBlank() }, "an empty failure text: $messages")
         assertEquals(emptyList(), messages.filter { home.name in it }, "the failure's text contains a path")
         assertEquals(setOf("Pictures", "capture.jpg"), home.list()?.toSet(), "files written for a failed save")
+    }
+
+    // logging-pii-and-noise: one failure is one log line. The saver logs a failed save; the store
+    // and the auto-save around it add none.
+    @Test
+    fun aFailedAutoSaveIsLoggedOnce() = runTest {
+        val config = MediaSaverConfig { autoSave = true }
+        val plugin = ImageSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
+        val errors = CopyOnWriteArrayList<Throwable?>()
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { level, _, _, throwable -> if (level == CameraKLogger.Level.ERROR) errors += throwable }
+        val outcome = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { plugin.results.first() }
+        val session = saverSession(plugin)
+        startReady(session)
+
+        session.holder.capture()
+        val failure = assertIs<CameraKResult.Failure>(outcome.await(), "the auto-save of a missing file")
+
+        val cause = assertNotNull(failure.error.cause)
+        assertEquals(1, errors.size, "error log lines for one failed auto-save: $errors")
+        assertSame(cause, errors.single(), "the failed auto-save was not logged with its cause")
     }
 
     private fun jpeg(): ByteArray {
