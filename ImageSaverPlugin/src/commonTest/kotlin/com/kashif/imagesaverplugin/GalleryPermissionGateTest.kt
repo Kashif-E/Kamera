@@ -85,6 +85,21 @@ class GalleryPermissionGateTest : SaverTest() {
         assertEquals(CameraKResult.Success(image), captured, "the capture itself changed")
     }
 
+    /** The deprecated 1.x byte save adds to the same gallery, so it passes the same gate until C1' removes it. */
+    @Test
+    fun theDeprecatedByteSaveIsRefusedWithoutAGalleryCall() = runTest {
+        val store = permissionStore()
+        val permission = ScriptedPermission(PermissionStatus.Denied(shouldShowRationale = false))
+
+        @Suppress("DEPRECATION")
+        val result = saver(store = store, permission = permission).save(byteArrayOf(1, 2, 3), "shot")
+
+        @Suppress("DEPRECATION")
+        assertIs<ImageSaveResult.Failed>(result, "a byte save at Denied")
+        assertEquals(1, permission.reads, "the byte save did not read the gallery status")
+        assertEquals(0, store.adds.size, "a refused byte save reached the gallery")
+    }
+
     private suspend fun assertRefused(status: PermissionStatus, store: FakeGalleryStore) {
         val result = saver(store = store, permission = ScriptedPermission(status)).save(image)
 
