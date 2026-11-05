@@ -1,211 +1,100 @@
 package com.kashif.ocrPlugin
 
 import android.graphics.Bitmap
-import androidx.camera.core.ExperimentalGetImage
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
+import android.graphics.BitmapFactory
+import android.media.ExifInterface
 import com.google.android.gms.tasks.Task
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.frames.FrameRect
 import com.kashif.cameraK.utils.CameraKLogger
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.util.concurrent.Executor
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
-actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig): String =
-    extractText(bitmap, ::MlKitBitmapTextRecognizer)
+internal actual fun platformTextRecognizers(config: OcrConfig): TextRecognizerFactory = AndroidTextRecognizers()
 
 /**
- * The ML Kit calls one-shot OCR makes, so a test can stand in for the recognizer and check that
- * every one it creates is closed. [close] frees the recognizer's native model handles.
+ * The ML Kit calls OCR makes, so a test can stand in for ML Kit and check that every client it
+ * creates is closed. [close] frees the client's native model handles. Each task fails with ML Kit's
+ * exception.
  */
-internal interface BitmapTextRecognizer {
-    /** Reads the text in [bitmap]; the task fails with ML Kit's exception. */
-    fun recognize(bitmap: Bitmap): Task<String>
+internal interface MlKitTextClient {
+    fun recognize(bitmap: Bitmap, rotationDegrees: Int): Task<List<FoundBlock>>
+
+    fun recognizeNv21(nv21: ByteArray, width: Int, height: Int, rotationDegrees: Int): Task<List<FoundBlock>>
 
     fun close()
 }
 
-/** [BitmapTextRecognizer] over ML Kit's Latin text recognizer. */
-internal class MlKitBitmapTextRecognizer : BitmapTextRecognizer {
+/** [MlKitTextClient] over ML Kit's bundled Latin text recognizer. */
+internal class LatinMlKitTextClient : MlKitTextClient {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    override fun recognize(bitmap: Bitmap): Task<String> =
-        recognizer.process(InputImage.fromBitmap(bitmap, 0)).onSuccessTask(DirectExecutor) { Tasks.forResult(it.text) }
+    override fun recognize(bitmap: Bitmap, rotationDegrees: Int): Task<List<FoundBlock>> =
+        process(InputImage.fromBitmap(bitmap, rotationDegrees))
+
+    override fun recognizeNv21(nv21: ByteArray, width: Int, height: Int, rotationDegrees: Int): Task<List<FoundBlock>> =
+        process(InputImage.fromByteArray(nv21, width, height, rotationDegrees, InputImage.IMAGE_FORMAT_NV21))
+
+    private fun process(image: InputImage): Task<List<FoundBlock>> =
+        recognizer.process(image).onSuccessTask(DirectExecutor) { Tasks.forResult(blocksOf(it)) }
 
     override fun close() = recognizer.close()
+
+    private fun blocksOf(text: Text): List<FoundBlock> = text.textBlocks.map { block ->
+        FoundBlock(block.text, block.boundingBox?.let { FrameRect(it.left, it.top, it.right, it.bottom) }, null)
+    }
 }
 
-// The listeners only resume a continuation, so they run on whichever thread completes the task
-// instead of being posted to the main thread.
+/** A still decoded for ML Kit, with the rotation its EXIF orientation asks for. */
+internal class DecodedStill(val bitmap: Bitmap, val rotationDegrees: Int)
+
+/**
+ * The Android recognizers: ML Kit, with one level for both [OcrLevel]s. Live frames reach it as NV21
+ * built from the frame's luma with neutral chroma, so either analysis format reads the same way;
+ * text needs no colour. A still is decoded from its file with its EXIF rotation.
+ */
+internal class AndroidTextRecognizers(
+    private val newClient: () -> MlKitTextClient = ::LatinMlKitTextClient,
+    private val decode: (String) -> DecodedStill? = ::decodeStill,
+    private val liveTimeoutMillis: Long = LIVE_TIMEOUT_MILLIS,
+) : TextRecognizerFactory {
+    override fun live(level: OcrLevel): LiveTextRecognizer =
+        TODO("OC': ML Kit live recognizer over $newClient, $liveTimeoutMillis")
+
+    override fun still(level: OcrLevel): StillTextRecognizer = TODO("OC': ML Kit still recognizer over $decode")
+}
+
+internal fun decodeStill(path: String): DecodedStill? {
+    val bitmap = BitmapFactory.decodeFile(path) ?: return null
+    val rotation =
+        try {
+            when (
+                ExifInterface(
+                    path,
+                ).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            ) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+        } catch (e: IOException) {
+            CameraKLogger.e(TAG, "OcrPlugin: reading a still's EXIF orientation failed; it is read unrotated", e)
+            0
+        }
+    return DecodedStill(bitmap, rotation)
+}
+
+// The listeners only resume, so they run on whichever thread completes the task instead of being
+// posted to the main thread.
 private val DirectExecutor = Executor(Runnable::run)
 
-/**
- * Reads the text in [bitmap] once with a recognizer from [newRecognizer], which is closed before
- * this returns, however it returns.
- */
-internal suspend fun extractText(bitmap: ImageBitmap, newRecognizer: () -> BitmapTextRecognizer): String =
-    withContext(Dispatchers.Default) {
-        try {
-            CameraKLogger.d("TextRecognition", "Starting text extraction from bitmap")
-            require(bitmap.width > 0 && bitmap.height > 0) { "Invalid bitmap dimensions" }
+private const val TAG = "CameraK"
 
-            val recognizer = newRecognizer()
-            try {
-                val extractedText = recognizer.recognize(bitmap.asAndroidBitmap()).await()
-                CameraKLogger.d("TextRecognition", "Text extracted, length=${extractedText.length}")
-                extractedText
-            } finally {
-                recognizer.close()
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            CameraKLogger.e("TextRecognition", "Text extraction failed", e)
-            throw e
-        }
-    }
-
-// Cancelling the caller resumes at once; the task's late result is then dropped.
-private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
-    addOnSuccessListener(DirectExecutor) { continuation.resume(it) }
-    addOnFailureListener(DirectExecutor) { continuation.resumeWithException(it) }
-}
-
-internal fun CameraController.enableTextRecognition(
-    maxFps: Int,
-    onTextRecognized: (String) -> Unit,
-    onError: (Exception) -> Unit = {},
-): TextRecognitionAnalyzer {
-    CameraKLogger.d("TextRecognition", "Configuring text recognition analyzer")
-
-    val analyzer =
-        TextRecognitionAnalyzer(
-            onTextRecognized = onTextRecognized,
-            onError = onError,
-            maxFps = maxFps,
-        )
-
-    registerImageAnalyzer(analyzer)
-    return analyzer
-}
-
-/**
- * The ML Kit call live OCR makes on each analysis frame, so a test can stand in for the recognizer
- * and count the frames it is asked to read. [close] frees the recognizer's native model handles.
- */
-internal interface LiveTextRecognizer {
-    /**
-     * Starts reading the text in [frame], or returns null when the frame has no image to read. The
-     * task fails with ML Kit's exception. The caller closes [frame] once the task completes.
-     */
-    fun recognize(frame: ImageProxy): Task<String>?
-
-    fun close()
-}
-
-/** [LiveTextRecognizer] over ML Kit's Latin text recognizer. */
-internal class MlKitLiveTextRecognizer : LiveTextRecognizer {
-    private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
-    @androidx.annotation.OptIn(ExperimentalGetImage::class)
-    override fun recognize(frame: ImageProxy): Task<String>? {
-        val mediaImage = frame.image ?: return null
-        val image = InputImage.fromMediaImage(mediaImage, frame.imageInfo.rotationDegrees)
-        return recognizer.process(image).onSuccessTask(DirectExecutor) { Tasks.forResult(it.text) }
-    }
-
-    override fun close() = recognizer.close()
-}
-
-/**
- * Live OCR on CameraX analysis frames. A failure is logged here, once, before [onError] sees it; the
- * recognised text is never logged.
- */
-internal class TextRecognitionAnalyzer(
-    private val onTextRecognized: (String) -> Unit,
-    private val onError: (Exception) -> Unit = {},
-    private val recognizer: LiveTextRecognizer = MlKitLiveTextRecognizer(),
-    maxFps: Int = DEFAULT_LIVE_OCR_MAX_FPS,
-) : ImageAnalysis.Analyzer {
-    private val processedTexts = mutableSetOf<String>()
-
-    // Analysis runs on CameraX's single analysis executor, the only caller of the gate.
-    private val gate = FrameRateGate(maxFps)
-
-    override fun analyze(imageProxy: ImageProxy) {
-        // Judged by the frame's sensor timestamp, before the frame is read. A skipped frame is closed
-        // at once, so the analysis stream (shared with other analyzers) moves on.
-        if (!gate.tryPass(imageProxy.imageInfo.timestamp)) {
-            imageProxy.close()
-            return
-        }
-
-        try {
-            val task = recognizer.recognize(imageProxy)
-            if (task == null) {
-                imageProxy.close()
-                return
-            }
-
-            task
-                .addOnSuccessListener { text ->
-                    // Avoid duplicate emissions for same text
-                    if (text.isNotEmpty() && !processedTexts.contains(text)) {
-                        processedTexts.add(text)
-                        CameraKLogger.d("TextRecognition", "Text recognised, length=${text.length}")
-                        onTextRecognized(text)
-
-                        if (processedTexts.size > MAX_REMEMBERED_TEXTS) {
-                            processedTexts.clear()
-                        }
-                    }
-                }.addOnFailureListener { exception ->
-                    CameraKLogger.e("TextRecognition", "Recognition failed", exception)
-                    onError(exception)
-                }.addOnCompleteListener {
-                    imageProxy.close()
-                }
-        } catch (e: Exception) {
-            CameraKLogger.e("TextRecognition", "Analyzer error", e)
-            onError(e)
-            imageProxy.close()
-        }
-    }
-
-    private companion object {
-        // Texts already delivered are remembered so the same text is not delivered on every frame it
-        // stays in view; past this many the set is cleared, so it cannot grow for the whole session.
-        const val MAX_REMEMBERED_TEXTS = 50
-    }
-
-    fun shutdown() {
-        try {
-            recognizer.close()
-            processedTexts.clear()
-        } catch (e: Exception) {
-            CameraKLogger.e("TextRecognition", "Error closing recognizer", e)
-        }
-    }
-}
-
-actual fun startRecognition(
-    cameraController: CameraController,
-    config: OcrConfig,
-    onText: (text: String) -> Unit,
-): RecognitionHandle {
-    val analyzer = cameraController.enableTextRecognition(config.maxFps, onText)
-    return RecognitionHandle {
-        cameraController.unregisterImageAnalyzer(analyzer)
-        analyzer.shutdown() // close the ML Kit recognizer
-    }
-}
+// ML Kit answers a frame in tens of milliseconds; a frame it has not answered in this long is
+// abandoned, so the registration's worker moves on.
+private const val LIVE_TIMEOUT_MILLIS = 10_000L

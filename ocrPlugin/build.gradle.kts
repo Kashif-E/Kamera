@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.vanniktech.publish)
     alias(libs.plugins.dokka)
+    alias(libs.plugins.poko)
 }
 
 kotlin {
@@ -33,6 +34,7 @@ kotlin {
 
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation(projects.cameraKTesting)
 
             // Test-only, and it must stay that way. On the runtime classpath, coroutines-test
             // installs TestMainDispatcherFactory via ServiceLoader, which takes over

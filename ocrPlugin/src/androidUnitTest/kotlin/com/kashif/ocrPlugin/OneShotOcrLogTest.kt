@@ -1,9 +1,6 @@
 package com.kashif.ocrPlugin
 
-import android.graphics.Bitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import com.google.android.gms.tasks.Task
-import com.google.android.gms.tasks.Tasks
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -13,6 +10,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /** One-shot OCR logs what it did, never the text it read: the log sink may go to a crash reporter. */
@@ -34,19 +32,14 @@ class OneShotOcrLogTest {
 
     @Test
     fun recognisedText_isNotLogged() = runBlocking {
-        val text = extractText(Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).asImageBitmap()) {
-            Recognizer(Tasks.forResult(SECRET))
-        }
+        val recognizers =
+            AndroidTextRecognizers(newClient = { FakeMlKitClient { textTask(SECRET) } }, decode = { stillBitmap() })
 
-        assertEquals(SECRET, text)
+        val result = OcrPlugin(OcrConfig(), recognizers).recognize(capture())
+
+        assertEquals(SECRET, assertIs<CameraKResult.Success<RecognizedText>>(result).value.text)
         assertTrue(messages.isNotEmpty(), "one-shot OCR logged nothing, so the check below proves nothing")
         assertTrue(messages.none { SECRET_PART in it }, "log lines carrying the recognised text: $messages")
-    }
-
-    private class Recognizer(private val result: Task<String>) : BitmapTextRecognizer {
-        override fun recognize(bitmap: Bitmap): Task<String> = result
-
-        override fun close() = Unit
     }
 
     private companion object {

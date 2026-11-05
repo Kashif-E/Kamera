@@ -1,447 +1,89 @@
 package com.kashif.ocrPlugin
 
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asSkiaBitmap
-import com.kashif.cameraK.controller.CameraController
-import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.cinterop.BetaInteropApi
-import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
-import kotlinx.cinterop.Pinned
-import kotlinx.cinterop.StableRef
-import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
-import kotlinx.cinterop.asStableRef
-import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.pin
 import kotlinx.cinterop.ptr
-import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.value
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import org.jetbrains.skia.ColorAlphaType
-import org.jetbrains.skia.ColorSpace
-import org.jetbrains.skia.ColorType
-import org.jetbrains.skia.ImageInfo
-import platform.AVFoundation.AVCaptureConnection
-import platform.AVFoundation.AVCaptureOutput
-import platform.AVFoundation.AVCaptureVideoDataOutput
-import platform.AVFoundation.AVCaptureVideoDataOutputSampleBufferDelegateProtocol
-import platform.AVFoundation.AVCaptureVideoOrientationPortrait
-import platform.AVFoundation.AVCaptureVideoStabilizationModeStandard
-import platform.CoreFoundation.CFRelease
-import platform.CoreFoundation.CFRetain
-import platform.CoreGraphics.CGColorRenderingIntent
-import platform.CoreGraphics.CGColorSpaceCreateWithName
-import platform.CoreGraphics.CGColorSpaceRelease
-import platform.CoreGraphics.CGDataProviderCreateWithData
-import platform.CoreGraphics.CGDataProviderRelease
-import platform.CoreGraphics.CGImageAlphaInfo
-import platform.CoreGraphics.CGImageCreate
 import platform.CoreGraphics.CGImageRef
-import platform.CoreGraphics.CGImageRelease
-import platform.CoreGraphics.kCGBitmapByteOrderDefault
-import platform.CoreGraphics.kCGColorSpaceSRGB
-import platform.CoreImage.CIImage
-import platform.CoreMedia.CMSampleBufferGetImageBuffer
-import platform.CoreMedia.CMSampleBufferRef
 import platform.CoreVideo.CVPixelBufferRef
-import platform.CoreVideo.kCVPixelBufferPixelFormatTypeKey
-import platform.CoreVideo.kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-import platform.Foundation.CFBridgingRelease
-import platform.Foundation.NSArray
-import platform.Foundation.NSDate
 import platform.Foundation.NSError
-import platform.Foundation.date
-import platform.Foundation.timeIntervalSince1970
-import platform.Foundation.valueForKey
 import platform.Vision.VNImageRequestHandler
 import platform.Vision.VNRecognizeTextRequest
-import platform.Vision.VNRecognizedText
-import platform.Vision.VNRecognizedTextObservation
 import platform.Vision.VNRequest
-import platform.Vision.VNRequestTextRecognitionLevelAccurate
 import platform.Vision.VNRequestTextRecognitionLevelFast
-import platform.darwin.NSObject
-import platform.darwin.dispatch_async
-import platform.darwin.dispatch_get_main_queue
-import platform.darwin.dispatch_queue_create
-import platform.darwin.dispatch_queue_t
-import kotlin.concurrent.AtomicInt
-import kotlin.concurrent.Volatile
-import kotlin.coroutines.resume
 
-@OptIn(ExperimentalForeignApi::class)
-actual suspend fun extractTextFromBitmapImpl(bitmap: ImageBitmap, config: OcrConfig): String =
-    recognizeText(bitmap, ::performVisionRequest)
+internal actual fun platformTextRecognizers(config: OcrConfig): TextRecognizerFactory = AppleTextRecognizers()
 
 /**
- * Runs a Vision request over an image, so a test can stand in for Vision. Returns the error Vision
+ * Runs a Vision request over a still, so a test can stand in for Vision. Returns the error Vision
  * reported, or null when the request ran.
  */
 internal fun interface VisionPerformer {
     @OptIn(ExperimentalForeignApi::class)
-    fun perform(image: CGImageRef, request: VNRecognizeTextRequest): NSError?
+    fun perform(image: CGImageRef, orientation: UInt, request: VNRecognizeTextRequest): NSError?
+}
+
+/**
+ * Runs live OCR's Vision request over one frame's luma, so a test can stand in for Vision. Returns
+ * the error Vision reported, or null when the request ran.
+ */
+internal fun interface LiveVisionPerformer {
+    @OptIn(ExperimentalForeignApi::class)
+    fun perform(pixelBuffer: CVPixelBufferRef, orientation: UInt, request: VNRecognizeTextRequest): NSError?
 }
 
 /** [VisionPerformer] over VNImageRequestHandler.performRequests. */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-internal fun performVisionRequest(image: CGImageRef, request: VNRecognizeTextRequest): NSError? = memScoped {
+internal fun performVisionRequest(image: CGImageRef, orientation: UInt, request: VNRecognizeTextRequest): NSError? =
+    memScoped {
+        val error = alloc<ObjCObjectVar<NSError?>>()
+        val handler = VNImageRequestHandler(image, orientation, emptyMap<Any?, Any?>())
+        if (handler.performRequests(listOf(request), error.ptr)) null else error.value
+    }
+
+/** [LiveVisionPerformer] over VNImageRequestHandler.performRequests. */
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+internal fun performLiveVisionRequest(
+    pixelBuffer: CVPixelBufferRef,
+    orientation: UInt,
+    request: VNRecognizeTextRequest,
+): NSError? = memScoped {
     val error = alloc<ObjCObjectVar<NSError?>>()
-    val handler = VNImageRequestHandler(image, mapOf<Any?, String>())
+    val handler = VNImageRequestHandler(pixelBuffer, orientation, emptyMap<Any?, Any?>())
     if (handler.performRequests(listOf(request), error.ptr)) null else error.value
 }
 
 /**
- * Reads the text in [bitmap] once, running Vision through [performer] off the caller's thread.
- * Returns "" when the bitmap cannot be handed to Vision or Vision fails; the failure is logged.
+ * The iOS recognizers: Vision. Live frames reach it as a one-plane 8-bit pixel buffer built from
+ * the frame's luma, never the camera's own sample buffer, so the plugin retains none; a still is
+ * decoded from its file with its orientation.
  */
 @OptIn(ExperimentalForeignApi::class)
-internal suspend fun recognizeText(bitmap: ImageBitmap, performer: VisionPerformer): String =
-    withContext(Dispatchers.Default) {
-        val cgImage = cgImageOf(bitmap)
-        if (cgImage == null) {
-            CameraKLogger.e(TAG, "Text extraction failed: the bitmap's pixels could not be read")
-            return@withContext ""
-        }
+internal class AppleTextRecognizers(
+    private val livePerformer: LiveVisionPerformer = LiveVisionPerformer(::performLiveVisionRequest),
+    private val stillPerformer: VisionPerformer = VisionPerformer(::performVisionRequest),
+) : TextRecognizerFactory {
+    override fun live(level: OcrLevel): LiveTextRecognizer = TODO("OC': Vision live recognizer over $livePerformer")
 
-        try {
-            suspendCancellableCoroutine { continuation ->
-                val request =
-                    VNRecognizeTextRequest { request, error ->
-                        if (error != null) {
-                            CameraKLogger.e(TAG, "Text extraction failed", VisionException(error))
-                            continuation.resume("")
-                            return@VNRecognizeTextRequest
-                        }
-
-                        val results = request?.results as? NSArray
-                        if (results == null) {
-                            continuation.resume("")
-                            return@VNRecognizeTextRequest
-                        }
-
-                        val recognizedText =
-                            buildString {
-                                for (i in 0 until results.count.toInt()) {
-                                    val observation =
-                                        results.objectAtIndex(i.toULong()) as? VNRecognizedTextObservation
-                                    observation?.let { obs ->
-                                        val candidatesArray = obs.topCandidates(1u)
-
-                                        if (candidatesArray.isNotEmpty()) {
-                                            val text =
-                                                (candidatesArray.first() as? NSObject)?.valueForKey("string") as? String
-                                            if (!text.isNullOrBlank()) {
-                                                if (isNotEmpty()) append("\n")
-                                                append(text)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                        continuation.resume(recognizedText.trim())
-                    }
-
-                request.recognitionLevel = VNRequestTextRecognitionLevelAccurate
-                request.usesLanguageCorrection = true
-
-                // Vision calls the completion handler synchronously inside performRequests, if at all,
-                // so once perform returns the continuation is resumed already or never will be.
-                val failure =
-                    try {
-                        performer.perform(cgImage, request)?.let(::VisionException)
-                    } catch (e: Exception) {
-                        e
-                    }
-                if (continuation.isActive) {
-                    if (failure != null) {
-                        CameraKLogger.e(TAG, "Text extraction failed: Vision did not run the request", failure)
-                    } else {
-                        CameraKLogger.e(TAG, "Text extraction failed: Vision returned without a result or an error")
-                    }
-                    continuation.resume("")
-                }
-            }
-        } finally {
-            CGImageRelease(cgImage)
-        }
-    }
-
-/**
- * Copies [bitmap]'s pixels once into a new sRGB CGImage, without encoding them, or returns null when
- * they cannot be read. The caller releases the image.
- */
-@OptIn(ExperimentalForeignApi::class)
-internal fun cgImageOf(bitmap: ImageBitmap): CGImageRef? {
-    val width = bitmap.width
-    val height = bitmap.height
-    if (width <= 0 || height <= 0) return null
-    val rowBytes = width * 4
-    val pixels =
-        bitmap.asSkiaBitmap().readPixels(
-            ImageInfo(width, height, ColorType.RGBA_8888, ColorAlphaType.PREMUL, ColorSpace.sRGB),
-            rowBytes,
-            0,
-            0,
-        ) ?: return null
-
-    // The provider reads the pinned array in place and unpins it when Core Graphics releases it.
-    val pinned = pixels.pin()
-    val owner = StableRef.create(pinned)
-    val provider =
-        CGDataProviderCreateWithData(
-            owner.asCPointer(),
-            pinned.addressOf(0),
-            pixels.size.convert(),
-            releasePinnedPixels,
-        )
-    if (provider == null) {
-        owner.dispose()
-        pinned.unpin()
-        return null
-    }
-    val space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB)
-    return try {
-        CGImageCreate(
-            width.convert(),
-            height.convert(),
-            8u,
-            32u,
-            rowBytes.convert(),
-            space,
-            // RGBA bytes in memory, alpha premultiplied: the layout readPixels was asked for.
-            CGImageAlphaInfo.kCGImageAlphaPremultipliedLast.value or kCGBitmapByteOrderDefault,
-            provider,
-            null,
-            false,
-            CGColorRenderingIntent.kCGRenderingIntentDefault,
-        )
-    } finally {
-        CGColorSpaceRelease(space)
-        CGDataProviderRelease(provider)
-    }
-}
-
-@OptIn(ExperimentalForeignApi::class)
-private val releasePinnedPixels =
-    staticCFunction { info: COpaquePointer?, _: COpaquePointer?, _: ULong ->
-        info?.asStableRef<Pinned<ByteArray>>()?.let { owner ->
-            owner.get().unpin()
-            owner.dispose()
-        }
-        Unit
-    }
-
-private const val TAG = "TextRecognition"
-
-private const val NANOS_PER_SECOND = 1_000_000_000.0
-
-/** An error Vision reported, carried as a Kotlin exception so it can be logged. */
-private class VisionException(error: NSError) :
-    Exception("Vision error ${error.domain} ${error.code}: ${error.localizedDescription}")
-
-/**
- * Runs live OCR's Vision request over one frame, so a test can stand in for Vision. Returns the error
- * Vision reported, or null when the request ran.
- */
-internal fun interface LiveVisionPerformer {
-    @OptIn(ExperimentalForeignApi::class)
-    fun perform(pixelBuffer: CVPixelBufferRef, request: VNRecognizeTextRequest): NSError?
-}
-
-/** [LiveVisionPerformer] over VNImageRequestHandler.performRequests. */
-@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-internal fun performLiveVisionRequest(pixelBuffer: CVPixelBufferRef, request: VNRecognizeTextRequest): NSError? =
-    memScoped {
-        val error = alloc<ObjCObjectVar<NSError?>>()
-        val handler = VNImageRequestHandler(pixelBuffer, emptyMap<Any?, String>())
-        if (handler.performRequests(listOf(request), error.ptr)) null else error.value
-    }
-
-private fun wallClockNanos(): Long = (NSDate.date().timeIntervalSince1970() * NANOS_PER_SECOND).toLong()
-
-/**
- * Delegate for handling video frame capture and processing.
- * Processes frames asynchronously to extract text using Vision framework.
- *
- * @property onText Callback invoked when text is successfully extracted from a frame.
- */
-@OptIn(ExperimentalForeignApi::class)
-class VideoDataDelegate internal constructor(
-    private val onText: (String) -> Unit,
-    maxFps: Int,
-    private val performer: LiveVisionPerformer,
-    private val clockNanos: () -> Long,
-    private val processingQueue: dispatch_queue_t,
-) : NSObject(),
-    AVCaptureVideoDataOutputSampleBufferDelegateProtocol {
-    constructor(onText: (String) -> Unit, maxFps: Int = DEFAULT_LIVE_OCR_MAX_FPS) : this(
-        onText,
-        maxFps,
-        LiveVisionPerformer { pixelBuffer, request -> performLiveVisionRequest(pixelBuffer, request) },
-        ::wallClockNanos,
-        dispatch_queue_create("com.kashif.ocrPlugin.processing", null),
-    )
-
-    @Volatile
-    private var isProcessingFrame = false
-
-    // Read only on the delegate's serial queue.
-    private val gate = FrameRateGate(maxFps)
-
-    /**
-     * Processes a captured video frame to extract text.
-     *
-     * @param output The capture output that provided the sample buffer.
-     * @param didOutputSampleBuffer The captured video frame sample buffer.
-     * @param fromConnection The connection from which the sample buffer was received.
-     */
-    override fun captureOutput(
-        output: AVCaptureOutput,
-        didOutputSampleBuffer: CMSampleBufferRef?,
-        fromConnection: AVCaptureConnection,
-    ) {
-        if (didOutputSampleBuffer == null) return
-        onFrame(didOutputSampleBuffer)
-    }
-
-    /** Hands [sampleBuffer] to Vision on the processing queue, unless a frame is in flight or the rate says wait. */
-    internal fun onFrame(sampleBuffer: CMSampleBufferRef) {
-        // Skip if already processing
-        if (isProcessingFrame) return
-
-        if (!gate.tryPass(clockNanos())) return
-
-        // Mark as processing before async work
-        isProcessingFrame = true
-
-        CFRetain(sampleBuffer)
-
-        dispatch_async(processingQueue) {
-            processFrame(sampleBuffer)
-        }
-    }
-
-    private fun processFrame(sampleBuffer: CMSampleBufferRef) {
-        val frame = InFlightFrame(sampleBuffer)
-        try {
-            val pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) ?: return frame.release()
-            val ciImage = CIImage.imageWithCVPixelBuffer(pixelBuffer) ?: return frame.release()
-            val framePixels = ciImage.pixelBuffer ?: return frame.release()
-
-            val request =
-                liveTextRequest { vnRequest, error ->
-                    frame.answered = true
-                    if (error != null) {
-                        CameraKLogger.e(TAG, "Live text recognition failed for a frame", VisionException(error))
-                        frame.release()
-                        return@liveTextRequest
-                    }
-
-                    handleRecognitionResults(vnRequest?.results as? NSArray, frame)
-                }
-
-            // Vision calls the completion handler synchronously inside performRequests, if at all,
-            // so once perform returns the frame has been answered or never will be.
-            val failure = performer.perform(framePixels, request)
-            if (!frame.answered) {
-                if (failure != null) {
-                    CameraKLogger.e(
-                        TAG,
-                        "Live text recognition failed: Vision did not run the request",
-                        VisionException(failure),
-                    )
-                } else {
-                    CameraKLogger.e(TAG, "Live text recognition failed: Vision returned without a result or an error")
-                }
-                frame.release()
-            }
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Live text recognition failed for a frame", e)
-            frame.release()
-        }
-    }
-
-    private fun handleRecognitionResults(resultsArray: NSArray?, frame: InFlightFrame) {
-        if (resultsArray == null || resultsArray.count.toInt() == 0) {
-            frame.release()
-            return
-        }
-
-        val recognizedStrings = mutableListOf<String>()
-
-        for (i in 0 until resultsArray.count.toInt()) {
-            val observation = resultsArray.objectAtIndex(i.toULong()) as? VNRecognizedTextObservation
-            observation?.let {
-                val topCandidates = it.topCandidates(1u) as NSArray
-                if (topCandidates.count > 0uL) {
-                    val candidate = topCandidates.objectAtIndex(0uL) as? VNRecognizedText
-                    val confidence = candidate?.confidence ?: 0.0f
-
-                    if (confidence > MIN_LIVE_CONFIDENCE) {
-                        candidate?.string?.let { text ->
-                            if (text.isNotBlank()) {
-                                recognizedStrings.add(text)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        val extractedText = recognizedStrings.joinToString("\n")
-        if (extractedText.isNotBlank()) {
-            dispatch_async(dispatch_get_main_queue()) {
-                onText(extractedText.trim())
-                frame.release()
-            }
-        } else {
-            frame.release()
-        }
-    }
-
-    /** A frame on its way through Vision. Whichever path finishes with it releases it, exactly once. */
-    private inner class InFlightFrame(private val sampleBuffer: CMSampleBufferRef) {
-        // Set by Vision's completion handler, which runs inside perform on the processing queue.
-        var answered = false
-        private val released = AtomicInt(0)
-
-        fun release() {
-            if (released.compareAndSet(0, 1)) cleanupAndRelease(sampleBuffer)
-        }
-    }
-
-    /**
-     * Cleans up and releases the video frame sample buffer.
-     *
-     * @param sampleBuffer The sample buffer to release.
-     */
-    private fun cleanupAndRelease(sampleBuffer: CMSampleBufferRef) {
-        isProcessingFrame = false
-        CFRelease(sampleBuffer)
-    }
+    override fun still(level: OcrLevel): StillTextRecognizer = TODO("OC': Vision still recognizer over $stillPerformer")
 }
 
 /**
- * The Vision request live OCR runs on each frame it reads; [onComplete] receives Vision's result.
- * Live frames use the fast level, which Vision provides for real-time use; one-shot recognition of a
- * still keeps the accurate level.
+ * The Vision request live OCR runs on each frame it reads, at [level]; [onComplete] receives
+ * Vision's result. Live frames skip language correction and small print, which Vision misreads in
+ * live frames.
  */
-internal fun liveTextRequest(onComplete: (VNRequest?, NSError?) -> Unit): VNRecognizeTextRequest =
+internal fun liveTextRequest(level: OcrLevel, onComplete: (VNRequest?, NSError?) -> Unit): VNRecognizeTextRequest =
     VNRecognizeTextRequest(onComplete).apply {
+        // OC': the level does not reach Vision yet ($level).
         recognitionLevel = VNRequestTextRecognitionLevelFast
         usesLanguageCorrection = false
         minimumTextHeight = MIN_LIVE_TEXT_HEIGHT
         recognitionLanguages = listOf(LIVE_LANGUAGE)
     }
-
-// Live candidates below this confidence are dropped: at the fast level they are mostly noise.
-private const val MIN_LIVE_CONFIDENCE = 0.3f
 
 // Text shorter than this fraction of the frame height is ignored, which skips the small print
 // Vision misreads in live frames and saves time on each one.
@@ -449,65 +91,3 @@ private const val MIN_LIVE_TEXT_HEIGHT = 0.1f
 
 // Live recognition reads English, as Android's Latin ML Kit model and desktop's eng model do.
 private const val LIVE_LANGUAGE = "en-US"
-
-/**
- * The video output live OCR reads frames from, before its sample-buffer delegate is set. Frames come
- * in the camera's native 420f, which Vision reads directly, so none is colour-converted to BGRA.
- */
-@OptIn(ExperimentalForeignApi::class)
-internal fun ocrVideoDataOutput(): AVCaptureVideoDataOutput = AVCaptureVideoDataOutput().apply {
-    // The key is a CFString constant; it has to cross into the dictionary as an NSString.
-    val pixelFormatKey = CFBridgingRelease(CFRetain(kCVPixelBufferPixelFormatTypeKey))
-    setVideoSettings(mapOf(pixelFormatKey to kCVPixelFormatType_420YpCbCr8BiPlanarFullRange))
-    setAlwaysDiscardsLateVideoFrames(true)
-}
-
-/**
- * Enables continuous text recognition on the iOS camera controller.
- *
- * Uses configuration queue pattern (Apple WWDC pattern) to safely add video output.
- * Processes camera frames asynchronously and emits detected text via callback.
- * Does NOT call startSession() - session is started by main camera setup.
- *
- * Tracks the video output to prevent duplicate setup and allow proper cleanup.
- *
- * @param cameraController The camera controller providing frames
- * @param onText Callback invoked when text is detected with the extracted text
- */
-@OptIn(ExperimentalForeignApi::class)
-actual fun startRecognition(
-    cameraController: CameraController,
-    config: OcrConfig,
-    onText: (String) -> Unit,
-): RecognitionHandle {
-    // Idempotency/teardown is owned by the plugin (it stops the prior handle before re-starting),
-    // so no module-global dedup is needed here.
-    val videoDataOutput =
-        ocrVideoDataOutput().apply {
-            setSampleBufferDelegate(
-                VideoDataDelegate(onText, config.maxFps),
-                dispatch_queue_create("com.kashif.ocrPlugin.videoQueue", null),
-            )
-        }
-
-    // Queue configuration change atomically (prevents startRunning inside begin/commit crash)
-    cameraController.queueConfigurationChange {
-        cameraController.safeAddOutput(videoDataOutput)
-
-        (videoDataOutput.connections.firstOrNull() as? AVCaptureConnection)?.let { connection ->
-            if (connection.supportsVideoOrientation) {
-                connection.setVideoOrientation(AVCaptureVideoOrientationPortrait)
-            }
-            if (connection.supportsVideoStabilization) {
-                connection.setPreferredVideoStabilizationMode(
-                    AVCaptureVideoStabilizationModeStandard,
-                )
-            }
-        }
-    }
-
-    return RecognitionHandle {
-        videoDataOutput.setSampleBufferDelegate(null, null)
-        cameraController.safeRemoveOutput(videoDataOutput)
-    }
-}

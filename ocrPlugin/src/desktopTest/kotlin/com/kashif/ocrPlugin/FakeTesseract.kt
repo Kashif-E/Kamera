@@ -1,5 +1,6 @@
 package com.kashif.ocrPlugin
 
+import org.bytedeco.tesseract.global.tesseract.OEM_TESSERACT_ONLY
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -10,15 +11,21 @@ import java.util.concurrent.atomic.AtomicInteger
  * be freed exactly once and never touched afterwards, and End() or delete() while a recognition is
  * inside the engine frees memory that recognition is using. It records each breach in [violations]
  * instead of crashing the JVM, and counts every crossing into "native" code in [crossings]. Init()
- * returns [initResult], so a test can stand in for language data Tesseract rejects.
+ * returns [initResult], or [legacyInitResult] for the legacy engine, so a test can stand in for
+ * language data Tesseract rejects or that has no legacy engine. [initModes] records each Init's
+ * engine mode.
  */
-internal class FakeTesseract(private val recognizedText: String? = "HELLO", private val initResult: Int = 0) :
-    TesseractLibrary {
+internal class FakeTesseract(
+    private val recognizedText: String? = "HELLO",
+    private val initResult: Int = 0,
+    private val legacyInitResult: Int = initResult,
+) : TesseractLibrary {
     val violations: MutableList<String> = CopyOnWriteArrayList()
     val crossings = AtomicInteger()
     val engines: MutableList<FakeEngine> = CopyOnWriteArrayList()
     val texts: MutableList<FakeText> = CopyOnWriteArrayList()
     val pixes: MutableList<FakePix> = CopyOnWriteArrayList()
+    val initModes: MutableList<Int> = CopyOnWriteArrayList()
 
     /** The last image handed to an engine, as one luma value per pixel, row-major. */
     @Volatile var lastImage: GrayImage? = null
@@ -50,9 +57,10 @@ internal class FakeTesseract(private val recognizedText: String? = "HELLO", priv
             if (ends.get() > 0) violations += "$operation after End()"
         }
 
-        override fun init(dataPath: String, language: String): Int {
+        override fun init(dataPath: String, language: String, oem: Int): Int {
             use("Init")
-            return initResult
+            initModes += oem
+            return if (oem == OEM_TESSERACT_ONLY) legacyInitResult else initResult
         }
 
         override fun setVariable(name: String, value: String) = use("SetVariable")

@@ -1,12 +1,16 @@
 package com.kashif.ocrPlugin
 
+import com.kashif.cameraK.result.CameraKResult
+import kotlinx.coroutines.runBlocking
 import java.awt.Color
 import java.awt.Font
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.File
+import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -65,9 +69,16 @@ class OcrProcessorNativeLeaksTest {
     fun oneShotExtraction_freesTheTessBaseApiOfEveryProcessorItCreates() {
         val tesseract = FakeTesseract()
 
-        repeat(3) {
-            val text = extractText(colourFrame(16, 8)) { OCRProcessor(tesseract, TESSDATA) }
-            assertEquals("HELLO", text)
+        val plugin = OcrPlugin(OcrConfig(), DesktopTextRecognizers(tesseract) { TESSDATA })
+        val image = File.createTempFile("ocr-still", ".png")
+        try {
+            ImageIO.write(colourFrame(16, 8), "png", image)
+            repeat(3) {
+                val result = runBlocking { plugin.recognize(capture(image.absolutePath)) }
+                assertEquals("HELLO", assertIs<CameraKResult.Success<RecognizedText>>(result).value.text)
+            }
+        } finally {
+            image.delete()
         }
 
         assertTrue(tesseract.engines.isNotEmpty(), "no TessBaseAPI was created")

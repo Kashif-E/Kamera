@@ -21,7 +21,8 @@ internal interface TesseractLibrary {
     fun newPix(width: Int, height: Int, depth: Int): Pix
 
     interface Engine {
-        fun init(dataPath: String, language: String): Int
+        /** Init with OCR engine mode [oem] (OEM_TESSERACT_ONLY, OEM_LSTM_ONLY or OEM_DEFAULT); 0 on success. */
+        fun init(dataPath: String, language: String, oem: Int): Int
 
         fun setVariable(name: String, value: String)
 
@@ -68,7 +69,7 @@ internal object JavaCppTesseract : TesseractLibrary {
         Pix(pixCreate(width, height, depth))
 
     private class Engine(private val api: TessBaseAPI) : TesseractLibrary.Engine {
-        override fun init(dataPath: String, language: String): Int = api.Init(dataPath, language)
+        override fun init(dataPath: String, language: String, oem: Int): Int = api.Init(dataPath, language, oem)
 
         override fun setVariable(name: String, value: String) {
             api.SetVariable(name, value)

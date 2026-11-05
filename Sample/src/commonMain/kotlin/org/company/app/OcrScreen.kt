@@ -44,24 +44,15 @@ internal fun rememberOcrFeature(): OcrFeature {
 internal fun rememberRecognizedText(ocr: OcrFeature): String? {
     var recognizedText by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(ocr) {
-        for (text in ocr.plugin.ocrFlow) {
-            recognizedText = text
-        }
+        ocr.plugin.results.collect { recognizedText = it.text }
     }
     return recognizedText
 }
 
 @Composable
 internal fun OcrRecognitionEffect(ocr: OcrFeature, isOCREnabled: Boolean) {
-    LaunchedEffect(isOCREnabled) {
-        try {
-            if (isOCREnabled) {
-                ocr.plugin.startRecognition()
-            } else {
-                ocr.plugin.stopRecognition()
-            }
-        } catch (_: Exception) {
-        }
+    LaunchedEffect(ocr, isOCREnabled) {
+        if (isOCREnabled) ocr.plugin.resume() else ocr.plugin.pause()
     }
 }
 
