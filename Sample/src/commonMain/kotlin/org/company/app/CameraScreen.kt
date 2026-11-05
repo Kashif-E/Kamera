@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.X
+import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.compose.CameraKScreen
 import com.kashif.cameraK.compose.rememberCameraKStateHolder
 import com.kashif.cameraK.controller.CameraController
@@ -58,11 +60,14 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import kotlin.uuid.ExperimentalUuidApi
@@ -486,4 +491,34 @@ private fun CameraKError.displayText(): String = when (this) {
     CameraKError.NotReady -> "The camera is not ready"
     CameraKError.Closed -> "The camera is closed"
     is CameraKError.Internal -> "Something went wrong with the camera"
+}
+
+/** The configuration settings the Sample lets the user change; each change builds a new configuration. */
+internal data class CameraSettings(
+    val aspectRatio: AspectRatio = AspectRatio.RATIO_4_3,
+    val resolution: Pair<Int, Int>? = null,
+    val imageFormat: ImageFormat = ImageFormat.JPEG,
+    val qualityPrioritization: QualityPrioritization = QualityPrioritization.BALANCED,
+    val cameraDeviceType: CameraDeviceType = CameraDeviceType.WIDE_ANGLE,
+)
+
+internal val CameraSettingsSaver: Saver<CameraSettings, Any> = Saver(
+    save = { TODO("LC'") },
+    restore = { TODO("LC'") },
+)
+
+/** The holder's capture, as the Sample's photo button uses it. */
+internal interface SampleCapturer {
+    suspend fun capture(): CameraKResult<CapturedImage>
+}
+
+/** The Sample's photo action. */
+internal class CaptureFeature(private val capturer: SampleCapturer) {
+    /** The last photo taken, for the screen to show. */
+    val lastPhoto: StateFlow<CapturedImage?> get() = TODO("LC'")
+
+    /** One line per photo, for the screen to show. */
+    val notices: Flow<String> get() = TODO("LC'")
+
+    suspend fun takePhoto(): Unit = TODO("LC'")
 }
