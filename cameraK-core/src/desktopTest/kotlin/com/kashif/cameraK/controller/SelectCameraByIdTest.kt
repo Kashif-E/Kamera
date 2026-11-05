@@ -18,12 +18,14 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber
+import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -132,6 +134,48 @@ class SelectCameraByIdTest {
         assertSilentSwitchReverts(silent, CameraOperation.DEVICE_TYPE)
     }
 
+    // The engine's coroutines on a scheduler of their own, as the contract driver runs them. While the
+    // caller waits on the producer's real thread for the new device's first frame, its virtual time
+    // skips ahead; that is not the device staying silent for NO_FRAME_TIMEOUT.
+    @Test
+    fun aSwitchTimesTheFirstFrameOnTheEnginesClockNotTheCallers() = runTest {
+        val rig = DesktopEngineRig(TestCoroutineScheduler(), caseScheduler = testScheduler)
+        val second = webcam("usb-second", CameraLens.FRONT)
+        val late = rig.newCamera().apply { holdOpen = true }
+        val source = object : GrabberSource {
+            override fun deviceKey(device: LensInfo): Any = device.id
+
+            override val canRelax: Boolean = false
+
+            override fun create(device: LensInfo, constrained: Boolean): FrameGrabber =
+                if (device.id == second.id) late else rig.camera
+        }
+        val sut = DesktopCameraEngine(
+            CameraConfiguration(),
+            rig.environment(),
+            source,
+            authorization = { PermissionStatus.Granted },
+            enumerate = { CameraCapabilities(listOf(first, second)) },
+        )
+        try {
+            open(rig, sut, CameraSelection.ById(first.id))
+            val firstFrame = thread(name = "camerak-test-late-frame") {
+                Thread.sleep(LATE_FRAME_MILLIS)
+                late.deliverFrame()
+            }
+
+            // Called directly, as the contract kit calls it: nothing settles the engine meanwhile.
+            val switched = sut.selectCamera(CameraSelection.ById(second.id))
+            firstFrame.join()
+
+            assertEquals(second.id, assertIs<CameraKResult.Success<LensInfo>>(switched, "the switch").value.id)
+            assertEquals(1, late.startCount, "the other device's opens")
+        } finally {
+            sut.close()
+            rig.settle()
+        }
+    }
+
     // A switch from [first] to [silent], which opens and then delivers nothing, ends as Timeout([operation]).
     private suspend fun TestScope.assertSilentSwitchReverts(silent: LensInfo, operation: CameraOperation) {
         val rig = DesktopEngineRig(testScheduler)
@@ -207,6 +251,9 @@ class SelectCameraByIdTest {
     )
 
     private companion object {
+        // Far longer than the caller's virtual time takes to skip ahead.
+        const val LATE_FRAME_MILLIS = 200L
+
         fun webcam(id: String, lens: CameraLens = CameraLens.BACK, type: CameraDeviceType = CameraDeviceType.DEFAULT) =
             LensInfo(id, type, lens, 1f, 1f, hasFlash = false, isLogical = false)
     }
