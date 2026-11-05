@@ -35,7 +35,6 @@ fun App() = AppTheme {
         val analyzer = rememberAnalyzerFeature()
         val qrScanner = rememberQrScannerFeature()
         val ocr = rememberOcrFeature()
-        val recording = rememberRecordingFeature()
 
         PermissionsHandler(
             permissions = permissions,
@@ -49,7 +48,7 @@ fun App() = AppTheme {
                 imageSaver = imageSaver,
                 qrScanner = qrScanner,
                 ocr = ocr,
-                recording = recording,
+                snackbarHostState = snackbarHostState,
             )
         }
     }

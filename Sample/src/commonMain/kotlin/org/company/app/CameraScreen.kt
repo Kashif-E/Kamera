@@ -18,6 +18,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,7 +73,7 @@ internal fun CameraContent(
     imageSaver: ImageSaverFeature,
     qrScanner: QrScannerFeature,
     ocr: OcrFeature,
-    recording: RecordingFeature,
+    snackbarHostState: SnackbarHostState,
 ) {
     val latestFrame = rememberLatestFrame(analyzer)
     val qrCodes = rememberQrCodes(qrScanner)
@@ -162,7 +163,7 @@ internal fun CameraContent(
             qrScanner = qrScanner,
             ocr = ocr,
             analyzer = analyzer,
-            recording = recording,
+            snackbarHostState = snackbarHostState,
             qrCodes = qrCodes,
             recognizedText = recognizedText,
             latestFrame = latestFrame,
@@ -191,7 +192,7 @@ private fun CameraScreen(
     qrScanner: QrScannerFeature,
     ocr: OcrFeature,
     analyzer: AnalyzerFeature,
-    recording: RecordingFeature,
+    snackbarHostState: SnackbarHostState,
     qrCodes: List<String>,
     recognizedText: String?,
     latestFrame: ByteArray?,
@@ -208,8 +209,7 @@ private fun CameraScreen(
     onCameraDeviceTypeChange: (CameraDeviceType) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    // The capture and record buttons stay on the 1.x controller until the engines capture and record
-    // (A3', I3', D3').
+    // The capture button stays on the 1.x controller; recording runs on the holder.
     val cameraController = cameraState.controller
     var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
@@ -224,7 +224,12 @@ private fun CameraScreen(
     }
 
     var cameraMode by remember { mutableStateOf(CameraMode.Photo) }
-    val isRecording by recording.isRecording.collectAsState()
+    val recording = rememberRecordingFeature(holder)
+    val recordingState by recording.state.collectAsState()
+    val isRecording = recordingState.isLive()
+    LaunchedEffect(recording) {
+        recording.notices.collect { snackbarHostState.showSnackbar(it) }
+    }
     var recordingDurationMs by remember { mutableStateOf(0L) }
 
     var isQRScanningEnabled by remember { mutableStateOf(true) }
@@ -352,7 +357,7 @@ private fun CameraScreen(
                             }
                         },
                         onVideoToggle = {
-                            scope.launch { recording.toggleRecording(cameraController.asSampleRecorder()) }
+                            scope.launch { recording.toggleRecording() }
                         },
                     )
                 }

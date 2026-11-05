@@ -19,132 +19,144 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.recording.RecordingEndReason
+import com.kashif.cameraK.recording.RecordingState
+import com.kashif.cameraK.recording.elapsed
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.TimeMark
-import kotlin.time.TimeSource
 
-/** The two 1.x controller calls the Sample records with. */
+/** The holder's recording, as the Sample uses it. */
 internal interface SampleRecorder {
-    suspend fun startRecording(configuration: VideoConfiguration): String
+    val recordingState: StateFlow<RecordingState>
 
-    suspend fun stopRecording(): VideoCaptureResult
+    suspend fun startRecording(configuration: VideoConfiguration): CameraKResult<RecordingState.Recording>
+
+    suspend fun stopRecording(): CameraKResult<RecordedVideo>
 }
 
-internal fun CameraController.asSampleRecorder(): SampleRecorder {
-    val controller = this
+internal fun CameraKStateHolder.asSampleRecorder(): SampleRecorder {
+    val holder = this
     return object : SampleRecorder {
-        override suspend fun startRecording(configuration: VideoConfiguration): String =
-            controller.startRecording(configuration)
+        override val recordingState: StateFlow<RecordingState> get() = holder.recordingState
 
-        override suspend fun stopRecording(): VideoCaptureResult = controller.stopRecording()
+        override suspend fun startRecording(
+            configuration: VideoConfiguration,
+        ): CameraKResult<RecordingState.Recording> = holder.startRecording(configuration)
+
+        override suspend fun stopRecording(): CameraKResult<RecordedVideo> = holder.stopRecording()
     }
 }
 
+/** Whether a recording is under way, from its start until it has finished. */
+internal fun RecordingState.isLive(): Boolean = when (this) {
+    RecordingState.Idle, is RecordingState.Finished -> false
+    is RecordingState.Starting,
+    is RecordingState.Recording,
+    is RecordingState.Paused,
+    is RecordingState.Stopping,
+    -> true
+}
+
 /**
- * The Sample's video recording: Full HD with audio, up to five minutes. It records on the 1.x
- * controller until the engines record (A3', I3', D3'); LC' moves it onto the holder.
+ * The Sample's video recording on the holder: Full HD with audio, up to five minutes.
  *
- * The 1.x controller reports no end of its own, so the Sample stops the recording at
- * [VideoConfiguration.maxDuration] itself, as the 1.x holder did; on Android and iOS the platform
- * stops there too, and the stop collects its result. A recording the platform ends with an error is
- * still shown until the next tap, whose stop reports it.
- *
- * @param scope Where a recording's own work runs, so it outlives the tap that started it.
- * @param timeSource The clock of the elapsed time shown while recording.
+ * The platform ends a recording at [VideoConfiguration.maxDuration], and the holder's
+ * [SampleRecorder.recordingState] says so, as it does for a recording the platform ends with an
+ * error. [reportEnds] turns every end, whoever caused it, into a [notices] line for the screen.
  */
-internal class RecordingFeature(
-    private val scope: CoroutineScope,
-    private val timeSource: TimeSource = TimeSource.Monotonic,
-) {
+internal class RecordingFeature(private val recorder: SampleRecorder) {
     val configuration = VideoConfiguration(
         quality = VideoQuality.FHD,
         enableAudio = true,
         maxDuration = 5.minutes,
     )
 
-    private val transitions = Mutex()
+    // Two quick taps start and then stop, rather than starting twice.
+    private val taps = Mutex()
 
-    // The elapsed time shown while recording: the Sample's own, from when the recording started.
-    private var startedAt: TimeMark? = null
+    private val _notices = Channel<String>(Channel.BUFFERED)
 
-    // Stops the recording at the configured limit.
-    private var limit: Job? = null
+    /** One line per recording that ended or did not start, for the screen to show. */
+    val notices: Flow<String> = _notices.receiveAsFlow()
 
-    // Counts the recordings started, so a limit acts only on its own.
-    private var started = 0
-
-    private val _isRecording = MutableStateFlow(false)
-
-    /** Whether a recording runs. */
-    val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
+    /** The holder's recording state. */
+    val state: StateFlow<RecordingState> get() = recorder.recordingState
 
     /** The recorded time, or 0 when nothing is recording. */
-    val durationMs: Long get() = startedAt?.elapsedNow()?.inWholeMilliseconds ?: 0L
+    val durationMs: Long get() = recorder.recordingState.value.elapsed().inWholeMilliseconds
 
-    /** Starts a recording on [recorder], or stops the one running. */
-    suspend fun toggleRecording(recorder: SampleRecorder) {
-        transitions.withLock { if (_isRecording.value) stop(recorder) else start(recorder) }
+    /** Starts a recording, or stops the one under way. */
+    suspend fun toggleRecording() {
+        taps.withLock { if (recorder.recordingState.value.isLive()) stop() else start() }
     }
 
-    private suspend fun start(recorder: SampleRecorder) {
-        try {
-            recorder.startRecording(configuration)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Starting a recording failed", e)
-            return
-        }
-        startedAt = timeSource.markNow()
-        _isRecording.value = true
-        println("Recording started")
-        val recording = ++started
-        configuration.maxDuration?.let { maxDuration ->
-            limit = scope.launch {
-                delay(maxDuration)
-                transitions.withLock {
-                    if (_isRecording.value && started == recording) {
-                        limit = null
-                        stop(recorder)
-                    }
-                }
+    /** Reports each recording's end until cancelled; an end from before the call is not reported. */
+    suspend fun reportEnds() {
+        var reported = (recorder.recordingState.value as? RecordingState.Finished)?.recordingId
+        recorder.recordingState.filterIsInstance<RecordingState.Finished>().collect { finished ->
+            if (finished.recordingId != reported) {
+                reported = finished.recordingId
+                report(finished)
             }
         }
     }
 
-    // The file is finalized even when the tap's coroutine goes away.
-    private suspend fun stop(recorder: SampleRecorder) {
-        limit?.cancel()
-        limit = null
-        val result = withContext(NonCancellable) { recorder.stopRecording() }
-        startedAt = null
-        _isRecording.value = false
-        when (result) {
-            is VideoCaptureResult.Success -> println("Recording saved: ${result.filePath}")
-            is VideoCaptureResult.Error -> CameraKLogger.e(TAG, "The recording failed", result.exception)
+    private suspend fun start() {
+        when (val started = recorder.startRecording(configuration)) {
+            is CameraKResult.Success -> println("Recording started")
+            is CameraKResult.Failure -> {
+                val error = started.error
+                CameraKLogger.w(TAG, "Starting a recording failed: ${error::class.simpleName}", error.cause)
+                _notices.trySend("Recording did not start: ${error.recordingText()}")
+            }
         }
+    }
+
+    // The holder finalizes the file even when the tap's coroutine goes away; the end is reported by
+    // reportEnds, from the recording state.
+    private suspend fun stop() {
+        val stopped = withContext(NonCancellable) { recorder.stopRecording() }
+        if (stopped is CameraKResult.Failure && stopped.error is CameraKError.InvalidState) {
+            CameraKLogger.w(TAG, "Stopped a recording that had already ended")
+        }
+    }
+
+    private fun report(finished: RecordingState.Finished) {
+        val notice = when (val result = finished.result) {
+            is CameraKResult.Success -> {
+                println("Recording saved: ${result.value.path}")
+                when (finished.reason) {
+                    RecordingEndReason.MAX_DURATION -> "Recording reached its time limit and was saved"
+                    RecordingEndReason.MAX_FILE_SIZE -> "Recording reached its size limit and was saved"
+                    else -> "Recording saved"
+                }
+            }
+            is CameraKResult.Failure -> {
+                CameraKLogger.e(TAG, "The recording failed: ${result.error::class.simpleName}", result.error.cause)
+                "Recording failed: ${result.error.recordingText()}"
+            }
+        }
+        _notices.trySend(notice)
     }
 
     private companion object {
@@ -152,10 +164,24 @@ internal class RecordingFeature(
     }
 }
 
+private fun CameraKError.recordingText(): String = when (this) {
+    is CameraKError.Permission -> "microphone access is needed"
+    is CameraKError.Storage -> "could not write to storage"
+    is CameraKError.Timeout -> "the camera did not answer in time"
+    is CameraKError.Busy -> "a recording is already under way"
+    is CameraKError.Unsupported -> "this camera cannot record at that quality"
+    is CameraKError.Disconnected -> "the camera was disconnected"
+    CameraKError.NotReady -> "the camera is not ready"
+    CameraKError.Closed -> "the camera is closed"
+    else -> "the camera reported an error"
+}
+
+/** The Sample's recording on [holder], remembered while the holder lives. */
 @Composable
-internal fun rememberRecordingFeature(): RecordingFeature {
-    val scope = rememberCoroutineScope()
-    return remember(scope) { RecordingFeature(scope) }
+internal fun rememberRecordingFeature(holder: CameraKStateHolder): RecordingFeature {
+    val recording = remember(holder) { RecordingFeature(holder.asSampleRecorder()) }
+    LaunchedEffect(recording) { recording.reportEnds() }
+    return recording
 }
 
 /** While [isRecording], publishes the recording's elapsed time to [onDurationChange] four times a second. */
