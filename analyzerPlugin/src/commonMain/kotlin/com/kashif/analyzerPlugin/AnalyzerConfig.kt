@@ -21,7 +21,12 @@ public class AnalyzerConfig private constructor(builder: Builder) {
         public var maxDimension: Int? = if (from != null) from.maxDimension else DEFAULT_MAX_DIMENSION
         public var jpegQuality: Int = from?.jpegQuality ?: DEFAULT_JPEG_QUALITY
 
-        internal fun build(): AnalyzerConfig = AnalyzerConfig(this)
+        internal fun build(): AnalyzerConfig {
+            require(maxFps > 0f && maxFps.isFinite()) { "maxFps must be a positive number" }
+            maxDimension?.let { require(it > 0) { "maxDimension must be positive, or null for full size" } }
+            require(jpegQuality in 1..MAX_JPEG_QUALITY) { "jpegQuality must be from 1 to $MAX_JPEG_QUALITY" }
+            return AnalyzerConfig(this)
+        }
     }
 
     /** A copy with the fields [block] sets changed. */
@@ -46,6 +51,7 @@ public class AnalyzerConfig private constructor(builder: Builder) {
         const val DEFAULT_MAX_FPS = 1f
         const val DEFAULT_MAX_DIMENSION = 1280
         const val DEFAULT_JPEG_QUALITY = 80
+        const val MAX_JPEG_QUALITY = 100
     }
 }
 

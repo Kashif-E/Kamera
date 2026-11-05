@@ -18,4 +18,10 @@ internal expect fun platformFrameEncoder(config: AnalyzerConfig): FrameEncoder
  * The size a [width] × [height] frame is encoded at: scaled down so its longest side is
  * [maxDimension], its aspect ratio kept, never scaled up, and at least one pixel each way.
  */
-internal fun encodedSize(width: Int, height: Int, maxDimension: Int?): Pair<Int, Int> = TODO("AN': encodedSize")
+internal fun encodedSize(width: Int, height: Int, maxDimension: Int?): Pair<Int, Int> {
+    val longest = maxOf(width, height)
+    if (maxDimension == null || longest <= maxDimension) return width to height
+    val scale = maxDimension.toDouble() / longest
+    fun scaled(side: Int) = if (side == longest) maxDimension else maxOf(1, (side * scale + 0.5).toInt())
+    return scaled(width) to scaled(height)
+}
