@@ -154,6 +154,31 @@ class RecordingFeatureTest {
         assertEquals(listOf("Recording did not start: a recording is already under way"), notices)
     }
 
+    // What `rememberRecordingElapsed(holder)` holds: the recording state's elapsed time at the last tick.
+    @Test
+    fun theTopBarShowsTheHoldersElapsedTimeWhileRecordingAndZeroOtherwise() = runTest {
+        val recorder = FakeRecorder(this)
+        val (recording, _) = started(recorder)
+        assertEquals(0L, recording.state.value.shownDurationMs(Duration.ZERO), "nothing is recording")
+
+        recording.toggleRecording()
+        advanceTimeBy(3.seconds)
+        val lastTick = recording.state.value.elapsed()
+        assertEquals(3.seconds.inWholeMilliseconds, recording.state.value.shownDurationMs(lastTick))
+
+        val paused = RecordingState.Paused(recordingId = 1, filePath = "/fake/VID_1.mp4", accumulated = 3.seconds)
+        assertEquals(3.seconds.inWholeMilliseconds, paused.shownDurationMs(paused.elapsed()), "a pause hid the time")
+
+        recorder.platformEnds(CameraKResult.Success(recorder.video(1)), RecordingEndReason.MAX_DURATION)
+        runCurrent()
+        assertEquals(
+            0L,
+            recording.state.value.shownDurationMs(lastTick),
+            "a finished recording's last tick stayed on screen",
+        )
+        assertEquals(0L, RecordingState.Idle.shownDurationMs(lastTick))
+    }
+
     @Test
     fun anEndFromBeforeTheScreenIsNotReportedAgain() = runTest {
         val recorder = FakeRecorder(this)
