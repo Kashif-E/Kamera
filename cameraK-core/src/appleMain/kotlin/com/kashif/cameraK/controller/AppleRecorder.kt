@@ -38,7 +38,6 @@ import platform.AVFoundation.AVCaptureSessionPreset1280x720
 import platform.AVFoundation.AVCaptureSessionPreset1920x1080
 import platform.AVFoundation.AVCaptureSessionPreset3840x2160
 import platform.AVFoundation.AVCaptureSessionPreset640x480
-import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVMediaTypeAudio
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.CoreMedia.kCMTimeInvalid
@@ -86,8 +85,8 @@ internal class AppleRecorder(
     var hasUsageDescription: (String) -> Boolean,
     /** The qualities the bound camera can record. */
     private val supportedQualities: () -> Set<VideoQuality>,
-    /** The orientation a movie starts in. */
-    private val videoOrientation: () -> AVCaptureVideoOrientation,
+    /** How a movie's video connection is turned when it starts. */
+    private val videoRotation: () -> VideoRotation,
 ) {
     /** The movie-file-output calls a recording makes; tests record them. */
     var movieRecorder: MovieRecorder = AVMovieRecorder
@@ -279,7 +278,7 @@ internal class AppleRecorder(
         active = movie
         recording = true
         removeFileIfPresent(path)
-        movieRecorder.start(setup.output, NSURL.fileURLWithPath(path), videoOrientation(), delegate)
+        movieRecorder.start(setup.output, NSURL.fileURLWithPath(path), videoRotation(), delegate)
         return CameraKResult.Success(movie)
     }
 

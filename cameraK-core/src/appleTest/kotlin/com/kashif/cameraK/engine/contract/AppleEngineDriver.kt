@@ -6,12 +6,15 @@ import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.controller.AppleCameraEngine
 import com.kashif.cameraK.controller.CameraDeviceProvider
 import com.kashif.cameraK.controller.CaptureDeviceOps
+import com.kashif.cameraK.controller.CoordinatorRotationSources
 import com.kashif.cameraK.controller.CustomCameraController
 import com.kashif.cameraK.controller.FakeDevice
 import com.kashif.cameraK.controller.FakeMovieRecorder
 import com.kashif.cameraK.controller.FakePhotoCapturer
 import com.kashif.cameraK.controller.FakeSessionOps
 import com.kashif.cameraK.controller.PhotoDimensions
+import com.kashif.cameraK.controller.RotationSourceFactory
+import com.kashif.cameraK.controller.VideoRotation
 import com.kashif.cameraK.controller.captureInputWithoutCamera
 import com.kashif.cameraK.controller.orientedJpeg
 import com.kashif.cameraK.controller.spinUntil
@@ -48,6 +51,7 @@ import platform.AVFoundation.AVCaptureTorchMode
 import platform.AVFoundation.AVCaptureTorchModeAuto
 import platform.AVFoundation.AVCaptureTorchModeOff
 import platform.AVFoundation.AVCaptureTorchModeOn
+import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVErrorDeviceAlreadyUsedByAnotherSession
 import platform.AVFoundation.AVErrorDeviceWasDisconnected
 import platform.UIKit.UIDeviceOrientation
@@ -83,6 +87,8 @@ internal class AppleEngineDriver(
     frontPhotoSizes: List<PhotoDimensions> = emptyList(),
     /** Whether the app's Info.plist has a key, as the engine reads NSMicrophoneUsageDescription. */
     private val hasUsageDescription: (String) -> Boolean = { true },
+    /** The rotation coordinators the engine makes; null keeps the production factory, which makes none for a fake camera. */
+    private val rotationSources: RotationSourceFactory? = null,
 ) : ThrowingCallbackDriver,
     PreOpenInterruptionDriver,
     ReadBackFlashDriver,
@@ -173,6 +179,29 @@ internal class AppleEngineDriver(
     @Volatile
     var microphoneAnswer: () -> Result<platform.AVFoundation.AVCaptureInput> = { Result.success(microphone) }
 
+    private val previewTurnLock = platform.Foundation.NSLock()
+    private val previewTurnList = mutableListOf<Pair<AVCaptureVideoPreviewLayer?, VideoRotation>>()
+
+    /** Every turn of a preview layer, in order: the layer and the orientation or angle it was given. */
+    val previewTurns: List<Pair<AVCaptureVideoPreviewLayer?, VideoRotation>>
+        get() {
+            previewTurnLock.lock()
+            try {
+                return previewTurnList.toList()
+            } finally {
+                previewTurnLock.unlock()
+            }
+        }
+
+    private fun recordPreviewTurn(layer: AVCaptureVideoPreviewLayer?, rotation: VideoRotation) {
+        previewTurnLock.lock()
+        try {
+            previewTurnList += layer to rotation
+        } finally {
+            previewTurnLock.unlock()
+        }
+    }
+
     private val sessions = atomic(0)
     private val enumerations = atomic(0)
     private var dispatcher: TestDispatcher? = null
@@ -207,6 +236,10 @@ internal class AppleEngineDriver(
             },
             cameraDevices = devices,
             photoCapturer = photoCapturer,
+            previewOrienting = { layer, orientation ->
+                recordPreviewTurn(layer, VideoRotation.Orientation(orientation))
+            },
+            previewRotating = { layer, degrees -> recordPreviewTurn(layer, VideoRotation.Angle(degrees)) },
         )
         val onScheduler = checkNotNull(dispatcher) { "createEngine runs inside runCase" }
         val environment = CameraKEnvironment(dispatchers = CameraKDispatchers(onScheduler, onScheduler, onScheduler))
@@ -225,6 +258,7 @@ internal class AppleEngineDriver(
                     orientationNotificationLock.unlock()
                 }
             },
+            rotationSources = rotationSources ?: CoordinatorRotationSources,
         ) {
             enumerations.incrementAndGet()
             lenses

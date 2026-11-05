@@ -29,6 +29,7 @@ import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.update
+import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
@@ -42,6 +43,7 @@ import platform.AVFoundation.AVCaptureMetadataOutputObjectsDelegateProtocol
 import platform.AVFoundation.AVCaptureOutput
 import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
+import platform.CoreGraphics.CGRect
 import platform.Foundation.NSData
 import platform.Foundation.NSDataWritingAtomic
 import platform.Foundation.NSError
@@ -279,6 +281,21 @@ actual class CameraController private constructor(
     fun previewLayoutChanged(orientation: UIInterfaceOrientation?) {
         hostInterfaceOrientation = orientation?.toVideoOrientation()
         applyPreviewOrientation()
+    }
+
+    /**
+     * Lays out [layer], one [createPreviewLayer] made, in a host view whose bounds are [bounds] under
+     * an interface in [orientation], as the engine's own preview does. Main thread only.
+     */
+    @InternalCameraKApi
+    @OptIn(ExperimentalForeignApi::class)
+    fun layOutPreviewLayer(
+        layer: AVCaptureVideoPreviewLayer,
+        bounds: CValue<CGRect>,
+        orientation: UIInterfaceOrientation?,
+    ) {
+        hostInterfaceOrientation = orientation?.toVideoOrientation()
+        engine.preview.layOutPreviewLayer(layer, bounds, orientation)
     }
 
     /** The interface orientation the preview's host last reported. Main thread only. */

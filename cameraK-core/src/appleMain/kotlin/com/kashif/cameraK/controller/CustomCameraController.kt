@@ -70,6 +70,7 @@ class CustomCameraController(
         AVCaptureVideoPreviewLayer?,
         AVCaptureVideoOrientation,
     ) -> Unit = ::orientPreviewLayer
+    private var previewRotating: (AVCaptureVideoPreviewLayer, Double) -> Unit = ::rotatePreviewLayer
 
     /**
      * Test seam: [sessionFactory] supplies the session, and [inputConfigurator], when set, adds the
@@ -80,7 +81,7 @@ class CustomCameraController(
      * the cameras setup and the lens switches open, in place of AVCaptureDevice discovery.
      * [photoCapturer], when set, receives each capture request in place of the photo output.
      * [previewOrienting], when set, applies the preview's orientation in place of setting it on the
-     * preview layer's connection.
+     * preview layer's connection, and [previewRotating] the rotation coordinator's preview angle.
      */
     internal constructor(
         qualityPrioritization: QualityPrioritization,
@@ -95,6 +96,7 @@ class CustomCameraController(
         cameraDevices: CameraDeviceProvider? = null,
         photoCapturer: PhotoCapturer? = null,
         previewOrienting: ((AVCaptureVideoPreviewLayer?, AVCaptureVideoOrientation) -> Unit)? = null,
+        previewRotating: ((AVCaptureVideoPreviewLayer, Double) -> Unit)? = null,
     ) : this(qualityPrioritization, initialCameraLens, aspectRatio, targetResolution, mirrorFrontCamera) {
         this.sessionFactory = sessionFactory
         this.inputConfigurator = inputConfigurator
@@ -103,6 +105,7 @@ class CustomCameraController(
         cameraDevices?.let { this.cameraDevices = it }
         photoCapturer?.let { this.photoCapturer = it }
         previewOrienting?.let { this.previewOrienting = it }
+        previewRotating?.let { this.previewRotating = it }
     }
 
     /**
@@ -182,6 +185,13 @@ class CustomCameraController(
      */
     @Volatile
     internal var captureOrientation: () -> AVCaptureVideoOrientation = { currentVideoOrientation() }
+
+    /**
+     * How the photo connection is turned for a capture: the engine answers with the coordinator's angle
+     * from iOS 17 when no target orientation is set, otherwise with [captureOrientation].
+     */
+    @Volatile
+    internal var captureRotation: () -> VideoRotation = { VideoRotation.Orientation(captureOrientation()) }
 
     /** Whether a recording is in progress; the engine answers from its recorder. */
     @Volatile
@@ -777,6 +787,18 @@ class CustomCameraController(
         previewOrienting(cameraPreviewLayer, orientation)
     }
 
+    /** Turns [layer] by [rotation]. Call it on main: the preview layer belongs to UIKit. */
+    internal fun turnPreview(layer: AVCaptureVideoPreviewLayer, rotation: VideoRotation) {
+        when (rotation) {
+            is VideoRotation.Orientation -> previewOrienting(layer, rotation.orientation)
+            is VideoRotation.Angle -> previewRotating(layer, rotation.degrees)
+        }
+    }
+
+    private fun rotatePreviewLayer(layer: AVCaptureVideoPreviewLayer, degrees: Double) {
+        layer.connection?.turn(VideoRotation.Angle(degrees))
+    }
+
     private fun orientPreviewLayer(layer: AVCaptureVideoPreviewLayer?, orientation: AVCaptureVideoOrientation) {
         layer?.connection?.let { connection ->
             if (connection.isVideoOrientationSupported()) connection.videoOrientation = orientation
@@ -965,7 +987,7 @@ class CustomCameraController(
 
         // The orientation the photo's metadata records, and the front-camera photo mirrored to match
         // the mirrored preview when configured (#112).
-        val orientation = captureOrientation()
+        val rotation = captureRotation()
         val mirrored = mirrorFrontCamera && isUsingFrontCamera
 
         lateinit var delegate: PhotoCaptureDelegate
@@ -980,7 +1002,7 @@ class CustomCameraController(
             },
         )
         retainPhotoDelegate(delegate)
-        photoCapturer.capture(output, settings, orientation, mirrored, delegate)
+        photoCapturer.capture(output, settings, rotation, mirrored, delegate)
         return true
     }
 

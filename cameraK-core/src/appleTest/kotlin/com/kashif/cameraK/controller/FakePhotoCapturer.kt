@@ -20,12 +20,15 @@ internal class FakePhotoCapturer : PhotoCapturer {
     class Request(
         val output: AVCapturePhotoOutput,
         val settings: AVCapturePhotoSettings,
-        val orientation: AVCaptureVideoOrientation,
+        val rotation: VideoRotation,
         val mirrored: Boolean,
         val callbacks: PhotoCaptureCallbacks,
         val queue: String,
         val onMainThread: Boolean,
-    )
+    ) {
+        /** The orientation the photo connection was set to; null when it was turned by an angle. */
+        val orientation: AVCaptureVideoOrientation? get() = (rotation as? VideoRotation.Orientation)?.orientation
+    }
 
     private val lock = NSLock()
     private val recorded = mutableListOf<Request>()
@@ -137,14 +140,14 @@ internal class FakePhotoCapturer : PhotoCapturer {
     override fun capture(
         output: AVCapturePhotoOutput,
         settings: AVCapturePhotoSettings,
-        orientation: AVCaptureVideoOrientation,
+        rotation: VideoRotation,
         mirrored: Boolean,
         delegate: AVCapturePhotoCaptureDelegateProtocol,
     ) {
         val request = Request(
             output,
             settings,
-            orientation,
+            rotation,
             mirrored,
             (delegate as PhotoCaptureDelegate).callbacks,
             currentQueueLabel(),

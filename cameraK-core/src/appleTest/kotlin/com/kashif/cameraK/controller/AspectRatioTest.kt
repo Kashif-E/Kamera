@@ -8,11 +8,21 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.utils.toByteArray
+import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.useContents
 import kotlinx.coroutines.test.TestScope
 import platform.AVFoundation.AVCaptureSessionPresetPhoto
+import platform.AVFoundation.AVCaptureVideoPreviewLayer
+import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
+import platform.CoreGraphics.CGRect
+import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSData
+import platform.UIKit.UIInterfaceOrientation
+import platform.UIKit.UIInterfaceOrientationLandscapeRight
+import platform.UIKit.UIInterfaceOrientationPortrait
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -80,6 +90,67 @@ class AspectRatioTest {
         assertContentEquals(photo.toByteArray(), fileBytes(image.path), "a 4:3 photo was re-encoded")
         assertEquals(64 to 48, image.width to image.height)
     }
+
+    /**
+     * The preview layer fills the largest centred box of the requested aspect ratio inside its host,
+     * with ResizeAspectFill (w6 decision G1): the Photo preset's 4:3 frame is cropped as the still is,
+     * so the preview shows what a capture keeps. The box is upright under a portrait interface, wide
+     * under a landscape one, and follows the host's shape before the host has a window scene.
+     */
+    @Test
+    fun thePreviewFillsACentredBoxOfTheRequestedAspectRatio() = driver.runCase {
+        val portrait = CGRectMake(0.0, 0.0, 360.0, 800.0)
+        val landscape = CGRectMake(0.0, 0.0, 800.0, 360.0)
+        val cases = listOf(
+            PreviewCase(AspectRatio.RATIO_16_9, portrait, UIInterfaceOrientationPortrait, Box(0.0, 80.0, 360.0, 640.0)),
+            PreviewCase(AspectRatio.RATIO_9_16, portrait, UIInterfaceOrientationPortrait, Box(0.0, 80.0, 360.0, 640.0)),
+            PreviewCase(AspectRatio.RATIO_4_3, portrait, UIInterfaceOrientationPortrait, Box(0.0, 160.0, 360.0, 480.0)),
+            PreviewCase(AspectRatio.RATIO_1_1, portrait, UIInterfaceOrientationPortrait, Box(0.0, 220.0, 360.0, 360.0)),
+            PreviewCase(
+                AspectRatio.RATIO_16_9,
+                landscape,
+                UIInterfaceOrientationLandscapeRight,
+                Box(80.0, 0.0, 640.0, 360.0),
+            ),
+            PreviewCase(AspectRatio.RATIO_4_3, landscape, null, Box(160.0, 0.0, 480.0, 360.0)),
+        )
+        cases.forEach { case ->
+            val engine = driver.createEngine(CameraConfiguration(aspectRatio = case.ratio))
+            val layer = engine.preview.createPreviewLayer()
+
+            engine.preview.layOutPreviewLayer(layer, case.bounds, case.orientation)
+
+            assertEquals(case.expected, layer.box(), "the ${case.ratio} preview's frame under ${case.orientation}")
+            assertEquals(AVLayerVideoGravityResizeAspectFill, layer.videoGravity, "the ${case.ratio} preview's gravity")
+            engine.close()
+        }
+    }
+
+    @Test
+    @OptIn(InternalCameraKApi::class)
+    fun theFacadesPreviewFillsTheSameBox() = driver.runCase {
+        val engine = driver.createEngine(CameraConfiguration(aspectRatio = AspectRatio.RATIO_16_9))
+        val facade = driver.engine.legacyController
+        val layer = facade.createPreviewLayer()
+
+        facade.layOutPreviewLayer(layer, CGRectMake(0.0, 0.0, 360.0, 800.0), UIInterfaceOrientationPortrait)
+
+        assertEquals(Box(0.0, 80.0, 360.0, 640.0), layer.box(), "the 1.x preview's frame")
+        assertEquals(AVLayerVideoGravityResizeAspectFill, layer.videoGravity, "the 1.x preview's gravity")
+        engine.close()
+    }
+
+    private data class Box(val x: Double, val y: Double, val width: Double, val height: Double)
+
+    private class PreviewCase(
+        val ratio: AspectRatio,
+        val bounds: CValue<CGRect>,
+        val orientation: UIInterfaceOrientation?,
+        val expected: Box,
+    )
+
+    private fun AVCaptureVideoPreviewLayer.box(): Box =
+        frame.useContents { Box(origin.x, origin.y, size.width, size.height) }
 
     private companion object {
         /** EXIF orientation 6: the sensor's pixels must be turned 90 degrees clockwise to display. */

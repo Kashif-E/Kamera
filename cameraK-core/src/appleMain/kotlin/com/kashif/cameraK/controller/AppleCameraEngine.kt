@@ -135,6 +135,8 @@ internal class AppleCameraEngine(
     private val generateOrientationNotifications: (Boolean) -> Unit = ::generateDeviceOrientationNotifications,
     /** Whether the app's Info.plist has [key]: a test bundle's cannot change per test. */
     private val hasUsageDescription: (key: String) -> Boolean = ::hasInfoPlistKey,
+    /** The rotation coordinators of iOS 17 and later; tests answer for the simulator, which has no camera. */
+    private val rotationSources: RotationSourceFactory = CoordinatorRotationSources,
     private val enumerateLenses: () -> List<LensInfo> = custom::getCameraCapabilities,
 ) : CameraEngine,
     LegacyControllerAccess {
@@ -187,7 +189,7 @@ internal class AppleCameraEngine(
         osVersion = osVersion,
         hasUsageDescription = hasUsageDescription,
         supportedQualities = ::boundQualities,
-        videoOrientation = ::captureVideoOrientation,
+        videoRotation = ::captureRotation,
     )
 
     override val recordingEvents: Flow<EngineRecordingEvent> = recorder.events
@@ -264,6 +266,7 @@ internal class AppleCameraEngine(
 
     init {
         custom.captureOrientation = ::captureVideoOrientation
+        custom.captureRotation = ::captureRotation
         custom.recordingInProgress = { recorder.isActive }
         custom.photoFormat = config.imageFormat
         custom.turnsDeferredStartOff = osVersion >= DEFERRED_START_IOS
@@ -1004,6 +1007,9 @@ internal class AppleCameraEngine(
     /** The orientation captures and movies take: the target when one is set, otherwise the device's. */
     internal fun captureVideoOrientation(): AVCaptureVideoOrientation =
         target.value?.toVideoOrientation() ?: custom.currentVideoOrientation()
+
+    /** How photos and movies are turned (design §2.4): the target orientation when one is set, else the device's. */
+    internal fun captureRotation(): VideoRotation = VideoRotation.Orientation(captureVideoOrientation())
 
     // ─── Device orientation ─────────────────────────────────────────────────────────────────────
 

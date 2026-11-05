@@ -2,7 +2,6 @@ package com.kashif.cameraK.controller
 
 import platform.AVFoundation.AVCaptureFileOutputRecordingDelegateProtocol
 import platform.AVFoundation.AVCaptureMovieFileOutput
-import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVMediaTypeAudio
 import platform.AVFoundation.AVMediaTypeVideo
 import platform.Foundation.NSURL
@@ -15,11 +14,11 @@ import platform.Foundation.NSURL
 internal interface MovieRecorder {
     fun isRecording(output: AVCaptureMovieFileOutput): Boolean
 
-    /** Starts recording to [url] with the video connection set to [orientation]. */
+    /** Starts recording to [url] with the video connection turned by [rotation]. */
     fun start(
         output: AVCaptureMovieFileOutput,
         url: NSURL,
-        orientation: AVCaptureVideoOrientation,
+        rotation: VideoRotation,
         delegate: AVCaptureFileOutputRecordingDelegateProtocol,
     )
 
@@ -44,12 +43,10 @@ internal object AVMovieRecorder : MovieRecorder {
     override fun start(
         output: AVCaptureMovieFileOutput,
         url: NSURL,
-        orientation: AVCaptureVideoOrientation,
+        rotation: VideoRotation,
         delegate: AVCaptureFileOutputRecordingDelegateProtocol,
     ) {
-        output.connectionWithMediaType(AVMediaTypeVideo)?.let { connection ->
-            if (connection.isVideoOrientationSupported()) connection.videoOrientation = orientation
-        }
+        output.connectionWithMediaType(AVMediaTypeVideo)?.turn(rotation)
         output.startRecordingToOutputFileURL(url, recordingDelegate = delegate)
     }
 

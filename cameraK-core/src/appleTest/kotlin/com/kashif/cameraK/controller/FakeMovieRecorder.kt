@@ -16,10 +16,13 @@ internal class FakeMovieRecorder : MovieRecorder {
     class Start(
         val output: AVCaptureMovieFileOutput,
         val url: NSURL,
-        val orientation: AVCaptureVideoOrientation,
+        val rotation: VideoRotation,
         val delegate: VideoRecordingDelegate,
         val queue: String,
-    )
+    ) {
+        /** The orientation the video connection was set to; null when it was turned by an angle. */
+        val orientation: AVCaptureVideoOrientation? get() = (rotation as? VideoRotation.Orientation)?.orientation
+    }
 
     /** Whether pause takes effect; a pause the output does not apply leaves isPaused false. */
     var pauseTakesEffect = true
@@ -46,13 +49,13 @@ internal class FakeMovieRecorder : MovieRecorder {
     override fun start(
         output: AVCaptureMovieFileOutput,
         url: NSURL,
-        orientation: AVCaptureVideoOrientation,
+        rotation: VideoRotation,
         delegate: AVCaptureFileOutputRecordingDelegateProtocol,
     ) {
         onStart?.invoke()
         val queue = currentQueueLabel()
         locked {
-            startList += Start(output, url, orientation, delegate as VideoRecordingDelegate, queue)
+            startList += Start(output, url, rotation, delegate as VideoRecordingDelegate, queue)
             recording = true
             paused = false
         }
