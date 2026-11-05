@@ -76,7 +76,8 @@ internal val VideoQuality.sessionPreset: String
  *   and owes no Finalized. A start its caller gave up on (cancelled) that a stop then ends yields
  *   one, carrying the stop's outcome, even when AVFoundation never reported it started.
  * - A finished recording's output, microphone and preset leave the session, unless prepared
- *   ([prepare]): a prepared output stays until the camera stops ([releasePreparedOnQueue]).
+ *   ([prepare]): a prepared output stays until the camera stops ([releasePreparedOnQueue]), and only
+ *   the preset leaves it, so stills between its recordings run at the still preset (w6 decision G2).
  */
 internal class AppleRecorder(
     private val custom: CustomCameraController,
@@ -268,6 +269,11 @@ internal class AppleRecorder(
             releasePreparedOnQueue()
             configure(config).getOrElse { return failure(it.toCameraKError()) }
         }
+        if (reused != null && !reused.runsItsPreset) {
+            // An earlier recording on this prepared output returned the session to the still preset.
+            custom.setSessionPresetOnQueue(config.quality.sessionPreset)
+            reused.runsItsPreset = true
+        }
         applyLimits(setup.output, config)
         val delegate = VideoRecordingDelegate()
         val movie = Movie(config, path, setup, delegate, prepared = reused != null)
@@ -365,7 +371,11 @@ internal class AppleRecorder(
 
     private fun finalize(movie: Movie, result: CameraKResult<RecordedVideo>, reason: RecordingEndReason) {
         movie.finalized = true
-        if (!movie.prepared) custom.releaseMovieOnQueue(movie.output, movie.setup.microphone)
+        if (movie.prepared) {
+            stillPresetAfter(movie)
+        } else {
+            custom.releaseMovieOnQueue(movie.output, movie.setup.microphone)
+        }
         if (active === movie) {
             active = null
             recording = false
@@ -378,6 +388,14 @@ internal class AppleRecorder(
         }
         movie.finished.complete(result)
         movie.afterFinalized.forEach { it() }
+    }
+
+    /** The session back at the still preset after a recording on the prepared output, which stays. */
+    private fun stillPresetAfter(movie: Movie) {
+        val kept = prepared?.takeIf { it.setup === movie.setup && it.runsItsPreset } ?: return
+        if (movie.config.quality.sessionPreset == custom.stillPreset) return
+        custom.setSessionPresetOnQueue(null)
+        kept.runsItsPreset = false
     }
 
     private fun video(movie: Movie): RecordedVideo {
@@ -465,6 +483,9 @@ internal class AppleRecorder(
     private class MovieSetup(val output: AVCaptureMovieFileOutput, val microphone: AVCaptureInput?)
 
     private class Prepared(val config: VideoConfiguration, val setup: MovieSetup) {
+        /** Whether the session runs the quality's preset, as prepare left it; false after a recording. */
+        var runsItsPreset = true
+
         fun matches(other: VideoConfiguration) =
             other.enableAudio == config.enableAudio && other.quality == config.quality
     }

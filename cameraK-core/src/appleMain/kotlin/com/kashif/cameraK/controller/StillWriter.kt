@@ -39,17 +39,20 @@ private class PhotoGeometry(val width: Int, val height: Int, val orientation: In
 
 /**
  * Writes [photo], the photo output's encoded photo (JPEG or HEIC), to [path] in [format] with the
- * [aspectRatio] the configuration asks for (w6 decision G1). 4:3 is what the Photo preset delivers and
- * is written as it came, byte for byte. 16:9 and 9:16 keep a centred crop of the sensor's long side at
- * 16:9, and 1:1 a centred square, of the full-resolution photo; the crop is of the sensor's pixels, and
- * the EXIF orientation and the rest of the photo's metadata are kept, so a portrait photo is a tall
- * crop. PNG is transcoded with ImageIO ([writePng]) when there is nothing to crop.
+ * [aspectRatio] the configuration asks for (w6 decision G1). A photo already of that ratio, as the
+ * Photo preset's 4:3 photo is for 4:3, is written as it came, byte for byte. Otherwise the still is a
+ * centred crop of the photo at the ratio ([cropRect]): 16:9 and 9:16 of the sensor's long side, 1:1 a
+ * square, and 4:3 when a recording's preset (w6 decision G2) delivered a 16:9 photo. The crop is of
+ * the sensor's pixels, and the EXIF orientation and the rest of the photo's metadata are kept, so a
+ * portrait photo is a tall crop. PNG is transcoded with ImageIO ([writePng]) when there is nothing to
+ * crop.
  *
  * A crop decodes and re-encodes the photo once. Measured on the iOS simulator (iOS 27, Apple
  * M-series Mac), median of ten runs over a 4032x3024 JPEG (12 MP, a flat test image of 190 KB): 18 ms
  * for 16:9 and 20 ms for 1:1, against 0.3 ms to write a 4:3 photo as delivered. A real photo has more
  * detail to decode and encode, so it costs more; the device figure is B1's to measure. An app that
- * wants no re-encode configures RATIO_4_3 and crops itself.
+ * wants no re-encode configures RATIO_4_3 and crops itself; stills taken during a recording are the
+ * exception.
  *
  * A photo ImageIO cannot read is written as it came, uncropped, with a warning: it is the user's
  * photo. Fails when the file cannot be written; the caller removes what was left.
@@ -63,7 +66,7 @@ internal fun writeStill(
     val geometry = photoGeometry(photo)
     val crop = geometry?.let { cropRect(it.width, it.height, aspectRatio) }
     val needsCrop = crop != null && (crop.width != geometry.width || crop.height != geometry.height)
-    if (aspectRatio != AspectRatio.RATIO_4_3 && geometry == null) {
+    if (geometry == null) {
         // Keep the user's photo rather than lose it: written as the camera delivered it, uncropped.
         CameraKLogger.w(
             "CameraK",
@@ -84,18 +87,23 @@ internal fun writeStill(
     }
 }
 
-/** A centred crop of a [width] x [height] photo at [aspectRatio], along the sensor's long side; null for 4:3. */
+/**
+ * A centred crop of a [width] x [height] photo at [aspectRatio], along the sensor's long side; null
+ * when the photo is kept whole. 4:3 is the still presets' own ratio, so a 4:3 still is cropped only
+ * from the 16:9 frame a recording's preset delivers (w6 decision G2), and any other photo is kept.
+ * Those presets' frames (1280x720, 1920x1080, 3840x2160) are exactly 16:9.
+ */
 internal fun cropRect(width: Int, height: Int, aspectRatio: AspectRatio): CropRect? {
-    val ratio = when (aspectRatio) {
-        AspectRatio.RATIO_4_3 -> return null
-        AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> 16.0 / 9.0
-        AspectRatio.RATIO_1_1 -> 1.0
-    }
     val landscape = width >= height
     val long = maxOf(width, height)
     val short = minOf(width, height)
+    val ratio = when (aspectRatio) {
+        AspectRatio.RATIO_4_3 -> if (long * 9 == short * 16) FOUR_THREE else return null
+        AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> SIXTEEN_NINE
+        AspectRatio.RATIO_1_1 -> 1.0
+    }
     val (cropLong, cropShort) = when {
-        abs(long.toDouble() / short - ratio) < 1.0 / short -> long to short
+        hasRatio(long, short, ratio) -> long to short
         long.toDouble() / short < ratio -> long to (long / ratio).roundToInt()
         else -> (short * ratio).roundToInt() to short
     }
@@ -105,6 +113,12 @@ internal fun cropRect(width: Int, height: Int, aspectRatio: AspectRatio): CropRe
 }
 
 internal data class CropRect(val x: Int, val y: Int, val width: Int, val height: Int)
+
+private const val FOUR_THREE = 4.0 / 3.0
+private const val SIXTEEN_NINE = 16.0 / 9.0
+
+/** Whether a [long] x [short] photo has [ratio], to within a pixel of its short side. */
+private fun hasRatio(long: Int, short: Int, ratio: Double): Boolean = abs(long.toDouble() / short - ratio) < 1.0 / short
 
 /** EXIF orientations 5 to 8 turn the pixels a quarter, so the photo displays with its sides swapped. */
 private fun displayed(width: Int, height: Int, geometry: PhotoGeometry): WrittenStill =

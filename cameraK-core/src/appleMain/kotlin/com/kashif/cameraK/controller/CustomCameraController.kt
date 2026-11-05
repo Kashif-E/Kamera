@@ -659,6 +659,25 @@ class CustomCameraController(
     }
 
     /**
+     * Sets [preset], a recording quality's, or the still preset when it is null, in one configuration
+     * transaction: a prepared movie output's recordings (w6 decision G2). Session queue only.
+     */
+    internal fun setSessionPresetOnQueue(preset: String?) {
+        val ops = session ?: return
+        val wanted = preset ?: stillPreset ?: return
+        ops.beginConfiguration()
+        try {
+            if (ops.canSetSessionPreset(wanted)) {
+                ops.setSessionPreset(wanted)
+            } else {
+                CameraKLogger.w(TAG, "CameraK: the session cannot take preset $wanted")
+            }
+        } finally {
+            ops.commitConfiguration()
+        }
+    }
+
+    /**
      * Removes a finished recording's [output] and [microphone] and returns the session to the still
      * preset, in one transaction, so the session and the microphone indicator are photo-only again.
      * Session queue only.
