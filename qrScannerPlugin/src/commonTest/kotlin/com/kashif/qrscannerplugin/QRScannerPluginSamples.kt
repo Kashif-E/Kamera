@@ -6,27 +6,30 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.kashif.cameraK.compose.rememberCameraKState
-import com.kashif.cameraK.state.CameraKState
+import com.kashif.cameraK.state.CameraKStateHolder
 
 // KDoc samples for QRScannerPlugin, referenced with @sample. They live here so the compiler checks them.
 
 @Composable
-internal fun ScanQrCodesSample(onCode: (String) -> Unit) {
-    val qrPlugin = rememberQRScannerPlugin()
-    var detectedQr by remember { mutableStateOf<String?>(null) }
-    val cameraState by rememberCameraKState { stateHolder ->
+internal fun ScanQrCodesSample(stateHolder: CameraKStateHolder, onCode: (String) -> Unit) {
+    val qrPlugin = rememberQRScannerPlugin(
+        QRScannerConfig {
+            formats =
+                setOf(BarcodeFormat.QR_CODE, BarcodeFormat.EAN_13)
+        },
+    )
+    var detected by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(stateHolder, qrPlugin) {
         stateHolder.attachPlugin(qrPlugin)
     }
-
     LaunchedEffect(qrPlugin) {
-        qrPlugin.getQrCodeFlow().collect { qr ->
-            detectedQr = qr
-            onCode(qr)
+        qrPlugin.results.collect { barcode ->
+            // The payload is untrusted: check it before acting on it.
+            val text = barcode.rawValue ?: return@collect
+            detected = text
+            onCode(text)
         }
     }
-
-    if (cameraState is CameraKState.Ready) {
-        // Show the preview and detectedQr.
-    }
+    // Show the preview and detected; qrPlugin.pause() and resume() stop and restart decoding.
 }

@@ -42,7 +42,8 @@ internal fun rememberQrScannerFeature(): QrScannerFeature {
 internal fun rememberQrCodes(qrScanner: QrScannerFeature): List<String> {
     var qrCodes by remember { mutableStateOf(listOf<String>()) }
     LaunchedEffect(qrScanner) {
-        qrScanner.plugin.getQrCodeFlow().collect { qr ->
+        qrScanner.plugin.results.collect { barcode ->
+            val qr = barcode.rawValue ?: return@collect
             if (qr !in qrCodes) {
                 qrCodes = (listOf(qr) + qrCodes).take(5)
             }
@@ -54,14 +55,7 @@ internal fun rememberQrCodes(qrScanner: QrScannerFeature): List<String> {
 @Composable
 internal fun QrScanningEffect(qrScanner: QrScannerFeature, isQRScanningEnabled: Boolean) {
     LaunchedEffect(isQRScanningEnabled) {
-        try {
-            if (isQRScanningEnabled) {
-                qrScanner.plugin.startScanning()
-            } else {
-                qrScanner.plugin.pauseScanning()
-            }
-        } catch (_: Exception) {
-        }
+        if (isQRScanningEnabled) qrScanner.plugin.resume() else qrScanner.plugin.pause()
     }
 }
 

@@ -29,7 +29,17 @@ public class QRScannerConfig private constructor(builder: Builder) {
         public var dedupeWindow: Duration = from?.dedupeWindow ?: DEFAULT_DEDUPE_WINDOW
         public var maxFps: Float = from?.maxFps ?: DEFAULT_MAX_FPS
 
-        internal fun build(): QRScannerConfig = QRScannerConfig(this)
+        internal fun build(): QRScannerConfig {
+            require(formats.isNotEmpty()) { "formats must name at least one barcode format" }
+            require(maxFps > 0f && maxFps.isFinite()) { "maxFps must be a positive finite number, not $maxFps" }
+            require(!dedupeWindow.isNegative()) { "dedupeWindow must not be negative, not $dedupeWindow" }
+            region?.let {
+                require(it.left >= 0 && it.top >= 0 && it.right > it.left && it.bottom > it.top) {
+                    "region must be a non-empty rectangle inside the frame, not [${it.left}, ${it.top}, ${it.right}, ${it.bottom})"
+                }
+            }
+            return QRScannerConfig(this)
+        }
     }
 
     /** A copy with the fields [block] sets changed. */

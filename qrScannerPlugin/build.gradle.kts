@@ -44,7 +44,6 @@ kotlin {
 
         commonMain.dependencies {
             api(projects.cameraK)
-            implementation(libs.atomicfu)
         }
 
         commonTest.dependencies {
@@ -61,8 +60,6 @@ kotlin {
 
         androidUnitTest.dependencies {
             implementation(libs.junit)
-            implementation(libs.robolectric)
-            implementation(libs.androidx.test.core)
         }
     }
 }
@@ -97,12 +94,4 @@ dokka {
     dokkaSourceSets.configureEach {
         samples.from("src/commonTest/kotlin")
     }
-}
-
-// The desktop tests drive a real CameraController with a fake grabber whose frames are JavaCV
-// Frames, which allocate through JavaCPP, so they need this machine's JavaCPP natives.
-dependencies {
-    val javacppPlatform = rootProject.extra["javacppPlatform"] as String
-    val desktopTestRuntimeOnly = kotlin.sourceSets.getByName("desktopTest").runtimeOnlyConfigurationName
-    add(desktopTestRuntimeOnly, variantOf(libs.javacpp) { classifier(javacppPlatform) })
 }

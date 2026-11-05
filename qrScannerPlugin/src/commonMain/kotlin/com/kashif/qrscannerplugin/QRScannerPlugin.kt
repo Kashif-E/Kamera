@@ -1,260 +1,209 @@
 package com.kashif.qrscannerplugin
+
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.frames.CameraFrame
+import com.kashif.cameraK.frames.FrameAnalyzer
+import com.kashif.cameraK.frames.FrameFormat
+import com.kashif.cameraK.frames.FrameRect
+import com.kashif.cameraK.frames.FrameSpec
+import com.kashif.cameraK.frames.copyLuma
+import com.kashif.cameraK.plugin.CameraKPluginContext
 import com.kashif.cameraK.plugin.PluginStatus
-import com.kashif.cameraK.state.CameraKEvent
+import com.kashif.cameraK.plugin.launchPerSession
 import com.kashif.cameraK.state.CameraKPlugin
-import com.kashif.cameraK.state.CameraKState
-import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.utils.InternalCameraKApi
-import kotlinx.atomicfu.atomic
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlin.jvm.JvmOverloads
 
 /**
- * QR Scanner plugin for the Compose-first camera API.
+ * Reads QR codes and barcodes from the camera's analysis frames.
+ *
+ * While the camera is Ready and the scanner is not paused, it holds one registration on the
+ * holder's frame source, at most [QRScannerConfig.maxFps] frames a second. It reads each frame's
+ * luma, decodes it (ZXing on Android and desktop, Vision on iOS), and emits each new code on
+ * [results]. It works in either analysis format, YUV_420 or RGBA_8888.
+ *
+ * A decoder failure other than "no code here" fails the plugin: [status] becomes `Failed`, the
+ * failure is logged with its throwable and reported once as a `PluginFailed` event, and decoding
+ * stops until the plugin is attached again.
  *
  * @sample com.kashif.qrscannerplugin.ScanQrCodesSample
  *
- * @property coroutineScope Scope for managing QR scanning operations and event emission.
+ * @property config What and how this scanner decodes.
  */
-@Stable
-class QRScannerPlugin internal constructor(
-    private val coroutineScope: CoroutineScope,
-    private val startScanner: (CameraController, (String) -> Unit) -> ScannerHandle,
+public class QRScannerPlugin internal constructor(
+    public val config: QRScannerConfig,
+    private val decoderFactory: BarcodeDecoderFactory,
 ) : CameraKPlugin {
-    /**
-     * @param coroutineScope Scope for managing QR scanning operations and event emission.
-     * @param scanIntervalMs The shortest time between two decode attempts, whether or not the last
-     *   one found a code, on Android and desktop. Defaults to 200 ms. On iOS the system's metadata
-     *   output decides how often it looks for codes, and this is ignored.
-     */
-    @JvmOverloads
-    constructor(coroutineScope: CoroutineScope, scanIntervalMs: Long = DEFAULT_QR_SCAN_INTERVAL_MS) : this(
-        coroutineScope,
-        { controller, onQrScanner -> startQrScanning(controller, scanIntervalMs, onQrScanner) },
-    ) {
-        require(scanIntervalMs >= 0) { "scanIntervalMs must not be negative" }
-    }
-
     /** A scanner for [config]. */
-    constructor(config: QRScannerConfig = QRScannerConfig()) : this(config, ::createBarcodeDecoder)
+    public constructor(config: QRScannerConfig = QRScannerConfig()) : this(config, ::createBarcodeDecoder)
 
-    internal constructor(config: QRScannerConfig, decoderFactory: BarcodeDecoderFactory) : this(
-        CoroutineScope(Job()),
-        { _, _ -> ScannerHandle {} },
-    ) {
-        this.config = config
-    }
+    private val paused = MutableStateFlow(false)
 
-    /** What and how this scanner decodes. */
-    var config: QRScannerConfig = QRScannerConfig()
-        private set
-
-    /** Idle, Running, Paused, or Failed with the attachment's failure. */
-    val status: StateFlow<PluginStatus> = MutableStateFlow(PluginStatus.Idle)
-
-    /** The decoded barcodes. */
-    val results: Flow<Barcode> = MutableSharedFlow()
-
-    /** Stops decoding. */
-    fun pause() = Unit
-
-    /** Decodes again after [pause]. */
-    fun resume() = Unit
-
-    private var cameraController: CameraController? = null
-    private var stateHolder: CameraKStateHolder? = null
-    private val qrCodeFlow = MutableSharedFlow<String>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
-    private var isScanning = atomic(false)
-
-    // Codes bound for the state holder's event bus. One forwarder per attachment emits them, so a
-    // slow events collector holds back one result instead of one suspended coroutine per frame, and
-    // a collector that falls behind gets the latest one.
-    private val busCodes = MutableSharedFlow<String>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
-
-    // What the app asked for: scanning, unless it paused. A new Ready starts a scanner only while this
-    // is true, so a pause holds across camera re-initialisation until the app resumes.
-    private val scanningWanted = atomic(true)
-    private var collectorJob: Job? = null
-    private var scannerHandle: ScannerHandle? = null
+    // Idle, Running or Paused: what the plugin itself is doing. status adds the context's failure.
+    private val activity = MutableStateFlow<PluginStatus>(PluginStatus.Idle)
+    private val _status = MutableStateFlow<PluginStatus>(PluginStatus.Idle)
 
     /**
-     * Attaches the plugin to the state holder (new API).
-     * Automatically starts scanning when camera becomes ready.
-     *
-     * @param stateHolder The [CameraKStateHolder] to attach to.
+     * Running while it holds an active registration; Paused after [pause], or while the registration
+     * waits for a frame output; Idle without a Ready session; `Failed` while the current attachment's
+     * context has a failure.
      */
-    override fun onAttach(stateHolder: CameraKStateHolder) {
-        CameraKLogger.d("CameraK", "QRScannerPlugin attached (new API)")
-        this.stateHolder = stateHolder
+    public val status: StateFlow<PluginStatus> = _status.asStateFlow()
 
-        collectorJob =
-            stateHolder.pluginScope.launch {
-                launch(start = CoroutineStart.UNDISPATCHED) {
-                    busCodes.collect { stateHolder.emitEvent(CameraKEvent.QRCodeScanned(it)) }
-                }
-                stateHolder.cameraState
-                    .filterIsInstance<CameraKState.Ready>()
-                    .collect { readyState ->
-                        this@QRScannerPlugin.cameraController = readyState.controller
-                        if (scanningWanted.value) registerScanner()
+    private val _results = MutableSharedFlow<Barcode>(
+        extraBufferCapacity = RESULTS_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /**
+     * Each code found, once per [QRScannerConfig.dedupeWindow]. Decoding never waits for a
+     * collector: one that falls behind loses the oldest codes first. The payload is untrusted input
+     * (see [Barcode]).
+     */
+    public val results: Flow<Barcode> = _results.asSharedFlow()
+
+    override fun onAttach(context: CameraKPluginContext) {
+        activity.value = if (paused.value) PluginStatus.Paused else PluginStatus.Idle
+        context.scope.launch {
+            combine(context.failure, activity) { failure, own -> failure?.let(PluginStatus::Failed) ?: own }
+                .collect { _status.value = it }
+        }
+        context.launchPerSession {
+            try {
+                combine(paused, context.failure) { paused, failure -> if (failure != null) null else paused }
+                    .distinctUntilChanged()
+                    .collectLatest { paused ->
+                        when (paused) {
+                            null -> Unit
+                            true -> activity.value = PluginStatus.Paused
+                            false -> scan(context)
+                        }
                     }
+            } finally {
+                activity.value = if (paused.value) PluginStatus.Paused else PluginStatus.Idle
             }
+        }
     }
 
-    /**
-     * Detaches the plugin from the state holder and cleans up resources.
-     */
     override fun onDetach() {
-        CameraKLogger.d("CameraK", "QRScannerPlugin detached")
-        isScanning.value = false
-        scannerHandle?.stop()
-        scannerHandle = null
-        collectorJob?.cancel()
-        collectorJob = null
-        this.stateHolder = null
-        this.cameraController = null
+        activity.value = PluginStatus.Idle
+        _status.value = PluginStatus.Idle
     }
 
-    /**
-     * Convenience method to attach this plugin to a state holder.
-     * Use this when manually managing plugin lifecycle.
-     *
-     * @param stateHolder The state holder to attach to.
-     */
-    fun attachToStateHolder(stateHolder: CameraKStateHolder) {
-        stateHolder.attachPlugin(this)
+    /** Stops decoding and closes the frame registration, so a paused scanner holds no frames. It holds across sessions. */
+    public fun pause() {
+        paused.value = true
     }
 
-    /**
-     * Starts scanning, now if the camera is ready and otherwise when it becomes ready. Same as
-     * [resumeScanning].
-     */
-    fun startScanning() {
-        scanningWanted.value = true
-        registerScanner()
+    /** Decodes again after [pause]: at once in a Ready session, otherwise from the next one. */
+    public fun resume() {
+        paused.value = false
     }
 
-    private fun registerScanner() {
-        val controller = cameraController ?: run {
-            CameraKLogger.d("CameraK", "QRScannerPlugin: CameraController is not initialized")
-            isScanning.value = false
-            return
+    // Registers for frames and decodes until cancelled: by a pause, a failure, the end of the session or a detach.
+    private suspend fun scan(context: CameraKPluginContext) {
+        val decoding = FrameDecoding(decoderFactory.create(config.formats)) { error ->
+            context.reportFailure(CameraKError.Internal(error))
         }
-        // Tear down any previous registration so re-init (new Ready) doesn't stack analyzers/delegates.
-        scannerHandle?.stop()
-        isScanning.value = true
-        scannerHandle = try {
-            startScanner(controller) { qrCode ->
-                if (isScanning.value) {
-                    qrCodeFlow.tryEmit(qrCode)
-                    busCodes.tryEmit(qrCode)
-                }
+        context.frames.register(frameSpec(), decoding).use { registration ->
+            registration.active.collect { active ->
+                activity.value = if (active) PluginStatus.Running else PluginStatus.Paused
             }
-        } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "QRScannerPlugin: Failed to start scanning", e)
-            isScanning.value = false
-            val failure =
-                @OptIn(InternalCameraKApi::class)
-                CameraKEvent.PluginFailed(
-                    this::class.simpleName ?: "QRScannerPlugin",
-                    CameraKError.Internal(e),
-                )
-            stateHolder?.let { holder -> holder.pluginScope.launch { holder.emitEvent(failure) } }
-            null
         }
     }
 
-    /**
-     * Pauses scanning: the platform scanner is removed, so no frame is decoded until [resumeScanning].
-     * The pause holds when the camera re-initialises.
-     */
-    fun pauseScanning() {
-        scanningWanted.value = false
-        isScanning.value = false
-        scannerHandle?.stop()
-        scannerHandle = null
-    }
+    private fun frameSpec() = FrameSpec(
+        maxFps = config.maxFps,
+        maxRetained = 0,
+        synchronous = false,
+        acceptedFormats = setOf(FrameFormat.YUV_420, FrameFormat.RGBA_8888),
+    )
 
     /**
-     * Resumes scanning after [pauseScanning], now if the camera is ready and otherwise when it
-     * becomes ready.
+     * One registration's decoding, on the frame source's worker: the luma into a buffer reused while
+     * frames keep their size, the decoder over the area, then the dedupe.
      */
-    fun resumeScanning() {
-        startScanning()
+    private inner class FrameDecoding(
+        private val decoder: BarcodeDecoder,
+        private val onFailure: (Exception) -> Unit,
+    ) : FrameAnalyzer {
+        private val dedupe = BarcodeDedupe(config.dedupeWindow)
+        private var luma = ByteArray(0)
+        private var scratch = ByteArray(0)
+        private var failed = false
+        private var warnedOutsideRegion = false
+
+        override fun analyze(frame: CameraFrame) {
+            if (failed) return
+            val area = decodeArea(frame.cropRect, config.region, frame.width, frame.height)
+            if (area == null) {
+                if (!warnedOutsideRegion) {
+                    warnedOutsideRegion = true
+                    CameraKLogger.w(
+                        TAG,
+                        "The configured region misses the frame's crop rect; such frames are not decoded",
+                    )
+                }
+                return
+            }
+            val pixels = frame.width * frame.height
+            if (luma.size != pixels) luma = ByteArray(pixels)
+            if (frame.format == FrameFormat.RGBA_8888 && scratch.size < frame.width * RGBA_BYTES_PER_PIXEL) {
+                scratch = ByteArray(frame.width * RGBA_BYTES_PER_PIXEL)
+            }
+            frame.copyLuma(luma, 0, scratch)
+            val found = try {
+                decoder.decode(LumaImage(luma, frame.width, frame.height, area, frame.rotationDegrees))
+            } catch (e: Exception) {
+                CameraKLogger.e(TAG, "Decoding a frame for barcodes failed; the scanner stops", e)
+                failed = true
+                onFailure(e)
+                return
+            }
+            for (barcode in found) {
+                if (dedupe.admit(barcode, frame.timestampNanos)) _results.tryEmit(barcode)
+            }
+        }
     }
 
-    /**
-     * Returns a flow that emits QR codes.
-     *
-     * @return SharedFlow<String>
-     */
-    fun getQrCodeFlow() = qrCodeFlow.asSharedFlow()
+    private companion object {
+        const val TAG = "QRScanner"
+        const val RESULTS_BUFFER = 16
+        const val RGBA_BYTES_PER_PIXEL = 4
+    }
 }
 
 /**
- * Handle to active scanning. [stop] removes the underlying platform analyzer/delegate so the
- * camera stops decoding frames — the plugin keeps no other way to tear that registration down.
+ * The rectangle to decode: the frame's crop rect, clamped to the frame, intersected with [region]
+ * when there is one. Null when that leaves nothing.
  */
-fun interface ScannerHandle {
-    fun stop()
+internal fun decodeArea(cropRect: FrameRect, region: FrameRect?, width: Int, height: Int): FrameRect? {
+    var left = maxOf(cropRect.left, 0)
+    var top = maxOf(cropRect.top, 0)
+    var right = minOf(cropRect.right, width)
+    var bottom = minOf(cropRect.bottom, height)
+    if (region != null) {
+        left = maxOf(left, region.left)
+        top = maxOf(top, region.top)
+        right = minOf(right, region.right)
+        bottom = minOf(bottom, region.bottom)
+    }
+    return if (right > left && bottom > top) FrameRect(left, top, right, bottom) else null
 }
 
-/**
- * Platform-specific function to start scanning for QR codes.
- *
- * @param controller The CameraController to be used for scanning.
- * @param onQrScanner A callback function that is invoked when a QR code is scanned.
- */
-expect fun startScanning(controller: CameraController, onQrScanner: (String) -> Unit): ScannerHandle
-
-/** The decode-attempt interval [QRScannerPlugin] and [startScanning] use unless told otherwise. */
-internal const val DEFAULT_QR_SCAN_INTERVAL_MS = 200L
-
-/**
- * Starts scanning with at most one decode attempt per [scanIntervalMs], where the platform decodes
- * frames itself (Android and desktop).
- */
-internal expect fun startQrScanning(
-    controller: CameraController,
-    scanIntervalMs: Long,
-    onQrScanner: (String) -> Unit,
-): ScannerHandle
-
-/**
- * Creates and remembers a QRScannerPlugin composable.
- *
- * @param coroutineScope Scope for managing QR scanning operations and event emission.
- * @param scanIntervalMs The shortest time between two decode attempts on Android and desktop; see
- *   [QRScannerPlugin].
- * @return A remembered instance of QRScannerPlugin.
- */
+/** A [QRScannerPlugin] for [config], kept across recompositions and made again when [config] changes. */
 @Composable
-fun rememberQRScannerPlugin(
-    coroutineScope: CoroutineScope = rememberCoroutineScope(),
-    scanIntervalMs: Long = DEFAULT_QR_SCAN_INTERVAL_MS,
-): QRScannerPlugin = remember(scanIntervalMs) {
-    QRScannerPlugin(coroutineScope, scanIntervalMs)
-}
+public fun rememberQRScannerPlugin(config: QRScannerConfig = QRScannerConfig()): QRScannerPlugin =
+    remember(config) { QRScannerPlugin(config) }

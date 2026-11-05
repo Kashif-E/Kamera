@@ -156,16 +156,17 @@ class ZxingDecoderTest {
 
     @Test
     fun theBoundingBoxIsInFramePixels() {
-        // A 180 px code at (300, 100), decoded from the area right of x = 200.
-        val scene = codeScene("WHERE", 600, 400, left = 300, top = 100)
+        // A 180 px code (three quarters of the scene's 240 px height) at (300, 30), decoded from the
+        // area right of x = 200.
+        val scene = codeScene("WHERE", 600, 240, left = 300, top = 30)
 
         val box =
-            assertNotNull(decoder().decode(scene.lumaImage(area = FrameRect(200, 0, 600, 400))).single().boundingBox)
+            assertNotNull(decoder().decode(scene.lumaImage(area = FrameRect(200, 0, 600, 240))).single().boundingBox)
 
         // ZXing reports the finder patterns' centres, 3.5 modules inside the code's corners, and a
         // 21-module code at 180 px has modules about 8 px wide: the box lies within the code's square,
         // at most 4.5 modules (40 px) in from each edge.
-        val code = listOf(300, 100, 480, 280)
+        val code = listOf(300, 30, 480, 210)
         val edges = box.edges()
         for (i in 0..3) {
             val inward = if (i < 2) edges[i] - code[i] else code[i] - edges[i]
