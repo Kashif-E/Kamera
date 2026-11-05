@@ -12,7 +12,13 @@ import com.kashif.cameraK.utils.CameraKPlatformApi
 import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.utils.toByteArray
 import com.kashif.cameraK.utils.toNSData
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -50,9 +56,10 @@ import kotlin.time.Duration.Companion.seconds
  * holds an import while its add-only prompt is up, so the wait is bounded by [importTimeout].
  *
  * A read streams the asset's photo resource with `PHAssetResourceManager` into a file in
- * `Library/Caches/CameraK`, reads it and deletes it.
+ * `Library/Caches/CameraK`, reads it and deletes it. A read cancelled while Photos is still writing
+ * deletes the file once Photos has finished, since the write itself cannot be cancelled.
  */
-@OptIn(ExperimentalForeignApi::class, InternalCameraKApi::class, CameraKPlatformApi::class)
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class, InternalCameraKApi::class, CameraKPlatformApi::class)
 internal class AppleGalleryStore(
     private val photos: PhotoLibraryGateway = SystemPhotoLibrary,
     private val importTimeout: Duration = IMPORT_TIMEOUT,
@@ -142,16 +149,19 @@ internal class AppleGalleryStore(
     }
 
     override suspend fun read(asset: GalleryAsset): CameraKResult<ByteArray> = withContext(Dispatchers.Default) {
-        var target: String? = null
+        // Set once Photos has finished with the file, so only then may this read delete it.
+        var written: String? = null
         try {
             val path = "${cameraKCachesDirectory()}/read_${NSUUID().UUIDString}"
-            target = path
             val error = suspendCancellableCoroutine { continuation ->
                 val started = photos.writeAssetData(asset.localIdentifier, NSURL.fileURLWithPath(path)) { error ->
-                    continuation.resume(error)
+                    // Photos cannot cancel the write, so a read cancelled before it finished leaves
+                    // the delete to here, after Photos has written the file.
+                    continuation.resume(error) { _, _, _ -> deleteReadFile(path) }
                 }
                 if (!started) continuation.resumeWithException(IOException("There is no such asset in Photos"))
             }
+            written = path
             if (error != null) throw PhotosException(error)
             val data = NSFileManager.defaultManager.contentsAtPath(path) ?: throw IOException("Photos wrote no data")
             CameraKResult.Success(data.toByteArray())
@@ -161,7 +171,23 @@ internal class AppleGalleryStore(
             CameraKLogger.e(TAG, "Reading an asset from Photos failed", e)
             CameraKResult.Failure(CameraKError.Storage(StorageFailure.NOT_FOUND, cause = e))
         } finally {
-            target?.let { NSFileManager.defaultManager.removeItemAtPath(it, null) }
+            written?.let(::deleteReadFile)
+        }
+    }
+
+    // A read's file in Caches/CameraK, if Photos wrote one. A failed delete is logged without the path.
+    private fun deleteReadFile(path: String) {
+        val files = NSFileManager.defaultManager
+        if (!files.fileExistsAtPath(path)) return
+        memScoped {
+            val error = alloc<ObjCObjectVar<NSError?>>()
+            if (!files.removeItemAtPath(path, error.ptr)) {
+                CameraKLogger.e(
+                    TAG,
+                    "Deleting a Photos read's temporary file failed",
+                    FileManagerException(error.value),
+                )
+            }
         }
     }
 
@@ -241,6 +267,10 @@ internal fun fileUrlOf(path: String): NSURL = if (path.startsWith(
 /** What Photos reported for a refused write or read: its domain and code, never a path. */
 internal class PhotosException(val error: NSError) :
     IOException("Photos refused the request (${error.domain} ${error.code})")
+
+/** What the file manager reported for a refused change: its domain and code, never a path. */
+internal class FileManagerException(error: NSError?) :
+    IOException("The file manager refused the change (${error?.domain} ${error?.code})")
 
 /** Photos did not finish an import within [timeout], as while its add-only prompt is unanswered. */
 internal class PhotosTimeout(timeout: Duration) : IOException("Photos did not finish the import within $timeout")
