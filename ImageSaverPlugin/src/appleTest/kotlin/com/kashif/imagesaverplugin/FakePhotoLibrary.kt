@@ -42,6 +42,8 @@ internal class FakePhotoLibrary(
     private val answersReads: Boolean = true,
     private val resourceBytes: ByteArray? = null,
     private val resourceError: NSError? = null,
+    private val holdsResourceWrites: Boolean = false,
+    private val afterResourceWrite: (path: String) -> Unit = {},
 ) : PhotoLibraryGateway {
     class Import(val url: NSURL, val kind: MediaKind)
 
@@ -56,6 +58,17 @@ internal class FakePhotoLibrary(
     val creationStarted = CompletableDeferred<Unit>()
     val readStarted = CompletableDeferred<PHImageRequestID>()
     val cancelledRequests = atomic(emptyList<PHImageRequestID>())
+
+    /** Completes with the file's path when a resource write starts, and once its completion has run. */
+    val resourceWriteStarted = CompletableDeferred<String>()
+    val resourceWriteFinished = CompletableDeferred<Unit>()
+    private val heldWrite = atomic<(() -> Unit)?>(null)
+
+    /** Lets a write held by `holdsResourceWrites` go ahead: Photos writes the file, then calls back. */
+    fun releaseResourceWrite() {
+        val write = checkNotNull(heldWrite.getAndSet(null)) { "no resource write is held" }
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.toLong(), 0u)) { write() }
+    }
     private val nextRequestId = atomic(1)
 
     // A synchronous read Photos has not answered blocks its caller, as PhotoKit does, until the test ends.
@@ -94,11 +107,20 @@ internal class FakePhotoLibrary(
         writtenTo.value = path
         val bytes = resourceBytes
         val error = resourceError
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.toLong(), 0u)) {
+        val write: () -> Unit = {
             if (error == null && bytes != null && path != null) {
                 NSFileManager.defaultManager.createFileAtPath(path, bytes.toNSData(), null)
+                afterResourceWrite(path)
             }
             completion(error)
+            resourceWriteFinished.complete(Unit)
+        }
+        path?.let { resourceWriteStarted.complete(it) }
+        // Photos cannot cancel a resource write; a held one finishes only when the test releases it.
+        if (holdsResourceWrites) {
+            heldWrite.value = write
+        } else {
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.toLong(), 0u)) { write() }
         }
         return true
     }
