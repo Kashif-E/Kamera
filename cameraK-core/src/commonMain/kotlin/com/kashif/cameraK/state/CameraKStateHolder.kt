@@ -242,6 +242,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         readyState = readyState,
         desiredHardware = { desiredHardware.value },
         beforeReady = ::beforeReady,
+        hostStopGrace = { recording.awaitHostStopGrace() },
         hostStop = { recording.stopForHostStop() },
     )
 
@@ -347,7 +348,14 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         lifecycle.start()
     }
 
-    /** Closes the camera and returns to Idle. A start in progress is cancelled and publishes no error. */
+    /**
+     * Closes the camera and returns to Idle. A start in progress is cancelled and publishes no error.
+     *
+     * While a recording is live the camera first stays open, and Ready, for two seconds: a [start] in
+     * that window, such as the one an Activity recreation (a rotation) makes, carries on with the same
+     * recording. Otherwise the recording then ends with [CameraKEvent.RecordingEnded] (INTERRUPTED)
+     * and the camera closes.
+     */
     public fun stop() {
         lifecycle.stop()
     }

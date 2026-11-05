@@ -79,7 +79,12 @@ internal fun startTimeoutState(status: PermissionStatus): CameraKState.Error = i
  * [state], written only through [transition]. A new desired value cancels the work of the previous
  * one, so a stop during a start cancels the start instead of racing it.
  *
+ * A stop while a recording is live waits [hostStopGrace] first, and a start inside that wait
+ * continues the open session: the engine is not started again and Starting is not published.
+ *
  * @param beforeReady Runs before the first and every later Ready is published, outside any lock.
+ * @param hostStopGrace The config-change grace: returns at once with no live recording, otherwise
+ *   once the grace has run out. Cancellable.
  * @param hostStop Stops the camera for a host stop in place of `engine.stop()`: the recording
  *   controller ends a live recording first, then stops the engine.
  */
@@ -90,6 +95,7 @@ internal class SessionLifecycle(
     private val readyState: CameraKState.Ready,
     private val desiredHardware: () -> DesiredHardware,
     private val beforeReady: () -> Unit,
+    private val hostStopGrace: suspend () -> Unit,
     private val hostStop: suspend () -> Unit,
 ) {
     private sealed interface Desired {
@@ -116,15 +122,34 @@ internal class SessionLifecycle(
     // Read and written by the reconciler only, one desired value at a time.
     private var engineStarted = false
 
+    // The engine accepted a session (Open or Interrupted) and has not been stopped since.
+    private var sessionOpen = false
+
+    // True only while a stop waits out the grace over an open session: a start then continues it.
+    private var continuable = false
+
     private val reconciler: Job = scope.launch {
         desired.collectLatest { d ->
             when (d) {
                 is Desired.Stopped -> {
-                    if (engineStarted) withContext(NonCancellable) { hostStop() }
+                    if (engineStarted) {
+                        continuable = sessionOpen
+                        hostStopGrace()
+                        continuable = false
+                        withContext(NonCancellable) {
+                            hostStop()
+                            sessionOpen = false
+                        }
+                    }
                     transition { CameraKState.Idle }
                     settled.value = Settled(d.upTo, CameraKState.Idle)
                 }
-                is Desired.Running -> runSessionCatching(d.attempt)
+                is Desired.Running -> if (continuable) {
+                    continuable = false
+                    sessionCatching(d.attempt) { continueSession(d.attempt) }
+                } else {
+                    sessionCatching(d.attempt) { runSession(d.attempt) }
+                }
                 // The holder's release owns shutdown.
                 Desired.Closed -> Unit
             }
@@ -226,13 +251,33 @@ internal class SessionLifecycle(
         }
     }
 
-    private suspend fun runSessionCatching(attempt: Int) {
-        suspendRunCatching { runSession(attempt) }.onFailure { e ->
+    private suspend fun sessionCatching(attempt: Int, session: suspend () -> Unit) {
+        suspendRunCatching { session() }.onFailure { e ->
             CameraKLogger.e(TAG, "The camera session failed unexpectedly", e)
-            withContext(NonCancellable) { engine.stop() }
+            stopEngine()
             transition { CameraKState.Error(CameraKError.Internal(e)) }
             settle(attempt)
         }
+    }
+
+    private suspend fun stopEngine() = withContext(NonCancellable) {
+        engine.stop()
+        sessionOpen = false
+    }
+
+    // A start inside the grace: the camera never closed, so the session goes on from what the engine
+    // reports now, with no Starting and no second engine.start.
+    private suspend fun continueSession(attempt: Int) = coroutineScope {
+        val runtimeFailure = CompletableDeferred<Unit>()
+        launch(start = CoroutineStart.UNDISPATCHED) {
+            engine.state.first { s ->
+                publish(attempt) { s }
+                s is EngineState.Failed
+            }
+            runtimeFailure.complete(Unit)
+        }
+        runtimeFailure.await()
+        stopEngine()
     }
 
     private suspend fun runSession(attempt: Int) {
@@ -255,7 +300,10 @@ internal class SessionLifecycle(
                 // A Failed ends the mirror: it ends its generation, so no later value of it is mapped.
                 val mirror = launch(start = CoroutineStart.UNDISPATCHED) {
                     engine.state.drop(1).first { s ->
-                        if (s is EngineState.Open || s is EngineState.Interrupted) accepted = true
+                        if (s is EngineState.Open || s is EngineState.Interrupted) {
+                            accepted = true
+                            sessionOpen = true
+                        }
                         publish(attempt) { s }
                         s is EngineState.Failed
                     }
@@ -264,14 +312,14 @@ internal class SessionLifecycle(
                 when (val started = withTimeoutOrNull(START_TIMEOUT) { engine.start(desiredHardware()) }) {
                     null -> {
                         mirror.cancel()
-                        withContext(NonCancellable) { engine.stop() }
+                        stopEngine()
                         transition { startTimeoutState(status) }
                         settle(attempt)
                     }
                     is CameraKResult.Failure -> {
                         // Authoritative whether or not the engine also published Failed.
                         mirror.cancel()
-                        withContext(NonCancellable) { engine.stop() }
+                        stopEngine()
                         transition { CameraKState.Error(started.error) }
                         settle(attempt)
                     }
@@ -279,19 +327,20 @@ internal class SessionLifecycle(
                         // Success means Open or Interrupted. Mapping the current value covers a start
                         // on an engine that was already open, whose state therefore never changed.
                         accepted = true
+                        sessionOpen = true
                         publish(attempt) { engine.state.value }
                         // The session lives until the next desired value cancels it, or until the
                         // platform fails it: then it releases the camera, so that no later engine
                         // value, such as a platform reopening on its own, moves Error back to Ready.
                         runtimeFailure.await()
-                        withContext(NonCancellable) { engine.stop() }
+                        stopEngine()
                     }
                 }
             }
         } catch (e: CancellationException) {
             // A cancelled start leaves nothing open. An accepted, live session is left to what
             // cancelled it: a stop (which stops the engine) or close (which closes it).
-            if (!accepted) withContext(NonCancellable) { engine.stop() }
+            if (!accepted) stopEngine()
             throw e
         }
     }

@@ -269,6 +269,9 @@ class RecordingControllerTest {
 
         holder.stop()
         runCurrent()
+        // No start came within the config-change grace.
+        advanceTimeBy(CONFIG_CHANGE_GRACE)
+        runCurrent()
 
         val calls = fake.calls
         val stopRecording = calls.indexOf("stopRecording")
@@ -852,6 +855,9 @@ class RecordingControllerTest {
 
         holder.stop()
         runCurrent()
+        // No start came within the config-change grace; the recording step starts after it.
+        advanceTimeBy(CONFIG_CHANGE_GRACE)
+        runCurrent()
         advanceTimeBy(SHUTDOWN_STOP_TIMEOUT - 1.milliseconds)
         runCurrent()
         assertEquals(0, fake.stopCalls, "the host stop gave up before SHUTDOWN_STOP_TIMEOUT: ${fake.calls}")
@@ -921,6 +927,9 @@ class RecordingControllerTest {
         runCurrent()
         assertEquals(0, fake.stopCalls, "the camera stopped under a start still resolving: ${fake.calls}")
         fake.deliverRecordingStarted()
+        runCurrent()
+        // No start came within the config-change grace.
+        advanceTimeBy(CONFIG_CHANGE_GRACE)
         runCurrent()
 
         val started = assertIs<CameraKResult.Success<RecordingState.Recording>>(start.await(), "the start").value

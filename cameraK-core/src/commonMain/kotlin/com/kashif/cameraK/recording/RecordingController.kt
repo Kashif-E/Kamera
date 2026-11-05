@@ -143,10 +143,7 @@ internal class RecordingController(
     }
 
     /** Starting, Recording, Paused or Stopping: a recording is live and the camera may not change. */
-    fun isLive(): Boolean = when (_state.value) {
-        RecordingState.Idle, is RecordingState.Finished -> false
-        else -> true
-    }
+    fun isLive(): Boolean = _state.value.isLive()
 
     suspend fun prepare(config: VideoConfiguration): CameraKResult<Unit> {
         if (isLive()) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_PREPARE))
@@ -206,8 +203,20 @@ internal class RecordingController(
     }
 
     /**
-     * The host stopped the camera: a live recording ends as INTERRUPTED, then the camera stops. Called
-     * by the session reconciler in place of `engine.stop()`, in `NonCancellable`.
+     * The first half of a host stop: while a recording is live, waits up to [CONFIG_CHANGE_GRACE] for
+     * a start to cancel the wait, so the stop and start of an Activity recreation leave the recording
+     * running on a camera that never closed. Returns at once with nothing live, and early when the
+     * recording ends on its own. Called by the session reconciler, cancellably.
+     */
+    suspend fun awaitHostStopGrace() {
+        if (!isLive()) return
+        withTimeoutOrNull(CONFIG_CHANGE_GRACE) { _state.first { !it.isLive() } }
+    }
+
+    /**
+     * The second half of a host stop, once the grace has run out: a live recording ends as
+     * INTERRUPTED, then the camera stops. Called by the session reconciler in place of
+     * `engine.stop()`, in `NonCancellable`.
      */
     suspend fun stopForHostStop() {
         stopJob(RecordingEndReason.INTERRUPTED)?.let { awaitBounded(it, "the host stopped the camera") }
@@ -578,6 +587,11 @@ internal class RecordingController(
     private companion object {
         const val TAG = "CameraK"
     }
+}
+
+private fun RecordingState.isLive(): Boolean = when (this) {
+    RecordingState.Idle, is RecordingState.Finished -> false
+    else -> true
 }
 
 /**
