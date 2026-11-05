@@ -9,6 +9,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.get
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.useContents
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import platform.CoreVideo.CVPixelBufferGetBaseAddress
 import platform.CoreVideo.CVPixelBufferGetBytesPerRow
@@ -24,6 +25,7 @@ import platform.ImageIO.kCGImagePropertyOrientationRight
 import platform.Vision.VNBarcodeSymbologyEAN13
 import platform.Vision.VNBarcodeSymbologyQR
 import kotlin.math.abs
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -35,6 +37,26 @@ import kotlin.test.assertTrue
  * hands it a one-plane luma buffer built from the plugin's copy: never the frame's own pixel buffer.
  */
 class VisionDecoderTest {
+    private val logs = LoggedProblems()
+
+    @AfterTest
+    fun restoreLogger() = logs.restore()
+
+    @Test
+    fun aFormatVisionCannotReadIsLoggedOnceAcrossSessions() = runTest {
+        logs.install()
+        val plugin = QRScannerPlugin(QRScannerConfig { formats = setOf(BarcodeFormat.QR_CODE, BarcodeFormat.UPC_A) })
+        val s = qrSession(plugin)
+        startReady(s)
+        s.holder.stop()
+        runCurrent()
+        startReady(s)
+
+        assertEquals(2, s.frames.registrations.size, "sessions")
+        val warnings = logs.entries.filter { "UPC_A" in it.first }
+        assertEquals(1, warnings.size, "warnings naming UPC_A: $warnings")
+    }
+
     @Test
     fun symbologiesAndRegionOfInterestAreSet() {
         val decoder = VisionBarcodeDecoder(setOf(BarcodeFormat.QR_CODE, BarcodeFormat.EAN_13, BarcodeFormat.UPC_A))
