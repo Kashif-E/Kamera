@@ -215,21 +215,31 @@ private fun CameraScreen(
         }
     }
 
-    var cameraMode by remember { mutableStateOf(CameraMode.Photo) }
+    // Saved: a rotation keeps the holder and any recording, and the recreated screen must offer the
+    // same mode, switches and lock, or a recording kept alive could no longer be stopped.
+    var choices by rememberCameraScreenChoices()
     val recording = rememberRecordingFeature(holder)
     val recordingState by recording.state.collectAsState()
     val isRecording = recordingState.isLive()
+    val cameraMode = choices.shownMode(isRecording)
+    val isQRScanningEnabled = choices.qrScanning
+    val isOCREnabled = choices.ocr
+    val lockedOrientation = choices.lockedOrientation
     LaunchedEffect(recording) {
         recording.notices.collect { snackbarHostState.showSnackbar(it) }
     }
     val recordingElapsed by rememberRecordingElapsed(holder)
 
-    var isQRScanningEnabled by remember { mutableStateOf(true) }
-    var isOCREnabled by remember { mutableStateOf(true) }
     var isDetectionEnabled by remember { mutableStateOf(true) }
 
     var showSettings by remember { mutableStateOf(false) }
-    var lockedOrientation by remember { mutableStateOf<DeviceOrientation?>(null) }
+
+    // A holder kept across a rotation still has the lock; one built after process death does not.
+    LaunchedEffect(holder) {
+        if (holder.uiState.value.targetOrientation != lockedOrientation) {
+            holder.setTargetOrientation(lockedOrientation)
+        }
+    }
 
     QrScanningEffect(qrScanner, isQRScanningEnabled)
 
@@ -305,7 +315,7 @@ private fun CameraScreen(
             // Mode switcher
             ModeSwitcher(
                 currentMode = cameraMode,
-                onModeChange = { cameraMode = it },
+                onModeChange = { choices = choices.copy(mode = it) },
                 enabled = !isRecording,
             )
 
@@ -377,10 +387,10 @@ private fun CameraScreen(
                         scope.launch { holder.selectCamera(uiState.cameraLens ?: CameraLens.BACK, it) }
                     }
                 },
-                onQRScanningToggle = { isQRScanningEnabled = it },
-                onOCRToggle = { isOCREnabled = it },
+                onQRScanningToggle = { choices = choices.copy(qrScanning = it) },
+                onOCRToggle = { choices = choices.copy(ocr = it) },
                 onOrientationLockChange = { orientation ->
-                    lockedOrientation = orientation
+                    choices = choices.copy(lockedOrientation = orientation)
                     scope.launch { holder.setTargetOrientation(orientation) }
                 },
                 onDismiss = { showSettings = false },
@@ -462,18 +472,38 @@ internal data class CameraScreenChoices(
     val lockedOrientation: DeviceOrientation? = null,
 )
 
+/** Saves the mode and the lock as names (no lock as none), and the switches as booleans: what a Bundle holds. */
 internal val CameraScreenChoicesSaver: Saver<CameraScreenChoices, Any> = Saver(
-    save = { TODO("LC'") },
-    restore = { TODO("LC'") },
+    save = { choices -> listOf(choices.mode.name, choices.qrScanning, choices.ocr, choices.lockedOrientation?.name) },
+    restore = ::restoreCameraScreenChoices,
 )
 
-/** The screen's choices, remembered across a recreation. */
+// Null for anything this saver did not write; the screen then starts from the defaults.
+private fun restoreCameraScreenChoices(saved: Any): CameraScreenChoices? {
+    val values = saved as? List<*> ?: return null
+    if (values.size != CHOICES_FIELDS) return null
+    val locked = values[3]?.let { name -> DeviceOrientation.entries.firstOrNull { it.name == name } ?: return null }
+    return CameraScreenChoices(
+        mode = CameraMode.entries.firstOrNull { it.name == values[0] } ?: return null,
+        qrScanning = values[1] as? Boolean ?: return null,
+        ocr = values[2] as? Boolean ?: return null,
+        lockedOrientation = locked,
+    )
+}
+
+private const val CHOICES_FIELDS = 4
+
+/** The screen's choices, saved, so a recreated screen starts from them. */
 @Composable
 internal fun rememberCameraScreenChoices(): MutableState<CameraScreenChoices> =
-    remember { mutableStateOf(CameraScreenChoices()) }
+    rememberSaveable(stateSaver = CameraScreenChoicesSaver) { mutableStateOf(CameraScreenChoices()) }
 
-/** The mode the shutter and the mode switcher show. */
-internal fun CameraScreenChoices.shownMode(recordingLive: Boolean): CameraMode = mode
+/**
+ * The mode the shutter and the mode switcher show: Video while a recording is live, whatever was
+ * selected, so the shutter can always stop the recording.
+ */
+internal fun CameraScreenChoices.shownMode(recordingLive: Boolean): CameraMode =
+    if (recordingLive) CameraMode.Video else mode
 
 /** The holder's capture, as the Sample's photo button uses it. */
 internal interface SampleCapturer {
@@ -499,14 +529,15 @@ internal class CaptureFeature(private val capturer: SampleCapturer) {
 
     private val _notices = Channel<String>(Channel.BUFFERED)
 
-    /** One line per photo taken or failed, for the screen to show. */
+    /** One line per photo taken or failed, for the screen to show; the save is the image saver's. */
     val notices: Flow<String> = _notices.receiveAsFlow()
 
     suspend fun takePhoto() {
         when (val result = capturer.capture()) {
             is CameraKResult.Success -> {
                 _lastPhoto.value = result.value
-                _notices.trySend("Photo saved")
+                // The image saver saves it from the holder's captures; this is only the capture.
+                _notices.trySend("Photo taken")
             }
             is CameraKResult.Failure -> {
                 CameraKLogger.w(TAG, "Taking a photo failed: ${result.error::class.simpleName}", result.error.cause)
