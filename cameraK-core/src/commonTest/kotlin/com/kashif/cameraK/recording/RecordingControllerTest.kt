@@ -1049,4 +1049,64 @@ class RecordingControllerTest {
             events.drop(from).filterIsInstance<CameraKEvent.RecordingEnded>().single().reason,
         )
     }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun aStartedThatArrivesWhileAnAbandonedStartIsStoppingLeavesTheStartAbandoned() = runTest {
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val engine = ScriptedRecordingEngine(fake)
+        val holder = readyHolder(engine)
+        val events = collectEvents(holder)
+        val states = mutableListOf<RecordingState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            holder.recordingState.collect { states += it }
+        }
+        // The stop of the start the holder gave up on is still out when the platform confirms that start.
+        val stopAnswer = CompletableDeferred<CameraKResult<RecordedVideo>>()
+        engine.nextStop = { stopAnswer.await() }
+
+        val start = async { holder.startRecording() }
+        runCurrent()
+        advanceTimeBy(RECORDING_START_TIMEOUT)
+        runCurrent()
+        assertIs<RecordingState.Starting>(holder.recordingState.value, "the abandoned start's stop already returned")
+        fake.deliverRecordingStarted()
+        runCurrent()
+
+        assertIs<RecordingState.Starting>(
+            holder.recordingState.value,
+            "a Started that arrived during the abandoned start's stop made it a recording",
+        )
+        stopAnswer.complete(CameraKResult.Success(FakeCaptures.video(path = "/fake/VID_0001.mp4")))
+        runCurrent()
+
+        assertIs<CameraKError.Timeout>(assertIs<CameraKResult.Failure>(start.await()).error)
+        assertEquals(RecordingState.Idle, holder.recordingState.value)
+        assertFalse(states.any { it is RecordingState.Recording }, "states: $states")
+        assertEquals(emptyList(), events.filterIsInstance<CameraKEvent.RecordingStarted>(), "an abandoned start")
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun aDurationLimitEndThatFailsStillReportsTheLimitWithThePathAndTheRecordedTime() = runTest {
+        val fake = FakeCameraEngine()
+        val holder = readyHolder(fake)
+        val events = collectEvents(holder)
+        val recording = holder.recording()
+        advanceTimeBy(3.seconds)
+
+        val failure = CameraKResult.Failure(CameraKError.Hardware(platformCode = 3))
+        fake.finishRecording(failure, RecordingEndReason.MAX_DURATION)
+        runCurrent()
+
+        val legacy = events.filter {
+            it is CameraKEvent.RecordingMaxDurationReached || it is CameraKEvent.RecordingFailed
+        }
+        assertEquals(2, legacy.size, "the 1.x events of a failed duration-limit end: $legacy")
+        assertEquals(CameraKEvent.RecordingMaxDurationReached(recording.filePath, 3_000L), legacy[0])
+        assertIs<CameraKEvent.RecordingFailed>(legacy[1])
+        val ended = events.filterIsInstance<CameraKEvent.RecordingEnded>().single()
+        assertEquals(RecordingEndReason.MAX_DURATION, ended.reason)
+        assertIs<CameraKResult.Failure>(ended.result)
+    }
 }
