@@ -434,6 +434,9 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         scope.coroutineContext.job.join()
     }
 
+    /** Runs [block] in the holder's scope, which [close] cancels. For `bindToLifecycle`. */
+    internal fun launchInHolderScope(block: suspend CoroutineScope.() -> Unit): Job = scope.launch(block = block)
+
     private fun beforeReady() {
         if (closing.value) return
         facadeLive.value = true
