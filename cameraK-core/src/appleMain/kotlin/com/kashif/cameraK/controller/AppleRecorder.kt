@@ -48,6 +48,7 @@ import platform.Foundation.NSUUID
 import platform.Foundation.timeIntervalSince1970
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
+import kotlin.time.Duration
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
@@ -125,6 +126,12 @@ internal class AppleRecorder(
 
     /** The 1.x facade's stopRecording after AVFoundation ended the recording by itself: that result, once. */
     fun takeUnclaimedResult(): CameraKResult<RecordedVideo>? = unclaimed.getAndSet(null)
+
+    /** The last recording that failed but kept its playable file, and how long that file records. */
+    private val lastKept = atomic<Pair<String, Duration>?>(null)
+
+    /** How long the kept file at [path] records, for the 1.x facade, which reports it as a success. */
+    fun keptFileDuration(path: String): Duration? = lastKept.value?.takeIf { it.first == path }?.second
 
     suspend fun prepare(config: VideoConfiguration): CameraKResult<Unit> {
         refusal(config, CameraOperation.RECORD_PREPARE)?.let { return it }
@@ -380,6 +387,8 @@ internal class AppleRecorder(
             active = null
             recording = false
         }
+        val kept = ((result as? CameraKResult.Failure)?.error as? CameraKError.Storage)?.keptFilePath
+        if (kept != null && movie.startedAt != null) lastKept.value = kept to recorded(movie)
         if (!movie.abandoned) {
             if (!_events.tryEmit(EngineRecordingEvent.Finalized(result, reason))) {
                 CameraKLogger.e(TAG, "CameraK: a recording's Finalized event was dropped: the event buffer is full")
@@ -398,18 +407,21 @@ internal class AppleRecorder(
         kept.runsItsPreset = false
     }
 
-    private fun video(movie: Movie): RecordedVideo {
-        val elapsed = movie.startedAt?.elapsedNow() ?: kotlin.time.Duration.ZERO
-        val paused = movie.paused + (movie.pausedAt?.elapsedNow() ?: kotlin.time.Duration.ZERO)
-        return RecordedVideo(
-            path = movie.path,
-            duration = (elapsed - paused).coerceAtLeast(kotlin.time.Duration.ZERO),
-            width = movie.config.quality.width,
-            height = movie.config.quality.height,
-            bitrateBps = null,
-            hasAudio = movie.hasAudio,
-        )
+    /** How long [movie] has recorded: from its start, less its pauses. */
+    private fun recorded(movie: Movie): Duration {
+        val elapsed = movie.startedAt?.elapsedNow() ?: Duration.ZERO
+        val paused = movie.paused + (movie.pausedAt?.elapsedNow() ?: Duration.ZERO)
+        return (elapsed - paused).coerceAtLeast(Duration.ZERO)
     }
+
+    private fun video(movie: Movie): RecordedVideo = RecordedVideo(
+        path = movie.path,
+        duration = recorded(movie),
+        width = movie.config.quality.width,
+        height = movie.config.quality.height,
+        bitrateBps = null,
+        hasAudio = movie.hasAudio,
+    )
 
     // ─── Any thread ──────────────────────────────────────────────────────────────────────────────
 
@@ -503,7 +515,7 @@ internal class AppleRecorder(
         val afterFinalized = mutableListOf<() -> Unit>()
         var startedAt: TimeMark? = null
         var pausedAt: TimeMark? = null
-        var paused = kotlin.time.Duration.ZERO
+        var paused = Duration.ZERO
         var hasAudio = false
         var stopReason: RecordingEndReason? = null
         var abandoned = false

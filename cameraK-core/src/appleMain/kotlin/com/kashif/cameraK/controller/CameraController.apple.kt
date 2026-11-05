@@ -580,7 +580,8 @@ actual class CameraController private constructor(
     /**
      * Stops the recording and returns its result once AVFoundation has finished the file, or an error
      * once the engine's finish timeout passes. A recording that already ended by itself reports its
-     * result. A full disk that kept a playable file reports that file, as 1.x did.
+     * result. A full disk that kept a playable file reports that file and how long it records, as 1.x
+     * did.
      */
     actual suspend fun stopRecording(): VideoCaptureResult = when (val stopped = engine.stopRecording()) {
         is CameraKResult.Success -> stopped.value.toVideoCaptureResult()
@@ -595,7 +596,10 @@ actual class CameraController private constructor(
     private fun CameraKResult<RecordedVideo>.toVideoCaptureResult(): VideoCaptureResult = when (this) {
         is CameraKResult.Success -> value.toVideoCaptureResult()
         is CameraKResult.Failure -> (error as? CameraKError.Storage)?.keptFilePath
-            ?.let { VideoCaptureResult.Success(it, 0) }
+            ?.let { kept ->
+                val recorded = engine.recorder.keptFileDuration(kept)?.inWholeMilliseconds ?: 0
+                VideoCaptureResult.Success(kept, recorded)
+            }
             ?: VideoCaptureResult.Error(error.asException("Recording failed"))
     }
 
