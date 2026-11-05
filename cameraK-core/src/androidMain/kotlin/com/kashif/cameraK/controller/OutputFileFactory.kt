@@ -22,7 +22,8 @@ private const val TAG = "CameraK"
  *
  * Directories are created on [io], off the main thread, once each; one that cannot be created is
  * `Storage(NOT_WRITABLE)` before CameraX is asked for anything. A file is claimed on the calling
- * thread with an atomic createNewFile, so no two captures share a name.
+ * thread with an atomic createNewFile, so no two captures share a name. A directory the app deleted
+ * after it was created is created again when a claim in it fails.
  */
 internal class OutputFileFactory(
     private val context: Context,
@@ -62,11 +63,25 @@ internal class OutputFileFactory(
         newFile(config.outputDirectory?.let(::File) ?: defaultDirectory, config.filePrefix, "mp4")
 
     private suspend fun newFile(dir: File, prefix: String, extension: String): CameraKResult<File> {
-        if (!ensureDirectory(dir)) {
-            CameraKLogger.e(TAG, "Creating the output directory failed")
-            return CameraKResult.Failure(CameraKError.Storage(StorageFailure.NOT_WRITABLE))
+        val known = dir.path in ensured
+        if (!ensureDirectory(dir)) return notWritable()
+        if (known) {
+            try {
+                return CameraKResult.Success(newCaptureFile(dir, prefix, extension))
+            } catch (e: IOException) {
+                // The app may have deleted the directory since it was created (a clean-up after an
+                // upload, say): forget it and create it again.
+                CameraKLogger.w(TAG, "Claiming an output file failed; creating its directory again", e)
+                ensured -= dir.path
+                if (!ensureDirectory(dir)) return notWritable()
+            }
         }
         return claim(dir, prefix, extension)
+    }
+
+    private fun notWritable(): CameraKResult<File> {
+        CameraKLogger.e(TAG, "Creating the output directory failed")
+        return CameraKResult.Failure(CameraKError.Storage(StorageFailure.NOT_WRITABLE))
     }
 
     private fun claim(dir: File, prefix: String, extension: String): CameraKResult<File> = try {
