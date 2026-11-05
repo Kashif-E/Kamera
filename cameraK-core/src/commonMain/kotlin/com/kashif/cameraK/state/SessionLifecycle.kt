@@ -83,6 +83,8 @@ internal fun startTimeoutState(status: PermissionStatus): CameraKState.Error = i
  * continues the open session: the engine is not started again and Starting is not published.
  *
  * @param beforeReady Runs before the first and every later Ready is published, outside any lock.
+ * @param awaitPreviousClose Runs before each engine start: a holder that replaces another waits for
+ *   the old engine to close, bounded.
  * @param hostStopGrace The config-change grace: returns at once with no live recording, otherwise
  *   once the grace has run out. Cancellable.
  * @param hostStop Stops the camera for a host stop in place of `engine.stop()`: the recording
@@ -95,6 +97,7 @@ internal class SessionLifecycle(
     private val readyState: CameraKState.Ready,
     private val desiredHardware: () -> DesiredHardware,
     private val beforeReady: () -> Unit,
+    private val awaitPreviousClose: suspend () -> Unit,
     private val hostStopGrace: suspend () -> Unit,
     private val hostStop: suspend () -> Unit,
 ) {
@@ -289,6 +292,7 @@ internal class SessionLifecycle(
             settle(attempt)
             return
         }
+        awaitPreviousClose()
         engineStarted = true
         // Open or Interrupted was reported for this session: the platform accepted it.
         var accepted = false

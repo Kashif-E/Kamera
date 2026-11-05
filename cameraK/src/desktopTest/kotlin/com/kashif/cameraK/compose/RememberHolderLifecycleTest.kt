@@ -29,9 +29,10 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 
 /**
- * The default Compose path: rememberCameraKStateHolder starts the holder when the host reaches
- * STARTED, stops it below STARTED, re-checks the permission on every resume and closes the holder
- * when it leaves the composition.
+ * The default Compose path without a ViewModelStoreOwner: rememberCameraKStateHolder starts the
+ * holder when the host reaches STARTED, stops it below STARTED, re-checks the permission on every
+ * resume and closes the holder when it leaves the composition. RetainedHolderTest covers the path
+ * with an owner.
  */
 class RememberHolderLifecycleTest {
     private class TestOwner : LifecycleOwner {
@@ -52,6 +53,10 @@ class RememberHolderLifecycleTest {
                     lifecycleOwner = owner,
                     engineFactory = { _, _ -> fake },
                     environment = environment,
+                    // The path with no ViewModelStoreOwner. A bare scene's own owner is one for the
+                    // whole process and is never cleared, so a holder retained in it would outlive
+                    // the scene and be shared with the next test's.
+                    viewModelStoreOwner = null,
                 )
             }
         }

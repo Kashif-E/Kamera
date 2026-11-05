@@ -2,7 +2,9 @@ package com.kashif.cameraK.compose
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.currentCompositeKeyHashCode
 import androidx.compose.runtime.remember
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModelStoreOwner
@@ -10,6 +12,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kashif.cameraK.engine.CameraEngineFactory
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.state.CameraConfiguration
@@ -17,6 +20,7 @@ import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.InternalCameraKApi
 
 /**
  * Creates and remembers a [CameraKStateHolder] and returns its [CameraKState].
@@ -55,10 +59,24 @@ expect fun rememberCameraKState(
 /**
  * Creates and remembers a [CameraKStateHolder] over this platform's camera, created with [plugins].
  *
+ * The holder lives in a ViewModel of the nearest `ViewModelStoreOwner`, one per call site, so an
+ * Activity recreation (a rotation) keeps it, with its plugins and any recording in progress. It
+ * closes when that owner is cleared, for instance when the user leaves the screen; desktop windows and
+ * iOS view controllers clear theirs when they close. Without an owner it is remembered and closes
+ * when it leaves the composition. A bare `ImageComposeScene` has one owner for the whole process,
+ * never cleared, so a test that composes this function there provides its own
+ * `LocalViewModelStoreOwner` and clears it.
+ *
+ * A new [config] closes the holder and builds a new one, whose camera opens once the old one has
+ * closed. A change to [plugins], including the new instances a recreated screen remembers, detaches
+ * the plugins no longer listed and attaches the new ones; never attach plugins from an effect keyed
+ * on the holder.
+ *
  * When [lifecycleOwner] is not null, the holder starts when it reaches STARTED and stops when it
  * drops below, and on every resume it re-checks the camera permission, so a permission granted in
- * the system dialog opens the camera with no retry. With a null owner the caller starts and stops
- * the holder. The holder closes when it leaves the composition, and a new [config] builds a new one.
+ * the system dialog opens the camera with no retry. A rotation's stop and start fall inside the
+ * holder's two-second grace, so a recording carries on. With a null owner the caller starts and
+ * stops the holder.
  */
 @Composable
 expect fun rememberCameraKStateHolder(
@@ -68,6 +86,7 @@ expect fun rememberCameraKStateHolder(
 ): CameraKStateHolder
 
 /** The default Compose path over an engine factory and an environment: this module's tests use it with a fake engine. */
+@OptIn(InternalCameraKApi::class)
 @CameraKEngineApi
 @Composable
 internal fun rememberCameraKStateHolder(
@@ -76,21 +95,34 @@ internal fun rememberCameraKStateHolder(
     lifecycleOwner: LifecycleOwner?,
     engineFactory: CameraEngineFactory,
     environment: CameraKEnvironment,
-    @Suppress("UNUSED_PARAMETER") viewModelStoreOwner: ViewModelStoreOwner? = LocalViewModelStoreOwner.current,
-): CameraKStateHolder = rememberLifecycleHolder(config, lifecycleOwner) {
-    CameraKStateHolder(config, engineFactory, plugins, environment)
+    viewModelStoreOwner: ViewModelStoreOwner? = LocalViewModelStoreOwner.current,
+): CameraKStateHolder = rememberLifecycleHolder(config, plugins, lifecycleOwner, viewModelStoreOwner) { c, p, after ->
+    CameraKStateHolder(c, engineFactory, p, environment, after)
 }
 
-/** Remembers the holder [create] builds for [config], drives it from [lifecycleOwner] and closes it on dispose. */
+/**
+ * Keeps the holder [factory] builds for [config]: in a [CameraKHolderViewModel] of
+ * [viewModelStoreOwner], or, without one, remembered and closed on dispose. Applies [plugins]
+ * changes and drives the holder from [lifecycleOwner].
+ */
 @Composable
 internal fun rememberLifecycleHolder(
     config: CameraConfiguration,
+    plugins: List<CameraKPlugin>,
     lifecycleOwner: LifecycleOwner?,
-    create: () -> CameraKStateHolder,
+    viewModelStoreOwner: ViewModelStoreOwner?,
+    factory: HolderFactory,
 ): CameraKStateHolder {
-    val holder = remember(config) { create() }
-    DisposableEffect(holder) {
-        onDispose { holder.close() }
+    val seed: (CameraConfiguration) -> CameraConfiguration = { it }
+    val holder: CameraKStateHolder
+    if (viewModelStoreOwner != null) {
+        val model = viewModel(viewModelStoreOwner, key = holderKey(currentCompositeKeyHashCode)) {
+            CameraKHolderViewModel()
+        }
+        holder = remember(model, config) { model.holderFor(config, plugins, seed, factory) }
+        LaunchedEffect(model, holder, plugins) { model.applyPlugins(plugins) }
+    } else {
+        holder = rememberDisposedHolder(config, plugins, seed, factory)
     }
     if (lifecycleOwner != null) {
         LifecycleStartEffect(holder, lifecycleOwner = lifecycleOwner) {
@@ -104,3 +136,35 @@ internal fun rememberLifecycleHolder(
     }
     return holder
 }
+
+// Without a ViewModelStoreOwner: remembered per config, closed when it leaves the composition.
+@OptIn(InternalCameraKApi::class)
+@Composable
+private fun rememberDisposedHolder(
+    config: CameraConfiguration,
+    plugins: List<CameraKPlugin>,
+    seed: (CameraConfiguration) -> CameraConfiguration,
+    factory: HolderFactory,
+): CameraKStateHolder {
+    val previous = remember { DisposedHolders() }
+    val holder = remember(config) {
+        val startAfter = previous.last?.closeCompletion
+        factory.create(if (previous.last == null) seed(config) else config, plugins, startAfter).also {
+            previous.last = it
+            previous.applied = plugins
+        }
+    }
+    DisposableEffect(holder) {
+        onDispose { holder.close() }
+    }
+    LaunchedEffect(holder, plugins) { previous.applied = holder.replacePlugins(previous.applied, plugins) }
+    return holder
+}
+
+// The holder last built in this composition and the plugins last applied to it.
+private class DisposedHolders {
+    var last: CameraKStateHolder? = null
+    var applied: List<CameraKPlugin> = emptyList()
+}
+
+private fun holderKey(compositeKey: Long): String = "com.kashif.cameraK.CameraKHolder:$compositeKey"

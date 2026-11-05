@@ -131,8 +131,10 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         engineFactory: CameraEngineFactory,
         plugins: List<CameraKPlugin>,
         environment: CameraKEnvironment,
-        @Suppress("UNUSED_PARAMETER") startAfter: Job?,
-    ) : this(config, engineFactory, plugins, environment)
+        startAfter: Job?,
+    ) : this(config, engineFactory, plugins, environment) {
+        previousClose.value = startAfter
+    }
 
     /** For `:cameraK`'s retained holder: the production constructor, starting after [startAfter]. */
     @InternalCameraKApi
@@ -140,8 +142,10 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         config: CameraConfiguration,
         platformContext: CameraKPlatformContext,
         plugins: List<CameraKPlugin>,
-        @Suppress("UNUSED_PARAMETER") startAfter: Job?,
-    ) : this(config, platformContext, plugins)
+        startAfter: Job?,
+    ) : this(config, platformContext, plugins) {
+        previousClose.value = startAfter
+    }
 
     /**
      * The 1.x constructor. [controllerFactory] runs in the first start, on [coroutineScope]'s
@@ -187,9 +191,20 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
 
     private val closing = atomic(false)
 
-    /** Completes once the engine has closed after [close]. Public only because `:cameraK` is another module. */
+    // Completed when the engine's closeAndJoin returns or throws; never when it outlives the bound.
+    private val engineClosed = Job()
+
+    /**
+     * Completes once the engine has closed after [close], so a holder built to replace this one can
+     * start its camera after this one has let it go. It stays incomplete when the engine does not
+     * close within the bound [close] waits. Public only because `:cameraK` is another module.
+     */
     @InternalCameraKApi
-    public val closeCompletion: Job = Job()
+    public val closeCompletion: Job
+        get() = engineClosed
+
+    // The closeCompletion of the holder this one replaces, until the first start has waited for it.
+    private val previousClose = atomic<Job?>(null)
 
     // Set when the first session reaches Ready: from then until close, the 1.x facade is live.
     private val facadeLive = atomic(false)
@@ -242,6 +257,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         readyState = readyState,
         desiredHardware = { desiredHardware.value },
         beforeReady = ::beforeReady,
+        awaitPreviousClose = ::awaitPreviousClose,
         hostStopGrace = { recording.awaitHostStopGrace() },
         hostStop = { recording.stopForHostStop() },
     )
@@ -409,11 +425,14 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         val closed = try {
             withTimeoutOrNull(ENGINE_CLOSE_TIMEOUT) {
                 engine.closeAndJoin()
+                engineClosed.complete()
                 commands.joinAll()
             }
         } catch (e: Throwable) {
             if (e.isFatal()) throw e
             CameraKLogger.e(TAG, "Closing the camera engine failed; the holder closed without it", e)
+            // The close ended, by throwing: nothing is left to wait for.
+            engineClosed.complete()
             return
         }
         if (closed == null) {
@@ -432,6 +451,19 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     public suspend fun closeAndJoin() {
         close()
         scope.coroutineContext.job.join()
+    }
+
+    // A holder built to replace another opens the camera only once the old engine has let it go, or
+    // after PREVIOUS_CLOSE_TIMEOUT: an engine that never closes cannot keep this one from starting.
+    private suspend fun awaitPreviousClose() {
+        val previous = previousClose.value ?: return
+        if (withTimeoutOrNull(PREVIOUS_CLOSE_TIMEOUT) { previous.join() } == null) {
+            CameraKLogger.w(
+                TAG,
+                "The camera this holder replaces did not close within $PREVIOUS_CLOSE_TIMEOUT; starting anyway",
+            )
+        }
+        previousClose.value = null
     }
 
     /** Runs [block] in the holder's scope, which [close] cancels. For `bindToLifecycle`. */
