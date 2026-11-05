@@ -32,6 +32,7 @@ import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.recording.RecordingEndReason
+import com.kashif.cameraK.recording.SHUTDOWN_STOP_TIMEOUT
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.map
 import com.kashif.cameraK.state.CameraConfiguration
@@ -308,7 +309,9 @@ internal class DesktopCameraEngine(
     /**
      * Terminal and non-blocking. Pending captures complete with `Failure(Closed)` at once. A live
      * recording is finalized first (§2.3 rule 7), on its own thread, and the camera is released
-     * after it: the grab loop runs until then.
+     * after it: the grab loop runs until then. A recorder whose `stop()` has not returned within
+     * [SHUTDOWN_STOP_TIMEOUT] is given up: the recording's `Finalized` is `Timeout(RECORD_STOP)`
+     * with reason ERROR, its thread is left to end by itself, and the camera is released.
      */
     override fun close() {
         val live = synchronized(lock) {
@@ -329,6 +332,15 @@ internal class DesktopCameraEngine(
             return
         }
         live.requestStop(RecordingEndReason.SHUTDOWN)
+        scope.launch {
+            delay(SHUTDOWN_STOP_TIMEOUT)
+            CameraKLogger.e(
+                TAG,
+                "A recorder did not stop within $SHUTDOWN_STOP_TIMEOUT of close; the recording ends as a " +
+                    "Timeout and the camera is released without it",
+            )
+            live.abandon(CameraKError.Timeout(CameraOperation.RECORD_STOP))
+        }
         live.finalized.invokeOnCompletion { scope.cancel() }
     }
 
@@ -524,7 +536,7 @@ internal class DesktopCameraEngine(
      * to move, and the next start opens what its own selection names. A device that fails to open
      * returns its open error, and the engine reopens the device it had. A device that opens but
      * delivers no frame within [NO_FRAME_TIMEOUT] is given up the same way, staying Open, and the
-     * switch returns `Timeout(LENS)`, or `Timeout(DEVICE_TYPE)` when only the device type changed.
+     * switch returns `Timeout(LENS)`, or `Timeout(DEVICE_TYPE)` when the switch keeps the lens.
      */
     override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> {
         if (isClosed()) return CameraKResult.Failure(CameraKError.Closed)
@@ -854,13 +866,11 @@ internal class DesktopCameraEngine(
     private fun isClosed(): Boolean = synchronized(lock) { closed }
 
     /**
-     * DEVICE_TYPE when a switch from [from] to [to] keeps the lens and changes only the device type,
-     * LENS otherwise (Decision 7).
+     * DEVICE_TYPE when a switch from [from] to [to] keeps the lens, LENS otherwise (Decision 7): the
+     * holder's `switchOperation` rule, so two webcams of one lens and device type are DEVICE_TYPE too.
      */
-    private fun switchOperation(from: LensInfo, to: LensInfo): CameraOperation = when {
-        from.lens == to.lens && from.deviceType != to.deviceType -> CameraOperation.DEVICE_TYPE
-        else -> CameraOperation.LENS
-    }
+    private fun switchOperation(from: LensInfo, to: LensInfo): CameraOperation =
+        if (from.lens == to.lens) CameraOperation.DEVICE_TYPE else CameraOperation.LENS
 
     /** One start: a generation (§2.3 rule 2). */
     private class Session(val desired: DesiredHardware) {

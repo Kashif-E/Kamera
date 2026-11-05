@@ -66,6 +66,9 @@ internal class DesktopRecording(
     /** The recording's outcome, completed once the recorder is released. */
     val finalized = CompletableDeferred<CameraKResult<RecordedVideo>>()
 
+    // Set by the recording's one end: its finish, or the engine giving up on it.
+    private val endClaimed = atomic(false)
+
     @Volatile private var clock: RecordingClock? = null
     private lateinit var job: Job
 
@@ -78,9 +81,6 @@ internal class DesktopRecording(
     private var framesWritten = 0
     private var lastFrameNumber = -1L
     private var lastTimestampMicros = 0L
-
-    /** Why the recording ended (the first reason wins); null while it runs. */
-    val endedBy: RecordingEndReason? get() = endReason.value
 
     /** Whether the recorder started and the engine announced it. */
     val isStarted: Boolean get() = clock != null && started.isCompleted
@@ -126,6 +126,19 @@ internal class DesktopRecording(
     fun requestStop(reason: RecordingEndReason) {
         endReason.compareAndSet(null, reason)
         job.cancel()
+    }
+
+    /**
+     * Ends a recording whose recorder never finished stopping, with [error]: an announced recording's
+     * one `Finalized` is that failure with reason ERROR. Its thread is left to end by itself, and
+     * whatever it finishes with later is dropped. Does nothing once the recording has ended.
+     */
+    fun abandon(error: CameraKError) {
+        if (!endClaimed.compareAndSet(false, true)) return
+        val failure = CameraKResult.Failure(error)
+        if (announced) listener.onFinalized(this, failure, RecordingEndReason.ERROR)
+        started.complete(failure)
+        finalized.complete(failure)
     }
 
     /** Pauses the clock at the engine's time; true when it was recording, false when already paused. */
@@ -258,6 +271,10 @@ internal class DesktopRecording(
                     CameraKError.Internal(IllegalStateException("The recording ended before any frame was written")),
                 )
             }
+        }
+        if (!endClaimed.compareAndSet(false, true)) {
+            CameraKLogger.w(TAG, "A recorder finished stopping after the engine gave up on it; its outcome is dropped")
+            return
         }
         val kept = (result as? CameraKResult.Failure)?.error?.let {
             it is CameraKError.Storage &&

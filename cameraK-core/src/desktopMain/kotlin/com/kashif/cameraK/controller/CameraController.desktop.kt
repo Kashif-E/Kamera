@@ -19,7 +19,6 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
-import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
@@ -448,10 +447,10 @@ actual class CameraController internal constructor(
 
     /**
      * Finalizes the engine's recording and returns its result. A recording this facade started that
-     * ended by itself (a limit, an error, a lost camera) is the next stop's result, once, as in 1.x;
-     * a recording started after it replaces it. An error when nothing is left to claim, the file is
-     * not playable, or the session's stop ended the recording (its file is kept, but 1.x reported
-     * that as an error).
+     * ended by itself (a limit, an error, a lost camera, the session's stop) is the next stop's
+     * result, once, as in 1.x; a recording started after it replaces it. A kept, playable file is a
+     * success with its path, whatever ended the recording, as on Android (W6 G4). An error when
+     * nothing is left to claim or the file is not playable.
      */
     actual suspend fun stopRecording(): VideoCaptureResult {
         val mine = unclaimed.getAndSet(null)
@@ -461,14 +460,7 @@ actual class CameraController internal constructor(
             val result = when {
                 stopped !is CameraKResult.Failure || stopped.error !is CameraKError.InvalidState -> stopped.asLegacy()
                 // Off the engine's books once it is finalizing, so its outcome is at most a moment away.
-                mine != null -> mine.finalized.await().let { outcome ->
-                    // 1.x reported a recording the session's stop ended as an error, never a success.
-                    if (outcome is CameraKResult.Success && mine.endedBy == RecordingEndReason.SHUTDOWN) {
-                        VideoCaptureResult.Error(IllegalStateException("The camera stopped during the recording"))
-                    } else {
-                        outcome.asLegacy()
-                    }
-                }
+                mine != null -> mine.finalized.await().asLegacy()
                 else -> VideoCaptureResult.Error(IllegalStateException("No active recording"))
             }
             claimed = true
