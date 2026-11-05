@@ -7,6 +7,7 @@ import android.util.Size
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.video.VideoCapture
 import com.kashif.cameraK.controller.AndroidCameraEngine
 import com.kashif.cameraK.engine.FakeAndroidPlatform.Companion.desired
 import com.kashif.cameraK.enums.AspectRatio
@@ -23,6 +24,7 @@ import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.testing.TestFrame
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKPlatformApi
+import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -36,6 +38,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -409,6 +412,100 @@ class FramePipelineTest {
         assertEquals(0, rejectedFrames, "a rejected registration received a frame")
         assertEquals(1, acceptedFrames, "setup: the accepted registration received the frame")
         assertFalse(rejected.active.value, "a rejected registration became active")
+        engine.closeAndJoin()
+    }
+
+    /**
+     * Frame isolation (W7b must-fix 1): a pooled slot goes back to the pool only at its last release,
+     * so the frames delivered after it cannot write over a frame another registration still retains.
+     */
+    @Test
+    fun aRetainedFrameKeepsItsBytesAfterAnotherRegistrationReleasesItsSlot() = runTest {
+        val engine = openEngine()
+        var retained: RetainedFrame? = null
+        val seenBySecond = mutableListOf<ByteArray>()
+        engine.frames.register(FrameSpec(maxRetained = 1)) { frame -> if (retained == null) retained = frame.retain() }
+        engine.frames.register { seenBySecond += it.firstPlaneBytes() }
+        platform.settle(testScheduler)
+        val first = FakeImageProxy.yuv(seed = 1)
+
+        deliver(first)
+        platform.settle(testScheduler)
+        val later = (2..FRAMES).map { FakeImageProxy.yuv(seed = it) }
+        later.forEach {
+            deliver(it)
+            platform.settle(testScheduler)
+        }
+
+        assertEquals(
+            (listOf(first) + later).map { it.firstPlane.toList() },
+            seenBySecond.map { it.toList() },
+            "setup: the releasing registration saw every frame's own bytes",
+        )
+        val kept = assertNotNull(retained, "setup: the retaining registration kept the first frame")
+        assertContentEquals(
+            first.firstPlane,
+            kept.firstPlaneBytes(),
+            "the retained frame's slot went back to the pool at the other registration's release",
+        )
+        kept.close()
+        engine.closeAndJoin()
+    }
+
+    /** W7b must-fix 2: a start on the same camera binds the ImageAnalysis a registration made while stopped. */
+    @Test
+    fun aStartOnTheSameCameraBindsTheAnalysisARegistrationMadeWhileStoppedAskedFor() = runTest {
+        val engine = openEngine(CameraConfiguration())
+        assertTrue(boundAnalyses().isEmpty(), "setup: the first bind had an ImageAnalysis")
+        engine.stop()
+        platform.settle(testScheduler)
+        var frames = 0
+        val registration = engine.frames.register { frames++ }
+        platform.settle(testScheduler)
+        assertFalse(registration.active.value, "setup: a registration while stopped is active with no ImageAnalysis")
+
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+
+        assertEquals(1, boundAnalyses().size, "the start on the same camera left out the ImageAnalysis")
+        assertTrue(registration.active.value, "the registration made while stopped is not active after the start")
+        deliver(FakeImageProxy.yuv())
+        platform.settle(testScheduler)
+        assertEquals(1, frames, "the registration made while stopped got no frame after the start")
+        engine.closeAndJoin()
+    }
+
+    /**
+     * W7b must-fix 3: a prepared VideoCapture stays bound when its recording ends, so no rebind of the
+     * stop's includes the ImageAnalysis a registration made during the recording asked for: the end of
+     * the recording binds it, once.
+     */
+    @Test
+    fun theEndOfAPreparedRecordingBindsTheAnalysisARegistrationMadeDuringItAskedFor() = runTest {
+        val engine = openEngine(CameraConfiguration())
+        assertEquals(CameraKResult.Success(Unit), engine.prepareRecording(VideoConfiguration()))
+        platform.settle(testScheduler)
+        val prepared = platform.backend.binding.bound.filterIsInstance<VideoCapture<*>>().single()
+        val (recording, _) = startRecording(platform, engine)
+        val binds = platform.backend.binding.bindCalls
+        val waiting = engine.frames.register { }
+        platform.settle(testScheduler)
+        assertEquals(binds, platform.backend.binding.bindCalls, "setup: a registration rebound during the recording")
+
+        val stop = async { engine.stopRecording() }
+        platform.settle(testScheduler)
+        recording.finalize()
+        platform.settle(testScheduler)
+        assertIs<CameraKResult.Success<*>>(stop.await(), "setup: the stop")
+
+        assertEquals(binds + 1, platform.backend.binding.bindCalls, "the prepared recording's end did not bind once")
+        assertEquals(1, boundAnalyses().size, "the prepared recording's end left out the ImageAnalysis")
+        assertTrue(waiting.active.value, "the registration made during the recording is not active once bound")
+        assertSame(
+            prepared,
+            platform.backend.binding.bound.filterIsInstance<VideoCapture<*>>().single(),
+            "setup: the prepared VideoCapture stays bound",
+        )
         engine.closeAndJoin()
     }
 

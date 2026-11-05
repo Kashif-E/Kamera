@@ -68,13 +68,17 @@ internal class FakeImageProxy private constructor(
     }
 
     companion object {
-        /** A YUV_420_888 frame whose luma is 0, 1, 2… and whose chroma is neutral grey. */
+        /**
+         * A YUV_420_888 frame whose luma is [seed], [seed] + 1, [seed] + 2… and whose chroma is neutral
+         * grey. Frames given different seeds hold different bytes.
+         */
         fun yuv(
             width: Int = 8,
             height: Int = 4,
             rotationDegrees: Int = 0,
             cropRect: Rect = Rect(0, 0, width, height),
             timestampNanos: Long = 0,
+            seed: Int = 0,
         ): FakeImageProxy {
             val chroma = (width / 2) * (height / 2)
             return FakeImageProxy(
@@ -85,7 +89,7 @@ internal class FakeImageProxy private constructor(
                 cropRect,
                 timestampNanos,
                 listOf(
-                    PlaneBytes(ByteArray(width * height) { it.toByte() }, width, 1),
+                    PlaneBytes(ByteArray(width * height) { (it + seed).toByte() }, width, 1),
                     PlaneBytes(ByteArray(chroma) { 128.toByte() }, width / 2, 1),
                     PlaneBytes(ByteArray(chroma) { 128.toByte() }, width / 2, 1),
                 ),
