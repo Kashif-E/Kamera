@@ -140,4 +140,50 @@ class ConfigChangeGraceTest {
         assertEquals(1, rig.fake.startCalls, "the start called the open engine again: ${rig.fake.calls}")
         assertIs<CameraKState.Ready>(rig.holder.cameraState.value)
     }
+
+    // On a standard dispatcher the stop and start of a recreation can both land before the reconciler
+    // runs, so it sees only the later Running and never the stop between them.
+    @Test
+    fun aStopAndStartTheReconcilerSeesTogetherContinueTheRecording() = runTest {
+        val (rig, recording) = recordingRig()
+        val states = mutableListOf<CameraKState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            rig.holder.cameraState.collect { states += it }
+        }
+
+        rig.holder.stop()
+        rig.holder.start()
+        runCurrent()
+        advanceTimeBy(CONFIG_CHANGE_GRACE * 2)
+        runCurrent()
+
+        val live = assertIs<RecordingState.Recording>(rig.holder.recordingState.value, "the recording did not survive")
+        assertEquals(recording.recordingId, live.recordingId)
+        assertTrue(states.all { it is CameraKState.Ready }, "the stop and start published $states")
+        assertEquals(1, rig.fake.startCalls, "the start called the open engine again: ${rig.fake.calls}")
+        assertFalse("stop" in rig.fake.calls, "the camera stopped under the recording: ${rig.fake.calls}")
+    }
+
+    @Test
+    fun aStopAndStartTheReconcilerSeesTogetherKeepTheSessionWithoutARecording() = runTest {
+        val fake = FakeCameraEngine()
+        val holder = CameraKStateHolder(
+            CameraConfiguration(),
+            CameraEngineFactory { _, _ -> fake },
+            emptyList(),
+            cameraKTestEnvironment(),
+        )
+        holder.start()
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value, "the holder did not reach Ready")
+        val states = mutableListOf<CameraKState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { holder.cameraState.collect { states += it } }
+
+        holder.stop()
+        holder.start()
+        runCurrent()
+
+        assertTrue(states.all { it is CameraKState.Ready }, "the stop and start published $states")
+        assertEquals(listOf("start"), fake.calls, "the open session was started again: ${fake.calls}")
+    }
 }
