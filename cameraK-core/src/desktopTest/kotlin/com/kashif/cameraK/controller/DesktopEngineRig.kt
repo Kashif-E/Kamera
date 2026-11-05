@@ -10,6 +10,7 @@ import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.EngineRuntime
 import com.kashif.cameraK.engine.Tracer
 import com.kashif.cameraK.engine.WorkerDispatcher
+import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -18,9 +19,12 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber
+import java.awt.image.BufferedImage
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
@@ -66,10 +70,14 @@ internal class DesktopEngineRig(
     /** How the next recorder behaves: the scripted recorder for its output path. */
     var recorderScript: (String) -> ScriptedFrameRecorder = { ScriptedFrameRecorder(it, workers) }
 
+    /** How the engines write a still to its file. */
+    var writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage
+
     /** The media an engine of the rig writes with: under [home], into [recorders]. */
     fun media(): DesktopMedia = DesktopMedia(
         userHome = home,
         recorderFactory = { path, _ -> recorderScript(path).also { recorders += it } },
+        writeCapture = { image, format, file -> writeCapture(image, format, file) },
     )
 
     /** The device the engine last opened the camera on, as a grabber factory sees it. */
@@ -159,7 +167,16 @@ internal class TrackedWorkers {
     @Volatile var epoch = 0L
         private set
 
+    private val gates = ConcurrentHashMap<String, WorkerGate>()
+
+    /**
+     * The next worker named [name] runs no task until the returned gate opens. A held task counts as
+     * running, so a test does not [DesktopEngineRig.settle] until it opened the gate.
+     */
+    fun holdNextWorker(name: String): WorkerGate = WorkerGate().also { gates[name] = it }
+
     fun newWorker(name: String): WorkerDispatcher {
+        val gate = gates.remove(name)?.also { it.taken = true }
         val executor = object : ThreadPoolExecutor(
             1,
             1,
@@ -171,7 +188,7 @@ internal class TrackedWorkers {
             override fun execute(command: Runnable) {
                 change { queued++ }
                 try {
-                    super.execute(command)
+                    super.execute(gate?.let { held -> Runnable { held.await() } then command } ?: command)
                 } catch (e: RejectedExecutionException) {
                     change { queued-- }
                     throw e
@@ -213,6 +230,11 @@ internal class TrackedWorkers {
         }
     }
 
+    private infix fun Runnable.then(next: Runnable) = Runnable {
+        run()
+        next.run()
+    }
+
     private inline fun change(update: () -> Unit) = lock.withLock {
         update()
         epoch++
@@ -222,6 +244,18 @@ internal class TrackedWorkers {
     private companion object {
         const val QUIET_TIMEOUT_SECONDS = 10L
     }
+}
+
+/** Holds a worker's tasks until [open]; [taken] once a worker was created behind it. */
+internal class WorkerGate {
+    private val opened = CountDownLatch(1)
+
+    @Volatile var taken = false
+        internal set
+
+    fun open() = opened.countDown()
+
+    internal fun await() = opened.await()
 }
 
 /**

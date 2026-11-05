@@ -13,7 +13,8 @@ import kotlin.concurrent.withLock
  * file, as FFmpeg opens it; each `record()` appends [bytesPerFrame] bytes to it, so the file grows
  * as a real one does, unless [failRecord] gives an exception for that frame's index. With
  * [holdStop], `stop()` waits until [finishStop], the way a test holds a finalization; the rig
- * counts that wait as quiet ([parkedStops]).
+ * counts that wait as quiet ([parkedStops]). [onStart] runs first in each `start()`, on the
+ * recording's thread, before a scripted [startFailure] is thrown.
  */
 internal class ScriptedFrameRecorder(
     private val path: String,
@@ -21,6 +22,7 @@ internal class ScriptedFrameRecorder(
     private val bytesPerFrame: Int = 1_000,
     private val failRecord: (Int) -> Exception? = { null },
     private val startFailure: Exception? = null,
+    private val onStart: () -> Unit = {},
 ) : FrameRecorder() {
     init {
         // The rate createFrameRecorder gives the real encoder.
@@ -48,6 +50,7 @@ internal class ScriptedFrameRecorder(
     val file: File get() = File(path)
 
     override fun start() {
+        onStart()
         sizeAtStart = imageWidth to imageHeight
         startFailure?.let { throw it }
         file.writeBytes(ByteArray(0))
