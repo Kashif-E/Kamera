@@ -36,7 +36,20 @@ internal fun interface BarcodeDecoder {
 /** Makes the decoder for one frame registration. */
 internal fun interface BarcodeDecoderFactory {
     fun create(formats: Set<BarcodeFormat>): BarcodeDecoder
+
+    /** The formats in [formats] that this factory's decoders cannot read, and ignore. */
+    fun unreadable(formats: Set<BarcodeFormat>): Set<BarcodeFormat> = emptySet()
 }
 
-/** ZXing on Android and desktop, Vision on iOS. */
+/** The platform's decoders: ZXing on Android and desktop, Vision on iOS. */
+internal object PlatformBarcodeDecoders : BarcodeDecoderFactory {
+    override fun create(formats: Set<BarcodeFormat>): BarcodeDecoder = createBarcodeDecoder(formats)
+
+    override fun unreadable(formats: Set<BarcodeFormat>): Set<BarcodeFormat> = unreadableBarcodeFormats(formats)
+}
+
+/** ZXing on Android and desktop, Vision on iOS. A format it cannot read is ignored. */
 internal expect fun createBarcodeDecoder(formats: Set<BarcodeFormat>): BarcodeDecoder
+
+/** The formats in [formats] that [createBarcodeDecoder]'s decoder cannot read. */
+internal expect fun unreadableBarcodeFormats(formats: Set<BarcodeFormat>): Set<BarcodeFormat>

@@ -9,11 +9,13 @@ import com.google.zxing.Result
 import com.google.zxing.ResultMetadataType
 import com.google.zxing.common.HybridBinarizer
 import com.kashif.cameraK.frames.FrameRect
-import com.kashif.cameraK.utils.CameraKLogger
 import java.util.EnumMap
 import com.google.zxing.BarcodeFormat as ZxingFormat
 
 internal actual fun createBarcodeDecoder(formats: Set<BarcodeFormat>): BarcodeDecoder = ZxingBarcodeDecoder(formats)
+
+internal actual fun unreadableBarcodeFormats(formats: Set<BarcodeFormat>): Set<BarcodeFormat> =
+    formats.filterNotTo(mutableSetOf()) { it in ZxingLumaReader.ZXING_FORMATS }
 
 /**
  * ZXing over the plugin's luma, on Android and desktop. It cuts out the image's area, downscales
@@ -151,18 +153,14 @@ internal fun interface LumaReader {
 }
 
 /**
- * [LumaReader] over ZXing's MultiFormatReader, reading [formats]. "No readable code" in any of
- * ZXing's forms (not found, checksum, format) is an empty result, not a failure, and is not logged.
+ * [LumaReader] over ZXing's MultiFormatReader, reading [formats]; a format ZXing cannot read is
+ * ignored, and the plugin logs that once. "No readable code" in any of ZXing's forms (not found,
+ * checksum, format) is an empty result, not a failure, and is not logged.
  */
 internal class ZxingLumaReader(formats: Set<BarcodeFormat>) : LumaReader {
     private val possible = formats.mapNotNull { ZXING_FORMATS[it] }
     private val fastReader = reader(tryHarder = false)
     private val slowReader = reader(tryHarder = true)
-
-    init {
-        val ignored = formats.filterNot { it in ZXING_FORMATS }
-        if (ignored.isNotEmpty()) CameraKLogger.w(TAG, "ZXing cannot read $ignored; those formats are ignored")
-    }
 
     override fun read(source: LumaSource, tryHarder: Boolean, inverted: Boolean): List<ReadCode> {
         val luminance =
@@ -189,9 +187,7 @@ internal class ZxingLumaReader(formats: Set<BarcodeFormat>) : LumaReader {
         )
     }
 
-    private companion object {
-        const val TAG = "QRScanner"
-
+    internal companion object {
         val ZXING_FORMATS: Map<BarcodeFormat, ZxingFormat> = mapOf(
             BarcodeFormat.QR_CODE to ZxingFormat.QR_CODE,
             BarcodeFormat.AZTEC to ZxingFormat.AZTEC,
@@ -207,10 +203,8 @@ internal class ZxingLumaReader(formats: Set<BarcodeFormat>) : LumaReader {
             BarcodeFormat.CODABAR to ZxingFormat.CODABAR,
             BarcodeFormat.ITF to ZxingFormat.ITF,
         )
-        val FORMATS_BY_ZXING: Map<ZxingFormat, BarcodeFormat> = ZXING_FORMATS.entries.associate { (ours, zxing) ->
-            zxing to
-                ours
-        }
+        private val FORMATS_BY_ZXING: Map<ZxingFormat, BarcodeFormat> =
+            ZXING_FORMATS.entries.associate { (ours, zxing) -> zxing to ours }
     }
 }
 

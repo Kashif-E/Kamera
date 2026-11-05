@@ -47,7 +47,15 @@ public class QRScannerPlugin internal constructor(
     private val decoderFactory: BarcodeDecoderFactory,
 ) : CameraKPlugin {
     /** A scanner for [config]. */
-    public constructor(config: QRScannerConfig = QRScannerConfig()) : this(config, ::createBarcodeDecoder)
+    public constructor(config: QRScannerConfig = QRScannerConfig()) : this(config, PlatformBarcodeDecoders)
+
+    init {
+        // Once per scanner, not per session: the decoder is made again for each Ready session.
+        val unreadable = decoderFactory.unreadable(config.formats)
+        if (unreadable.isNotEmpty()) {
+            CameraKLogger.w(TAG, "This platform cannot read $unreadable; those formats are ignored")
+        }
+    }
 
     private val paused = MutableStateFlow(false)
 

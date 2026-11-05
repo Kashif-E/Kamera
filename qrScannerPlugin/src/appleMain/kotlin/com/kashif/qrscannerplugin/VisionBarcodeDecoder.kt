@@ -54,11 +54,14 @@ import platform.posix.memcpy
 
 internal actual fun createBarcodeDecoder(formats: Set<BarcodeFormat>): BarcodeDecoder = VisionBarcodeDecoder(formats)
 
+internal actual fun unreadableBarcodeFormats(formats: Set<BarcodeFormat>): Set<BarcodeFormat> =
+    formats.filterNotTo(mutableSetOf()) { it in VisionBarcodeDecoder.SYMBOLOGIES }
+
 /**
  * Vision over the plugin's luma, on iOS: one 8-bit, one-plane pixel buffer per decoded frame, built
  * from the plugin's copy, so the frame's own sample buffer is never held. Vision reads only the
  * configured symbologies, inside the image's area (its region of interest). iOS reads UPC-A codes
- * as EAN-13, so [BarcodeFormat.UPC_A] is ignored, and logged once.
+ * as EAN-13, so [BarcodeFormat.UPC_A] is ignored; the plugin logs that once.
  */
 internal class VisionBarcodeDecoder(
     formats: Set<BarcodeFormat>,
@@ -67,11 +70,6 @@ internal class VisionBarcodeDecoder(
     private val pinnedRevision: ULong? = null,
 ) : BarcodeDecoder {
     private val requested: List<Any?> = formats.flatMap { SYMBOLOGIES[it].orEmpty() }
-
-    init {
-        val ignored = formats.filterNot { it in SYMBOLOGIES }
-        if (ignored.isNotEmpty()) CameraKLogger.w(TAG, "Vision cannot read $ignored; those formats are ignored")
-    }
 
     override fun decode(image: LumaImage): List<Barcode> {
         if (requested.isEmpty()) return emptyList()
@@ -176,8 +174,8 @@ internal class VisionBarcodeDecoder(
         return Barcode(payloadStringValue, null, format, geometry.toImage(corners))
     }
 
-    private companion object {
-        const val TAG = "QRScanner"
+    internal companion object {
+        private const val TAG = "QRScanner"
 
         val SYMBOLOGIES: Map<BarcodeFormat, List<Any?>> = mapOf(
             BarcodeFormat.QR_CODE to listOf(VNBarcodeSymbologyQR),
@@ -193,7 +191,7 @@ internal class VisionBarcodeDecoder(
             BarcodeFormat.CODABAR to listOf(VNBarcodeSymbologyCodabar),
             BarcodeFormat.ITF to listOf(VNBarcodeSymbologyI2of5, VNBarcodeSymbologyITF14),
         )
-        val FORMATS_BY_SYMBOLOGY: Map<Any?, BarcodeFormat> =
+        private val FORMATS_BY_SYMBOLOGY: Map<Any?, BarcodeFormat> =
             SYMBOLOGIES.entries.flatMap { (format, names) -> names.map { it to format } }.toMap()
     }
 }
