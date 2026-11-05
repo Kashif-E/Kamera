@@ -92,6 +92,19 @@ class AspectRatioTest {
     }
 
     /**
+     * A recording holds its quality's preset (w6 decision G2), so a still taken meanwhile comes from a
+     * 16:9 frame: a 4:3 configuration still gets a centred 4:3 crop of it, never the 16:9 frame.
+     */
+    @Test
+    fun aFourThreeStillFromAWiderFrameIsCroppedToFourThree() = driver.runCase {
+        val image = capture(AspectRatio.RATIO_4_3, orientedJpeg(width = 64, height = 36, orientation = 1))
+
+        val file = imageFileProperties(image.path)
+        assertEquals(48 to 36, file.width to file.height, "the 4:3 file's pixels")
+        assertEquals(48 to 36, image.width to image.height, "the 4:3 capture's reported size")
+    }
+
+    /**
      * The preview layer fills the largest centred box of the requested aspect ratio inside its host,
      * with ResizeAspectFill (w6 decision G1): the Photo preset's 4:3 frame is cropped as the still is,
      * so the preview shows what a capture keeps. The box is upright under a portrait interface, wide
