@@ -11,8 +11,14 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.kashif.cameraK.frames.FrameRect
 import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 internal actual fun platformTextRecognizers(config: OcrConfig): TextRecognizerFactory = AndroidTextRecognizers()
 
@@ -62,10 +68,50 @@ internal class AndroidTextRecognizers(
     private val decode: (String) -> DecodedStill? = ::decodeStill,
     private val liveTimeoutMillis: Long = LIVE_TIMEOUT_MILLIS,
 ) : TextRecognizerFactory {
-    override fun live(level: OcrLevel): LiveTextRecognizer =
-        TODO("OC': ML Kit live recognizer over $newClient, $liveTimeoutMillis")
+    override fun live(level: OcrLevel): LiveTextRecognizer = MlKitLiveRecognizer(newClient(), liveTimeoutMillis)
 
-    override fun still(level: OcrLevel): StillTextRecognizer = TODO("OC': ML Kit still recognizer over $decode")
+    override fun still(level: OcrLevel): StillTextRecognizer = MlKitStillRecognizer(newClient, decode)
+}
+
+private class MlKitLiveRecognizer(private val client: MlKitTextClient, private val timeoutMillis: Long) :
+    LiveTextRecognizer {
+    private var nv21 = ByteArray(0)
+    private var nv21Width = -1
+    private var nv21Height = -1
+
+    override fun recognize(image: LumaImage): List<FoundBlock> {
+        val lumaBytes = image.width * image.height
+        if (image.width != nv21Width || image.height != nv21Height) {
+            val chromaBytes = 2 * ((image.width + 1) / 2) * ((image.height + 1) / 2)
+            nv21 = ByteArray(lumaBytes + chromaBytes)
+            nv21.fill(NEUTRAL_CHROMA, lumaBytes)
+            nv21Width = image.width
+            nv21Height = image.height
+        }
+        image.bytes.copyInto(nv21, 0, 0, lumaBytes)
+        return client.recognizeNv21(nv21, image.width, image.height, image.rotationDegrees).awaitBlocking(timeoutMillis)
+    }
+
+    override fun close() = client.close()
+}
+
+private class MlKitStillRecognizer(
+    private val newClient: () -> MlKitTextClient,
+    private val decode: (String) -> DecodedStill?,
+) : StillTextRecognizer {
+    private var client: MlKitTextClient? = null
+
+    override suspend fun recognize(path: String): List<FoundBlock> {
+        val still = decode(path) ?: throw IOException("The image could not be decoded")
+        require(still.bitmap.width > 0 && still.bitmap.height > 0) { "Invalid bitmap dimensions" }
+        val created = newClient().also { client = it }
+        return created.recognize(still.bitmap, still.rotationDegrees).await()
+    }
+
+    override fun close() {
+        client?.close()
+        client = null
+    }
 }
 
 internal fun decodeStill(path: String): DecodedStill? {
@@ -89,11 +135,34 @@ internal fun decodeStill(path: String): DecodedStill? {
     return DecodedStill(bitmap, rotation)
 }
 
-// The listeners only resume, so they run on whichever thread completes the task instead of being
-// posted to the main thread.
+// The listeners only resume or count down, so they run on whichever thread completes the task
+// instead of being posted to the main thread.
 private val DirectExecutor = Executor(Runnable::run)
 
+// Cancelling the caller resumes at once; the task's late result is then dropped.
+private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
+    addOnSuccessListener(DirectExecutor) { continuation.resume(it) }
+    addOnFailureListener(DirectExecutor) { continuation.resumeWithException(it) }
+}
+
+// Live frames run on the frame registration's worker, never the main thread, so they wait for ML
+// Kit there. Tasks.await would refuse Robolectric's test thread, which is the main one.
+private fun <T> Task<T>.awaitBlocking(timeoutMillis: Long): T {
+    if (!isComplete) {
+        val done = CountDownLatch(1)
+        addOnCompleteListener(DirectExecutor) { done.countDown() }
+        if (!done.await(timeoutMillis, TimeUnit.MILLISECONDS)) {
+            throw TimeoutException("ML Kit did not answer within $timeoutMillis ms")
+        }
+    }
+    exception?.let { throw it }
+    check(!isCanceled) { "ML Kit cancelled the recognition" }
+    return result
+}
+
 private const val TAG = "CameraK"
+
+private const val NEUTRAL_CHROMA: Byte = 128.toByte()
 
 // ML Kit answers a frame in tens of milliseconds; a frame it has not answered in this long is
 // abandoned, so the registration's worker moves on.

@@ -3,12 +3,24 @@ package com.kashif.ocrPlugin
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.kashif.cameraK.capture.CapturedImage
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.frames.FrameAnalyzer
+import com.kashif.cameraK.frames.FrameFormat
+import com.kashif.cameraK.frames.FrameRegistration
+import com.kashif.cameraK.frames.FrameSpec
+import com.kashif.cameraK.frames.isFatalAnalyzerFailure
 import com.kashif.cameraK.plugin.CameraKPluginContext
 import com.kashif.cameraK.plugin.PluginStatus
+import com.kashif.cameraK.plugin.launchPerSession
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraKPlugin
+import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -16,6 +28,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Recognizes text: live, in the holder's analysis frames while a session is Ready, and once, in a
@@ -65,17 +84,42 @@ public class OcrPlugin internal constructor(
      */
     public val results: Flow<RecognizedText> = _results.asSharedFlow()
 
-    override fun onAttach(context: CameraKPluginContext): Unit = TODO("OC': live recognition through the frame source")
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun onAttach(context: CameraKPluginContext) {
+        val registration = MutableStateFlow<FrameRegistration?>(null)
+        context.scope.launch {
+            val own = registration.flatMapLatest { current ->
+                current?.active?.map { active -> if (active) PluginStatus.Running else PluginStatus.Paused }
+                    ?: flowOf(PluginStatus.Idle)
+            }
+            combine(context.failure, paused, own) { failure, isPaused, ownStatus ->
+                when {
+                    failure != null -> PluginStatus.Failed(failure)
+                    isPaused -> PluginStatus.Paused
+                    else -> ownStatus
+                }
+            }.collect { _status.value = it }
+        }
+        context.launchPerSession {
+            paused.collectLatest { isPaused ->
+                if (!isPaused) recognizeLive(context, registration)
+            }
+        }
+    }
 
     override fun onDetach() {
         _status.value = PluginStatus.Idle
     }
 
     /** Stops live recognition: the plugin closes its frame registration and holds no frames. */
-    public fun pause(): Unit = TODO("OC': pause")
+    public fun pause() {
+        paused.value = true
+    }
 
     /** Starts live recognition again after [pause], at once if a session is Ready. */
-    public fun resume(): Unit = TODO("OC': resume")
+    public fun resume() {
+        paused.value = false
+    }
 
     /**
      * Reads the text in [image] once, at [level], off the caller's thread, and releases the
@@ -85,11 +129,96 @@ public class OcrPlugin internal constructor(
      *   throwable when the image cannot be read or the recognizer fails. It never throws for either.
      * @sample com.kashif.ocrPlugin.recognizeStillSample
      */
+    @OptIn(InternalCameraKApi::class)
     public suspend fun recognize(
         image: CapturedImage,
         level: OcrLevel = OcrLevel.ACCURATE,
-    ): CameraKResult<RecognizedText> =
-        TODO("OC': recognize(image) on $recognizers, $recognitionDispatcher, ${image.path}, $level")
+    ): CameraKResult<RecognizedText> = withContext(recognitionDispatcher) {
+        try {
+            val recognizer = recognizers.still(level)
+            val blocks =
+                try {
+                    recognizer.recognize(image.path)
+                } finally {
+                    releaseStill(recognizer)
+                }
+            val text = recognizedText(blocks.map { TextBlock(it.text, it.bounds, it.confidence) }, 0L)
+            CameraKLogger.d(TAG, "OcrPlugin: one-shot text recognition finished, length=${text.text.length}")
+            CameraKResult.Success(text)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            if (e.isFatalAnalyzerFailure()) throw e
+            CameraKLogger.e(TAG, "OcrPlugin: one-shot text recognition failed", e)
+            CameraKResult.Failure(CameraKError.Internal(e))
+        }
+    }
+
+    private fun releaseStill(recognizer: StillTextRecognizer) {
+        try {
+            recognizer.close()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "OcrPlugin: releasing the one-shot text recognizer failed", e)
+        }
+    }
+
+    // One session's live recognition, until the session ends or the plugin is paused. A recognizer
+    // that cannot start throws into the context's scope, which marks the plugin Failed.
+    private suspend fun recognizeLive(
+        context: CameraKPluginContext,
+        registration: MutableStateFlow<FrameRegistration?>,
+    ) {
+        val lease = RecognizerLease(recognizers.live(config.level))
+        try {
+            context.frames.register(frameSpec(), analyzer(lease)).use { current ->
+                registration.value = current
+                try {
+                    awaitCancellation()
+                } finally {
+                    registration.value = null
+                }
+            }
+        } finally {
+            lease.closeWhenIdle()
+        }
+    }
+
+    private fun frameSpec() = FrameSpec(
+        maxFps = config.maxFps,
+        maxRetained = 0,
+        acceptedFormats = setOf(FrameFormat.YUV_420, FrameFormat.RGBA_8888),
+    )
+
+    private fun analyzer(lease: RecognizerLease): FrameAnalyzer {
+        val luma = FrameLuma(config.region)
+        var outsideLogged = false
+        return FrameAnalyzer { frame ->
+            val area = luma.read(frame)
+            if (area == null) {
+                if (!outsideLogged) {
+                    outsideLogged = true
+                    CameraKLogger.w(TAG, "OcrPlugin: the region lies outside the frame's crop, so no text is read")
+                }
+                return@FrameAnalyzer
+            }
+            val found =
+                try {
+                    lease.use { it.recognize(area.image) } ?: return@FrameAnalyzer
+                } catch (e: Exception) {
+                    CameraKLogger.e(TAG, "OcrPlugin: live text recognition failed for a frame", e)
+                    return@FrameAnalyzer
+                }
+            val blocks = found.filter { it.text.isNotBlank() }
+                .map { TextBlock(it.text, it.bounds?.let(area::toFrame), it.confidence) }
+            if (blocks.isEmpty()) return@FrameAnalyzer
+            val text = recognizedText(blocks, frame.timestampNanos)
+            CameraKLogger.d(TAG, "OcrPlugin: text recognised in a frame, length=${text.text.length}")
+            _results.tryEmit(text)
+        }
+    }
+
+    private fun recognizedText(blocks: List<TextBlock>, timestampNanos: Long) =
+        RecognizedText(blocks.joinToString("\n") { it.text }, blocks, timestampNanos)
 
     private companion object {
         const val TAG = "CameraK"

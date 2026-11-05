@@ -3,11 +3,16 @@ package com.kashif.ocrPlugin
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.locks.ReentrantLock
 import org.bytedeco.tesseract.global.tesseract.OEM_DEFAULT
+import org.bytedeco.tesseract.global.tesseract.OEM_LSTM_ONLY
+import org.bytedeco.tesseract.global.tesseract.OEM_TESSERACT_ONLY
 import org.bytedeco.tesseract.global.tesseract.PSM_AUTO
 import java.awt.image.BufferedImage
 import java.awt.image.ComponentSampleModel
 import java.awt.image.DataBufferByte
+import java.io.File
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.imageio.ImageIO
 
 /**
  * Desktop OCR on the Tesseract engine, safe to call from any thread.
@@ -68,7 +73,17 @@ public class OCRProcessor internal constructor(
     }
 
     private fun initialize(tessdataDir: String, level: OcrLevel) {
-        // OC': the level does not reach Tesseract yet ($level, $noLegacyEngineLogged).
+        if (level == OcrLevel.ACCURATE) {
+            check(api.init(tessdataDir, LANGUAGE, OEM_LSTM_ONLY) == 0) { "Tesseract could not load eng.traineddata" }
+            return
+        }
+        if (api.init(tessdataDir, LANGUAGE, OEM_TESSERACT_ONLY) == 0) return
+        if (noLegacyEngineLogged.compareAndSet(false, true)) {
+            CameraKLogger.w(
+                TAG,
+                "OcrPlugin: the language data has no legacy Tesseract engine, so FAST runs the default engine, as ACCURATE does",
+            )
+        }
         check(api.init(tessdataDir, LANGUAGE, OEM_DEFAULT) == 0) { "Tesseract could not load eng.traineddata" }
     }
 
@@ -94,6 +109,9 @@ public class OCRProcessor internal constructor(
         val bytesPerLine = (raster.sampleModel as ComponentSampleModel).scanlineStride
         return scanGray(pixels, grayImage.width, grayImage.height, bytesPerLine)
     }
+
+    /** Scans [width] x [height] gray bytes with no row padding, as [scan] does. */
+    internal fun scanLuma(pixels: ByteArray, width: Int, height: Int): String? = scanGray(pixels, width, height, width)
 
     private fun scanGray(pixels: ByteArray, width: Int, height: Int, bytesPerLine: Int): String? {
         if (!lock.tryLock()) return null
@@ -172,9 +190,59 @@ internal actual fun platformTextRecognizers(config: OcrConfig): TextRecognizerFa
  */
 internal class DesktopTextRecognizers(private val library: TesseractLibrary, private val tessdataDir: () -> String?) :
     TextRecognizerFactory {
-    override fun live(level: OcrLevel): LiveTextRecognizer = TODO("OC': Tesseract live recognizer over $library")
+    override fun live(level: OcrLevel): LiveTextRecognizer =
+        TesseractLiveRecognizer(OCRProcessor(library, tessdataDir(), level))
 
-    override fun still(level: OcrLevel): StillTextRecognizer = TODO("OC': Tesseract still recognizer over $tessdataDir")
+    override fun still(level: OcrLevel): StillTextRecognizer = TesseractStillRecognizer {
+        OCRProcessor(library, tessdataDir(), level)
+    }
+}
+
+private class TesseractLiveRecognizer(private val processor: OCRProcessor) : LiveTextRecognizer {
+    private var upright = ByteArray(0)
+
+    override fun recognize(image: LumaImage): List<FoundBlock> {
+        val text =
+            if (image.rotationDegrees % FULL_TURN == 0) {
+                processor.scanLuma(image.bytes, image.width, image.height)
+            } else {
+                if (upright.size < image.width * image.height) upright = ByteArray(image.width * image.height)
+                val turned = image.rotateInto(upright)
+                processor.scanLuma(upright, turned.first, turned.second)
+            }
+        return listOfNotNull(text?.let { FoundBlock(it, null, null) })
+    }
+
+    override fun close() = processor.close()
+}
+
+private class TesseractStillRecognizer(private val newProcessor: () -> OCRProcessor) : StillTextRecognizer {
+    private var processor: OCRProcessor? = null
+
+    override suspend fun recognize(path: String): List<FoundBlock> {
+        val image = ImageIO.read(File(path)) ?: throw IOException("The image could not be decoded")
+        val created = newProcessor().also { processor = it }
+        return listOfNotNull(created.scan(image)?.let { FoundBlock(it, null, null) })
+    }
+
+    override fun close() {
+        processor?.close()
+        processor = null
+    }
+}
+
+/** Turns this image upright into [destination]; returns the upright width and height. */
+internal fun LumaImage.rotateInto(destination: ByteArray): Pair<Int, Int> {
+    val w = width
+    val h = height
+    when (rotationDegrees) {
+        90 -> for (y in 0 until h) for (x in 0 until w) destination[x * h + (h - 1 - y)] = bytes[y * w + x]
+        180 -> for (y in 0 until h) for (x in 0 until w) destination[(h - 1 - y) * w + (w - 1 - x)] = bytes[y * w + x]
+        270 -> for (y in 0 until h) for (x in 0 until w) destination[(w - 1 - x) * h + y] = bytes[y * w + x]
+        else -> bytes.copyInto(destination, 0, 0, w * h)
+    }
+    return if (rotationDegrees == 90 || rotationDegrees == 270) h to w else w to h
 }
 
 private const val TAG = "CameraK"
+private const val FULL_TURN = 360
