@@ -220,7 +220,16 @@ internal class AndroidCameraEngine(
     )
     internal val framePipeline = FramePipeline(backend, analyzerExecutor)
     internal val videoRecorder =
-        VideoRecorder(context, backend, files, VideoHost(), environment.dispatchers.default, mainExecutor)
+        VideoRecorder(
+            context = context,
+            backend = backend,
+            files = files,
+            host = VideoHost(),
+            background = environment.dispatchers.default,
+            io = environment.dispatchers.io,
+            main = main,
+            callbackExecutor = mainExecutor,
+        )
 
     /** The physical lens every use case of the current bind pins, or null. */
     internal var pinnedPhysicalId: String? = null

@@ -23,10 +23,14 @@ import com.kashif.cameraK.video.VideoQuality
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -80,8 +84,8 @@ internal class RecordingOutcome(
  * Finalize, and every milestone on [events]. VideoCapture joins the bind only when a recording needs
  * it, or from [prepare] until the engine stops (#136: while bound, stills crop to its field of view).
  * The Recorder and its VideoCapture are built on [background]; only the bind runs on Main. Each
- * Finalize is mapped by [FinalizeMapper] over the playable probe, and a recording whose file is not
- * kept leaves no file.
+ * Finalize is mapped by [FinalizeMapper] over the playable probe, which reads the file on [io], and a
+ * recording whose file is not kept leaves no file.
  *
  * Every recording the engine started yields exactly one `Finalized`, in start order, whoever ended
  * it. A start that returns Failure started none. A start whose caller gave up after it reached
@@ -96,8 +100,17 @@ internal class VideoRecorder(
     private val files: OutputFileFactory,
     private val host: VideoSessionHost,
     private val background: CoroutineDispatcher,
+    private val io: CoroutineDispatcher,
+    main: CoroutineDispatcher,
     private val callbackExecutor: Executor,
 ) {
+    // Finishes a Finalize after its probe. It outlives the engine's scope, as a Finalize can land after
+    // the release stopped waiting for it, and the recording still ends once with its file kept or gone.
+    private val finalizeScope = CoroutineScope(SupervisorJob() + main)
+
+    // The last Finalize still being finished; each waits for the one before, so Finalized keeps start order.
+    private var lastFinalize: Job? = null
+
     /** The VideoCapture of the current bind, or null when it has none. */
     var videoCapture: VideoCapture<Recorder>? = null
         private set
@@ -354,10 +367,33 @@ internal class VideoRecorder(
     }
 
     private fun onFinalized(run: Run, event: RecordingFinalized) {
-        if (run.done) return
+        if (run.done || run.finalizing) return
+        run.finalizing = true
         // Finalized before CameraX reported the start, while the start still waits: it started nothing.
         if (!run.startConfirmed && run.awaitingStart) run.startFailed = true
-        val probe = backend.probeRecording(run.file)
+        // Who ended it is decided now: a stop asked for while the probe reads the file came too late.
+        val stopReason = run.stopReason
+        val previous = lastFinalize
+        lastFinalize = finalizeScope.launch {
+            // The probe reads and parses the file, so it runs on io, not on the main thread.
+            val probe = withContext(io) { backend.probeRecording(run.file) }
+            previous?.join()
+            try {
+                finishFinalized(run, event, stopReason, probe)
+            } catch (e: Exception) {
+                CameraKLogger.e(TAG, "Handling a recording report failed", e)
+            }
+        }
+    }
+
+    // Main thread, once [run]'s probe has read its file. A stop CameraX threw from may have ended it.
+    private fun finishFinalized(
+        run: Run,
+        event: RecordingFinalized,
+        stopReason: RecordingEndReason?,
+        probe: RecordingProbe,
+    ) {
+        if (run.done) return
         val video = RecordedVideo(
             path = run.file.absolutePath,
             duration = event.recordedDurationNanos.nanoseconds,
@@ -370,13 +406,13 @@ internal class VideoRecorder(
             event,
             probe.playable,
             video,
-            run.stopReason ?: RecordingEndReason.USER,
+            stopReason ?: RecordingEndReason.USER,
         )
         logFinalize(event, mapped)
         val keptFile = mapped.result is CameraKResult.Success ||
             ((mapped.result as CameraKResult.Failure).error as? CameraKError.Storage)?.keptFilePath != null
         if (!keptFile || run.startFailed) run.file.delete()
-        val endedByCameraX = run.stopReason == null
+        val endedByCameraX = stopReason == null
         finish(run, RecordingOutcome(mapped.result, mapped.reason, event.recordedDurationNanos / 1_000_000))
         if (endedByCameraX && active == null && !prepared && videoCapture != null && !host.isReleased) {
             // Drop VideoCapture so stills are full-FOV again (#136).
@@ -481,6 +517,7 @@ internal class VideoRecorder(
         var paused = false
         var pendingToggle: CompletableDeferred<Unit>? = null
         var claimed = false
+        var finalizing = false
         var done = false
     }
 }
