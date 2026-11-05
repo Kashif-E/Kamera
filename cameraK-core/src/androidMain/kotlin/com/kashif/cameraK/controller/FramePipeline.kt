@@ -4,9 +4,13 @@ import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.update
+import java.nio.ByteBuffer
 import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The frame consumers (plugins' analyzers) and the one [ImageAnalysis] that feeds them. The bound
@@ -87,4 +91,40 @@ internal class FramePipeline(private val backend: CameraXBackend, private val an
     fun clearConsumers() {
         consumers.value = emptyList()
     }
+}
+
+/**
+ * One 1.x consumer's share of an [ImageProxy] (the facade's `registerImageAnalyzer`, until C1'). The
+ * real proxy is closed only when the last share is closed; each share's close counts once.
+ *
+ * Each holder reads the planes through its own read-only views of CameraX's buffers, so one analyzer
+ * reading or trying to write a plane cannot move the position or change the pixels another analyzer
+ * sees. [getImage] is still CameraX's shared image: read it, never write to it.
+ */
+internal class LegacyImageProxy(private val delegate: ImageProxy, private val refCount: AtomicInteger) :
+    ImageProxy by delegate {
+    private val closed = AtomicBoolean(false)
+
+    private val ownPlanes: Array<ImageProxy.PlaneProxy> by lazy {
+        delegate.planes.map { plane -> ReadOnlyPlane(plane) as ImageProxy.PlaneProxy }.toTypedArray()
+    }
+
+    override fun getPlanes(): Array<ImageProxy.PlaneProxy> = ownPlanes
+
+    override fun close() {
+        if (closed.compareAndSet(false, true) && refCount.decrementAndGet() == 0) {
+            delegate.close()
+        }
+    }
+}
+
+/**
+ * A read-only view of [plane]'s buffer, with its own position and limit. asReadOnlyBuffer() always
+ * returns a big-endian view, while ImageReader hands out planes in native (little-endian) order, so
+ * the source's order is set again for multi-byte reads.
+ */
+internal class ReadOnlyPlane(plane: ImageProxy.PlaneProxy) : ImageProxy.PlaneProxy by plane {
+    private val buffer: ByteBuffer = plane.buffer.let { it.asReadOnlyBuffer().order(it.order()) }
+
+    override fun getBuffer(): ByteBuffer = buffer
 }
