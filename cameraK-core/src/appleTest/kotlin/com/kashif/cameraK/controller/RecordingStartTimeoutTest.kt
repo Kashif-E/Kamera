@@ -85,7 +85,11 @@ class RecordingStartTimeoutTest {
         driver.settle()
 
         assertStartTimedOut(start.await(), "the start that timed out")
-        assertEquals(1, events.finalized().size, "Finalized events for the recording reported Started: ${events.values}")
+        assertEquals(
+            1,
+            events.finalized().size,
+            "Finalized events for the recording reported Started: ${events.values}",
+        )
         engine.close()
     }
 

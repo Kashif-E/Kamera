@@ -1,5 +1,8 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -9,6 +12,7 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.toByteArray
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Job
@@ -62,6 +66,7 @@ internal class CaptureRig(
     fun start() {
         controller.startSession() // its own engine sets the session up and starts it, with no view
         awaitTrue("the session to start") { session.isRunning }
+        awaitTrue("the engine to report Open") { controller.engine.state.value == EngineState.Open }
     }
 
     /** One takePictureToFile call running on main; [result] is set when it returns. */

@@ -393,11 +393,16 @@ actual class CameraController private constructor(
     /**
      * Takes a picture through the engine, to a file in app-owned storage: Documents/CameraK, or the
      * configuration's output directory. PICTURES and DCIM no longer import it into Photos, which is
-     * the media saver's job. The holder alone limits how many captures are in flight.
+     * the media saver's job. The holder alone limits how many captures are in flight. A capture
+     * issued while startSession is still opening the camera waits for it to open, as in 1.x, for at
+     * most the engine's start timeout.
      */
-    actual suspend fun takePictureToFile(): ImageCaptureResult = when (val result = engine.capture()) {
-        is CameraKResult.Success -> ImageCaptureResult.SuccessWithFile(result.value.path)
-        is CameraKResult.Failure -> ImageCaptureResult.Error(result.error.asException("Photo capture failed"))
+    actual suspend fun takePictureToFile(): ImageCaptureResult {
+        engine.awaitOpenForFacade()
+        return when (val result = engine.capture()) {
+            is CameraKResult.Success -> ImageCaptureResult.SuccessWithFile(result.value.path)
+            is CameraKResult.Failure -> ImageCaptureResult.Error(result.error.asException("Photo capture failed"))
+        }
     }
 
     actual fun toggleFlashMode() {

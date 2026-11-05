@@ -168,10 +168,12 @@ internal class AppleRecorder(
         }
         return withTimeoutOrNull(startTimeoutMs) { movie.started.await() } ?: run {
             CameraKLogger.e(TAG, "CameraK: the recording did not start within $startTimeoutMs ms")
-            onQueue("abandoning a recording that did not start") {
-                abandon(movie)
-                CameraKResult.Success(Unit)
+            val reportedStarted = onQueue("ending a recording that did not start in time") {
+                CameraKResult.Success(endLateStart(movie))
             }
+            // A recording AVFoundation reported started as the timeout fired was announced Started, so
+            // it owes its one Finalized: the start returns once that has been emitted.
+            if ((reportedStarted as? CameraKResult.Success)?.value == true) movie.finished.await()
             failure(CameraKError.Timeout(CameraOperation.RECORD_START))
         }
     }
@@ -331,7 +333,11 @@ internal class AppleRecorder(
 
     private fun onFinished(movie: Movie, error: NSError?) {
         if (movie.finalized) {
-            CameraKLogger.d(TAG, "CameraK: AVFoundation finished a recording CameraK had already ended")
+            if (movie.abandoned && movie.startedAt == null && removeFileIfPresent(movie.path)) {
+                CameraKLogger.w(TAG, "CameraK: deleted the file AVFoundation finished for an abandoned recording start")
+            } else {
+                CameraKLogger.d(TAG, "CameraK: AVFoundation finished a recording CameraK had already ended")
+            }
             return
         }
         val end = movieEnd(error, movie.stopReason, movie.path)
@@ -365,7 +371,23 @@ internal class AppleRecorder(
         }
     }
 
-    /** A start given up on: AVFoundation is told to stop, and no Finalized is owed for it. */
+    /**
+     * The start of [movie] timed out. When AVFoundation reported it started meanwhile, it is stopped
+     * like any recording and yields its Finalized (returns true); otherwise it is abandoned (false).
+     */
+    private fun endLateStart(movie: Movie): Boolean {
+        if (movie.startedAt == null || movie.finalized) {
+            abandon(movie)
+            return false
+        }
+        requestEnd(movie, RecordingEndReason.ERROR)
+        return true
+    }
+
+    /**
+     * A start given up on: AVFoundation is told to stop, and no Finalized is owed for it. The file
+     * AVFoundation finishes for it afterwards is deleted ([onFinished]).
+     */
     private fun abandon(movie: Movie) {
         if (movie.finalized) return
         movie.abandoned = true

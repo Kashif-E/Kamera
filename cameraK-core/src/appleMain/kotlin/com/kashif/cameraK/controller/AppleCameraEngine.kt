@@ -58,11 +58,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCaptureFlashModeAuto
 import platform.AVFoundation.AVCaptureFlashModeOff
@@ -261,6 +265,10 @@ internal class AppleCameraEngine(
     private val closeDone = Job()
     private val starts = Mutex()
     private val facadeCalls = Mutex()
+
+    /** The facade's starts launched and not yet returned, and whether the engine closed: what a facade capture waits on. */
+    private val pendingFacadeStarts = MutableStateFlow(0)
+    private val closedFlow = MutableStateFlow(false)
     private val facade = atomic<CameraController?>(null)
 
     /** Captures waiting on AVFoundation, which close completes with Closed. Under [lock]. */
@@ -483,6 +491,7 @@ internal class AppleCameraEngine(
             pendingStart.also { pendingStart = null }
         }
         cut?.continuation?.resume(CLOSED)
+        closedFlow.value = true
         locked { pendingStills.toList().also { pendingStills.clear() } }.forEach { it.settle(CLOSED) }
         observers.forEach(center::removeObserver)
         stopObservingOrientation()
@@ -984,15 +993,37 @@ internal class AppleCameraEngine(
      * before the next facade call, when the start succeeded.
      */
     internal fun launchStart(desired: DesiredHardware, started: () -> Unit = {}) {
+        pendingFacadeStarts.update { it + 1 }
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            facadeCalls.withLock {
-                val result = start(desired)
-                if (result is CameraKResult.Failure) {
-                    CameraKLogger.e(TAG, "CameraK: starting the camera session failed", result.error.cause)
-                } else {
-                    started()
+            try {
+                facadeCalls.withLock {
+                    val result = start(desired)
+                    if (result is CameraKResult.Failure) {
+                        CameraKLogger.e(TAG, "CameraK: starting the camera session failed", result.error.cause)
+                    } else {
+                        started()
+                    }
                 }
+            } finally {
+                pendingFacadeStarts.update { it - 1 }
             }
+        }
+    }
+
+    /**
+     * The 1.x facade's capture: while a start is opening the camera, waits until it is Open, the start
+     * failed or the engine closed, for at most [START_TIMEOUT]. Returns at once when no start is
+     * pending; the capture then answers for the state it finds.
+     */
+    internal suspend fun awaitOpenForFacade() {
+        if (unusable() != null) return
+        withTimeoutOrNull(START_TIMEOUT) {
+            combine(_state, pendingFacadeStarts, closedFlow) { state, pending, closed ->
+                closed ||
+                    state == EngineState.Open ||
+                    state is EngineState.Failed ||
+                    (state == EngineState.Closed && pending == 0)
+            }.first { it }
         }
     }
 
