@@ -9,8 +9,11 @@
   source sets (commonMain, androidMain, appleMain, desktopMain and their tests), under
   <sourceSet>/kotlin/ in directories that match the package.
 - The media saver does not use core's Directory: its main sources name `com.kashif.cameraK.enums.Directory`
-  only in ImageSaverLegacy.kt, which holds the deprecated 1.x API until C1' removes it. The case scans
-  ImageSaverPlugin itself, since PLUGIN_MODULES does not list it, and is first run against a fixture.
+  only in ImageSaverLegacy.kt, which holds the deprecated 1.x API until C1' removes it (decision G4).
+  There Directory may appear only as the import, the deprecated ImageSaverConfig's `directory`
+  parameter and the one-to-one mapping to GalleryDestination; any other use of it in that file is a
+  finding too. The case scans ImageSaverPlugin itself, since PLUGIN_MODULES does not list it, and
+  runs both rules against fixtures first.
 - The Sample's App.kt names no plugin package: each plugin's code lives in that plugin's screen file,
   so a plugin slice or a package rename edits one Sample file and never App.kt. The plugin packages
   are read from the plugin modules' main sources, and the rule is first run against a fixture it
@@ -52,6 +55,15 @@ SAVER_LEGACY_FILE = "ImageSaverLegacy.kt"
 CORE_DIRECTORY = re.compile(
     r"\bcom\.kashif\.cameraK\.enums\.(Directory\b|\*)|(?<![A-Za-z0-9_.])Directory\.(PICTURES|DCIM|DOCUMENTS)\b"
 )
+DIRECTORY_TOKEN = re.compile(r"\bDirectory\b")
+# The only code lines of ImageSaverLegacy.kt that may name Directory (G4, until C1').
+LEGACY_DIRECTORY_LINES = [
+    re.compile(r"^import com\.kashif\.cameraK\.enums\.Directory$"),
+    re.compile(r"^    val directory: Directory = Directory\.PICTURES,$"),
+    re.compile(r"^internal fun Directory\.toGalleryDestination\(\): GalleryDestination = when \(this\) \{$"),
+    re.compile(r"^    Directory\.(PICTURES|DCIM|DOCUMENTS) -> GalleryDestination\.\1$"),
+]
+LEGACY_CONFIG = "public data class ImageSaverConfig("
 
 
 def kotlin_files(root):
@@ -160,6 +172,33 @@ def core_directory_references(text):
     return [number for number, line in enumerate(text.splitlines(), start=1) if CORE_DIRECTORY.search(line)]
 
 
+def legacy_directory_findings(text):
+    """Line numbers where ImageSaverLegacy.kt uses Directory beyond what G4 keeps until C1'."""
+    lines = text.splitlines()
+    findings = []
+    config_start = next((i for i, line in enumerate(lines) if line == LEGACY_CONFIG), None)
+    config_end = None
+    if config_start is not None:
+        config_end = next((i for i in range(config_start, len(lines)) if lines[i] == ")"), len(lines))
+        annotations = []
+        for line in reversed(lines[:config_start]):
+            if not (line.startswith("@") or line.startswith("    ") or line == ")"):
+                break
+            annotations.append(line)
+        if not any(line.startswith("@Deprecated(") for line in annotations):
+            findings.append(config_start + 1)
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith(("//", "*", "/*")) or not DIRECTORY_TOKEN.search(line):
+            continue
+        allowed = any(pattern.match(line) for pattern in LEGACY_DIRECTORY_LINES)
+        if allowed and line.startswith("    val directory"):
+            allowed = config_start is not None and config_start < index < config_end
+        if not allowed:
+            findings.append(index + 1)
+    return sorted(set(findings))
+
+
 def saver_does_not_import_core_directory(root):
     fixture = (
         "import com.kashif.cameraK.enums.ImageFormat\n"
@@ -171,11 +210,35 @@ def saver_does_not_import_core_directory(root):
     )
     if core_directory_references(fixture) != [2, 3, 5]:
         return ["scripts/check_plugin_sources.py: the saver Directory rule misjudges its fixture"]
+    legacy_fixture = (
+        "import com.kashif.cameraK.enums.Directory\n"  # 1 allowed
+        "// core's Directory, in a comment\n"  # 2 a comment
+        "@Deprecated(\n"  # 3
+        '    "Use MediaSaverConfig.",\n'  # 4
+        ")\n"  # 5
+        "@Immutable\n"  # 6
+        "public data class ImageSaverConfig(\n"  # 7
+        "    val directory: Directory = Directory.PICTURES,\n"  # 8 allowed
+        ")\n"  # 9
+        "internal fun Directory.toGalleryDestination(): GalleryDestination = when (this) {\n"  # 10 allowed
+        "    Directory.DCIM -> GalleryDestination.DCIM\n"  # 11 allowed
+        "    Directory.DCIM -> GalleryDestination.PICTURES\n"  # 12 not one to one
+        "}\n"  # 13
+        "public fun ImageSaverPlugin.save(directory: Directory) {}\n"  # 14 a new use
+        "    val directory: Directory = Directory.PICTURES,\n"  # 15 outside the config
+    )
+    undeprecated = "public data class ImageSaverConfig(\n    val directory: Directory = Directory.PICTURES,\n)\n"
+    if legacy_directory_findings(legacy_fixture) != [12, 14, 15] or legacy_directory_findings(undeprecated) != [1]:
+        return ["scripts/check_plugin_sources.py: the saver's legacy Directory rule misjudges its fixture"]
     findings = []
     for path in sorted((root / SAVER_MODULE / "src").glob("*Main/**/*.kt")):
-        if path.name == SAVER_LEGACY_FILE:
-            continue
         rel = path.relative_to(root)
+        if path.name == SAVER_LEGACY_FILE:
+            for number in legacy_directory_findings(path.read_text(encoding="utf-8")):
+                findings.append(
+                    f"{rel}:{number}: uses core's Directory beyond the deprecated ImageSaverConfig and its mapping"
+                )
+            continue
         for number in core_directory_references(path.read_text(encoding="utf-8")):
             findings.append(f"{rel}:{number}: uses core's Directory; the saver publishes to its own GalleryDestination")
     return findings
