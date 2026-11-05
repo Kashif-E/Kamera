@@ -88,7 +88,10 @@ internal class HeldFrame(private val data: FrameData, private val handle: Analyz
     }
 }
 
-/** A retained frame past the cap: a copy of the luma plane only, rows without padding. */
+/**
+ * A retained frame past the cap: a copy of the luma plane only, rows without padding. Its format is
+ * still YUV_420, with one plane, the luma; a consumer that needs chroma checks `planes.size`.
+ */
 internal class LumaCopyFrame(
     private val data: FrameData,
     private val luma: ByteArray,
