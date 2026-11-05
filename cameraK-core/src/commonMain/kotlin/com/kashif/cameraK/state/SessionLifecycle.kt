@@ -80,7 +80,8 @@ internal fun startTimeoutState(status: PermissionStatus): CameraKState.Error = i
  * one, so a stop during a start cancels the start instead of racing it.
  *
  * A stop while a recording is live waits [hostStopGrace] first, and a start inside that wait
- * continues the open session: the engine is not started again and Starting is not published.
+ * continues the open session: the engine is not started again and Starting is not published. So
+ * does a start that reaches the reconciler together with the stop before it, which then never runs.
  *
  * @param beforeReady Runs before the first and every later Ready is published, outside any lock.
  * @param awaitPreviousClose Runs before each engine start: a holder that replaces another waits for
@@ -147,7 +148,9 @@ internal class SessionLifecycle(
                     transition { CameraKState.Idle }
                     settled.value = Settled(d.upTo, CameraKState.Idle)
                 }
-                is Desired.Running -> if (continuable) {
+                // A session still open was never stopped: the grace was waiting, or the stop before
+                // this start was conflated away. A failed session is not continued; it starts again.
+                is Desired.Running -> if (continuable || (sessionOpen && _state.value !is CameraKState.Error)) {
                     continuable = false
                     sessionCatching(d.attempt) { continueSession(d.attempt) }
                 } else {
@@ -268,8 +271,8 @@ internal class SessionLifecycle(
         sessionOpen = false
     }
 
-    // A start inside the grace: the camera never closed, so the session goes on from what the engine
-    // reports now, with no Starting and no second engine.start.
+    // A start over a session that was never stopped: the camera never closed, so the session goes on
+    // from what the engine reports now, with no Starting and no second engine.start.
     private suspend fun continueSession(attempt: Int) = coroutineScope {
         val runtimeFailure = CompletableDeferred<Unit>()
         launch(start = CoroutineStart.UNDISPATCHED) {
