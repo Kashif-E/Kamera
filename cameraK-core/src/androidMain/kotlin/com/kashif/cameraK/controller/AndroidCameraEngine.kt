@@ -501,6 +501,16 @@ internal class AndroidCameraEngine(
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> =
         openCommand { videoRecorder.prepare(config) }
 
+    /**
+     * Starts a recording and returns its file's path once CameraX reports the start (§5). The quality
+     * is checked against the bound camera's set: one it names other qualities only refuses with
+     * `Unsupported(VIDEO_QUALITY)`, and a set the query could not read is unknown, so the quality goes
+     * to CameraX with its `lowerQualityOrHigherThan` fallback, as 1.x did.
+     *
+     * While CameraX's Finalize of a recording it ended by itself (a limit, an error) is still being
+     * read by the playable probe, that recording is still the active one, so a start returns
+     * `Busy(RECORD_START)` until its Finalized is out.
+     */
     override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> =
         openCommand { videoRecorder.start(config, legacy = false) }
 

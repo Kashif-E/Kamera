@@ -151,8 +151,8 @@ internal class VideoRecorder(
     /** Binds VideoCapture for [config] ahead of a start; it stays until the engine stops. Main thread. */
     suspend fun prepare(config: VideoConfiguration): CameraKResult<Unit> {
         if (active != null) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_PREPARE))
-        unsupportedQuality(config)?.let { return it }
-        bindVideoCapture(config.quality)?.let { return CameraKResult.Failure(it) }
+        val fallback = qualityFallback(config) ?: return unsupportedQuality()
+        bindVideoCapture(config.quality, fallback)?.let { return CameraKResult.Failure(it) }
         prepared = true
         return CameraKResult.Success(Unit)
     }
@@ -163,7 +163,7 @@ internal class VideoRecorder(
      */
     suspend fun start(config: VideoConfiguration, legacy: Boolean): CameraKResult<String> {
         if (active != null) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_START))
-        unsupportedQuality(config)?.let { return it }
+        val fallback = qualityFallback(config) ?: return unsupportedQuality()
         if (legacy && unclaimed != null) {
             CameraKLogger.w(TAG, "The last recording's outcome was never claimed by stopRecording(); discarding it")
             unclaimed = null
@@ -171,7 +171,7 @@ internal class VideoRecorder(
         val lazyBind = videoCapture == null || videoQuality != config.quality
         var started = false
         try {
-            if (lazyBind) bindVideoCapture(config.quality)?.let { return CameraKResult.Failure(it) }
+            if (lazyBind) bindVideoCapture(config.quality, fallback)?.let { return CameraKResult.Failure(it) }
             val file = when (val claimed = files.videoFile(config)) {
                 is CameraKResult.Failure -> return claimed
                 is CameraKResult.Success -> claimed.value
@@ -457,17 +457,34 @@ internal class VideoRecorder(
         }
     }
 
-    // CameraX's quality, from the bound camera's own set (§6.3); the bitrate is the quality's.
-    private suspend fun unsupportedQuality(config: VideoConfiguration): CameraKResult.Failure? {
-        if (config.quality in host.videoQualities()) return null
-        return CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.VIDEO_QUALITY))
+    // CameraX's quality, from the bound camera's own set (§6.3), with the fallback CameraX applies;
+    // null when the set names other qualities only. An empty set, from a query that threw (logged
+    // where it ran) or that CameraX answered with none, says nothing about the camera, so the request
+    // goes to CameraX with 1.x's fallback.
+    private suspend fun qualityFallback(config: VideoConfiguration): QualityFallback? {
+        val known = host.videoQualities()
+        return when {
+            known.isEmpty() -> {
+                CameraKLogger.w(
+                    TAG,
+                    "The camera's video qualities are unknown; recording ${config.quality} with CameraX's fallback",
+                )
+                QualityFallback.LOWER_OR_HIGHER
+            }
+            config.quality in known -> QualityFallback.HIGHER_OR_LOWER
+            else -> null
+        }
     }
 
-    // Builds the Recorder and VideoCapture off Main, then binds them on Main; null when bound.
-    private suspend fun bindVideoCapture(quality: VideoQuality): CameraKError? {
+    private fun unsupportedQuality(): CameraKResult.Failure =
+        CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.VIDEO_QUALITY))
+
+    // Builds the Recorder and VideoCapture off Main, then binds them on Main; null when bound. The
+    // bitrate is the quality's.
+    private suspend fun bindVideoCapture(quality: VideoQuality, fallback: QualityFallback): CameraKError? {
         if (!host.isBound) return CameraKError.NotReady
         val built = try {
-            withContext(background) { backend.buildVideoCapture(quality, quality.bitrateBps) }
+            withContext(background) { backend.buildVideoCapture(quality, quality.bitrateBps, fallback) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

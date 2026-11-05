@@ -122,16 +122,14 @@ internal interface CameraXBackend {
      * video bitrate when it is set, and [fallback] as CameraX's rule when the camera cannot record
      * [quality]. Builds no platform session, so it may run off the main thread.
      */
-    fun buildVideoCapture(
-        quality: VideoQuality,
-        bitrateBps: Int?,
-        fallback: QualityFallback = QualityFallback.HIGHER_OR_LOWER,
-    ): VideoCapture<Recorder> {
+    fun buildVideoCapture(quality: VideoQuality, bitrateBps: Int?, fallback: QualityFallback): VideoCapture<Recorder> {
         val cameraXQuality = quality.toCameraXQuality()
+        val strategy = when (fallback) {
+            QualityFallback.HIGHER_OR_LOWER -> FallbackStrategy.higherQualityOrLowerThan(cameraXQuality)
+            QualityFallback.LOWER_OR_HIGHER -> FallbackStrategy.lowerQualityOrHigherThan(cameraXQuality)
+        }
         val recorder = Recorder.Builder()
-            .setQualitySelector(
-                QualitySelector.from(cameraXQuality, FallbackStrategy.higherQualityOrLowerThan(cameraXQuality)),
-            )
+            .setQualitySelector(QualitySelector.from(cameraXQuality, strategy))
             .apply { bitrateBps?.let { setTargetVideoEncodingBitRate(it) } }
             .build()
         return VideoCapture.withOutput(recorder)
