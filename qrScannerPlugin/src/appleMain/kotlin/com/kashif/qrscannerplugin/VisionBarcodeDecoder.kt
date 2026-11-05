@@ -60,7 +60,12 @@ internal actual fun createBarcodeDecoder(formats: Set<BarcodeFormat>): BarcodeDe
  * configured symbologies, inside the image's area (its region of interest). iOS reads UPC-A codes
  * as EAN-13, so [BarcodeFormat.UPC_A] is ignored, and logged once.
  */
-internal class VisionBarcodeDecoder(formats: Set<BarcodeFormat>) : BarcodeDecoder {
+internal class VisionBarcodeDecoder(
+    formats: Set<BarcodeFormat>,
+    // Null is Vision's default, its newest revision. On the simulator, revisions 3 and 4 find no
+    // code and report no error, so the simulator tests that run a real detection pin revision 2.
+    private val pinnedRevision: ULong? = null,
+) : BarcodeDecoder {
     private val requested: List<Any?> = formats.flatMap { SYMBOLOGIES[it].orEmpty() }
 
     init {
@@ -93,6 +98,7 @@ internal class VisionBarcodeDecoder(formats: Set<BarcodeFormat>) : BarcodeDecode
      * upright, normalised, with its origin at the bottom left.
      */
     fun request(image: LumaImage): VNDetectBarcodesRequest = VNDetectBarcodesRequest().apply {
+        pinnedRevision?.let { setRevision(it) }
         setSymbologies(requested)
         val geometry = UprightGeometry(image.width, image.height, image.rotationDegrees)
         val area = geometry.toUpright(image.area)
