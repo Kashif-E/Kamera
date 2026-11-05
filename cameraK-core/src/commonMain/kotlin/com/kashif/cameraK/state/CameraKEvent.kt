@@ -153,9 +153,10 @@ abstract class CameraKEvent internal constructor() {
      *
      * The constructor is public only so CameraK's own plugins can build the event.
      *
-     * @property pluginId Which plugin failed: the plugin's class name. A failure in a coroutine
-     *   launched in the shared [CameraKStateHolder.pluginScope] has the fixed id `"pluginScope"`,
-     *   because that scope is shared by every plugin and cannot tell which one launched it.
+     * @property pluginId Which plugin failed: its [com.kashif.cameraK.plugin.CameraKPlugin.id], by
+     *   default the plugin class's simple name. A failure in a coroutine launched in the shared
+     *   [CameraKStateHolder.pluginScope] has the fixed id `"pluginScope"`, because that scope is
+     *   shared by every plugin and cannot tell which one launched it.
      * @property error What failed.
      */
     class PluginFailed @InternalCameraKApi constructor(val pluginId: String, val error: CameraKError) :
