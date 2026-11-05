@@ -72,6 +72,24 @@ class FakeFrameSourceTest {
     }
 
     @Test
+    fun maxFpsSkipsFramesInsideTheIntervalByTheirTimestamps() {
+        val source = FakeFrameSource()
+        val throttled = mutableListOf<CameraFrame>()
+        val unthrottled = mutableListOf<CameraFrame>()
+        source.register(FrameSpec(maxFps = 2f)) { throttled += it }
+        source.register(FrameSpec()) { unthrottled += it }
+        // One second of frames 1/30 s apart. At 2 fps a frame passes once 500 ms have gone since
+        // the last one that passed: the frames at 0 and 533 ms.
+        val frames = List(30) { TestFrame.luma(2, 2, ByteArray(4), timestampNanos = it * FRAME_NANOS) }
+
+        frames.forEach(source::emit)
+
+        assertEquals(listOf(0L, 16 * FRAME_NANOS), throttled.map { it.timestampNanos }, "frames through maxFps 2")
+        assertSame(frames[16], throttled[1], "an admitted frame reaches the analyzer as the frame emitted")
+        assertEquals<List<CameraFrame>>(frames, unthrottled, "a registration with no maxFps")
+    }
+
+    @Test
     fun nothingIsDeliveredWhileTheSessionIsNotOpen() {
         var open = false
         val source = FakeFrameSource(sessionFormat = { FrameFormat.YUV_420 }, isOpen = { open })
@@ -167,5 +185,9 @@ class FakeFrameSourceTest {
             CameraKLogger.sink = null
             CameraKLogger.enabled = false
         }
+    }
+
+    private companion object {
+        const val FRAME_NANOS = 33_333_333L
     }
 }
