@@ -50,6 +50,28 @@ class SelectCameraTest {
         engine.closeAndJoin()
     }
 
+    // A configuration with no lens starts on Default, which opens what ByLens(BACK) opens (§6.1 "Default lens").
+    @Test
+    fun defaultSelectionOpensTheBackCamera() = runTest {
+        val platform = FakeAndroidPlatform(listOf(FRONT, BACK))
+        val engine = platform.engine(testScheduler)
+
+        val start = engine.start(
+            DesiredHardware(
+                selection = CameraSelection.Default(CameraDeviceType.DEFAULT),
+                flashMode = desired.flashMode,
+                torchMode = desired.torchMode,
+                zoomRatio = desired.zoomRatio,
+                targetOrientation = null,
+            ),
+        )
+        platform.settle(testScheduler)
+
+        assertEquals(CameraKResult.Success(Unit), start, "a start on the default camera")
+        assertEquals(BACK.id, engine.hardware.value.camera?.id, "the default camera is not the back one")
+        engine.closeAndJoin()
+    }
+
     // Characterization: the engine's selectCamera has returned Busy(LENS) while recording since A1'
     // (AndroidCameraEngine.kt, the videoRecorder.isRecording branch).
     @Test

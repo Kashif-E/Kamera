@@ -558,6 +558,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         val target = when (selection) {
             is CameraSelection.ByLens -> selection.lens
             is CameraSelection.ById -> capabilities.value.allLenses.firstOrNull { it.id == selection.id }?.lens
+            is CameraSelection.Default -> null
         }
         return if (target == current.lens) CameraOperation.DEVICE_TYPE else CameraOperation.LENS
     }

@@ -264,6 +264,10 @@ internal class DesktopCameraEngine(
         is CameraSelection.ById -> capabilities.allLenses.firstOrNull { it.id == selection.id }
         is CameraSelection.ByLens -> capabilities.allLenses.firstOrNull { it.lens == selection.lens }
             ?: capabilities.allLenses.firstOrNull()
+        is CameraSelection.Default -> select(
+            capabilities,
+            CameraSelection.ByLens(CameraLens.BACK, selection.deviceType),
+        )
     }
 
     private fun launchRunLocked(session: Session, switching: Boolean = false): Run {

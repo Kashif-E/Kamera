@@ -49,4 +49,11 @@ public sealed interface CameraSelection {
     /** A `LensInfo.id` from the engine's capabilities (desktop device ids, Android camera ids, iOS uniqueIDs). */
     @Poko
     public class ById(public val id: String) : CameraSelection
+
+    /**
+     * The platform's default camera, which a configuration with no lens asks for: the BACK camera of
+     * [deviceType] on Android and iOS, the system default device on desktop.
+     */
+    @Poko
+    public class Default(public val deviceType: CameraDeviceType) : CameraSelection
 }

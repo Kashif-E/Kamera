@@ -669,6 +669,7 @@ internal class AndroidCameraEngine(
     private fun resolve(selection: CameraSelection): ResolvedCamera? = when (selection) {
         is CameraSelection.ByLens -> selectorResolver.resolveFacing(selection.lens, selection.deviceType)
         is CameraSelection.ById -> selectorResolver.resolveId(selection.id)
+        is CameraSelection.Default -> null
     }
 
     private fun lensOf(selection: CameraSelection): CameraLens? = (selection as? CameraSelection.ByLens)?.lens

@@ -1404,6 +1404,7 @@ internal class AppleCameraEngine(
     private fun resolve(selection: CameraSelection): CaptureDeviceOps? = when (selection) {
         is CameraSelection.ById -> custom.findCameraById(selection.id)
         is CameraSelection.ByLens -> custom.findCamera(selection.lens, selection.deviceType)
+        is CameraSelection.Default -> null
     }
 
     /**

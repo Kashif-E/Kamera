@@ -585,6 +585,7 @@ public class FakeCameraEngine(
                 }
                     ?: facing.firstOrNull()
             }
+            is CameraSelection.Default -> null
         }
     }
 
