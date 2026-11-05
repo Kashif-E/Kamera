@@ -125,6 +125,22 @@ class VideoFileOutcomeTest {
         assertEquals(started.url.path, success.filePath)
     }
 
+    /**
+     * A full disk that kept a playable file is a 1.x success (w6 decision G4's mapping, applied on iOS),
+     * and like any success it reports how long the file records.
+     */
+    @Test
+    fun aFullDiskThatKeptAPlayableFileIsASuccessWithItsDuration() {
+        use(Directory.DOCUMENTS)
+        val started = startedRecording()
+
+        val result = stop(started, avError(AVErrorDiskFull, successfullyFinished = true))
+
+        val success = assertIs<VideoCaptureResult.Success>(result, "a kept recording was reported as $result")
+        assertEquals(started.url.path, success.filePath)
+        assertTrue(success.durationMs > 0, "the kept recording's duration: ${success.durationMs} ms")
+    }
+
     @Test
     fun documentsVideosAreKeptUnderDocumentsCameraK() {
         use(Directory.DOCUMENTS)
