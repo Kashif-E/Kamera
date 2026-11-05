@@ -70,7 +70,13 @@ internal class DesktopFrameSource(
             val gate = registration.gate ?: continue
             val lease = gate.tryEnter(onReleased = frame::release) ?: continue
             frame.retain()
-            val view = planes ?: frame.analysisPlanes(format, analysisSize).also { planes = it }
+            val view = planes ?: try {
+                frame.analysisPlanes(format, analysisSize).also { planes = it }
+            } catch (e: Exception) {
+                CameraKLogger.e(TAG, "A camera frame could not be converted for analysis; the frame is skipped", e)
+                lease.release()
+                return
+            }
             registration.dispatch(DesktopCameraFrame(frame, format, view, lease), lease)
         }
     }
