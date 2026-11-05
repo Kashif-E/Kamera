@@ -5,11 +5,13 @@ package com.kashif.cameraK.controller
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -29,7 +31,8 @@ import kotlin.test.assertTrue
  * The desktop engine enumerates its camera on its own scope after construction, never in the
  * constructor (§6.3), and reports the first real capability values: the 1.x enumerator's one
  * camera, OFF-only flash and torch from `hasFlash`, and pause and resume. From D3' (§6.3): JPEG and
- * PNG stills without HEIC, all four video qualities, and the quality's bitrate as the encoder's target.
+ * PNG stills without HEIC, all four video qualities, and the quality's bitrate as the encoder's target;
+ * from D4', every aspect ratio and both analysis formats.
  */
 class DesktopCapabilitiesTest {
     @Test
@@ -90,6 +93,23 @@ class DesktopCapabilitiesTest {
             rig.settle()
 
             assertEquals(setOf(ImageFormat.JPEG, ImageFormat.PNG), sut.capabilities.value.supportedImageFormats)
+        } finally {
+            sut.close()
+        }
+    }
+
+    // D4' (§6.3): every aspect ratio, 1:1 included, is a crop in the producer's blit, and analysis
+    // frames come in either session format.
+    @Test
+    fun everyAspectRatioAndBothAnalysisFormats() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val sut = rig.engine()
+        try {
+            rig.settle()
+
+            assertEquals(AspectRatio.entries.toSet(), sut.capabilities.value.supportedAspectRatios)
+            assertTrue(sut.capabilities.value.supportsSquareCapture, "1:1 is a crop like the others")
+            assertEquals(FrameFormat.entries.toSet(), sut.capabilities.value.supportedAnalysisFormats)
         } finally {
             sut.close()
         }

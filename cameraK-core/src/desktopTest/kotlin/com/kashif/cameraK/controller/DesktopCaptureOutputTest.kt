@@ -4,6 +4,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.engine.EngineState
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.error.CameraFeature
@@ -103,7 +104,8 @@ class DesktopCaptureOutputTest {
 
         // The engine: a PICTURES configuration.
         val rig = DesktopEngineRig(testScheduler)
-        val sut = rig.engine(CameraConfiguration(directory = Directory.PICTURES))
+        // A 4:3 configuration for the 4:3 camera, so the blit crops nothing (D4').
+        val sut = rig.engine(CameraConfiguration(directory = Directory.PICTURES, aspectRatio = AspectRatio.RATIO_4_3))
         try {
             DesktopRecordingSteps(this, rig).open(sut)
             val image = engineCapture(rig, sut)

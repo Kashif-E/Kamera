@@ -7,6 +7,7 @@ import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.LegacyControllerAccess
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
@@ -47,7 +48,8 @@ class LegacyFacadeLiveTest {
     @Test
     fun analyzerAndCaptureListenerWorkThroughTheFacade() = runBlocking {
         val camera = FakeFrameGrabber().apply { openGate() }
-        val config = CameraConfiguration()
+        // A 4:3 configuration for the 4:3 camera, so the blit crops nothing (D4').
+        val config = CameraConfiguration(aspectRatio = AspectRatio.RATIO_4_3)
         val engine = DesktopCameraEngine(
             config,
             CameraKEnvironment(CameraKDispatchers(main = Dispatchers.Default, default = Dispatchers.Default)),

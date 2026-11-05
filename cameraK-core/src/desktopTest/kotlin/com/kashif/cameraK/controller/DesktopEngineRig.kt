@@ -19,8 +19,10 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber
+import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
 import java.io.File
+import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -33,6 +35,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration
+import org.bytedeco.javacv.FrameConverter as JavaCvFrameConverter
 
 /**
  * A desktop engine on the test scheduler, with its producer on real threads the rig can see. The
@@ -55,8 +58,15 @@ internal class DesktopEngineRig(
     private val cameras = CopyOnWriteArrayList<ScriptedFrameGrabber>()
     val camera = newCamera()
 
-    /** Another camera whose parked grabs [settle] counts as quiet. */
-    fun newCamera(): ScriptedFrameGrabber = ScriptedFrameGrabber(workers).also { cameras += it }
+    /** Another camera whose parked grabs [settle] counts as quiet, delivering [width] x [height] frames. */
+    fun newCamera(width: Int = 64, height: Int = 48): ScriptedFrameGrabber =
+        ScriptedFrameGrabber(workers, width, height).also { cameras += it }
+
+    /**
+     * Tasks a test parks on purpose, such as an analyzer held inside its callback: each counts its
+     * parked tasks, and [settle] counts them as quiet. Each change of a count bumps [workers].
+     */
+    val parked = CopyOnWriteArrayList<() -> Int>()
 
     /** The engines' clock, in nanoseconds: what a test sets it to, and only that. */
     val clock = AtomicLong(0)
@@ -73,10 +83,14 @@ internal class DesktopEngineRig(
     /** How the engines write a still to its file. */
     var writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage
 
+    /** A new converter from the producer's frames to a recorder's, for each recording. */
+    var recordingConverter: () -> JavaCvFrameConverter<BufferedImage> = ::Java2DFrameConverter
+
     /** The media an engine of the rig writes with: under [home], into [recorders]. */
     fun media(): DesktopMedia = DesktopMedia(
         userHome = home,
         recorderFactory = { path, _ -> recorderScript(path).also { recorders += it } },
+        recordingConverter = { recordingConverter() },
         writeCapture = { image, format, file -> writeCapture(image, format, file) },
     )
 
@@ -136,7 +150,8 @@ internal class DesktopEngineRig(
 
     private fun awaitQuiet() = workers.awaitQuiet {
         cameras.sumOf { it.parkedGrabs() } +
-            recorders.sumOf { it.parkedStops() }
+            recorders.sumOf { it.parkedStops() } +
+            parked.sumOf { it() }
     }
 
     // The engine's tasks and the case's resume each other (a start the case launched begins a
@@ -263,11 +278,27 @@ internal class WorkerGate {
  * through unless [holdOpen] is set, so an engine opens on its own; [deliverFrame] lets one more
  * through, and [failGrab] makes the waiting (or next) `grab()` throw. `grab()` waits the way a real
  * grabber blocks for the next frame, and an interrupt ends the wait with InterruptedException.
+ * Its frames are [width] x [height] BGR pixels, black until [fill] paints them.
  */
-internal class ScriptedFrameGrabber(private val workers: TrackedWorkers) : FrameGrabber() {
+internal class ScriptedFrameGrabber(private val workers: TrackedWorkers, width: Int = 64, height: Int = 48) :
+    FrameGrabber() {
     private val lock = ReentrantLock()
     private val available = lock.newCondition()
-    private val frame = Frame(64, 48, Frame.DEPTH_UBYTE, 3)
+    private val frame = Frame(width, height, Frame.DEPTH_UBYTE, 3)
+
+    /** Paints every later frame: [rgb] gives each pixel as 0xRRGGBB, written as the camera's BGR bytes. */
+    fun fill(rgb: (x: Int, y: Int) -> Int) = lock.withLock {
+        val pixels = frame.image[0] as ByteBuffer
+        for (y in 0 until frame.imageHeight) {
+            for (x in 0 until frame.imageWidth) {
+                val color = rgb(x, y)
+                val at = y * frame.imageStride + x * 3
+                pixels.put(at, (color and 0xFF).toByte())
+                pixels.put(at + 1, (color shr 8 and 0xFF).toByte())
+                pixels.put(at + 2, (color shr 16 and 0xFF).toByte())
+            }
+        }
+    }
     private var permits = 0
     private var failure: Throwable? = null
     private var waiter: Thread? = null

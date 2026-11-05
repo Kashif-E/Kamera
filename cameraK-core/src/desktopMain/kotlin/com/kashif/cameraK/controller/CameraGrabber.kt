@@ -30,6 +30,7 @@ import java.awt.image.BufferedImage
 import java.io.File
 import java.util.WeakHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The single producer of desktop camera frames. One grab loop, on its own thread, is the only code
@@ -61,6 +62,12 @@ class CameraGrabber(
     private val startLock = Any()
 
     @Volatile private var isHorizontallyFlipped = false
+
+    /** The analysis frames converted to YUV_420 (D4' red stub). */
+    internal val yuvConversions = AtomicLong()
+
+    /** The slots of the running loop's frame pool (D4' red stub). */
+    internal val slotsAllocated: Int get() = 0
 
     /** The width and height of the frames the grab loop last produced, or null before the first. */
     @Volatile internal var frameSize: Pair<Int, Int>? = null

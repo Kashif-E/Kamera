@@ -3,7 +3,9 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoQuality
 import kotlinx.coroutines.test.runTest
@@ -22,7 +24,8 @@ class RecordedVideoSizeTest {
     fun reportsTheSizeWritten() = runTest {
         val rig = DesktopEngineRig(testScheduler)
         val steps = DesktopRecordingSteps(this, rig)
-        val sut = rig.engine()
+        // A 4:3 configuration for the 4:3 camera, so the blit crops nothing (D4').
+        val sut = rig.engine(CameraConfiguration(aspectRatio = AspectRatio.RATIO_4_3))
         try {
             // The scripted camera's frames are 64 x 48.
             steps.open(sut)

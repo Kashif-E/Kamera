@@ -1,4 +1,5 @@
 package com.kashif.cameraK.controller
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.utils.CameraKLogger
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.Java2DFrameConverter
@@ -41,6 +42,12 @@ class FrameConverter {
         null
     }
 
+    /** The frame in a slot of the pool, with one lease, the caller's (D4' red stub). */
+    internal fun convertLeased(frame: Frame, blit: FrameBlit, captureNanos: Long): LeasedFrame? = TODO("D4'")
+
+    /** The slots allocated (D4' red stub). */
+    internal val slotCount: Int get() = TODO("D4'")
+
     fun release() {
         converter.close()
         slots.forEachIndexed { index, slot ->
@@ -74,5 +81,12 @@ class FrameConverter {
     private companion object {
         // The frame being collected, the one buffered behind it and the one being written.
         const val RING_SIZE = 3
+    }
+}
+
+/** The crop and mirror of the producer's blit (D4' red stub). */
+internal class FrameBlit(val aspectRatio: AspectRatio?, val mirrored: Boolean) {
+    companion object {
+        val NONE = FrameBlit(null, false)
     }
 }
