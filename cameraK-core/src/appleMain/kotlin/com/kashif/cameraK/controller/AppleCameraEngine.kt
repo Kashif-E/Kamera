@@ -13,7 +13,6 @@ import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineRecordingEvent
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.HardwareState
-import com.kashif.cameraK.engine.InactiveFrameSource
 import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewLayerLayout
@@ -31,7 +30,9 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.error.StorageFailure
+import com.kashif.cameraK.frames.AppleFrameSource
 import com.kashif.cameraK.frames.CoreVideoPixelBufferLocker
+import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.frames.PixelBufferLocker
 import com.kashif.cameraK.recording.RecordingEndReason
@@ -220,7 +221,17 @@ internal class AppleCameraEngine(
         set(value) {
             recorder.microphoneInput = value
         }
-    override val frames: FrameSource = InactiveFrameSource()
+
+    /** Analysis frames on one 420f video data output (design §8). */
+    private val frameSource = AppleFrameSource(
+        custom = custom,
+        keepOutput = config.frameAnalysis,
+        recordingActive = { recorder.isActive },
+        rotationDegrees = ::frameRotationDegrees,
+        onSampleBuffer = ::onSampleBuffer,
+        locker = pixelBufferLocker,
+    )
+    override val frames: FrameSource = frameSource
 
     private val scope = CoroutineScope(
         SupervisorJob(environment.parentJob) + environment.dispatchers.default +
@@ -234,6 +245,9 @@ internal class AppleCameraEngine(
     private var closed = false
     private var pendingStart: PendingStart? = null
     private var firstFrame: AutoCloseable? = null
+
+    /** A lens switch whose interval waits for the first sample buffer from [PendingSwitch.input]. */
+    private var pendingSwitch: PendingSwitch? = null
 
     /** Set by a media-services reset's restart, cleared when the session runs again. */
     private var restartedAfterReset = false
@@ -296,7 +310,14 @@ internal class AppleCameraEngine(
         custom.recordingInProgress = { recorder.isActive }
         custom.photoFormat = config.imageFormat
         custom.turnsDeferredStartOff = osVersion >= DEFERRED_START_IOS
+        recorder.onIdle = frameSource::reconcileOnQueue
         if (unsupported == null) {
+            // With frameAnalysis the frame output joins the startup transaction (design §8).
+            if (config.frameAnalysis) {
+                custom.afterQueuedSessionWork {
+                    platformCallback("adding the frame output") { frameSource.reconcileOnQueue() }
+                }
+            }
             scope.launch { enumerate() }
         } else {
             enumerated.complete(Unit)
@@ -357,6 +378,13 @@ internal class AppleCameraEngine(
     override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> {
         if (isClosed) return CLOSED
         unsupported?.let { error ->
+            locked { if (!closed) _state.value = EngineState.Failed(error) }
+            return failure(error)
+        }
+        if (config.analysisFormat != FrameFormat.YUV_420) {
+            // AVCaptureVideoDataOutput delivers CameraK's frames in 420f only (design §6.1, §8).
+            val error = CameraKError.Unsupported(CameraFeature.ANALYSIS_FORMAT)
+            CameraKLogger.e(TAG, "CameraK: iOS analysis frames are YUV_420; ${config.analysisFormat} fails the start")
             locked { if (!closed) _state.value = EngineState.Failed(error) }
             return failure(error)
         }
@@ -446,6 +474,7 @@ internal class AppleCameraEngine(
             phase = Phase.CLOSED
             pendingStart = null
             endFirstFrame()
+            endPendingSwitch()
             _state.value = EngineState.Closed
             true
         }
@@ -469,6 +498,7 @@ internal class AppleCameraEngine(
             generation++
             phase = Phase.CLOSED
             endFirstFrame()
+            endPendingSwitch()
             _state.value = EngineState.Closed
             pendingStart.also { pendingStart = null }
         }
@@ -491,6 +521,7 @@ internal class AppleCameraEngine(
             generation++
             phase = Phase.CLOSED
             endFirstFrame()
+            endPendingSwitch()
             _state.value = EngineState.Closed
             pendingStart.also { pendingStart = null }
         }
@@ -640,7 +671,8 @@ internal class AppleCameraEngine(
             phase = Phase.LIVE
             _state.value = next
             if (next == EngineState.Open) {
-                endFirstFrame()
+                // With a frame output the first frame is its first sample buffer (onSampleBuffer).
+                if (!frameSource.outputAttached) endFirstFrame()
                 restartedAfterReset = false
             }
             pendingStart.also { pendingStart = null }
@@ -654,6 +686,7 @@ internal class AppleCameraEngine(
             if (phase != Phase.STARTING && phase != Phase.LIVE) return
             phase = Phase.FAILED
             endFirstFrame()
+            endPendingSwitch()
             _state.value = EngineState.Failed(error)
             pendingStart.also { pendingStart = null }
         }
@@ -675,6 +708,44 @@ internal class AppleCameraEngine(
         firstFrame = null
     }
 
+    // Lock held: a switch whose first frame never came ends here, marked noFrame.
+    private fun endPendingSwitch() {
+        val switch = pendingSwitch ?: return
+        pendingSwitch = null
+        tracer.marker(AppleTraceNames.LENS_SWITCH_NO_FRAME)
+        switch.interval.close()
+    }
+
+    /**
+     * The frame output's queue, before any analyzer: the start's first sample buffer ends its
+     * first-frame interval, and the first one through the new camera's input ends a lens switch's.
+     */
+    private fun onSampleBuffer(input: AVCaptureInput?) {
+        locked {
+            if (!closed && (phase == Phase.STARTING || phase == Phase.LIVE)) endFirstFrame()
+            val switch = pendingSwitch
+            if (switch != null && input != null && switch.input === input) {
+                pendingSwitch = null
+                switch.interval.close()
+            }
+        }
+    }
+
+    /**
+     * Clockwise degrees that turn a frame upright: the video data output delivers the sensor's
+     * landscape buffer, which the back camera shows upright with the device turned left and the front
+     * camera with it turned right (the front's mirroring is not part of the rotation).
+     */
+    private fun frameRotationDegrees(): Int {
+        val front = custom.currentDevice?.isFront == true
+        return when (_deviceOrientation.value) {
+            DeviceOrientation.PORTRAIT -> if (front) DEGREES_270 else DEGREES_90
+            DeviceOrientation.LANDSCAPE_LEFT -> if (front) DEGREES_180 else 0
+            DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> if (front) DEGREES_90 else DEGREES_270
+            DeviceOrientation.LANDSCAPE_RIGHT -> if (front) 0 else DEGREES_180
+        }
+    }
+
     // ─── Commands ───────────────────────────────────────────────────────────────────────────────
 
     override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> {
@@ -687,10 +758,13 @@ internal class AppleCameraEngine(
      * Moves the open session to the camera [selection] names, with the 1.x lens switch, and passes
      * the camera live afterwards to [done] on the session queue. The work is queued before this
      * returns, so it runs after any session work already requested. The switch is one
-     * `CameraK.lensSwitch` interval, which ends when the swap has committed (the session keeps
-     * running through it) or, marked failed, when the switch was refused.
+     * `CameraK.lensSwitch` interval. With no frame output attached it ends when the swap has
+     * committed (the session keeps running through it); with one, at the first sample buffer through
+     * the new camera's input, or, marked noFrame, at the engine's stop, close, failure or next switch.
+     * A refused switch ends it at once, marked failed.
      */
     internal fun switchCamera(selection: CameraSelection, done: (CameraKResult<LensInfo>) -> Unit) {
+        locked { endPendingSwitch() }
         val interval = tracer.beginInterval(TraceNames.LENS_SWITCH)
         custom.afterQueuedSessionWork {
             val result = try {
@@ -699,8 +773,20 @@ internal class AppleCameraEngine(
                 CameraKLogger.e(TAG, "CameraK: switching the camera failed", e)
                 failure(CameraKError.Internal(e))
             }
-            if (result is CameraKResult.Failure) tracer.marker(AppleTraceNames.LENS_SWITCH_FAILED)
-            interval.close()
+            val input = custom.currentVideoInput
+            val waitsForFrame = result is CameraKResult.Success &&
+                frameSource.outputAttached &&
+                input != null &&
+                locked {
+                    if (closed) return@locked false
+                    endPendingSwitch()
+                    pendingSwitch = PendingSwitch(interval, input)
+                    true
+                }
+            if (!waitsForFrame) {
+                if (result is CameraKResult.Failure) tracer.marker(AppleTraceNames.LENS_SWITCH_FAILED)
+                interval.close()
+            }
             done(result)
         }
     }
@@ -1297,7 +1383,8 @@ internal class AppleCameraEngine(
         supportedAspectRatios = AspectRatio.entries.toSet(),
         // HEIC where the bound camera's photo output can encode HEVC.
         supportedImageFormats = imageFormats,
-        supportedAnalysisFormats = emptySet(),
+        // AVCaptureVideoDataOutput delivers CameraK's frames in 420f only (design §8).
+        supportedAnalysisFormats = setOf(FrameFormat.YUV_420),
         supportsSquareCapture = true,
     )
 
@@ -1429,12 +1516,17 @@ internal class AppleCameraEngine(
 
     private class PendingStart(val generation: Int, val continuation: CancellableContinuation<CameraKResult<Unit>>)
 
+    private class PendingSwitch(val interval: AutoCloseable, val input: AVCaptureInput)
+
     private companion object {
         const val TAG = "CameraK"
         const val MINIMUM_IOS = 16
         const val ROTATION_COORDINATOR_IOS = 17
         const val PAUSE_RESUME_IOS = 18
         const val DEFERRED_START_IOS = 26
+        const val DEGREES_90 = 90
+        const val DEGREES_180 = 180
+        const val DEGREES_270 = 270
         val CLOSED = CameraKResult.Failure(CameraKError.Closed)
 
         fun failure(error: CameraKError) = CameraKResult.Failure(error)

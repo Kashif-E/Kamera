@@ -592,6 +592,17 @@ class CustomCameraController(
         }
     }
 
+    /**
+     * Session queue, before the session is configured: [change] runs inside the setup transaction, as
+     * a change queued before setup does.
+     */
+    internal fun joinSetupOnQueue(change: () -> Unit) {
+        pendingConfigurations.add(change)
+    }
+
+    /** The camera's input in the session now. Session queue. */
+    internal val currentVideoInput: AVCaptureInput? get() = videoInput
+
     /** Runs [block] on the session queue after every piece of session work already requested. */
     internal fun afterQueuedSessionWork(block: () -> Unit) {
         dispatch_async(sessionQueue, block)

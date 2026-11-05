@@ -8,9 +8,11 @@ import platform.CoreVideo.CVPixelBufferRef
 
 /**
  * The frame's Core Video pixel buffer, for zero-copy decoders (Vision). Non-null only on a frame
- * delivered to a [FrameSpec.synchronous] registration, while that frame is valid; null on a
- * [TestFrame][CameraFrame] and on every frame an asynchronous registration gets.
+ * delivered to a [FrameSpec.synchronous] registration, and on that registration's retained frames that
+ * hold the sample buffer, while the frame is valid; null on a test frame, on every frame an
+ * asynchronous registration gets, and on a retained frame that copied its luma. Its base address is
+ * locked read-only while non-null.
  */
 @CameraKPlatformApi
 public val CameraFrame.pixelBuffer: CVPixelBufferRef?
-    get() = TODO("I4'")
+    get() = (this as? PixelBufferFrame)?.exposedPixelBuffer

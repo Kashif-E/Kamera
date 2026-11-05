@@ -103,6 +103,9 @@ internal class AppleRecorder(
     /** How long a stop waits for AVFoundation to finish the file. */
     var finishTimeoutMs: Long = 10_000
 
+    /** Session queue: a recording finalized and nothing records now, so the outputs may change again. */
+    var onIdle: () -> Unit = {}
+
     /** Whether the movie output can pause: AVCaptureFileOutput's pause exists from iOS 18. */
     var pauseSupported: () -> Boolean = { osVersion >= PAUSE_RESUME_IOS }
 
@@ -408,6 +411,7 @@ internal class AppleRecorder(
         if (active === movie) {
             active = null
             recording = false
+            guarded("changing the outputs after a recording") { onIdle() }
         }
         val kept = ((result as? CameraKResult.Failure)?.error as? CameraKError.Storage)?.keptFilePath
         if (kept != null && movie.startedAt != null) lastKept.value = kept to recorded(movie)
