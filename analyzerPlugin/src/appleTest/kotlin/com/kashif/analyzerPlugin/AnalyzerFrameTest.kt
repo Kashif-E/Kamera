@@ -8,33 +8,6 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.sizeOf
 import kotlinx.cinterop.value
-import platform.AVFoundation.AVCaptureOutput
-import platform.AVFoundation.AVCaptureVideoDataOutput
-import platform.CoreFoundation.CFDataCreate
-import platform.CoreFoundation.CFRelease
-import platform.CoreFoundation.kCFAllocatorDefault
-import platform.CoreGraphics.CGColorRenderingIntent
-import platform.CoreGraphics.CGColorSpaceCreateDeviceRGB
-import platform.CoreGraphics.CGColorSpaceRelease
-import platform.CoreGraphics.CGDataProviderCreateWithCFData
-import platform.CoreGraphics.CGDataProviderRelease
-import platform.CoreGraphics.CGImageAlphaInfo
-import platform.CoreGraphics.CGImageCreate
-import platform.CoreGraphics.kCGBitmapByteOrder32Little
-import platform.CoreVideo.CVPixelBufferCreate
-import platform.CoreVideo.CVPixelBufferGetBaseAddress
-import platform.CoreVideo.CVPixelBufferGetBytesPerRow
-import platform.CoreVideo.CVPixelBufferGetDataSize
-import platform.CoreVideo.CVPixelBufferGetHeight
-import platform.CoreVideo.CVPixelBufferGetWidth
-import platform.CoreVideo.CVPixelBufferLockBaseAddress
-import platform.CoreVideo.CVPixelBufferRef
-import platform.CoreVideo.CVPixelBufferRefVar
-import platform.CoreVideo.CVPixelBufferRelease
-import platform.CoreVideo.CVPixelBufferUnlockBaseAddress
-import platform.CoreVideo.kCVPixelBufferLock_ReadOnly
-import platform.CoreVideo.kCVPixelFormatType_32BGRA
-import platform.CoreVideo.kCVReturnSuccess
 import platform.Foundation.NSDate
 import platform.Foundation.NSRunLoop
 import platform.Foundation.NSThread
@@ -45,7 +18,7 @@ import platform.darwin.KERN_SUCCESS
 import platform.darwin.NSEC_PER_SEC
 import platform.darwin.TASK_VM_INFO
 import platform.darwin.dispatch_async
-import platform.darwin.dispatch_get_main_queue
+import platform.darwin.dispatch_queue_create
 import platform.darwin.dispatch_semaphore_create
 import platform.darwin.dispatch_semaphore_signal
 import platform.darwin.dispatch_semaphore_wait
@@ -55,136 +28,63 @@ import platform.darwin.mach_task_self_
 import platform.darwin.natural_tVar
 import platform.darwin.task_info
 import platform.darwin.task_vm_info_data_t
-import platform.posix.memset
 import kotlin.native.runtime.GC
 import kotlin.native.runtime.NativeRuntimeApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
+/** The iOS encoder over 420f frames: nothing kept per frame, and nothing moved onto the main queue. */
 @OptIn(ExperimentalForeignApi::class, NativeRuntimeApi::class)
 class AnalyzerFrameTest {
     @Test
     fun convertingFramesDoesNotKeepADecodedImagePerFrame() {
-        val buffer = pixelBuffer(FRAME_WIDTH, FRAME_HEIGHT)
-        try {
-            var delivered = 0
-            val analyzer = CameraAnalyzer(onFrameAvailable = { delivered++ }, renderer = copyingRenderer)
+        val frame = BiPlanarFrame(FRAME_WIDTH, FRAME_HEIGHT, lumaLevel = 0x80)
+        val encoder = CoreImageFrameEncoder(AnalyzerConfig { maxDimension = null }, copyingRenderer)
+        var delivered = 0
 
-            repeat(WARM_UP_FRAMES) { analyzer.analyze(buffer) }
-            val before = settledFootprint()
-            repeat(MEASURED_FRAMES) { analyzer.analyze(buffer) }
-            val growth = settledFootprint() - before
+        repeat(WARM_UP_FRAMES) { if (encoder.encode(frame) != null) delivered++ }
+        val before = settledFootprint()
+        repeat(MEASURED_FRAMES) { if (encoder.encode(frame) != null) delivered++ }
+        val growth = settledFootprint() - before
 
-            assertEquals(WARM_UP_FRAMES + MEASURED_FRAMES, delivered, "every frame should reach the consumer")
-            // A leaked CGImage keeps one decoded frame alive, so the leak grows the footprint by
-            // about one frame per conversion (MEASURED_FRAMES frames in all). Five frames of slack
-            // absorbs allocator and CoreImage cache noise and is far below that.
-            val limit = SLACK_FRAMES * DECODED_FRAME_BYTES
-            assertTrue(
-                growth < limit,
-                "footprint grew ${growth / MB} MB over $MEASURED_FRAMES frames (limit ${limit / MB} MB, " +
-                    "${DECODED_FRAME_BYTES / MB} MB per decoded frame)",
-            )
-        } finally {
-            CVPixelBufferRelease(buffer)
-        }
+        assertEquals(WARM_UP_FRAMES + MEASURED_FRAMES, delivered, "every frame should be encoded")
+        // A leaked CGImage keeps one decoded frame alive, and a leaked pixel buffer most of one, so a
+        // leak grows the footprint by about a frame per conversion (MEASURED_FRAMES frames in all).
+        // Five frames of slack absorbs allocator and CoreImage cache noise and is far below that.
+        val limit = SLACK_FRAMES * DECODED_FRAME_BYTES
+        assertTrue(
+            growth < limit,
+            "footprint grew ${growth / MB} MB over $MEASURED_FRAMES frames (limit ${limit / MB} MB, " +
+                "${DECODED_FRAME_BYTES / MB} MB per decoded frame)",
+        )
     }
 
     @Test
     fun framesAreConvertedOnAPrivateQueueNotTheMainQueue() {
-        var added: AVCaptureOutput? = null
         val convertedOnMain = atomic<Boolean?>(null)
-        val handle = startAnalyzer(
-            addOutput = { added = it },
-            removeOutput = {},
-            onFrameAvailable = { convertedOnMain.value = NSThread.isMainThread },
-            renderer = copyingRenderer,
-        )
-        val output = assertIs<AVCaptureVideoDataOutput>(added)
-        val queue = assertNotNull(output.sampleBufferCallbackQueue, "the output needs a delegate queue")
-        assertNotEquals<Any?>(dispatch_get_main_queue(), queue, "frames must not be delivered on the main queue")
-
-        val buffer = pixelBuffer(64, 48)
-        try {
-            val analyzer = assertIs<CameraAnalyzer>(output.sampleBufferDelegate)
-            val done = dispatch_semaphore_create(0)
-            dispatch_async(queue) {
-                analyzer.analyze(buffer)
-                dispatch_semaphore_signal(done)
-            }
-            val timedOut = dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC.toLong()))
-            assertEquals(0L, timedOut, "conversion on the delegate queue did not finish within 5 s")
-            assertEquals(false, convertedOnMain.value, "a frame delivered on the delegate queue was converted on main")
-        } finally {
-            CVPixelBufferRelease(buffer)
-            handle.stop()
+        val renderer = FrameRenderer { pixels, width, height ->
+            convertedOnMain.value = NSThread.isMainThread
+            copyingRenderer.render(pixels, width, height)
         }
-    }
+        val encoder = CoreImageFrameEncoder(AnalyzerConfig(), renderer)
+        // The frame source calls analyze on its own serial worker; this queue stands in for it.
+        val worker = dispatch_queue_create("com.kashif.analyzerPlugin.test.worker", null)
+        val encoded = atomic<Result<EncodedFrame?>?>(null)
 
-    @Test
-    fun theDelegateStaysRegisteredUntilTheHandleIsStopped() {
-        var added: AVCaptureOutput? = null
-        var removed: AVCaptureOutput? = null
-        val handle = startAnalyzer(
-            addOutput = { added = it },
-            removeOutput = { removed = it },
-            onFrameAvailable = {},
-            renderer = copyingRenderer,
-        )
-        val output = assertIs<AVCaptureVideoDataOutput>(added)
-
-        // AVCaptureVideoDataOutput holds its delegate weakly; only the handle can keep it alive.
-        settledFootprint()
-        assertNotNull(output.sampleBufferDelegate, "the delegate was collected while the analyzer was running")
-
-        handle.stop()
-        assertNull(output.sampleBufferDelegate, "stop must detach the delegate")
-        assertSame(output, removed, "stop must remove the output it added")
-    }
-
-    /**
-     * A CPU stand-in for the CoreImage renderer, which cannot run here because the simulator test
-     * process has no Metal device. Like CIContext.createCGImage it returns a +1 CGImage that owns
-     * its own copy of the frame's pixels, so whoever leaks the image leaks one decoded frame.
-     */
-    private val copyingRenderer = FrameRenderer { buffer ->
-        CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly)
-        try {
-            val height = CVPixelBufferGetHeight(buffer)
-            val bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
-            val pixels = CFDataCreate(
-                null,
-                CVPixelBufferGetBaseAddress(buffer)?.reinterpret(),
-                (bytesPerRow * height).toLong(),
-            )
-            val provider = CGDataProviderCreateWithCFData(pixels)
-            CFRelease(pixels)
-            val colorSpace = CGColorSpaceCreateDeviceRGB()
-            val image = CGImageCreate(
-                CVPixelBufferGetWidth(buffer),
-                height,
-                8u,
-                32u,
-                bytesPerRow,
-                colorSpace,
-                kCGBitmapByteOrder32Little or CGImageAlphaInfo.kCGImageAlphaNoneSkipFirst.value,
-                provider,
-                null,
-                false,
-                CGColorRenderingIntent.kCGRenderingIntentDefault,
-            )
-            CGColorSpaceRelease(colorSpace)
-            CGDataProviderRelease(provider)
-            image
-        } finally {
-            CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly)
+        val done = dispatch_semaphore_create(0)
+        dispatch_async(worker) {
+            // A throwable escaping a dispatch block would end the test process; it is rethrown below.
+            encoded.value = runCatching { encoder.encode(BiPlanarFrame(64, 48, lumaLevel = 0x40)) }
+            dispatch_semaphore_signal(done)
         }
+        // Main waits here, so an encoder that hopped to the main queue would never finish.
+        val timedOut = dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC.toLong()))
+
+        assertEquals(0L, timedOut, "encoding on the worker did not finish within 5 s")
+        assertNotNull(assertNotNull(encoded.value).getOrThrow(), "the frame was not encoded")
+        assertEquals(false, convertedOnMain.value, "a frame encoded on the worker was converted on main")
     }
 
     /** Collects garbage, lets deferred Objective-C releases run, and reads the process footprint. */
@@ -203,24 +103,6 @@ class AnalyzerFrameTest {
         val result = task_info(mach_task_self_, TASK_VM_INFO.toUInt(), info.ptr.reinterpret(), count.ptr)
         check(result == KERN_SUCCESS) { "task_info failed: $result" }
         info.phys_footprint.toLong()
-    }
-
-    private fun pixelBuffer(width: Int, height: Int): CVPixelBufferRef = memScoped {
-        val out = alloc<CVPixelBufferRefVar>()
-        val status = CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            width.toULong(),
-            height.toULong(),
-            kCVPixelFormatType_32BGRA,
-            null,
-            out.ptr,
-        )
-        check(status == kCVReturnSuccess) { "CVPixelBufferCreate failed: $status" }
-        val buffer = checkNotNull(out.value)
-        CVPixelBufferLockBaseAddress(buffer, 0u)
-        memset(CVPixelBufferGetBaseAddress(buffer), 0x80, CVPixelBufferGetDataSize(buffer))
-        CVPixelBufferUnlockBaseAddress(buffer, 0u)
-        buffer
     }
 
     private companion object {

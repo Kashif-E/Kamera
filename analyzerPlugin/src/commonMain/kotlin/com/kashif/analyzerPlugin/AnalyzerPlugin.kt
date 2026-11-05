@@ -1,133 +1,89 @@
 package com.kashif.analyzerPlugin
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import com.kashif.cameraK.controller.CameraController
-import com.kashif.cameraK.error.CameraKError
-import com.kashif.cameraK.state.CameraKEvent
+import com.kashif.cameraK.frames.FrameFormat
+import com.kashif.cameraK.frames.FrameSpec
+import com.kashif.cameraK.plugin.CameraKPluginContext
+import com.kashif.cameraK.plugin.PluginStatus
 import com.kashif.cameraK.state.CameraKPlugin
-import com.kashif.cameraK.state.CameraKState
-import com.kashif.cameraK.state.CameraKStateHolder
-import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.utils.InternalCameraKApi
-import kotlinx.atomicfu.atomic
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Handle to a started analyzer. Call [stop] to remove the underlying platform analyzer/output so it
- * stops consuming frames — the plugin keeps no other way to tear that registration down.
+ * Hands the app the camera's analysis frames as JPEGs, for models that take encoded images.
+ *
+ * The plugin reads frames from the holder's frame source and adds no camera output of its own. It
+ * registers only while [results] has a collector, the camera is Ready and the plugin is not
+ * [pause]d, so with no collector no frame is copied or encoded. Frames arrive at most
+ * [AnalyzerConfig.maxFps] a second, scaled down to [AnalyzerConfig.maxDimension].
+ *
+ * @property config How frames are encoded.
  */
-fun interface AnalyzerHandle {
-    fun stop()
-}
-
-class AnalyzerPlugin internal constructor(
-    val coroutineScope: CoroutineScope,
-    private val startFrameAnalyzer: (CameraController, (ByteArray) -> Unit) -> AnalyzerHandle,
+public class AnalyzerPlugin internal constructor(
+    public val config: AnalyzerConfig,
+    private val encoderFactory: (AnalyzerConfig) -> FrameEncoder,
+    private val acceptedFormats: Set<FrameFormat> = ENCODED_FORMATS,
 ) : CameraKPlugin {
-    constructor(coroutineScope: CoroutineScope) : this(
-        coroutineScope,
-        { controller, onFrame -> com.kashif.analyzerPlugin.startAnalyzer(controller, onFrame) },
-    )
+    /** An analyzer that encodes frames as [config] says, with the platform's encoder. */
+    public constructor(config: AnalyzerConfig = AnalyzerConfig()) : this(config, ::platformFrameEncoder)
 
-    private var cameraController: CameraController? = null
-    private var stateHolder: CameraKStateHolder? = null
-    private val analyzerFlow = MutableSharedFlow<ByteArray>(
+    private val _status = MutableStateFlow<PluginStatus>(PluginStatus.Idle)
+
+    /**
+     * Running while frames are being encoded; Paused while [pause]d or while the frame source waits
+     * for its output; Idle with no Ready session or no collector of [results]; and `Failed` while
+     * the current attachment has failed: its registration was rejected or the encoder threw.
+     */
+    public val status: StateFlow<PluginStatus> = _status.asStateFlow()
+
+    private val _results = MutableSharedFlow<EncodedFrame>(
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
-    private var isAnalyzing = atomic(false)
-    private var collectorJob: Job? = null
-    private var analyzerHandle: AnalyzerHandle? = null
-
-    fun startAnalyzer() {
-        val controller = cameraController ?: return
-        // Tear down any previous registration first so re-init (new Ready) doesn't stack
-        // analyzers (Android) or outputs (iOS), which would multiply per-frame work and leak.
-        analyzerHandle?.stop()
-        isAnalyzing.value = true
-        analyzerHandle = startFrameAnalyzer(controller) { frame ->
-            if (isAnalyzing.value) analyzerFlow.tryEmit(frame)
-        }
-    }
-
-    fun stopAnalyzer() {
-        isAnalyzing.value = false
-        analyzerHandle?.stop()
-        analyzerHandle = null
-    }
 
     /**
-     * Attaches the plugin to the state holder (new API).
-     * Automatically starts Analyzer when camera becomes ready.
-     *
-     * @param stateHolder The [CameraKStateHolder] to attach to.
+     * The encoded frames. Encoding runs only while this has a collector; a collector that falls
+     * behind gets the latest frame and loses the ones before it.
      */
-    override fun onAttach(stateHolder: CameraKStateHolder) {
-        CameraKLogger.d("CameraK", "Analyzer attached (new API)")
-        this.stateHolder = stateHolder
+    public val results: Flow<EncodedFrame> = _results.asSharedFlow()
 
-        collectorJob = stateHolder.pluginScope.launch {
-            stateHolder.cameraState
-                .filterIsInstance<CameraKState.Ready>()
-                .collect { readyState ->
-                    try {
-                        this@AnalyzerPlugin.cameraController = readyState.controller
-                        startAnalyzer()
-                    } catch (e: Exception) {
-                        CameraKLogger.e("CameraK", "Analyzer: Failed to start analyzer", e)
-                        stateHolder.emitEvent(
-                            @OptIn(InternalCameraKApi::class)
-                            CameraKEvent.PluginFailed(
-                                this@AnalyzerPlugin::class.simpleName ?: "AnalyzerPlugin",
-                                CameraKError.Internal(e),
-                            ),
-                        )
-                    }
-                }
-        }
+    override fun onAttach(context: CameraKPluginContext) {
+        TODO("AN': onAttach")
     }
 
-    /**
-     * Detaches the plugin from the state holder and cleans up resources.
-     */
     override fun onDetach() {
-        CameraKLogger.d("CameraK", "com.kashif.analyzerPlugin.AnalyzerPlugin detached")
-        stopAnalyzer()
-        collectorJob?.cancel()
-        collectorJob = null
-        this.stateHolder = null
-        this.cameraController = null
+        TODO("AN': onDetach")
     }
 
-    /**
-     * Convenience method to attach this plugin to a state holder.
-     * Use this when manually managing plugin lifecycle.
-     *
-     * @param stateHolder The state holder to attach to.
-     */
-    fun attachToStateHolder(stateHolder: CameraKStateHolder) {
-        stateHolder.attachPlugin(this)
+    /** Stops encoding and closes the frame registration, until [resume]. */
+    public fun pause() {
+        TODO("AN': pause")
     }
 
-    /**
-     * Returns a flow that emits latest frames.
-     *
-     * @return SharedFlow<ByteArray>
-     */
-    fun getAnalyzerFlow() = analyzerFlow.asSharedFlow()
+    /** Encodes again after [pause], once the camera is Ready and [results] has a collector. */
+    public fun resume() {
+        TODO("AN': resume")
+    }
+
+    internal companion object {
+        /** The analyzer converts either session format to colour itself. */
+        val ENCODED_FORMATS: Set<FrameFormat> = setOf(FrameFormat.YUV_420, FrameFormat.RGBA_8888)
+    }
 }
 
-expect fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit): AnalyzerHandle
+/**
+ * The registration the analyzer asks for: asynchronous, so a slow encode delays no other analyzer;
+ * retaining nothing, because it encodes inside `analyze` from the copied planes; at [AnalyzerConfig.maxFps].
+ */
+internal fun AnalyzerConfig.frameSpec(acceptedFormats: Set<FrameFormat>): FrameSpec = TODO("AN': frameSpec")
 
+/** The same analyzer across recompositions while [config] is unchanged. */
 @Composable
-fun rememberAnalyzerPlugin(coroutineScope: CoroutineScope = rememberCoroutineScope()): AnalyzerPlugin =
-    remember(coroutineScope) {
-        AnalyzerPlugin(coroutineScope)
-    }
+public fun rememberAnalyzerPlugin(config: AnalyzerConfig = AnalyzerConfig()): AnalyzerPlugin =
+    remember(config) { AnalyzerPlugin(config) }

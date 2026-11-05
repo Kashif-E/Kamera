@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.kashif.analyzerPlugin.AnalyzerConfig
 import com.kashif.analyzerPlugin.AnalyzerPlugin
 import com.kashif.analyzerPlugin.rememberAnalyzerPlugin
 import kotlinx.coroutines.CoroutineScope
@@ -13,19 +14,22 @@ import kotlinx.coroutines.CoroutineScope
 /** The Sample's frame analyzer, feeding the TFLite object detector where the platform has one. */
 internal class AnalyzerFeature(val plugin: AnalyzerPlugin)
 
+// Object detection wants a steadier stream than the analyzer's default of one frame a second.
+private val SampleAnalyzerConfig = AnalyzerConfig { maxFps = 5f }
+
 @Composable
 internal fun rememberAnalyzerFeature(): AnalyzerFeature {
-    val plugin = rememberAnalyzerPlugin()
+    val plugin = rememberAnalyzerPlugin(SampleAnalyzerConfig)
     return remember(plugin) { AnalyzerFeature(plugin) }
 }
 
-/** The most recent analyzed frame. */
+/** The most recent analyzed frame's JPEG. Collecting it is what makes the analyzer encode. */
 @Composable
 internal fun rememberLatestFrame(analyzer: AnalyzerFeature): ByteArray? {
     var latestFrame by remember { mutableStateOf<ByteArray?>(null) }
     LaunchedEffect(analyzer) {
-        analyzer.plugin.getAnalyzerFlow().collect { frame ->
-            latestFrame = frame
+        analyzer.plugin.results.collect { frame ->
+            latestFrame = frame.bytes
         }
     }
     return latestFrame
@@ -33,15 +37,8 @@ internal fun rememberLatestFrame(analyzer: AnalyzerFeature): ByteArray? {
 
 @Composable
 internal fun AnalyzerEffect(analyzer: AnalyzerFeature, isDetectionEnabled: Boolean) {
-    LaunchedEffect(isDetectionEnabled) {
-        try {
-            if (isDetectionEnabled) {
-                analyzer.plugin.startAnalyzer()
-            } else {
-                analyzer.plugin.stopAnalyzer()
-            }
-        } catch (_: Exception) {
-        }
+    LaunchedEffect(analyzer, isDetectionEnabled) {
+        if (isDetectionEnabled) analyzer.plugin.resume() else analyzer.plugin.pause()
     }
 }
 

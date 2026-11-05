@@ -1,34 +1,10 @@
 package com.kashif.analyzerPlugin
 
-import androidx.annotation.OptIn
-import androidx.camera.core.ExperimentalGetImage
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import com.kashif.cameraK.controller.CameraController
-import com.kashif.cameraK.utils.toByteArray
+import com.kashif.cameraK.frames.CameraFrame
 
-actual fun startAnalyzer(cameraController: CameraController, onFrameAvailable: (ByteArray) -> Unit): AnalyzerHandle {
-    val analyzer = cameraController.enableAnalyzer(onFrameAvailable)
-    return AnalyzerHandle { cameraController.unregisterImageAnalyzer(analyzer) }
-}
+internal actual fun platformFrameEncoder(config: AnalyzerConfig): FrameEncoder = BitmapFrameEncoder(config)
 
-internal fun CameraController.enableAnalyzer(onFrameAvailable: (ByteArray) -> Unit): CameraAnalyzer {
-    val analyzer = CameraAnalyzer(onFrameAvailable = onFrameAvailable)
-    registerImageAnalyzer(analyzer)
-    return analyzer
-}
-
-internal class CameraAnalyzer(private val onFrameAvailable: (ByteArray) -> Unit) : ImageAnalysis.Analyzer {
-    @OptIn(ExperimentalGetImage::class)
-    override fun analyze(image: ImageProxy) {
-        try {
-            val mediaImage = image.image
-            if (mediaImage == null) {
-                return
-            }
-            onFrameAvailable(image.toByteArray())
-        } finally {
-            image.close()
-        }
-    }
+/** Encodes through an ARGB Bitmap and `Bitmap.compress`, from the frame's copied planes. */
+internal class BitmapFrameEncoder(private val config: AnalyzerConfig) : FrameEncoder {
+    override fun encode(frame: CameraFrame): EncodedFrame? = TODO("AN': BitmapFrameEncoder")
 }
