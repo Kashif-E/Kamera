@@ -189,7 +189,7 @@ class AnalyzerPluginTest {
     @Test
     fun aRejectedRegistrationMarksFailed() = runTest {
         val s = session(
-            config = CameraConfiguration(analysisFormat = FrameFormat.RGBA_8888),
+            config = CameraConfiguration { analysisFormat = FrameFormat.RGBA_8888 },
             acceptedFormats = setOf(FrameFormat.YUV_420),
         )
 

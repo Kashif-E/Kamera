@@ -364,7 +364,7 @@ class QRScannerPluginTest {
     fun anRgbaFrameReachesTheDecoderAsLuma() = runTest {
         val decoders = FakeDecoders()
         val plugin = QRScannerPlugin(QRScannerConfig(), decoders)
-        val s = qrSession(plugin, CameraConfiguration(analysisFormat = FrameFormat.RGBA_8888))
+        val s = qrSession(plugin, CameraConfiguration { analysisFormat = FrameFormat.RGBA_8888 })
         startReady(s)
         // One white pixel, then one black one.
         val rgba = byteArrayOf(-1, -1, -1, -1, 0, 0, 0, -1)

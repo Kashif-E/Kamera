@@ -137,7 +137,7 @@ internal fun TestScope.ocrSession(
         override val frames: FrameSource get() = frames
     }
     val holder = CameraKStateHolder(
-        CameraConfiguration(analysisFormat = format),
+        CameraConfiguration { analysisFormat = format },
         { config, _ -> wrapped.also { engine.configuration = config } },
         listOf(plugin),
         cameraKTestEnvironment(),

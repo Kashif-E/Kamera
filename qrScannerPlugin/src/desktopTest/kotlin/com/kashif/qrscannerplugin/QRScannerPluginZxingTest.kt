@@ -12,7 +12,7 @@ class QRScannerPluginZxingTest {
     fun rgbaSessionDecodesThroughCopyLuma() = runTest {
         val plugin = QRScannerPlugin()
         val results = collectResults(plugin)
-        val s = qrSession(plugin, CameraConfiguration(analysisFormat = FrameFormat.RGBA_8888))
+        val s = qrSession(plugin, CameraConfiguration { analysisFormat = FrameFormat.RGBA_8888 })
         startReady(s)
 
         s.fake.fakeFrames.emit(codeScene("HELLO", 320, 240).rgbaFrame())
