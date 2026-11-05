@@ -572,19 +572,32 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
      * when nothing is recording. A stop the platform does not finalize within five seconds returns
      * `Failure(Timeout(RECORD_STOP))`; the recording is then Finished with that failure and reason
      * ERROR, and [CameraKEvent.RecordingEnded] reports it.
+     *
+     * Unlike the other commands it also runs while the camera is [CameraKState.Interrupted]: the
+     * platform can still finalize the file, and a refusal would leave a recording the app cannot end.
      */
     public suspend fun stopRecording(): CameraKResult<RecordedVideo> {
-        commands.refused()?.let { return it }
+        stopRefusal()?.let { return it }
         return recording.stop()
     }
 
-    /** Pauses the recording; `Failure(Unsupported(PAUSE_RESUME))` where the platform cannot. */
+    // A stop runs in Ready and Interrupted; every other command only in Ready.
+    private fun stopRefusal(): CameraKResult.Failure? = when {
+        closing.value -> CameraKResult.Failure(CameraKError.Closed)
+        cameraState.value is CameraKState.Interrupted -> null
+        else -> commands.refused()
+    }
+
+    /**
+     * Pauses the recording; `Failure(Unsupported(PAUSE_RESUME))` where the platform cannot, and
+     * `Failure(NotReady)` while the camera is Interrupted.
+     */
     public suspend fun pauseRecording(): CameraKResult<Unit> {
         commands.refused()?.let { return it }
         return recording.pause()
     }
 
-    /** Resumes a paused recording. */
+    /** Resumes a paused recording; `Failure(NotReady)` while the camera is Interrupted. */
     public suspend fun resumeRecording(): CameraKResult<Unit> {
         commands.refused()?.let { return it }
         return recording.resume()
