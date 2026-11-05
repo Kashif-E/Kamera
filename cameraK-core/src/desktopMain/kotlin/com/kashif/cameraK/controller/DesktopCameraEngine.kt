@@ -60,6 +60,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import java.awt.image.BufferedImage
 import java.io.File
@@ -549,13 +550,27 @@ internal class DesktopCameraEngine(
             }
         }
         // The engine's own first-frame bound: a device that opens and stays silent is given up.
-        val opened = withTimeoutOrNull(NO_FRAME_TIMEOUT) { run.firstFrame.await() }
+        val opened = firstFrameWithinTimeout(run)
             ?: synchronized(lock) {
                 if (run.firstFrame.isCompleted) null else return CameraKResult.Failure(revertLocked(run, device))
             }
             ?: run.firstFrame.await()
         if (opened) return CameraKResult.Success(device)
         return CameraKResult.Failure(synchronized(lock) { switchFailure(run) })
+    }
+
+    // Timed on the engine's dispatcher, as the no-frame watchdog is, not on the caller's: null when
+    // NO_FRAME_TIMEOUT passed first, or the engine's scope ended.
+    private suspend fun firstFrameWithinTimeout(run: Run): Boolean? {
+        val bound = scope.launch { delay(NO_FRAME_TIMEOUT) }
+        return try {
+            select {
+                run.firstFrame.onAwait { it }
+                bound.onJoin { null }
+            }
+        } finally {
+            bound.cancel()
+        }
     }
 
     // A switch's device opened but delivered no frame in time: the device the session had opens
