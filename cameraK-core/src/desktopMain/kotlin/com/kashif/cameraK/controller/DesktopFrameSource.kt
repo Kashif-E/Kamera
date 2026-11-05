@@ -15,6 +15,7 @@ import com.kashif.cameraK.frames.FrameRegistration
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.frames.FrameSpec
 import com.kashif.cameraK.frames.RetainedFrame
+import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,13 +30,16 @@ import kotlin.coroutines.EmptyCoroutineContext
  * and never queues them, so each worker is conflated to the latest frame. A frame reaching an
  * analyzer holds a lease on its slot until the analyzer returns and every retain is closed.
  *
- * Analysis frames are in the session's [format], converted from the slot only when an analyzer
- * takes the frame, once per frame. A registration whose `acceptedFormats` lacks [format] is
+ * Analysis frames are in the session's [format] and at its [analysisSize] (the blitted frame's
+ * size when null), converted from the slot only when an analyzer takes the frame, once per frame.
+ * A synchronous registration runs on the producer thread and reads that same converted frame:
+ * desktop has no platform buffer to hand it. A registration whose `acceptedFormats` lacks [format] is
  * rejected with `Unsupported(ANALYSIS_FORMAT)` and never active. Every other registration is active
  * from the start, because a desktop session always has its frames: there is no output to add.
  */
 internal class DesktopFrameSource(
     private val format: FrameFormat,
+    private val analysisSize: Resolution?,
     private val newWorker: (String) -> WorkerDispatcher,
     private val nanoTime: () -> Long,
 ) : FrameSource {
@@ -66,7 +70,7 @@ internal class DesktopFrameSource(
             val gate = registration.gate ?: continue
             val lease = gate.tryEnter(onReleased = frame::release) ?: continue
             frame.retain()
-            val view = planes ?: frame.analysisPlanes(format).also { planes = it }
+            val view = planes ?: frame.analysisPlanes(format, analysisSize).also { planes = it }
             registration.dispatch(DesktopCameraFrame(frame, format, view, lease), lease)
         }
     }
@@ -121,9 +125,9 @@ internal class DesktopFrameSource(
 }
 
 /**
- * One analysis frame: a borrowed view of a leased slot in the session's format. Desktop pixels are
- * upright, so the rotation is 0, and the crop rectangle is the whole frame (the aspect ratio's crop
- * already happened in the blit).
+ * One analysis frame: a borrowed view of a leased slot in the session's format and analysis size.
+ * Desktop pixels are upright, so the rotation is 0, and the crop rectangle is the whole frame (the
+ * aspect ratio's crop already happened in the blit, and analysisResolution's in the scaling).
  */
 internal class DesktopCameraFrame(
     frame: LeasedFrame,
@@ -131,8 +135,8 @@ internal class DesktopCameraFrame(
     override val planes: List<FramePlane>,
     private val lease: AnalyzerLease,
 ) : CameraFrame {
-    override val width: Int = frame.width
-    override val height: Int = frame.height
+    override val width: Int = frame.analysisWidth
+    override val height: Int = frame.analysisHeight
     override val rotationDegrees: Int get() = 0
     override val timestampNanos: Long = frame.captureNanos
     override val cropRect: FrameRect = FrameRect(0, 0, width, height)

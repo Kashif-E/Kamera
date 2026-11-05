@@ -2,9 +2,11 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FramePlane
+import com.kashif.cameraK.state.Resolution
 import kotlinx.coroutines.channels.Channel
 import java.awt.AlphaComposite
 import java.awt.Graphics2D
+import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.awt.image.DataBufferByte
 import java.util.concurrent.atomic.AtomicInteger
@@ -17,8 +19,9 @@ import java.util.concurrent.atomic.AtomicLong
  * recorder, the preview's hold) [retain]s one and [release]s it once. [FrameConverter] writes the
  * slot again only when no lease is left.
  *
- * Analysis frames read [analysisPlanes]: the slot's pixels in the session's format, converted into
- * a buffer the slot keeps, at most once per frame and only when an analyzer takes the frame.
+ * Analysis frames read [analysisPlanes]: the slot's pixels in the session's format and at its
+ * analysis size, converted into a buffer the slot keeps, at most once per frame and only when an
+ * analyzer takes the frame.
  */
 internal class LeasedFrame internal constructor(
     val width: Int,
@@ -73,33 +76,46 @@ internal class LeasedFrame internal constructor(
         }
     }
 
+    /** The size of the planes [analysisPlanes] last returned. */
+    var analysisWidth: Int = width
+        private set
+    var analysisHeight: Int = height
+        private set
+
+    // The slot scaled to the session's analysisResolution; kept for the slot's life.
+    private var scaled: ScaledImage? = null
+
     /**
      * This frame's pixels in [format], as planes over the slot's analysis buffer: RGBA_8888 one
      * plane of 4 bytes per pixel; YUV_420 the full-range BT.601 Y, U and V planes of I420, chroma
-     * subsampled 2 x 2. Converted on the first call for this frame. Producer thread only, while it
-     * holds a lease.
+     * subsampled 2 x 2. With a [size] other than the frame's, the frame's centre at that size's
+     * aspect ratio is scaled to it first, so nothing is stretched. Converted on the first call for
+     * this frame. Producer thread only, while it holds a lease.
      */
-    internal fun analysisPlanes(format: FrameFormat): List<FramePlane> {
+    internal fun analysisPlanes(format: FrameFormat, size: Resolution? = null): List<FramePlane> {
         if (analysisGeneration == generation && analysisFormat == format) return planes
+        val source = size?.takeUnless { it.width == width && it.height == height }?.let(::scaledTo)
+        val w = source?.width ?: width
+        val h = source?.height ?: height
+        val pixels = source?.draw() ?: bgr
+        val rebuild = analysisFormat != format || analysisWidth != w || analysisHeight != h
         when (format) {
             FrameFormat.RGBA_8888 -> {
-                val size = width * height * RGBA_BYTES
-                if (analysis.size != size) analysis = ByteArray(size)
-                bgrToRgba(bgr, width * height, analysis)
-                if (analysisFormat != format) {
-                    planes = listOf(DesktopFramePlane(analysis, 0, width * RGBA_BYTES, RGBA_BYTES, size))
-                }
+                val bytes = w * h * RGBA_BYTES
+                if (analysis.size != bytes) analysis = ByteArray(bytes)
+                bgrToRgba(pixels, w * h, analysis)
+                if (rebuild) planes = listOf(DesktopFramePlane(analysis, 0, w * RGBA_BYTES, RGBA_BYTES, bytes))
             }
             FrameFormat.YUV_420 -> {
-                val chromaWidth = (width + 1) / 2
-                val chroma = chromaWidth * ((height + 1) / 2)
-                val luma = width * height
+                val chromaWidth = (w + 1) / 2
+                val chroma = chromaWidth * ((h + 1) / 2)
+                val luma = w * h
                 if (analysis.size != luma + 2 * chroma) analysis = ByteArray(luma + 2 * chroma)
-                bgrToI420(bgr, width, height, analysis)
+                bgrToI420(pixels, w, h, analysis)
                 yuvConversions.incrementAndGet()
-                if (analysisFormat != format) {
+                if (rebuild) {
                     planes = listOf(
-                        DesktopFramePlane(analysis, 0, width, 1, luma),
+                        DesktopFramePlane(analysis, 0, w, 1, luma),
                         DesktopFramePlane(analysis, luma, chromaWidth, 1, chroma),
                         DesktopFramePlane(analysis, luma + chroma, chromaWidth, 1, chroma),
                     )
@@ -107,15 +123,65 @@ internal class LeasedFrame internal constructor(
             }
         }
         analysisFormat = format
+        analysisWidth = w
+        analysisHeight = h
         analysisGeneration = generation
         return planes
     }
 
+    private fun scaledTo(size: Resolution): ScaledImage = scaled?.takeIf { it.width == size.width && it.height == size.height }
+        ?: ScaledImage(image, size.width, size.height).also {
+            scaled?.dispose()
+            scaled = it
+        }
+
     /** Frees the slot's drawing state; its image stays readable for a consumer still holding it. */
-    internal fun dispose() = graphics.dispose()
+    internal fun dispose() {
+        graphics.dispose()
+        scaled?.dispose()
+    }
 
     private companion object {
         const val RGBA_BYTES = 4
+    }
+}
+
+/**
+ * [source] scaled to [width] x [height] for analysis: its centred region at that aspect ratio,
+ * drawn bilinearly into an owned `TYPE_3BYTE_BGR` image, whose bytes [draw] returns.
+ */
+private class ScaledImage(source: BufferedImage, val width: Int, val height: Int) {
+    private val image = BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR)
+    private val bgr: ByteArray = (image.raster.dataBuffer as DataBufferByte).data
+
+    // A view of the source's pixels, not a copy, so the draw reads only the region.
+    private val region: BufferedImage = source.centredRegion(width, height)
+    private val graphics: Graphics2D = image.createGraphics().apply {
+        composite = AlphaComposite.Src
+        setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+    }
+
+    fun draw(): ByteArray {
+        graphics.drawImage(region, 0, 0, width, height, null)
+        return bgr
+    }
+
+    fun dispose() = graphics.dispose()
+}
+
+private fun BufferedImage.centredRegion(ratioWidth: Int, ratioHeight: Int): BufferedImage {
+    val wide = width.toLong() * ratioHeight
+    val tall = height.toLong() * ratioWidth
+    return when {
+        wide > tall -> {
+            val w = (height.toLong() * ratioWidth / ratioHeight).toInt().coerceAtLeast(1)
+            getSubimage((width - w) / 2, 0, w, height)
+        }
+        wide < tall -> {
+            val h = (width.toLong() * ratioHeight / ratioWidth).toInt().coerceAtLeast(1)
+            getSubimage(0, (height - h) / 2, width, h)
+        }
+        else -> this
     }
 }
 
