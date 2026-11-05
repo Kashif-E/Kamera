@@ -51,8 +51,8 @@ internal class FakeDecoders(var answer: (LumaImage) -> List<Barcode> = { emptyLi
 }
 
 /**
- * The holder's frame source as its plugins see it: each registration's spec, and whether it was
- * closed. With [rejectWith] set, a registration is rejected without reaching the fake engine's source;
+ * The holder's frame source as its plugins see it: each registration's spec, the frames the source
+ * admitted to its analyzer, and whether it was closed. With [rejectWith] set, a registration is rejected without reaching the fake engine's source;
  * with [inactive] set, it reaches it but reports itself inactive, as one waiting for a frame output.
  */
 internal class SpyFrames(private val inner: FrameSource) : FrameSource {
@@ -67,8 +67,12 @@ internal class SpyFrames(private val inner: FrameSource) : FrameSource {
         val registration = when {
             rejection != null -> SpyRegistration(spec, null, MutableStateFlow(false), rejection)
             else -> {
-                val real = inner.register(spec, analyzer)
-                SpyRegistration(spec, real, if (inactive) MutableStateFlow(false) else real.active, null)
+                val admitted = mutableListOf<Long>()
+                val real = inner.register(spec) { frame ->
+                    admitted += frame.timestampNanos
+                    analyzer.analyze(frame)
+                }
+                SpyRegistration(spec, real, if (inactive) MutableStateFlow(false) else real.active, null, admitted)
             }
         }
         registrations += registration
@@ -81,6 +85,8 @@ internal class SpyRegistration(
     private val inner: FrameRegistration?,
     override val active: StateFlow<Boolean>,
     override val rejection: CameraKError?,
+    /** The timestamps of the frames the source admitted to this registration's analyzer. */
+    val admitted: List<Long> = emptyList(),
 ) : FrameRegistration {
     var closed = false
         private set

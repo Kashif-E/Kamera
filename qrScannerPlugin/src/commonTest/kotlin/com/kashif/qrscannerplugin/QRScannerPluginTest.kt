@@ -24,7 +24,8 @@ import kotlin.test.assertTrue
 /**
  * The QR plugin over a fake decoder: one registration per Ready session through the holder's frame
  * source, the common luma handed to the decoder, one dedupe policy, and `status`/`results` as the
- * only outputs. Frames are emitted at least 1 / maxFps apart, so each holds on a gated source too.
+ * only outputs. Frames are emitted 250 ms apart, more than 1 / maxFps at the default 5, so a gated
+ * source admits each; [maxFpsBoundsDecodes], which sets 3, counts the frames the source admitted.
  */
 class QRScannerPluginTest {
     private val logs = LoggedProblems()
@@ -65,12 +66,15 @@ class QRScannerPluginTest {
         val s = qrSession(plugin)
         startReady(s)
 
-        // The shared gate drops frames inside 1 / maxFps (AnalyzerGateTest); the plugin keeps no
-        // throttle of its own, so every frame the source admits is decoded.
+        // Frames 250 ms apart, inside 1 / maxFps. The source applies the registration's maxFps: an
+        // ungated source admits all six, the shared gate (AnalyzerGateTest) those at 0, 500 and
+        // 1000 ms. The plugin keeps no throttle of its own, so it decodes every frame admitted.
         repeat(6) { s.fake.fakeFrames.emit(blankFrame(it)) }
 
-        assertEquals(3f, s.frames.registrations.single().spec.maxFps, "the registration's maxFps")
-        assertEquals(6, decoders.images.size, "decodes of 6 admitted frames")
+        val registration = s.frames.registrations.single()
+        assertEquals(3f, registration.spec.maxFps, "the registration's maxFps")
+        assertTrue(registration.admitted.size >= 3, "frames admitted: ${registration.admitted}")
+        assertEquals(registration.admitted.size, decoders.images.size, "decodes of ${registration.admitted} admitted")
     }
 
     @Test
