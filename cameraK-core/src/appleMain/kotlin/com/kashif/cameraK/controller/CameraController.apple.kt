@@ -645,7 +645,7 @@ actual class CameraController private constructor(
     /**
      * Sets the engine's target orientation in any state, as 1.x did. The target decides how photos and
      * recordings are oriented. The preview shows what the interface shows, so it keeps following the
-     * interface orientation.
+     * interface orientation (from iOS 17, the rotation coordinator's preview angle).
      */
     actual fun setTargetOrientation(orientation: DeviceOrientation?) {
         engine.storeTargetOrientation(orientation)
@@ -653,10 +653,11 @@ actual class CameraController private constructor(
 
     /**
      * Turns the preview to the interface's orientation, so a portrait-locked app keeps an upright
-     * portrait preview whichever way the device is held. Main thread only.
+     * portrait preview whichever way the device is held; from iOS 17 the rotation coordinator's
+     * preview angle, which accounts for the interface, turns the layer it drives. Main thread only.
      */
     private fun applyPreviewOrientation() {
-        interfaceOrientation()?.let(customCameraController::orientPreview)
+        engine.turnNewestPreview(interfaceOrientation())
     }
 
     /**
@@ -666,7 +667,10 @@ actual class CameraController private constructor(
      */
     internal var interfaceOrientation: () -> AVCaptureVideoOrientation? = { hostInterfaceOrientation }
 
-    /** The orientation photos and movies take: the engine's target when set, otherwise the device's. */
+    /**
+     * The orientation photos and movies take below iOS 17: the engine's target when set, otherwise the
+     * device's. From 17 an unset target gives the rotation coordinator's angle (engine.captureRotation).
+     */
     internal fun effectiveVideoOrientation(): AVCaptureVideoOrientation = engine.captureVideoOrientation()
 }
 

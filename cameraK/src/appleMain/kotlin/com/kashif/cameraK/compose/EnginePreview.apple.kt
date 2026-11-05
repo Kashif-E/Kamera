@@ -13,18 +13,8 @@ import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readValue
-import platform.AVFoundation.AVCaptureVideoOrientation
-import platform.AVFoundation.AVCaptureVideoOrientationLandscapeLeft
-import platform.AVFoundation.AVCaptureVideoOrientationLandscapeRight
-import platform.AVFoundation.AVCaptureVideoOrientationPortrait
-import platform.AVFoundation.AVCaptureVideoOrientationPortraitUpsideDown
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.CoreGraphics.CGRectZero
-import platform.UIKit.UIInterfaceOrientation
-import platform.UIKit.UIInterfaceOrientationLandscapeLeft
-import platform.UIKit.UIInterfaceOrientationLandscapeRight
-import platform.UIKit.UIInterfaceOrientationPortrait
-import platform.UIKit.UIInterfaceOrientationPortraitUpsideDown
 import platform.UIKit.UIView
 
 /**
@@ -41,7 +31,7 @@ internal actual fun EnginePreview(
     key(source) {
         Box(modifier = modifier) {
             UIKitView(
-                factory = { PreviewLayerHostView(source.createPreviewLayer()) },
+                factory = { PreviewLayerHostView(source, source.createPreviewLayer()) },
                 modifier = Modifier.fillMaxSize(),
                 update = {},
                 onRelease = { it.detach() },
@@ -52,35 +42,25 @@ internal actual fun EnginePreview(
 }
 
 /**
- * Keeps [previewLayer] the size of the view, and on each layout turns it to the interface's
- * orientation, which a rotation changes. The 1.x facade did this through previewLayoutChanged.
+ * Hosts [previewLayer] and lays it out on each layout pass through [source]: a centred box of the
+ * configured aspect ratio, turned by the rotation coordinator from iOS 17, otherwise to the
+ * interface's orientation, which a rotation changes.
  */
 @OptIn(ExperimentalForeignApi::class)
-private class PreviewLayerHostView(private val previewLayer: AVCaptureVideoPreviewLayer) :
-    UIView(frame = CGRectZero.readValue()) {
+private class PreviewLayerHostView(
+    private val source: PlatformPreviewSource,
+    private val previewLayer: AVCaptureVideoPreviewLayer,
+) : UIView(frame = CGRectZero.readValue()) {
     init {
         layer.addSublayer(previewLayer)
     }
 
     override fun layoutSubviews() {
         super.layoutSubviews()
-        previewLayer.setFrame(bounds)
-        val orientation = window?.windowScene?.interfaceOrientation?.toVideoOrientation() ?: return
-        previewLayer.connection?.let { connection ->
-            if (connection.isVideoOrientationSupported()) connection.videoOrientation = orientation
-        }
+        source.layOutPreviewLayer(previewLayer, bounds, window?.windowScene?.interfaceOrientation)
     }
 
     fun detach() {
         previewLayer.removeFromSuperlayer()
     }
-}
-
-/** The video orientation that matches an interface orientation; null when the interface has none yet. */
-private fun UIInterfaceOrientation.toVideoOrientation(): AVCaptureVideoOrientation? = when (this) {
-    UIInterfaceOrientationPortrait -> AVCaptureVideoOrientationPortrait
-    UIInterfaceOrientationPortraitUpsideDown -> AVCaptureVideoOrientationPortraitUpsideDown
-    UIInterfaceOrientationLandscapeLeft -> AVCaptureVideoOrientationLandscapeLeft
-    UIInterfaceOrientationLandscapeRight -> AVCaptureVideoOrientationLandscapeRight
-    else -> null
 }

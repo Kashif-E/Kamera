@@ -1,5 +1,6 @@
 package com.kashif.cameraK.controller
 
+import platform.AVFoundation.AVCaptureDeviceRotationCoordinator
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 
 /**
@@ -27,11 +28,28 @@ internal fun interface RotationSourceFactory {
     ): RotationSource?
 }
 
-/** The production factory: AVCaptureDevice.RotationCoordinator over the camera's AVCaptureDevice. */
+/**
+ * The production factory: AVCaptureDevice.RotationCoordinator over the camera's AVCaptureDevice, its
+ * preview angle observed by key-value observing. iOS 17 and later only; the engine never calls it below.
+ */
 internal object CoordinatorRotationSources : RotationSourceFactory {
     override fun make(
         device: CaptureDeviceOps,
         previewLayer: AVCaptureVideoPreviewLayer?,
         onPreviewAngle: (Double) -> Unit,
-    ): RotationSource? = TODO("I3' rotation coordinator")
+    ): RotationSource? {
+        val camera = (device as? AVCaptureDeviceOps)?.device ?: return null
+        val coordinator = AVCaptureDeviceRotationCoordinator(device = camera, previewLayer = previewLayer)
+        val observation = observeKeyPaths(coordinator, listOf(PREVIEW_ANGLE)) {
+            onPreviewAngle(coordinator.videoRotationAngleForHorizonLevelPreview)
+        }
+        return object : RotationSource {
+            override val captureAngle: Double get() = coordinator.videoRotationAngleForHorizonLevelCapture
+            override val previewAngle: Double get() = coordinator.videoRotationAngleForHorizonLevelPreview
+
+            override fun close() = observation.close()
+        }
+    }
+
+    private const val PREVIEW_ANGLE = "videoRotationAngleForHorizonLevelPreview"
 }

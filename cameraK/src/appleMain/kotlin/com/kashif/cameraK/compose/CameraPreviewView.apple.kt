@@ -40,8 +40,9 @@ actual fun CameraPreviewView(
 }
 
 /**
- * Hosts the controller's preview layer and keeps it the size of the view. Each layout turns the
- * preview to the interface's orientation, which a rotation changes.
+ * Hosts the controller's preview layer and lays it out on each layout pass as the engine's preview
+ * does: a centred box of the configured aspect ratio, turned by the rotation coordinator from iOS 17,
+ * otherwise to the interface's orientation, which a rotation changes.
  */
 @OptIn(ExperimentalForeignApi::class, InternalCameraKApi::class)
 private class PreviewHostView(private val controller: CameraController) : UIView(frame = CGRectZero.readValue()) {
@@ -49,8 +50,7 @@ private class PreviewHostView(private val controller: CameraController) : UIView
 
     override fun layoutSubviews() {
         super.layoutSubviews()
-        previewLayer.setFrame(bounds)
-        controller.previewLayoutChanged(window?.windowScene?.interfaceOrientation)
+        controller.layOutPreviewLayer(previewLayer, bounds, window?.windowScene?.interfaceOrientation)
     }
 
     fun detach() {
