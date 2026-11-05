@@ -73,7 +73,8 @@ internal val VideoQuality.sessionPreset: String
  *   it or AVFoundation did, mapped by [movieEnd] under the partial-file rule: an unplayable file is
  *   deleted. A recording whose end does not arrive within [finishTimeoutMs] ends
  *   `Finalized(Failure(Timeout(RECORD_STOP)), ERROR)`. A start that returns a failure started nothing
- *   and owes no Finalized.
+ *   and owes no Finalized. A start its caller gave up on (cancelled) that a stop then ends yields
+ *   one, carrying the stop's outcome, even when AVFoundation never reported it started.
  * - A finished recording's output, microphone and preset leave the session, unless prepared
  *   ([prepare]): a prepared output stays until the camera stops ([releasePreparedOnQueue]).
  */
@@ -326,11 +327,13 @@ internal class AppleRecorder(
             CameraKLogger.d(TAG, "CameraK: an unplayable recording left no file to delete")
         }
         if (movie.startedAt == null) {
-            // It ended before it started: the start fails with why, and a start that failed started nothing.
-            movie.abandoned = true
+            // It ended before it started: the start fails with why. Ended by itself, it started nothing
+            // and a later stop finds nothing to stop. Ended by a stop (the start was given up on), that
+            // stop's answer is not InvalidState, so it yields its one Finalized (CameraEngine.recordingEvents).
+            if (movie.stopReason == null) movie.abandoned = true
             val why = end.error ?: CameraKError.Internal(IllegalStateException("The recording ended before it started"))
-            movie.started.complete(failure(why))
             finalize(movie, failure(why), end.reason)
+            movie.started.complete(failure(why))
             return
         }
         val result = end.error?.let(::failure) ?: CameraKResult.Success(video(movie))
