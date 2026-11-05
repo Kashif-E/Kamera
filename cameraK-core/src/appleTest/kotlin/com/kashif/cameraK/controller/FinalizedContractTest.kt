@@ -3,6 +3,7 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
@@ -10,11 +11,16 @@ import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.test.TestScope
 import platform.AVFoundation.AVErrorMaximumDurationReached
+import platform.AVFoundation.AVErrorUnknown
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 
 /**
@@ -80,5 +86,75 @@ class FinalizedContractTest {
             assertEquals(0, noUsageDescription.movieRecorder.starts.size, "the movie output was started")
             engine.close()
         }
+    }
+
+    /**
+     * The holder gives up on a start AVFoundation has not confirmed (its timeout is shorter than the
+     * engine's) and calls stopRecording; AVFoundation then finishes the file without ever reporting
+     * it started. The stop reached a movie output the start had begun, so it cannot answer
+     * InvalidState(RECORD_STOP), and the recording yields its one Finalized like any other: the holder
+     * counts on that Finalized, and would otherwise take the next recording's as this one's.
+     */
+    @Test
+    fun aStopAfterAGivenUpStartThatAVFoundationFinishesUnstartedYieldsOneFinalized() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+        val events = recordingEventsOf(engine)
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        val (start, begun) = startReachingTheMovieOutput(engine)
+        start.cancelAndJoin()
+
+        val stop = async { engine.stopRecording() }
+        repeat(20) { if (driver.movieRecorder.stops == 0) driver.settle() }
+        driver.movieRecorder.reportFinished(begun, movieError(AVErrorUnknown, successfullyFinished = false))
+        repeat(20) { if (!stop.isCompleted) driver.settle() }
+        val stopped = stop.await()
+        driver.settle()
+
+        val error = assertIs<CameraKResult.Failure>(stopped, "the stop of a recording AVFoundation failed").error
+        assertFalse(
+            error is CameraKError.InvalidState && error.operation == CameraOperation.RECORD_STOP,
+            "the stop said nothing reached the platform, but the movie output had been started",
+        )
+        val finalized = events.finalized()
+        assertEquals(1, finalized.size, "Finalized events after the given-up start's stop: ${events.values}")
+        assertEquals(stopped, finalized.single().result, "the Finalized carries the stop's outcome")
+        engine.close()
+    }
+
+    /**
+     * Characterization: a start given up on, which AVFoundation then ends by itself before reporting
+     * it started, leaves nothing to stop. The stop answers InvalidState(RECORD_STOP) and no Finalized
+     * follows, so the holder owes none.
+     */
+    @Test
+    fun aGivenUpStartAVFoundationEndsBeforeAnyStopLeavesNothingToStopAndNoFinalized() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+        val events = recordingEventsOf(engine)
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        val (start, begun) = startReachingTheMovieOutput(engine)
+        start.cancelAndJoin()
+
+        driver.movieRecorder.reportFinished(begun, movieError(AVErrorUnknown, successfullyFinished = false))
+        driver.settle()
+        val stopped = engine.stopRecording()
+        driver.settle()
+
+        val invalid = assertIs<CameraKError.InvalidState>(assertIs<CameraKResult.Failure>(stopped).error)
+        assertEquals(CameraOperation.RECORD_STOP, invalid.operation)
+        assertEquals(emptyList(), events.finalized(), "a Finalized for a start that started nothing")
+        engine.close()
+    }
+
+    /** A startRecording whose movie output has started, with no didStartRecording reported yet. */
+    private suspend fun TestScope.startReachingTheMovieOutput(
+        engine: CameraEngine,
+    ): Pair<Deferred<CameraKResult<String>>, FakeMovieRecorder.Start> {
+        val start = async { engine.startRecording(VideoConfiguration()) }
+        repeat(50) { if (driver.movieRecorder.starts.isEmpty()) driver.settle() }
+        val begun = driver.movieRecorder.starts.single()
+        written += begun.url.path!!
+        return start to begun
     }
 }
