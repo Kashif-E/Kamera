@@ -71,7 +71,11 @@ class LensSwitchNoFrameTest {
         assertIs<CameraKResult.Success<*>>(engine.selectCamera(front))
         assertEquals(listOf("begin 1"), tracer.events, "the interval ended before any frame from the new camera")
         engine.close()
-        assertEquals(listOf("begin 1", noFrame, "end 1"), tracer.events, "a switch with no frame, at the engine's close")
+        assertEquals(
+            listOf("begin 1", noFrame, "end 1"),
+            tracer.events,
+            "a switch with no frame, at the engine's close",
+        )
     }
 
     @Test

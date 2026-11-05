@@ -416,6 +416,7 @@ internal class AppleCameraEngine(
                 phase = Phase.STARTING
                 restartedAfterReset = false
                 pendingStart = PendingStart(generation, continuation)
+                endPendingSwitch()
                 firstFrame?.close()
                 firstFrame = tracer.beginInterval(TraceNames.FIRST_FRAME)
                 _state.value = EngineState.Opening
@@ -765,39 +766,46 @@ internal class AppleCameraEngine(
      * `CameraK.lensSwitch` interval. With no frame output attached it ends when the swap has
      * committed (the session keeps running through it); with one, at the first sample buffer through
      * the new camera's input, or, marked noFrame, at the engine's stop, close, failure or next switch.
-     * A refused switch ends it at once, marked failed.
+     * A switch whose generation a stop or close cut while it was committing ends at once, marked noFrame;
+     * a refused switch ends at once, marked failed.
      */
     internal fun switchCamera(selection: CameraSelection, done: (CameraKResult<LensInfo>) -> Unit) {
         locked { endPendingSwitch() }
         val interval = tracer.beginInterval(TraceNames.LENS_SWITCH)
         custom.afterQueuedSessionWork {
+            val generation = locked { this.generation }
             val result = try {
-                switchOnQueue(selection)
+                switchOnQueue(selection, generation)
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "CameraK: switching the camera failed", e)
                 failure(CameraKError.Internal(e))
             }
-            val input = custom.currentVideoInput
-            val waitsForFrame = result is CameraKResult.Success &&
-                frameSource.outputAttached &&
-                input != null &&
+            // The input whose first sample buffer ends the interval, when a frame output is attached.
+            val awaited = custom.currentVideoInput
+                .takeIf { result is CameraKResult.Success && frameSource.outputAttached }
+            // The phase and generation are checked under the lock that publishes the switch, so a stop
+            // since the live check ends the switch here instead of leaving it waiting.
+            val pending = awaited != null &&
                 locked {
-                    if (closed) return@locked false
+                    if (closed || this.generation != generation || phase != Phase.LIVE) return@locked false
                     endPendingSwitch()
-                    pendingSwitch = PendingSwitch(interval, input)
+                    pendingSwitch = PendingSwitch(interval, awaited)
                     true
                 }
-            if (!waitsForFrame) {
-                if (result is CameraKResult.Failure) tracer.marker(AppleTraceNames.LENS_SWITCH_FAILED)
+            if (!pending) {
+                when {
+                    result is CameraKResult.Failure -> tracer.marker(AppleTraceNames.LENS_SWITCH_FAILED)
+                    awaited != null -> tracer.marker(AppleTraceNames.LENS_SWITCH_NO_FRAME)
+                }
                 interval.close()
             }
             done(result)
         }
     }
 
-    private fun switchOnQueue(selection: CameraSelection): CameraKResult<LensInfo> {
+    private fun switchOnQueue(selection: CameraSelection, generation: Int): CameraKResult<LensInfo> {
         unusable()?.let { return it }
-        if (!locked { phase == Phase.LIVE }) return failure(CameraKError.NotReady)
+        if (!isCurrent(generation, Phase.LIVE)) return failure(CameraKError.NotReady)
         afterSwitchLiveCheck()
         val device = resolve(selection) ?: return failure(CameraKError.NoCamera(selection.lens()))
         if (custom.recordingInProgress()) return failure(CameraKError.Busy(CameraOperation.LENS))
