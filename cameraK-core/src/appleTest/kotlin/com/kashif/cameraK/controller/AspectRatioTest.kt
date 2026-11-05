@@ -18,6 +18,7 @@ import platform.AVFoundation.AVCaptureSessionPresetPhoto
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
 import platform.CoreGraphics.CGRect
+import platform.QuartzCore.CALayer
 import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSData
 import platform.UIKit.UIInterfaceOrientation
@@ -139,14 +140,22 @@ class AspectRatioTest {
         }
     }
 
+    /**
+     * The 1.x CameraPreviewView's host sizes the layer to its bounds and reports the layout through
+     * previewLayoutChanged, as it did before G1, so the facade adds no member: the box comes from the
+     * host's bounds, the layer's superlayer.
+     */
     @Test
     @OptIn(InternalCameraKApi::class)
     fun theFacadesPreviewFillsTheSameBox() = driver.runCase {
         val engine = driver.createEngine(CameraConfiguration(aspectRatio = AspectRatio.RATIO_16_9))
         val facade = driver.engine.legacyController
         val layer = facade.createPreviewLayer()
+        val host = CALayer().apply { setFrame(CGRectMake(0.0, 0.0, 360.0, 800.0)) }
+        host.addSublayer(layer)
 
-        facade.layOutPreviewLayer(layer, CGRectMake(0.0, 0.0, 360.0, 800.0), UIInterfaceOrientationPortrait)
+        layer.setFrame(host.bounds)
+        facade.previewLayoutChanged(UIInterfaceOrientationPortrait)
 
         assertEquals(Box(0.0, 80.0, 360.0, 640.0), layer.box(), "the 1.x preview's frame")
         assertEquals(AVLayerVideoGravityResizeAspectFill, layer.videoGravity, "the 1.x preview's gravity")
