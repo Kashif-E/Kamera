@@ -5,6 +5,7 @@ package com.kashif.cameraK.engine
 import android.content.Context
 import android.hardware.display.DisplayManager
 import android.util.Rational
+import android.view.Display
 import android.view.Surface
 import androidx.camera.core.Preview
 import com.kashif.cameraK.engine.FakeAndroidPlatform.Companion.desired
@@ -47,5 +48,52 @@ class ViewPortDisplayTest {
         assertEquals(Surface.ROTATION_90, attached.rotation, "the ViewPort ignored the display the preview is on")
         assertEquals(Rational(16, 9), attached.aspectRatio, "the crop did not turn with the attached display")
         engine.closeAndJoin()
+    }
+
+    // The default display is a portrait panel at ROTATION_0. A landscape-first 640x360 panel at
+    // ROTATION_90 is portrait as well, so the crop stays 9:16, but the ViewPort's rotation must be that
+    // panel's: CameraX maps the ViewPort's ratio into sensor space by it, and a rotation a quarter
+    // stale crops the wrong orientation (#182 on the display-change path).
+    @Test
+    fun aQuarterTurnedPanelOfTheOtherNaturalOrientationRebindsWithItsRotation() = runTest {
+        val engine = platform.engine(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        assertEquals(Surface.ROTATION_0, platform.backend.binding.viewPorts.last()!!.rotation, "setup")
+
+        engine.preview.attach(Preview.SurfaceProvider { }, landscapeFirstPanelAtRotation90())
+        platform.settle(testScheduler)
+
+        val attached = platform.backend.binding.viewPorts.last()!!
+        assertEquals(Surface.ROTATION_90, attached.rotation, "the ViewPort ignored the display the preview is on")
+        assertEquals(Rational(9, 16), attached.aspectRatio, "a quarter-turned landscape panel is portrait")
+        engine.closeAndJoin()
+    }
+
+    // The same move while the engine is stopped and kept: the next start rebinds with the panel's rotation.
+    @Test
+    fun aStartAfterThePreviewMovedToAQuarterTurnedPanelOfTheOtherNaturalOrientationUsesItsRotation() = runTest {
+        val engine = platform.engine(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        engine.stop()
+        platform.settle(testScheduler)
+
+        engine.preview.attach(Preview.SurfaceProvider { }, landscapeFirstPanelAtRotation90())
+        platform.settle(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired), "the second start")
+        platform.settle(testScheduler)
+
+        val viewPort = platform.backend.binding.viewPorts.last()!!
+        assertEquals(Surface.ROTATION_90, viewPort.rotation, "the start kept the ViewPort of the display it left")
+        assertEquals(Rational(9, 16), viewPort.aspectRatio, "a quarter-turned landscape panel is portrait")
+        engine.closeAndJoin()
+    }
+
+    private fun landscapeFirstPanelAtRotation90(): Display {
+        val displays = platform.context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val panel = displays.getDisplay(ShadowDisplayManager.addDisplay("w640dp-h360dp"))
+        shadowOf(panel).setRotation(Surface.ROTATION_90)
+        return panel
     }
 }

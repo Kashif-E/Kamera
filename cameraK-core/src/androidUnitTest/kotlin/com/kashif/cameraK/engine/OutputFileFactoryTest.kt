@@ -2,6 +2,7 @@
 
 package com.kashif.cameraK.engine
 
+import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.result.CameraKResult
@@ -68,6 +69,36 @@ class OutputFileFactoryTest {
 
         assertEquals(setOf(stills, videos), io.created, "directories created outside the io dispatcher")
         platform.backend.recordings.single().finalize()
+        platform.settle(testScheduler)
+        engine.closeAndJoin()
+    }
+
+    // An app may delete the output directory between captures, for example when it cleans up after
+    // an upload; the engine keeps working and creates it again.
+    @Test
+    fun anOutputDirectoryDeletedAfterTheFirstCaptureIsCreatedAgain() = runTest {
+        val engine = platform.engine(testScheduler)
+        open(platform, engine)
+        val first = async { engine.capture() }
+        platform.settle(testScheduler)
+        platform.backend.captures.single().deliverSaved(byteArrayOf(1))
+        platform.settle(testScheduler)
+        val firstFile = File(assertIs<CameraKResult.Success<CapturedImage>>(first.await(), "setup").value.path)
+        val directory = checkNotNull(firstFile.parentFile)
+        assertTrue(directory.deleteRecursively(), "setup: the app deletes the output directory")
+
+        val second = async { engine.capture() }
+        platform.settle(testScheduler)
+        assertEquals(2, platform.backend.captures.size, "the capture after the directory went never reached CameraX")
+        platform.backend.captures.last().deliverSaved(byteArrayOf(2))
+        platform.settle(testScheduler)
+        val secondFile = File(assertIs<CameraKResult.Success<CapturedImage>>(second.await()).value.path)
+        assertEquals(directory, secondFile.parentFile, "the second capture went elsewhere")
+
+        assertTrue(directory.deleteRecursively(), "setup: deleted again")
+        val (recording, path) = startRecording(platform, engine)
+        assertEquals(directory, File(path).parentFile, "the recording went elsewhere")
+        recording.finalize()
         platform.settle(testScheduler)
         engine.closeAndJoin()
     }
