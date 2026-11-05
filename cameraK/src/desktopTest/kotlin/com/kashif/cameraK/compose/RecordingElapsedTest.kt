@@ -3,7 +3,6 @@
 package com.kashif.cameraK.compose
 
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
 import com.kashif.cameraK.recording.RecordingState
@@ -46,7 +45,8 @@ class RecordingElapsedTest {
             height = 10,
             coroutineContext = StandardTestDispatcher(testScheduler),
         ) {
-            val elapsed by rememberRecordingElapsed(holder, tick = 1.seconds)
+            // Read in composition, so each new value recomposes this scope once.
+            val elapsed = rememberRecordingElapsed(holder, tick = 1.seconds).value
             SideEffect { read += elapsed }
         }
         try {

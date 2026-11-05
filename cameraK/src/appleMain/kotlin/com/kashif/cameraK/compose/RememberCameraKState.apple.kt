@@ -5,10 +5,10 @@ package com.kashif.cameraK.compose
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.state.CameraConfiguration

@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.currentCompositeKeyHashCode
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -21,6 +22,7 @@ import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.InternalCameraKApi
+import kotlinx.coroutines.flow.combine
 
 /**
  * Creates and remembers a [CameraKStateHolder] and returns its [CameraKState].
@@ -72,6 +74,9 @@ expect fun rememberCameraKState(
  * the plugins no longer listed and attaches the new ones; never attach plugins from an effect keyed
  * on the holder.
  *
+ * The user's lens, flash and torch are saved with rememberSaveable, so after process death the new
+ * holder starts with them; the zoom is saved too, and restored once the configuration can carry it.
+ *
  * When [lifecycleOwner] is not null, the holder starts when it reaches STARTED and stops when it
  * drops below, and on every resume it re-checks the camera permission, so a permission granted in
  * the system dialog opens the camera with no retry. A rotation's stop and start fall inside the
@@ -113,7 +118,10 @@ internal fun rememberLifecycleHolder(
     viewModelStoreOwner: ViewModelStoreOwner?,
     factory: HolderFactory,
 ): CameraKStateHolder {
-    val seed: (CameraConfiguration) -> CameraConfiguration = { it }
+    // The choices saved before process death: what this composition was restored with, if anything.
+    val userState = rememberSaveable(saver = CameraUserStateBox.Saver) { CameraUserStateBox(null) }
+    val restored = remember { userState.value }
+    val seed: (CameraConfiguration) -> CameraConfiguration = { it.seededBy(restored) }
     val holder: CameraKStateHolder
     if (viewModelStoreOwner != null) {
         val model = viewModel(viewModelStoreOwner, key = holderKey(currentCompositeKeyHashCode)) {
@@ -123,6 +131,22 @@ internal fun rememberLifecycleHolder(
         LaunchedEffect(model, holder, plugins) { model.applyPlugins(plugins) }
     } else {
         holder = rememberDisposedHolder(config, plugins, seed, factory)
+    }
+    LaunchedEffect(holder) {
+        combine(holder.uiState, holder.zoom) { ui, zoom ->
+            val lens = ui.cameraLens
+            val flash = ui.flashMode
+            val torch = ui.torchMode
+            // Null until the first bind reports a camera.
+            if (lens == null ||
+                flash == null ||
+                torch == null
+            ) {
+                null
+            } else {
+                CameraUserState(lens, flash, torch, zoom.ratio)
+            }
+        }.collect { reported -> if (reported != null) userState.value = reported }
     }
     if (lifecycleOwner != null) {
         LifecycleStartEffect(holder, lifecycleOwner = lifecycleOwner) {
