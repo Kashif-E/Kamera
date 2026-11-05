@@ -509,6 +509,37 @@ class FramePipelineTest {
         engine.closeAndJoin()
     }
 
+    /**
+     * W7b must-fix 4: a bind that finishes on Main while a registration is being made, between its
+     * read of whether the output is bound and its publish, does not leave the registration inactive.
+     */
+    @Test
+    fun aBindFinishingDuringARegistrationLeavesItActive() = runTest {
+        val engine = platform.engine(testScheduler, CameraConfiguration(frameAnalysis = true), runtime = testWorkers())
+        val pipeline = engine.framePipeline
+        pipeline.beforePublishingActive = { pipeline.onBound(true) }
+
+        val registration = engine.frames.register { }
+
+        assertTrue(registration.active.value, "a bind that finished during the registration left it inactive")
+        pipeline.beforePublishingActive = {}
+        engine.closeAndJoin()
+    }
+
+    /** W7b must-fix 5: the engine's close unbinds the output, so a registration made after it is inactive. */
+    @Test
+    fun aRegistrationMadeAfterCloseIsInactive() = runTest {
+        val engine = openEngine()
+        assertTrue(engine.frames.register { }.active.value, "setup: a registration on the bound output is active")
+        engine.closeAndJoin()
+
+        val late = engine.frames.register { }
+        platform.settle(testScheduler)
+
+        assertFalse(late.active.value, "a registration made after close reports the closed engine's output as bound")
+        late.close()
+    }
+
     private suspend fun TestScope.openEngine(
         config: CameraConfiguration = CameraConfiguration(frameAnalysis = true),
     ): AndroidCameraEngine {

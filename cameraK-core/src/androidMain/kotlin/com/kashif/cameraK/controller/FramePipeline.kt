@@ -73,6 +73,10 @@ internal class FramePipeline(
     @Volatile
     private var outputBound = false
 
+    /** Test seam: runs in [register] between its read of whether the output is bound and its publish. */
+    @Volatile
+    internal var beforePublishingActive: () -> Unit = {}
+
     override fun register(spec: FrameSpec, analyzer: FrameAnalyzer): FrameRegistration {
         if (sessionFormat !in spec.acceptedFormats) {
             CameraKLogger.w(TAG, "A frame analyzer that cannot read $sessionFormat frames was registered; it gets none")
@@ -82,7 +86,9 @@ internal class FramePipeline(
         registrations.update { it + registration }
         analysisRequested = true
         resizePool()
-        registration.publishActive(outputBound)
+        val bound = outputBound
+        beforePublishingActive()
+        registration.publishActive(bound)
         onConsumersChanged()
         return registration
     }
