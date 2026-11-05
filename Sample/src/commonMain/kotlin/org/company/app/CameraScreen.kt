@@ -271,7 +271,7 @@ private fun CameraScreen(
             torchMode = uiState.torchMode ?: TorchMode.OFF,
             aspectRatio = aspectRatio,
             isRecording = isRecording,
-            recordingDurationMs = if (isRecording) recordingElapsed.inWholeMilliseconds else 0L,
+            recordingDurationMs = recordingState.shownDurationMs(recordingElapsed),
             onFlashToggle = { scope.launch { holder.cycleFlashMode() } },
             onTorchToggle = { scope.launch { holder.toggleTorch() } },
             onAspectRatioCycle = {

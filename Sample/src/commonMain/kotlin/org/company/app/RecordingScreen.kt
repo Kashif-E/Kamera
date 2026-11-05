@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 /** The holder's recording, as the Sample uses it. */
@@ -74,6 +75,14 @@ internal fun RecordingState.isLive(): Boolean = when (this) {
     is RecordingState.Stopping,
     -> true
 }
+
+/**
+ * The time the top bar shows: [holderElapsed], the holder's elapsed time from
+ * `rememberRecordingElapsed`, while a recording is live, and zero otherwise, so a finished
+ * recording's last tick does not stay on screen.
+ */
+internal fun RecordingState.shownDurationMs(holderElapsed: Duration): Long =
+    if (isLive()) holderElapsed.inWholeMilliseconds else 0L
 
 /**
  * The Sample's video recording on the holder: Full HD with audio, up to five minutes.
