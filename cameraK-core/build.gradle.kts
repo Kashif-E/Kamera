@@ -41,6 +41,8 @@ kotlin {
         commonMain.dependencies {
             api(libs.kotlinx.coroutines.core)
             implementation(libs.atomicfu)
+            // bindToLifecycle(lifecycle: Lifecycle) names Lifecycle in a public signature. No Compose.
+            api(libs.jetbrains.lifecycle.runtime)
         }
 
         commonTest {

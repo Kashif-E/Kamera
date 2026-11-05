@@ -26,6 +26,8 @@ kotlin {
             api(libs.compose.foundation)
             // rememberCameraKStateHolder's start/stop and resume effects; its signature names LifecycleOwner.
             api(libs.jetbrains.lifecycle.runtime.compose)
+            // The retained holder's ViewModel (CameraKHolderViewModel). No public signature names a ViewModel.
+            implementation(libs.jetbrains.lifecycle.viewmodel.compose)
         }
 
         commonTest.dependencies {
@@ -56,6 +58,8 @@ kotlin {
             // and the manifest that declares the ComponentActivity it launches.
             implementation(libs.compose.ui.test)
             implementation(libs.androidx.compose.ui.test.manifest)
+            // RetainedHolderTest recreates an Activity around the default Compose path over FakeCameraEngine.
+            implementation(project(":cameraK-testing"))
         }
 
         androidMain.dependencies {

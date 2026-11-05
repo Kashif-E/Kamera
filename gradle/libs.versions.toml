@@ -22,8 +22,8 @@ androidx-activity = "1.13.0"
 # cameraK-core's lifecycle-runtime, which has no Compose: its Android 1.x bridge drives a
 # LifecycleRegistry. The version is the one activity-compose brought before the module split.
 androidx-lifecycle = "2.9.4"
-# camerak's Compose lifecycle effects (LifecycleStartEffect, LifecycleResumeEffect, LocalLifecycleOwner):
-# the JetBrains multiplatform build, at the version compose-multiplatform 1.11.1's ui depends on.
+# The JetBrains multiplatform lifecycle, at the version compose-multiplatform 1.11.1's ui depends on:
+# camerak-core's bindToLifecycle, and camerak's Compose lifecycle effects and retained holder ViewModel.
 jetbrains-lifecycle = "2.9.6"
 # cameraK-core's Android trace sections. The version CameraX 1.5.3 already brings at runtime.
 androidx-tracing = "1.2.0"
@@ -80,7 +80,9 @@ compose-material3 = { module = "org.jetbrains.compose.material3:material3", vers
 androidx-activityCompose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 androidx-activity = { module = "androidx.activity:activity", version.ref = "androidx-activity" }
 androidx-lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime", version.ref = "androidx-lifecycle" }
+jetbrains-lifecycle-runtime = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime", version.ref = "jetbrains-lifecycle" }
 jetbrains-lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "jetbrains-lifecycle" }
+jetbrains-lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "jetbrains-lifecycle" }
 androidx-tracing = { module = "androidx.tracing:tracing", version.ref = "androidx-tracing" }
 lucide-icons-cmp = { module = "com.composables:icons-lucide-cmp", version.ref = "lucide-icons" }
 
