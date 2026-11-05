@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.kashif.imagesaverplugin
 
 import com.kashif.cameraK.enums.ImageFormat
@@ -32,14 +34,10 @@ class JVMImageSaverPluginOutputTest {
         home.deleteRecursively()
     }
 
-    private fun plugin(format: ImageFormat = ImageFormat.JPEG) = JVMImageSaverPlugin(
-        ImageSaverConfig(imageFormat = format),
-        onImageSaved = {},
-        onImageSavedFailed = {},
-        userHome = home,
-    )
+    private fun plugin(format: ImageFormat = ImageFormat.JPEG) =
+        legacySaver(ImageSaverConfig(imageFormat = format), home)
 
-    private suspend fun JVMImageSaverPlugin.saved(bytes: ByteArray, name: String?): File {
+    private suspend fun ImageSaverPlugin.saved(bytes: ByteArray, name: String?): File {
         val result = save(bytes, name)
         return File(assertIs<ImageSaveResult.Saved>(result, "save result: $result").location)
     }

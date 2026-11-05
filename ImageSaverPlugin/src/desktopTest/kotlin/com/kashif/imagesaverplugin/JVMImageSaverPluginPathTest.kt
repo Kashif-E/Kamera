@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.kashif.imagesaverplugin
 
 import kotlinx.coroutines.test.runTest
@@ -34,17 +36,13 @@ class JVMImageSaverPluginPathTest {
         sandbox.deleteRecursively()
     }
 
-    private fun plugin(customFolderName: String? = null, onFailed: (String) -> Unit = {}) = JVMImageSaverPlugin(
-        ImageSaverConfig(customFolderName = customFolderName),
-        onImageSaved = {},
-        onImageSavedFailed = onFailed,
-        userHome = home,
-    )
+    private fun plugin(customFolderName: String? = null) =
+        legacySaver(ImageSaverConfig(customFolderName = customFolderName), home)
 
     private fun filesUnder(folder: File): List<String> =
         folder.walkTopDown().filter { it.isFile }.map { it.relativeTo(sandbox).path }.toList()
 
-    private suspend fun assertRejected(sut: JVMImageSaverPlugin, imageName: String?) {
+    private suspend fun assertRejected(sut: ImageSaverPlugin, imageName: String?) {
         val result = sut.save(jpeg(), imageName)
 
         val failed = assertIs<ImageSaveResult.Failed>(result, "save result for a name that leaves the folder")
@@ -67,14 +65,15 @@ class JVMImageSaverPluginPathTest {
         assertRejected(plugin(), "nested/shot")
     }
 
+    // A folder name is validated when the saver is configured now, as the prefix already was.
     @Test
     fun aCustomFolderWithParentSegments_isRejected() = runTest {
-        assertRejected(plugin(customFolderName = "../../escaped"), "shot")
+        assertRejectedWhenConfigured("../../escaped")
     }
 
     @Test
     fun anAbsoluteCustomFolder_isRejected() = runTest {
-        assertRejected(plugin(customFolderName = File(sandbox, "absolute").absolutePath), "shot")
+        assertRejectedWhenConfigured(File(sandbox, "absolute").absolutePath)
     }
 
     @Test
@@ -82,18 +81,27 @@ class JVMImageSaverPluginPathTest {
         for (name in listOf(".", "..", "shot\u0000", "line\nbreak", "a".repeat(65), "")) {
             assertRejected(plugin(), name)
         }
-        assertRejected(plugin(customFolderName = ".."), "shot")
+        assertRejectedWhenConfigured("..")
     }
 
+    private fun assertRejectedWhenConfigured(customFolderName: String) {
+        val error = assertFailsWith<IllegalArgumentException> { plugin(customFolderName = customFolderName) }
+        if (customFolderName.length > 2) {
+            assertFalse(customFolderName in error.message.orEmpty(), "the error message repeats the folder name")
+        }
+        assertEquals(emptyList(), filesUnder(sandbox), "files written for a rejected folder name")
+    }
+
+    // Ported from the 1.x failure callback, which is gone: the failure's own message carries the reason.
     @Test
     fun aRejectedName_isReportedThroughTheFailureCallbackAndSaveImageReturnsNull() = runTest {
-        var failure: String? = null
-        val sut = plugin(onFailed = { failure = it })
+        val sut = plugin()
 
         val path = sut.saveImage(jpeg(), "../escaped")
+        val failure = assertIs<ImageSaveResult.Failed>(sut.save(jpeg(), "../escaped")).error.message
 
         assertNull(path)
-        assertFalse(failure.isNullOrEmpty(), "the failure callback got no reason")
+        assertFalse(failure.isNullOrEmpty(), "the failure has no reason")
         assertFalse("escaped" in failure.orEmpty(), "the failure message repeats the caller's name")
     }
 
@@ -194,12 +202,8 @@ class JVMImageSaverPluginPathTest {
         pluginWithPrefix("MyApp.v2-photo_")
     }
 
-    private fun pluginWithPrefix(prefix: String) = JVMImageSaverPlugin(
-        ImageSaverConfig(isAutoSave = true, prefix = prefix),
-        onImageSaved = {},
-        onImageSavedFailed = {},
-        userHome = home,
-    )
+    private fun pluginWithPrefix(prefix: String) =
+        legacySaver(ImageSaverConfig(isAutoSave = true, prefix = prefix), home)
 
     private fun jpeg(): ByteArray {
         val image = BufferedImage(8, 8, BufferedImage.TYPE_3BYTE_BGR)

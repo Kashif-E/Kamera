@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.kashif.imagesaverplugin
 
 import android.content.ContentProvider
@@ -38,7 +40,7 @@ import kotlin.test.assertSame
 class AndroidImageSaverPluginFailureTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val mediaStore = Robolectric.setupContentProvider(FakeMediaStore::class.java, MediaStore.AUTHORITY)
-    private val plugin = AndroidImageSaverPlugin(context, ImageSaverConfig())
+    private val plugin = androidSaver(context)
     private val firstRow = ContentUris.withAppendedId(
         MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
         1,
@@ -98,8 +100,8 @@ class AndroidImageSaverPluginFailureTest {
  * Stores MediaStore rows in memory so a test can see what a save left behind.
  *
  * Like MediaProvider from API 29 (`ensureFileColumns`), it rejects a row whose RELATIVE_PATH starts
- * outside the collection's primary directories: `Images` takes `DCIM/` and `Pictures/`, `Files`
- * takes `Download/` and `Documents/`.
+ * outside the collection's primary directories: `Images` takes `DCIM/` and `Pictures/`, `Video`
+ * takes `DCIM/`, `Movies/` and `Pictures/`, `Files` takes `Download/` and `Documents/`.
  */
 class FakeMediaStore : ContentProvider() {
     val rows = linkedMapOf<Uri, ContentValues>()
@@ -154,6 +156,7 @@ class FakeMediaStore : ContentProvider() {
 
     private fun allowedPrimaryDirectories(collection: Uri): List<String> = when (collection.pathSegments.getOrNull(1)) {
         "images" -> listOf("DCIM", "Pictures")
+        "video" -> listOf("DCIM", "Movies", "Pictures")
         "file" -> listOf("Download", "Documents")
         else -> error("FakeMediaStore does not model $collection")
     }

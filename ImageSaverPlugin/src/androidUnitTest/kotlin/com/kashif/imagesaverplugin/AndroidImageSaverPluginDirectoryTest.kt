@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.kashif.imagesaverplugin
 
 import android.content.ContentUris
@@ -6,7 +8,6 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
-import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
@@ -34,7 +35,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * Where a save lands for each [Directory].
+ * Where a deprecated byte save lands for each [GalleryDestination]; GallerySaveTest covers `save(image)`.
  *
  * From API 29 MediaStore checks RELATIVE_PATH against the collection: `MediaStore.Images` accepts
  * only `DCIM/` and `Pictures/` and throws IllegalArgumentException for anything else, while
@@ -65,7 +66,7 @@ class AndroidImageSaverPluginDirectoryTest {
     @Test
     @Config(sdk = [35])
     fun save_toDocuments_landsInTheDocumentsFolder() = runTest {
-        val plugin = pluginFor(Directory.DOCUMENTS, customFolderName = "Scans")
+        val plugin = pluginFor(GalleryDestination.DOCUMENTS, customFolderName = "Scans")
         val row = firstRowOf(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY))
         val written = writesTo(row)
         val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1)
@@ -82,7 +83,7 @@ class AndroidImageSaverPluginDirectoryTest {
     @Test
     @Config(sdk = [35])
     fun save_toDcim_staysInTheImagesCollection() = runTest {
-        val plugin = pluginFor(Directory.DCIM, customFolderName = null)
+        val plugin = pluginFor(GalleryDestination.DCIM, customFolderName = null)
         val row = firstRowOf(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY))
         writesTo(row)
 
@@ -95,7 +96,7 @@ class AndroidImageSaverPluginDirectoryTest {
     @Test
     @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_writesIntoTheConfiguredDirectoryAndFolder() = runTest {
-        val plugin = pluginFor(Directory.DOCUMENTS, customFolderName = "Scans")
+        val plugin = pluginFor(GalleryDestination.DOCUMENTS, customFolderName = "Scans")
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         writesTo(row)
 
@@ -109,7 +110,7 @@ class AndroidImageSaverPluginDirectoryTest {
     @Test
     @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_usesTheDefaultFolderLikeApi29AndAbove() = runTest {
-        val plugin = pluginFor(Directory.PICTURES, customFolderName = null)
+        val plugin = pluginFor(GalleryDestination.PICTURES, customFolderName = null)
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         writesTo(row)
 
@@ -122,7 +123,7 @@ class AndroidImageSaverPluginDirectoryTest {
     @Test
     @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_keepsAnExistingFileWithTheSameName() = runTest {
-        val plugin = pluginFor(Directory.PICTURES, customFolderName = "Album")
+        val plugin = pluginFor(GalleryDestination.PICTURES, customFolderName = "Album")
         val existing = File(publicDirectory(Environment.DIRECTORY_PICTURES), "Album/shot.jpg").apply {
             parentFile!!.mkdirs()
             writeBytes(byteArrayOf(9, 9, 9))
@@ -140,7 +141,7 @@ class AndroidImageSaverPluginDirectoryTest {
     @Test
     @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_writesTheBytesIntoTheFileItNames() = runTest {
-        val plugin = pluginFor(Directory.DCIM, customFolderName = "Trip")
+        val plugin = pluginFor(GalleryDestination.DCIM, customFolderName = "Trip")
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         writesToItsFile(row)
         val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 7)
@@ -160,7 +161,7 @@ class AndroidImageSaverPluginDirectoryTest {
     fun save_belowApi29_concurrentSavesWithTheSameName_neverShareAFile() = runTest {
         File(publicDirectory(Environment.DIRECTORY_PICTURES), "Burst").mkdirs()
 
-        val paths = saveConcurrently(pluginFor(Directory.PICTURES, customFolderName = "Burst"))
+        val paths = saveConcurrently(pluginFor(GalleryDestination.PICTURES, customFolderName = "Burst"))
 
         assertEquals(2, paths.toSet().size, "both saves were given $paths")
     }
@@ -168,7 +169,7 @@ class AndroidImageSaverPluginDirectoryTest {
     @Test
     @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_concurrentSavesIntoAMissingFolder_bothSucceed() = runTest {
-        val paths = saveConcurrently(pluginFor(Directory.PICTURES, customFolderName = "NewAlbum"))
+        val paths = saveConcurrently(pluginFor(GalleryDestination.PICTURES, customFolderName = "NewAlbum"))
 
         assertEquals(2, paths.toSet().size, "both saves were given $paths")
     }
@@ -177,7 +178,7 @@ class AndroidImageSaverPluginDirectoryTest {
      * Runs two saves named "shot" at once, holding both inserts until each save has chosen its path,
      * and checks that each one's bytes are in the file its row names. Returns the two paths.
      */
-    private suspend fun CoroutineScope.saveConcurrently(plugin: AndroidImageSaverPlugin): List<String> {
+    private suspend fun CoroutineScope.saveConcurrently(plugin: ImageSaverPlugin): List<String> {
         val bothChoseAPath = CyclicBarrier(2)
         mediaStore.beforeInsert = { bothChoseAPath.await(10, TimeUnit.SECONDS) }
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -199,7 +200,7 @@ class AndroidImageSaverPluginDirectoryTest {
     @Test
     @Config(sdk = [Config.OLDEST_SDK, 28])
     fun save_belowApi29_nameWithPathSeparators_staysInTheConfiguredFolder() = runTest {
-        val plugin = pluginFor(Directory.PICTURES, customFolderName = "Inside")
+        val plugin = pluginFor(GalleryDestination.PICTURES, customFolderName = "Inside")
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         writesToItsFile(row)
 
@@ -221,7 +222,7 @@ class AndroidImageSaverPluginDirectoryTest {
         }
         val logged = loggedErrors()
 
-        val result = pluginFor(Directory.PICTURES, customFolderName = "Blocked").save(byteArrayOf(1), "shot")
+        val result = pluginFor(GalleryDestination.PICTURES, customFolderName = "Blocked").save(byteArrayOf(1), "shot")
 
         val failure = assertIs<ImageSaveResult.Failed>(result)
         assertEquals(emptyMap(), mediaStore.rows)
@@ -233,7 +234,7 @@ class AndroidImageSaverPluginDirectoryTest {
     fun save_belowApi29_whenTheInsertIsRejected_leavesNoFileBehind() = runTest {
         mediaStore.insertFailure = IllegalArgumentException("rejected")
 
-        val result = pluginFor(Directory.PICTURES, customFolderName = "Rejected").save(byteArrayOf(1), "shot")
+        val result = pluginFor(GalleryDestination.PICTURES, customFolderName = "Rejected").save(byteArrayOf(1), "shot")
 
         assertIs<ImageSaveResult.Failed>(result)
         val folder = File(publicDirectory(Environment.DIRECTORY_PICTURES), "Rejected")
@@ -246,7 +247,7 @@ class AndroidImageSaverPluginDirectoryTest {
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         writesTo(row) { throw IOException("disk full") }
 
-        val result = pluginFor(Directory.PICTURES, customFolderName = "Unwritten").save(byteArrayOf(1), "shot")
+        val result = pluginFor(GalleryDestination.PICTURES, customFolderName = "Unwritten").save(byteArrayOf(1), "shot")
 
         assertIs<ImageSaveResult.Failed>(result)
         assertEquals(emptyMap(), mediaStore.rows)
@@ -254,9 +255,12 @@ class AndroidImageSaverPluginDirectoryTest {
         assertEquals(emptyList(), folder.list().orEmpty().toList())
     }
 
-    private fun pluginFor(directory: Directory, customFolderName: String?) = AndroidImageSaverPlugin(
+    private fun pluginFor(destination: GalleryDestination, customFolderName: String?) = androidSaver(
         context,
-        ImageSaverConfig(directory = directory, customFolderName = customFolderName),
+        MediaSaverConfig {
+            this.destination = destination
+            folderName = customFolderName
+        },
     )
 
     private fun firstRowOf(collection: Uri): Uri = ContentUris.withAppendedId(collection, 1)

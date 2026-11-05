@@ -1,248 +1,211 @@
 package com.kashif.imagesaverplugin
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
-import coil3.PlatformContext
-import coil3.compose.LocalPlatformContext
-import com.kashif.cameraK.controller.CameraController
-import com.kashif.cameraK.enums.Directory
-import com.kashif.cameraK.enums.ImageFormat
+import com.kashif.cameraK.capture.CapturedImage
+import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.error.CameraKError
-import com.kashif.cameraK.state.CameraKEvent
+import com.kashif.cameraK.permissions.CameraKPermission
+import com.kashif.cameraK.permissions.PermissionStatus
+import com.kashif.cameraK.platform.CameraKPlatformContext
+import com.kashif.cameraK.plugin.CameraKPluginContext
+import com.kashif.cameraK.plugin.PluginStatus
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraKPlugin
-import com.kashif.cameraK.state.CameraKState
-import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.utils.InternalCameraKApi
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlin.time.Clock
-import kotlin.time.ExperimentalTime
 
 /**
- * Configuration for the ImageSaverPlugin.
+ * Publishes captures and recordings to the photo gallery, the only CameraK code that writes there,
+ * so one capture makes at most one gallery entry. Core writes app-owned files only; the saver copies
+ * them, never decodes them, and never deletes or changes them.
  *
- * @param isAutoSave Determines if images should be saved automatically upon capture. Auto-save is then
- *   the capture's gallery publisher: keep `CameraConfiguration.directory` at its default,
- *   `Directory.DOCUMENTS`, because PICTURES or DCIM make the camera publish the photo as well.
- * @param prefix Optional prefix for image filenames when auto-saving, which names each file
- *   `<prefix>_<epochMillis>`. The desktop saver accepts at most 50 characters from
- *   `A-Z a-z 0-9 . _ -` and throws [IllegalArgumentException] when it is created with any other.
- * @param directory Specifies the directory where images will be saved when auto-saving.
- * @param customFolderName Optional folder name within the specified directory. On Android and
- *   desktop images go to `<directory>/<customFolderName>`, or `<directory>/CameraK` when it is null.
+ * With [MediaSaverConfig.autoSave] every capture that reaches the holder's `captures` (each
+ * successful `capture()`) is saved, and its outcome is emitted on [results]. A failed auto-save is a
+ * `Failure` there, logged with its cause; the plugin carries on, and the next capture is saved again.
+ *
+ * Every save first reads the `GALLERY_ADD` status where the platform needs it ([galleryPermission])
+ * and fails with `Permission(GALLERY_ADD, status)` without touching the gallery unless it is
+ * Granted or Limited. iOS also proceeds at NotDetermined, because Photos raises its add-only prompt
+ * during the save. The saver shows no prompt itself: the app requests [galleryPermission].
+ *
+ * @property config What and where the saver publishes.
  */
-@Immutable
-data class ImageSaverConfig(
-    val isAutoSave: Boolean = false,
-    val prefix: String? = null,
-    val directory: Directory = Directory.PICTURES,
-    val customFolderName: String? = null,
-    val imageFormat: ImageFormat = ImageFormat.JPEG,
-)
+public class ImageSaverPlugin internal constructor(
+    public val config: MediaSaverConfig,
+    private val store: GalleryStore,
+    private val permissionRead: GalleryPermissionRead,
+    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+) : CameraKPlugin {
+    /** A saver for [config] that reaches the platform's gallery through [platformContext]. */
+    public constructor(config: MediaSaverConfig, platformContext: CameraKPlatformContext) : this(
+        config,
+        platformGalleryStore(platformContext, config),
+        platformGalleryPermissionRead(platformContext),
+    )
 
-/**
- * Outcome of [ImageSaverPlugin.save].
- */
-@Immutable
-sealed class ImageSaveResult {
-    /**
-     * @property location Where the image was stored: a `content://` URI on Android, a file path on
-     *   desktop, an asset identifier on iOS.
-     */
-    @Immutable
-    data class Saved(val location: String) : ImageSaveResult()
-
-    /**
-     * @property error Why the image was not stored. Its message may contain paths or URIs.
-     */
-    @Immutable
-    data class Failed(val error: Throwable) : ImageSaveResult()
-}
-
-/**
- * Abstract plugin for saving captured images to device storage.
- *
- * Implements [CameraKPlugin] for Compose-first state management.
- * Provides automatic and manual image saving with configurable naming and directory options.
- *
- * @param config Configuration settings for image saving behavior.
- *
- * @property config Immutable configuration for saving behavior.
- *
- * @example
- * ```kotlin
- * val plugin = rememberImageSaverPlugin(
- *     config = ImageSaverConfig(
- *         isAutoSave = true,
- *         prefix = "MyApp",
- *         directory = Directory.PICTURES,
- *         customFolderName = "MyPhotos"
- *     )
- * )
- *
- * val cameraState by rememberCameraKState { stateHolder ->
- *     plugin.onAttach(stateHolder)
- * }
- * ```
- */
-@Stable
-abstract class ImageSaverPlugin(val config: ImageSaverConfig) : CameraKPlugin {
     /** The saver reads captures, never analysis frames, so a holder created with it binds no frame analysis. */
     override val needsFrames: Boolean get() = false
 
-    private var stateHolder: CameraKStateHolder? = null
-    private var autoSaveJob: Job? = null
+    private val _status = MutableStateFlow<PluginStatus>(PluginStatus.Idle)
 
-    // The controller the capture listener is currently registered on, so we can remove it on
-    // re-init / detach instead of stacking listeners (which would save each capture N times).
-    private var registeredController: CameraController? = null
+    /**
+     * Running while attached with auto-save on, Idle otherwise, and `Failed` while the current
+     * attachment's context has a failure: the plugin itself broke, not a save.
+     */
+    public val status: StateFlow<PluginStatus> = _status.asStateFlow()
 
-    // Stable reference so addImageCaptureListener / removeImageCaptureListener target the same lambda.
-    @OptIn(ExperimentalTime::class)
-    internal val captureListener: (ByteArray) -> Unit = { byteArray ->
-        val holder = stateHolder
-        holder?.pluginScope?.launch(Dispatchers.IO) {
-            val imageName = config.prefix?.let { autoSaveImageName(it, Clock.System.now().toEpochMilliseconds()) }
-            val result = save(byteArray, imageName)
-            if (result is ImageSaveResult.Failed) {
-                CameraKLogger.e("ImageSaverPlugin", "Auto-save failed", result.error)
-                holder.emitEvent(
-                    @OptIn(InternalCameraKApi::class)
-                    CameraKEvent.PluginFailed(
-                        this@ImageSaverPlugin::class.simpleName ?: "ImageSaverPlugin",
-                        CameraKError.Internal(result.error),
-                    ),
+    /**
+     * What the platform needs before a save can add to the gallery: `GALLERY_ADD` on iOS and on
+     * Android API 28 and below, null on Android API 29 and later and on desktop.
+     */
+    public val galleryPermission: CameraKPermission? get() = store.galleryPermission
+
+    private val _results = MutableSharedFlow<CameraKResult<SavedImage>>(
+        extraBufferCapacity = RESULTS_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /** Each auto-save's outcome. A collector that falls behind loses the oldest outcomes first. */
+    public val results: Flow<CameraKResult<SavedImage>> = _results.asSharedFlow()
+
+    override fun onAttach(context: CameraKPluginContext): Unit = TODO("IS': auto-save from captures")
+
+    override fun onDetach() {
+        _status.value = PluginStatus.Idle
+    }
+
+    private suspend fun autoSave(image: CapturedImage) {
+        val name = config.prefix?.let { autoSaveImageName(it, clock()) }
+        val result = save(image, name)
+        if (result is CameraKResult.Failure) {
+            CameraKLogger.e(TAG, "Auto-saving a capture failed (${result.error::class.simpleName})", result.error.cause)
+        }
+        _results.emit(result)
+    }
+
+    /**
+     * Copies [image]'s file into the gallery as [name] plus its format's extension, or under a name of
+     * the platform's own when [name] is null. The file is read, never decoded or changed.
+     *
+     * @return the saved image; `Failure(Permission)` without a gallery write when the gallery
+     *   permission is not granted; `Failure(Storage)` when the gallery refused it. On iOS a failed or
+     *   timed-out import is `Storage(GALLERY_IMPORT_FAILED)` whose `keptFilePath` is [image]'s file.
+     * @throws IllegalArgumentException when [name] is not 1 to 64 characters from
+     *   `A-Z a-z 0-9 . _ -`, or is `.` or `..`. The message never repeats it.
+     */
+    public suspend fun save(image: CapturedImage, name: String? = null): CameraKResult<SavedImage> {
+        TODO("IS': save(image)")
+    }
+
+    /**
+     * Copies [video]'s file into the gallery, as [save] does a still.
+     *
+     * @throws IllegalArgumentException for a [name] that breaks the same rule.
+     */
+    public suspend fun save(video: RecordedVideo, name: String? = null): CameraKResult<SavedVideo> {
+        TODO("IS': save(video)")
+    }
+
+    /** The bytes of an image this saver saved, read without blocking the calling thread. */
+    public suspend fun readBytes(saved: SavedImage): CameraKResult<ByteArray> = TODO("IS': readBytes(saved)")
+
+    // Reads the permission where the platform needs it, then adds; see the class KDoc for the rule.
+    private suspend fun <T> gated(add: suspend () -> CameraKResult<T>): CameraKResult<T> {
+        if (store.galleryPermission == null) return add()
+        val status = permissionRead.status()
+        when {
+            status == PermissionStatus.Granted || status == PermissionStatus.Limited -> return add()
+            status != PermissionStatus.NotDetermined || !store.addPrompts -> return refused(status)
+        }
+        val result = add()
+        if (result is CameraKResult.Failure) {
+            val answered = permissionRead.status()
+            if (answered == PermissionStatus.PermanentlyDenied || answered == PermissionStatus.Restricted) {
+                return CameraKResult.Failure(
+                    CameraKError.Permission(CameraKPermission.GALLERY_ADD, answered, result.error.cause),
                 )
             }
         }
+        return result
     }
 
-    /**
-     * Saves the captured image data to storage.
-     *
-     * @param byteArray The image data as a [ByteArray].
-     * @param imageName Optional custom name for the image. If not provided, a default name is generated.
-     * @return The file path where the image was saved, or null if saving failed.
-     */
-    abstract suspend fun saveImage(byteArray: ByteArray, imageName: String? = null): String?
-
-    /**
-     * Saves the captured image data to storage and reports why it failed when it does.
-     *
-     * @param byteArray The encoded image.
-     * @param imageName Optional file name without extension. If not provided, a default name is generated.
-     * @return [ImageSaveResult.Saved] with the stored location, or [ImageSaveResult.Failed] with the cause.
-     */
-    open suspend fun save(byteArray: ByteArray, imageName: String? = null): ImageSaveResult {
-        val location = saveImage(byteArray, imageName)
-        return if (location != null) {
-            ImageSaveResult.Saved(location)
-        } else {
-            ImageSaveResult.Failed(IllegalStateException("Image could not be saved"))
-        }
+    private fun refused(status: PermissionStatus): CameraKResult<Nothing> {
+        CameraKLogger.w(TAG, "A save was refused: the gallery permission is $status")
+        return CameraKResult.Failure(CameraKError.Permission(CameraKPermission.GALLERY_ADD, status))
     }
 
-    /**
-     * Attaches the plugin to the state holder (new API).
-     * If auto-save is enabled, automatically saves images when camera becomes ready.
-     *
-     * @param stateHolder The [CameraKStateHolder] to attach to.
-     */
-    override fun onAttach(stateHolder: CameraKStateHolder) {
-        this.stateHolder = stateHolder
-
-        if (!config.isAutoSave) return
-
-        // Re-register on every Ready (a lens switch / re-init produces a new controller), moving
-        // the single listener off the previous controller so it's never registered twice.
-        autoSaveJob?.cancel()
-        autoSaveJob = stateHolder.pluginScope.launch {
-            stateHolder.cameraState.filterIsInstance<CameraKState.Ready>().collect { ready ->
-                registeredController?.removeImageCaptureListener(captureListener)
-                ready.controller.addImageCaptureListener(captureListener)
-                registeredController = ready.controller
-            }
-        }
-    }
-
-    /**
-     * Detaches the plugin from the state holder and cleans up resources.
-     */
-    override fun onDetach() {
-        autoSaveJob?.cancel()
-        autoSaveJob = null
-        registeredController?.removeImageCaptureListener(captureListener)
-        registeredController = null
-        stateHolder = null
-    }
-
-    /**
-     * Retrieves the image byte array from a file path, blocking the calling thread while it reads.
-     *
-     * @param path The file path to read.
-     * @return The image data as a [ByteArray].
-     */
+    /** Saves encoded image bytes. Use [save] with the capture instead. */
     @Deprecated(
-        "Blocks the calling thread while it reads. Use readBytes, which suspends.",
-        ReplaceWith("readBytes(path)"),
+        "Save the CapturedImage with save(image), which copies its file and returns a typed result.",
+        level = DeprecationLevel.WARNING,
     )
-    abstract fun getByteArrayFrom(path: String): ByteArray
+    public suspend fun saveImage(byteArray: ByteArray, imageName: String? = null): String? {
+        @Suppress("DEPRECATION")
+        return (save(byteArray, imageName) as? ImageSaveResult.Saved)?.location
+    }
 
     /**
-     * Reads the image at [path]: a file path, a `content://` URI on Android, or a `ph://` asset
-     * location on iOS. Suspends while the platform reads, so it can be called from any thread, and
-     * cancelling it stops the wait.
-     *
-     * @param path Where the image is stored, as returned by [saveImage] or a capture.
-     * @return The image data.
-     * @throws kotlinx.io.IOException when the image cannot be read.
+     * Saves encoded image bytes in [MediaSaverConfig.imageFormat]'s way: Android labels them by what
+     * they hold, desktop converts them to the configured format, iOS stores them as they are.
      */
     @Suppress("DEPRECATION")
-    open suspend fun readBytes(path: String): ByteArray = withContext(Dispatchers.IO) { getByteArrayFrom(path) }
+    @Deprecated(
+        "Save the CapturedImage with save(image), which copies its file and returns a typed result.",
+        level = DeprecationLevel.WARNING,
+    )
+    public suspend fun save(byteArray: ByteArray, imageName: String? = null): ImageSaveResult =
+        when (val result = store.addImage(MediaSource.Bytes(byteArray), config.imageFormat, imageName)) {
+            is CameraKResult.Success -> ImageSaveResult.Saved(store.legacyLocation(result.value))
+            is CameraKResult.Failure -> ImageSaveResult.Failed(result.error.asThrowable())
+        }
+
+    /** Reads the image at [path], blocking the calling thread. */
+    @Deprecated(
+        "Blocks the calling thread while it reads. Use readBytes(saved), which suspends.",
+        level = DeprecationLevel.WARNING,
+    )
+    public fun getByteArrayFrom(path: String): ByteArray = store.readLegacyBlocking(path)
+
+    /**
+     * Reads the image at [path]: a file path, a `content://` URI on Android, or a `ph://` location
+     * on iOS, which also reads plain file paths. Suspends while the platform reads.
+     *
+     * @throws kotlinx.io.IOException when the image cannot be read; the message holds no path.
+     */
+    @Deprecated(
+        "Read a SavedImage with readBytes(saved), which returns a typed result.",
+        level = DeprecationLevel.WARNING,
+    )
+    public suspend fun readBytes(path: String): ByteArray = store.readLegacy(path)
+
+    private companion object {
+        const val TAG = "ImageSaverPlugin"
+        const val RESULTS_BUFFER = 16
+    }
 }
 
 /** The name an auto-save gives a capture taken at [epochMillis]: [prefix], `_`, then the milliseconds. */
 internal fun autoSaveImageName(prefix: String, epochMillis: Long): String = "${prefix}_$epochMillis"
 
-/**
- * Creates a remembered [ImageSaverPlugin] instance with automatic lifecycle management.
- *
- * @param config Configuration settings for image saving.
- * @param context Platform context for accessing device storage.
- * @return An instance of platform-specific [ImageSaverPlugin].
- *
- * @example
- * ```kotlin
- * @Composable
- * fun MyScreen() {
- *     val imageSaver = rememberImageSaverPlugin(
- *         config = ImageSaverConfig(isAutoSave = true)
- *     )
- * }
- * ```
- */
-@Composable
-fun rememberImageSaverPlugin(
-    config: ImageSaverConfig,
-    context: PlatformContext = LocalPlatformContext.current,
-): ImageSaverPlugin = remember(config) {
-    createPlatformImageSaverPlugin(context, config)
-}
+// What the deprecated byte API reports for an error: the platform's throwable, or one that names the kind.
+private fun CameraKError.asThrowable(): Throwable =
+    cause ?: IllegalStateException("Image could not be saved (${this::class.simpleName})")
 
-/**
- * Platform-specific factory for creating [ImageSaverPlugin] instances.
- *
- * Must be implemented for each platform (Android, iOS, Desktop).
- *
- * @param context Platform context for storage operations.
- * @param config Configuration settings for the plugin.
- * @return An instance of [ImageSaverPlugin] for the current platform.
- */
-expect fun createPlatformImageSaverPlugin(context: PlatformContext, config: ImageSaverConfig): ImageSaverPlugin
+/** The same configuration's saver across recompositions, over [platformContext]'s gallery. */
+@Composable
+public fun rememberImageSaverPlugin(
+    config: MediaSaverConfig,
+    platformContext: CameraKPlatformContext = rememberCameraKPlatformContext(),
+): ImageSaverPlugin = remember(config, platformContext) { ImageSaverPlugin(config, platformContext) }
+
+/** This platform's [CameraKPlatformContext], remembered: the application context on Android. */
+@Composable
+internal expect fun rememberCameraKPlatformContext(): CameraKPlatformContext

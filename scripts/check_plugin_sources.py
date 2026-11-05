@@ -8,6 +8,9 @@
 - Source-set layout: every plugin module, ImageSaverPlugin included, keeps its code in the standard
   source sets (commonMain, androidMain, appleMain, desktopMain and their tests), under
   <sourceSet>/kotlin/ in directories that match the package.
+- The media saver does not use core's Directory: its main sources name `com.kashif.cameraK.enums.Directory`
+  only in ImageSaverLegacy.kt, which holds the deprecated 1.x API until C1' removes it. The case scans
+  ImageSaverPlugin itself, since PLUGIN_MODULES does not list it, and is first run against a fixture.
 - The Sample's App.kt names no plugin package: each plugin's code lives in that plugin's screen file,
   so a plugin slice or a package rename edits one Sample file and never App.kt. The plugin packages
   are read from the plugin modules' main sources, and the rule is first run against a fixture it
@@ -44,6 +47,11 @@ COMMENTED_CODE = re.compile(
 )
 FENCE = re.compile(r"^\s*\*\s*```")
 SAMPLE_APP = pathlib.Path("Sample/src/commonMain/kotlin/org/company/app/App.kt")
+SAVER_MODULE = "ImageSaverPlugin"
+SAVER_LEGACY_FILE = "ImageSaverLegacy.kt"
+CORE_DIRECTORY = re.compile(
+    r"\bcom\.kashif\.cameraK\.enums\.(Directory\b|\*)|(?<![A-Za-z0-9_.])Directory\.(PICTURES|DCIM|DOCUMENTS)\b"
+)
 
 
 def kotlin_files(root):
@@ -147,6 +155,32 @@ def sample_app_kt_imports_no_plugin_package(root):
     return findings
 
 
+def core_directory_references(text):
+    """Line numbers of text that import or name core's Directory."""
+    return [number for number, line in enumerate(text.splitlines(), start=1) if CORE_DIRECTORY.search(line)]
+
+
+def saver_does_not_import_core_directory(root):
+    fixture = (
+        "import com.kashif.cameraK.enums.ImageFormat\n"
+        "import com.kashif.cameraK.enums.Directory\n"
+        "val d = Directory.DCIM\n"
+        "val g = GalleryDestination.DCIM\n"
+        "import com.kashif.cameraK.enums.*\n"
+        "val e = Environment.DIRECTORY_DCIM\n"
+    )
+    if core_directory_references(fixture) != [2, 3, 5]:
+        return ["scripts/check_plugin_sources.py: the saver Directory rule misjudges its fixture"]
+    findings = []
+    for path in sorted((root / SAVER_MODULE / "src").glob("*Main/**/*.kt")):
+        if path.name == SAVER_LEGACY_FILE:
+            continue
+        rel = path.relative_to(root)
+        for number in core_directory_references(path.read_text(encoding="utf-8")):
+            findings.append(f"{rel}:{number}: uses core's Directory; the saver publishes to its own GalleryDestination")
+    return findings
+
+
 def main():
     root = pathlib.Path(__file__).resolve().parent.parent
     findings = []
@@ -155,6 +189,7 @@ def main():
             findings += check(path, root)
     findings += check_layout(root)
     findings += sample_app_kt_imports_no_plugin_package(root)
+    findings += saver_does_not_import_core_directory(root)
     if findings:
         print("Plugin source check failed:")
         print("\n".join(findings))

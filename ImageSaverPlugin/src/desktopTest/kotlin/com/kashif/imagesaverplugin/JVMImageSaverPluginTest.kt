@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.kashif.imagesaverplugin
 
 import kotlinx.coroutines.test.runTest
@@ -10,6 +12,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 
 class JVMImageSaverPluginTest {
@@ -20,21 +23,17 @@ class JVMImageSaverPluginTest {
         home.deleteRecursively()
     }
 
+    // Ported from the 1.x failure callback, which is gone: the failure's own message says the same.
     @Test
     fun saveImage_undecodableBytes_returnsNullAndReportsTheFailure() = runTest {
-        var saved = false
-        var failure: String? = null
-        val plugin =
-            JVMImageSaverPlugin(ImageSaverConfig(), onImageSaved = { saved = true }, onImageSavedFailed = {
-                failure =
-                    it
-            })
+        val plugin = plugin()
 
         val path = plugin.saveImage(byteArrayOf(1, 2, 3), imageName = "not-an-image")
+        val result = plugin.save(byteArrayOf(1, 2, 3), imageName = "not-an-image")
 
         assertNull(path)
-        assertFalse(saved)
-        assertEquals("Could not decode image bytes", failure)
+        assertEquals("Could not decode image bytes", assertIs<ImageSaveResult.Failed>(result).error.message)
+        assertEquals(emptyList(), home.walkTopDown().filter { it.isFile }.toList(), "files written for a failed save")
     }
 
     @Test
@@ -85,6 +84,5 @@ class JVMImageSaverPluginTest {
         assertFalse(home.name in error.message.orEmpty(), "the error message contains the path: ${error.message}")
     }
 
-    private fun plugin() =
-        JVMImageSaverPlugin(ImageSaverConfig(), onImageSaved = {}, onImageSavedFailed = {}, userHome = home)
+    private fun plugin() = legacySaver(ImageSaverConfig(), home)
 }

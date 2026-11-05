@@ -1470,12 +1470,11 @@ tasks.register("checkLicenseMetadata") {
     }
 }
 
-// Release 2.0 is built on Compose Multiplatform 1.11 and Coil 3.5. Each library's shipped desktop and
-// Android classpaths must resolve Compose's runtime, foundation and ui at exactly the Compose plugin's
-// version, on or above that baseline and stable, and Coil on or above its baseline. Resolving the
-// classpaths, rather than reading the catalog, catches a dependency that drags Compose to another line.
+// Release 2.0 is built on Compose Multiplatform 1.11. Each library's shipped desktop and Android
+// classpaths must resolve Compose's runtime, foundation and ui at exactly the Compose plugin's version,
+// on or above that baseline and stable. Resolving the classpaths, rather than reading the catalog,
+// catches a dependency that drags Compose to another line.
 val composeBaseline = "1.11.0"
-val coilBaseline = "3.5.0"
 val composePluginVersion =
     libs.versions.compose.multiplatform
         .get()
@@ -1508,7 +1507,7 @@ subprojects {
         }
     tasks.register("checkComposeBaseline") {
         group = "verification"
-        description = "Fails if this library ships Compose off the plugin's version or Coil below the 2.0 baseline"
+        description = "Fails if this library ships Compose off the plugin's version"
         doLast {
             val problems = mutableListOf<String>()
             if (composePluginVersion.contains('-') || !versionAtLeast(composePluginVersion, composeBaseline)) {
@@ -1521,8 +1520,6 @@ subprojects {
                         when {
                             module in composeCoreModules && version != composePluginVersion ->
                                 "$configurationName resolves $module $version, not the Compose plugin's $composePluginVersion"
-                            module.startsWith("io.coil-kt.coil3:") && !versionAtLeast(version, coilBaseline) ->
-                                "$configurationName resolves $module $version; 2.0 needs Coil $coilBaseline or later"
                             else -> null
                         }
                     }
@@ -1537,7 +1534,7 @@ subprojects {
 
 tasks.register("checkComposeBaseline") {
     group = lintGroup
-    description = "Fails if a library ships Compose or Coil off the 2.0 baseline"
+    description = "Fails if a library ships Compose off the 2.0 baseline"
     dependsOn(publishedModules.map { ":$it:checkComposeBaseline" })
 }
 

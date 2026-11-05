@@ -1,5 +1,10 @@
+@file:Suppress("DEPRECATION")
+
 package com.kashif.imagesaverplugin
 
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.testing.FakeCaptures
 import kotlinx.coroutines.test.runTest
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
@@ -11,14 +16,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * The desktop saver's callbacks belong to the consumer. A callback that throws cannot turn a saved
- * image into a failure or make save() throw, and the failure callback's message names what went
- * wrong without the file system paths a platform exception carries.
+ * The 2.0 saver takes no callbacks: a save's outcome is its return value, so no app code runs
+ * inside a save and none can turn a saved image into a failure. A failure names its kind and keeps
+ * the platform's exception as its cause, and nothing shown to a user is built from that cause's
+ * message, which may hold a path.
  */
 class JVMImageSaverPluginCallbackTest {
 
@@ -29,35 +33,21 @@ class JVMImageSaverPluginCallbackTest {
         home.deleteRecursively()
     }
 
+    // Replaces aThrowingOnImageSaved_stillReportsTheSaveAndNoFailure: there is no onImageSaved.
     @Test
-    fun aThrowingOnImageSaved_stillReportsTheSaveAndNoFailure() = runTest {
-        var failure: String? = null
-        val sut = JVMImageSaverPlugin(
-            ImageSaverConfig(),
-            onImageSaved = { throw IllegalStateException("a consumer's onImageSaved failed") },
-            onImageSavedFailed = { failure = it },
-            userHome = home,
-        )
+    fun aSavedImageIsReportedAsSavedOnly() = runTest {
+        val result = legacySaver(ImageSaverConfig(), home).save(jpeg(), "shot")
 
-        val result = sut.save(jpeg(), "shot")
-
-        val saved = assertIs<ImageSaveResult.Saved>(result, "save result when onImageSaved throws")
+        val saved = assertIs<ImageSaveResult.Saved>(result, "save result")
         assertTrue(File(saved.location).isFile, "the saved file is missing")
-        assertNull(failure, "a saved image was also reported as failed")
     }
 
+    // Replaces aThrowingOnImageSavedFailed_stillReturnsTheFailure: there is no onImageSavedFailed.
     @Test
-    fun aThrowingOnImageSavedFailed_stillReturnsTheFailure() = runTest {
-        val sut = JVMImageSaverPlugin(
-            ImageSaverConfig(),
-            onImageSaved = {},
-            onImageSavedFailed = { throw IllegalStateException("a consumer's onImageSavedFailed failed") },
-            userHome = home,
-        )
+    fun aFailedSaveReturnsTheFailure() = runTest {
+        val result = legacySaver(ImageSaverConfig(), home).save(byteArrayOf(1, 2, 3), "not-an-image")
 
-        val result = sut.save(byteArrayOf(1, 2, 3), "not-an-image")
-
-        assertIs<ImageSaveResult.Failed>(result, "save result when onImageSavedFailed throws")
+        assertIs<ImageSaveResult.Failed>(result, "save result for bytes that are not an image")
     }
 
     @Test
@@ -65,21 +55,15 @@ class JVMImageSaverPluginCallbackTest {
         // The configured folder is taken by a file, so creating it fails with an exception whose
         // message is the folder's path.
         File(home, "Pictures").writeText("not a folder")
-        var failure: String? = null
-        val sut = JVMImageSaverPlugin(
-            ImageSaverConfig(),
-            onImageSaved = {},
-            onImageSavedFailed = { failure = it },
-            userHome = home,
-        )
+        val source = File(home, "capture.jpg").apply { writeBytes(jpeg()) }
+        val config = MediaSaverConfig()
+        val sut = ImageSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
 
-        val result = sut.save(jpeg(), "shot")
+        val result = sut.save(FakeCaptures.image(path = source.path))
 
-        assertIs<ImageSaveResult.Failed>(result, "save result when the folder cannot be created")
-        val message = assertNotNull(failure, "the failure callback was not called")
-        assertFalse(message.isBlank(), "the failure callback got an empty reason")
-        assertFalse(home.name in message, "the failure message contains a path: $message")
-        assertEquals(listOf("Pictures"), home.list()?.toList(), "files written for a failed save")
+        val error = assertIs<CameraKError.Storage>(assertIs<CameraKResult.Failure>(result).error)
+        assertFalse(home.name in error.toString(), "the failure's text contains a path: $error")
+        assertEquals(setOf("Pictures", "capture.jpg"), home.list()?.toSet(), "files written for a failed save")
     }
 
     private fun jpeg(): ByteArray {

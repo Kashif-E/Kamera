@@ -6,6 +6,7 @@ import org.w3c.dom.Element
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -42,6 +43,14 @@ class CameraPermissionManifestTest {
             ),
             features,
         )
+    }
+
+    /** Core writes app-owned files only; the media saver declares the storage permission it needs. */
+    @Test
+    fun libraryManifestDeclaresNoStoragePermission() {
+        val permissions = manifest.elements("uses-permission").map { it.getAttributeNS(ANDROID_NS, "name") }
+
+        assertFalse(Manifest.permission.WRITE_EXTERNAL_STORAGE in permissions, "declared permissions: $permissions")
     }
 
     private fun org.w3c.dom.Document.elements(tag: String): List<Element> =

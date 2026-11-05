@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.kashif.imagesaverplugin
 
 import android.content.ContentUris
@@ -32,7 +34,7 @@ class AndroidImageSaverPluginNameTest {
         rows.forEach {
             shadowOf(context.contentResolver).registerOutputStreamSupplier(it, Supplier { ByteArrayOutputStream() })
         }
-        val plugin = AndroidImageSaverPlugin(context, ImageSaverConfig())
+        val plugin = androidSaver(context)
 
         repeat(2) { plugin.save(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1)) }
 

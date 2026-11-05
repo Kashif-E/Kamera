@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.kashif.imagesaverplugin
 
 import android.content.ContentUris
@@ -58,7 +60,7 @@ class AndroidImageSaverPluginFormatTest {
         for (row in listOf(firstRow, secondRow)) {
             shadowOf(context.contentResolver).registerOutputStreamSupplier(row, Supplier { ByteArrayOutputStream() })
         }
-        val plugin = AndroidImageSaverPlugin(context, ImageSaverConfig(imageFormat = ImageFormat.PNG))
+        val plugin = androidSaver(context, MediaSaverConfig { imageFormat = ImageFormat.PNG })
 
         plugin.save(jpeg, "first")
         plugin.save(jpeg, "second")
@@ -71,7 +73,7 @@ class AndroidImageSaverPluginFormatTest {
     fun jpegBytes_withPngConfigured_areSavedAsJpeg() = runTest {
         shadowOf(context.contentResolver).registerOutputStreamSupplier(firstRow, Supplier { ByteArrayOutputStream() })
 
-        AndroidImageSaverPlugin(context, ImageSaverConfig(imageFormat = ImageFormat.PNG)).save(jpeg, "shot")
+        androidSaver(context, MediaSaverConfig { imageFormat = ImageFormat.PNG }).save(jpeg, "shot")
 
         val values = mediaStore.rows.getValue(firstRow)
         assertEquals("image/jpeg", values.getAsString(MediaStore.MediaColumns.MIME_TYPE))
@@ -82,7 +84,7 @@ class AndroidImageSaverPluginFormatTest {
     fun pngBytes_withPngConfigured_areSavedAsPng() = runTest {
         shadowOf(context.contentResolver).registerOutputStreamSupplier(firstRow, Supplier { ByteArrayOutputStream() })
 
-        AndroidImageSaverPlugin(context, ImageSaverConfig(imageFormat = ImageFormat.PNG)).save(png, "shot")
+        androidSaver(context, MediaSaverConfig { imageFormat = ImageFormat.PNG }).save(png, "shot")
 
         val values = mediaStore.rows.getValue(firstRow)
         assertEquals("image/png", values.getAsString(MediaStore.MediaColumns.MIME_TYPE))

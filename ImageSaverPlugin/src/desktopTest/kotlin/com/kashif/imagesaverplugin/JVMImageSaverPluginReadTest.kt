@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.kashif.imagesaverplugin
 
 import com.kashif.cameraK.enums.Directory
@@ -28,8 +30,7 @@ class JVMImageSaverPluginReadTest {
     private val home = File(sandbox, "home").apply { mkdirs() }
     private val sut = plugin(ImageSaverConfig())
 
-    private fun plugin(config: ImageSaverConfig) =
-        JVMImageSaverPlugin(config, onImageSaved = {}, onImageSavedFailed = {}, userHome = home)
+    private fun plugin(config: ImageSaverConfig) = legacySaver(config, home)
 
     @AfterTest
     fun tearDown() {
@@ -41,7 +42,7 @@ class JVMImageSaverPluginReadTest {
         return File(parent, name).apply { writeBytes(bytes) }
     }
 
-    private fun assertRefused(path: String, reader: JVMImageSaverPlugin = sut) {
+    private fun assertRefused(path: String, reader: ImageSaverPlugin = sut) {
         val error = assertFailsWith<IOException>("reading $path") { reader.getByteArrayFrom(path) }
         assertFalse(sandbox.name in error.message.orEmpty(), "the error message contains a path: ${error.message}")
     }

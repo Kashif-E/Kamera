@@ -22,9 +22,6 @@ kotlin {
         val desktopMain by getting
         commonMain.dependencies {
             api(projects.cameraK)
-            // coil3.PlatformContext is in rememberImageSaverPlugin's and the factory's signatures.
-            api(libs.coil3.core)
-            implementation(libs.coil3.compose.core)
         }
 
         appleMain.dependencies {
@@ -33,6 +30,7 @@ kotlin {
 
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation(projects.cameraKTesting)
 
             // Test-only, and it must stay that way. On the runtime classpath, coroutines-test
             // installs TestMainDispatcherFactory via ServiceLoader, which takes over
@@ -46,9 +44,6 @@ kotlin {
             implementation(libs.junit)
             implementation(libs.robolectric)
             implementation(libs.androidx.test.core)
-        }
-
-        androidMain.dependencies {
         }
     }
 
