@@ -57,6 +57,14 @@ internal val RECORDING_START_TIMEOUT: Duration = 5.seconds
  */
 internal val SHUTDOWN_STOP_TIMEOUT: Duration = 5.seconds
 
+/**
+ * How long a host stop keeps the camera open while a recording is live, so the stop and the start of
+ * an Activity recreation (a rotation) leave the recording running. Long enough for a recreation
+ * under load; short enough that a real stop does not keep the camera, and its privacy indicator, on
+ * for long after the app has gone to the background.
+ */
+internal val CONFIG_CHANGE_GRACE: Duration = 2.seconds
+
 /** How often `uiState.recordingDurationMs` moves while recording: the 1.x ticker's rate. */
 internal val RECORDING_TICK: Duration = 250.milliseconds
 
