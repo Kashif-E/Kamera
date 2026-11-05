@@ -8,6 +8,7 @@ import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.recording.RecordingState
+import com.kashif.cameraK.recording.elapsed
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
@@ -95,12 +96,12 @@ class RecordingFeatureTest {
         assertEquals(5.minutes, recorder.configurations.single().maxDuration)
         assertTrue(recording.state.value.isLive(), "the recording did not start")
         advanceTimeBy(5.minutes)
-        assertEquals(5.minutes.inWholeMilliseconds, recording.durationMs)
+        assertEquals(5.minutes.inWholeMilliseconds, recording.state.value.elapsed().inWholeMilliseconds)
 
         recorder.platformEnds(CameraKResult.Success(recorder.video(1)), RecordingEndReason.MAX_DURATION)
         runCurrent()
         assertFalse(recording.state.value.isLive(), "the Sample still shows a recording the limit ended")
-        assertEquals(0L, recording.durationMs)
+        assertEquals(0L, recording.state.value.elapsed().inWholeMilliseconds)
         assertEquals(listOf("Recording reached its time limit and was saved"), notices)
         assertEquals(0, recorder.stops, "the Sample stopped a recording the platform had already ended")
     }

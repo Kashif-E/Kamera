@@ -27,7 +27,6 @@ import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.recording.RecordingState
-import com.kashif.cameraK.recording.elapsed
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
@@ -100,9 +99,6 @@ internal class RecordingFeature(private val recorder: SampleRecorder) {
 
     /** The holder's recording state. */
     val state: StateFlow<RecordingState> get() = recorder.recordingState
-
-    /** The recorded time, or 0 when nothing is recording. */
-    val durationMs: Long get() = recorder.recordingState.value.elapsed().inWholeMilliseconds
 
     /** Starts a recording, or stops the one under way. */
     suspend fun toggleRecording() {
