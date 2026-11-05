@@ -33,6 +33,7 @@ import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.result.map
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.ZoomState
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -691,13 +692,17 @@ internal class DesktopCameraEngine(
     }
 
     override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> =
-        beginRecording(config, requireOpen = true)
+        beginRecording(config, requireOpen = true).map { it.path }
 
     /**
-     * Starts a recording and returns its path once the recorder started and `Started` was emitted.
-     * [requireOpen] false is the 1.x facade's start, which records whatever frames come, as 1.x did.
+     * Starts a recording and returns it once the recorder started and `Started` was emitted.
+     * [requireOpen] false is the 1.x facade's start, which records whatever frames come, as 1.x did,
+     * and keeps the recording to claim its outcome.
      */
-    internal suspend fun beginRecording(video: VideoConfiguration, requireOpen: Boolean): CameraKResult<String> {
+    internal suspend fun beginRecording(
+        video: VideoConfiguration,
+        requireOpen: Boolean,
+    ): CameraKResult<DesktopRecording> {
         synchronized(lock) {
             if (closed) return CameraKResult.Failure(CameraKError.Closed)
             if (requireOpen && _state.value != EngineState.Open) return CameraKResult.Failure(CameraKError.NotReady)
@@ -717,7 +722,7 @@ internal class DesktopCameraEngine(
         }
     }
 
-    private suspend fun startNow(video: VideoConfiguration): CameraKResult<String> {
+    private suspend fun startNow(video: VideoConfiguration): CameraKResult<DesktopRecording> {
         val live = when (val created = newRecording(video)) {
             is CameraKResult.Failure -> return created
             is CameraKResult.Success -> created.value
@@ -733,7 +738,7 @@ internal class DesktopCameraEngine(
         }
         val outcome = live.start()
         if (outcome is CameraKResult.Failure) synchronized(lock) { if (recording === live) recording = null }
-        return outcome
+        return outcome.map { live }
     }
 
     // The output file and an unstarted recorder for it.

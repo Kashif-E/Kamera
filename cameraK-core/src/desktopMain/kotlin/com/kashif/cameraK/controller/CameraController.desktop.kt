@@ -3,6 +3,7 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.CameraCapabilities
+import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.CameraSelection
@@ -18,6 +19,7 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
@@ -127,6 +129,9 @@ actual class CameraController internal constructor(
             CoroutineExceptionHandler { _, e -> CameraKLogger.e("CameraK", "CameraK: Camera session failed", e) },
     )
     private val closed = atomic(false)
+
+    // The last recording this facade started, until a stop claims its outcome (1.x).
+    private val unclaimed = atomic<DesktopRecording?>(null)
 
     // The hardware the 1.x setters asked for, kept across stop and start and passed to the
     // engine's start (W4 decision G3).
@@ -430,7 +435,10 @@ actual class CameraController internal constructor(
             configuration
         }
         return when (val started = engine.beginRecording(video, requireOpen = false)) {
-            is CameraKResult.Success -> started.value
+            is CameraKResult.Success -> {
+                unclaimed.value = started.value
+                started.value.path
+            }
             is CameraKResult.Failure -> throw when (val error = started.error) {
                 is CameraKError.Busy -> IllegalStateException("A recording is already in progress")
                 else -> error.asException("The recording did not start")
@@ -438,13 +446,37 @@ actual class CameraController internal constructor(
         }
     }
 
-    /** Finalizes the engine's recording; an error when none is live or the file is not playable. */
-    actual suspend fun stopRecording(): VideoCaptureResult = when (val stopped = engine.stopRecording()) {
-        is CameraKResult.Success -> VideoCaptureResult.Success(
-            stopped.value.path,
-            stopped.value.duration.inWholeMilliseconds,
-        )
-        is CameraKResult.Failure -> VideoCaptureResult.Error(stopped.error.asException("The recording failed"))
+    /**
+     * Finalizes the engine's recording and returns its result. A recording this facade started that
+     * ended by itself (a limit, an error, a lost camera) is the next stop's result, once, as in 1.x;
+     * a recording started after it replaces it. An error when nothing is left to claim, the file is
+     * not playable, or the session's stop ended the recording (its file is kept, but 1.x reported
+     * that as an error).
+     */
+    actual suspend fun stopRecording(): VideoCaptureResult {
+        val mine = unclaimed.getAndSet(null)
+        var claimed = false
+        try {
+            val stopped = engine.stopRecording()
+            val result = when {
+                stopped !is CameraKResult.Failure || stopped.error !is CameraKError.InvalidState -> stopped.asLegacy()
+                // Off the engine's books once it is finalizing, so its outcome is at most a moment away.
+                mine != null -> mine.finalized.await().let { outcome ->
+                    // 1.x reported a recording the session's stop ended as an error, never a success.
+                    if (outcome is CameraKResult.Success && mine.endedBy == RecordingEndReason.SHUTDOWN) {
+                        VideoCaptureResult.Error(IllegalStateException("The camera stopped during the recording"))
+                    } else {
+                        outcome.asLegacy()
+                    }
+                }
+                else -> VideoCaptureResult.Error(IllegalStateException("No active recording"))
+            }
+            claimed = true
+            return result
+        } finally {
+            // A cancelled caller did not claim it: it stays for the next stop, unless a start replaced it.
+            if (!claimed && mine != null) unclaimed.compareAndSet(null, mine)
+        }
     }
 
     // Frames captured while paused are dropped and the paused time is taken out of every later
@@ -456,6 +488,11 @@ actual class CameraController internal constructor(
     actual suspend fun resumeRecording() {
         engine.resumeRecording()
     }
+}
+
+private fun CameraKResult<RecordedVideo>.asLegacy(): VideoCaptureResult = when (this) {
+    is CameraKResult.Success -> VideoCaptureResult.Success(value.path, value.duration.inWholeMilliseconds)
+    is CameraKResult.Failure -> VideoCaptureResult.Error(error.asException("The recording failed"))
 }
 
 // The 1.x results carry an exception: the platform's own when there is one.

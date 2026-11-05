@@ -79,6 +79,9 @@ internal class DesktopRecording(
     private var lastFrameNumber = -1L
     private var lastTimestampMicros = 0L
 
+    /** Why the recording ended (the first reason wins); null while it runs. */
+    val endedBy: RecordingEndReason? get() = endReason.value
+
     /** Whether the recorder started and the engine announced it. */
     val isStarted: Boolean get() = clock != null && started.isCompleted
 
