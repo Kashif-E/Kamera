@@ -5,6 +5,13 @@ import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import com.kashif.cameraK.engine.WorkerDispatcher
+import com.kashif.cameraK.engine.newDedicatedWorker
+import com.kashif.cameraK.frames.FrameAnalyzer
+import com.kashif.cameraK.frames.FrameFormat
+import com.kashif.cameraK.frames.FrameRegistration
+import com.kashif.cameraK.frames.FrameSource
+import com.kashif.cameraK.frames.FrameSpec
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.update
 import java.nio.ByteBuffer
@@ -17,9 +24,17 @@ import java.util.concurrent.atomic.AtomicInteger
  * ImageAnalysis feeds them through one [MultiplexingAnalyzer] that reads the consumer list on every
  * frame, so registering or removing one never touches CameraX bindings.
  */
-internal class FramePipeline(private val backend: CameraXBackend, private val analyzerExecutor: Executor) {
+internal class FramePipeline(
+    private val backend: CameraXBackend,
+    private val analyzerExecutor: Executor,
+    private val sessionFormat: FrameFormat = FrameFormat.YUV_420,
+    private val newWorker: (String) -> WorkerDispatcher = ::newDedicatedWorker,
+    private val nanoTime: () -> Long = System::nanoTime,
+) : FrameSource {
     private val consumers = atomic(emptyList<ImageAnalysis.Analyzer>())
-    private val multiplexer = MultiplexingAnalyzer { consumers.value }
+    internal val multiplexer = MultiplexingAnalyzer { consumers.value }
+
+    override fun register(spec: FrameSpec, analyzer: FrameAnalyzer): FrameRegistration = TODO("A4'")
 
     // Set by the configuration's frameAnalysis or by the first registration, and kept for the
     // engine's lifetime: from then on every bind includes one ImageAnalysis, so later consumers join

@@ -12,6 +12,7 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
@@ -133,6 +134,18 @@ class AndroidCapabilitiesTest {
         assertEquals(VideoQuality.HD.bitrateBps, build.bitrateBps, "the Recorder's target bitrate")
         platform.backend.recordings.single().finalize()
         platform.settle(testScheduler)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun analysisFormatsYuvAndRgba() = runTest {
+        val engine = platform.engine(testScheduler)
+        platform.settle(testScheduler)
+        assertEquals(
+            setOf(FrameFormat.YUV_420, FrameFormat.RGBA_8888),
+            engine.capabilities.value.supportedAnalysisFormats,
+            "ImageAnalysis outputs YUV_420_888 and RGBA_8888",
+        )
         engine.closeAndJoin()
     }
 }
