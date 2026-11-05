@@ -87,6 +87,9 @@ class RetainedHolderTest {
 
     @After
     fun tearDown() {
+        // A test that left its Activity running would leave its composition to the next test.
+        controller?.let { if (!it.get().isDestroyed) it.pause().stop().destroy() }
+        settle()
         HostActivity.content = null
         holderParent.cancel()
         test.cancel()
