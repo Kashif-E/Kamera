@@ -45,7 +45,7 @@ class SampleBufferPoolTest {
 
     @Test
     fun atMostOneRetainedPerAnalyzer() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         val kept = Kept()
@@ -76,7 +76,7 @@ class SampleBufferPoolTest {
 
     @Test
     fun thirdRetainOverallCopiesLuma() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         val kept = List(3) { Kept() }

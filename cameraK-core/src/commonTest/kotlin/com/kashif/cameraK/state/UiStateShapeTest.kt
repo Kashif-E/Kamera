@@ -97,11 +97,11 @@ class UiStateShapeTest {
 
     @Test
     fun configurationFieldsComeFromTheConfiguration() = runTest {
-        val config = CameraConfiguration(
-            imageFormat = ImageFormat.PNG,
-            qualityPrioritization = QualityPrioritization.QUALITY,
-            cameraDeviceType = CameraDeviceType.WIDE_ANGLE,
-        )
+        val config = CameraConfiguration {
+            imageFormat = ImageFormat.PNG
+            qualityPrioritization = QualityPrioritization.QUALITY
+            cameraDeviceType = CameraDeviceType.WIDE_ANGLE
+        }
         val holder = CameraKStateHolder(config, { _, _ -> FakeCameraEngine() }, emptyList(), cameraKTestEnvironment())
         assertEquals(ImageFormat.PNG, holder.uiState.value.imageFormat, "before the first start")
         assertEquals(

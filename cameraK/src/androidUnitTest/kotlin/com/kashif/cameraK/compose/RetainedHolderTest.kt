@@ -199,11 +199,11 @@ class RetainedHolderTest {
             LoggedEngine("new", log) {},
         ).iterator()
         nextEngine = { logged.next() }
-        var config by mutableStateOf(CameraConfiguration(aspectRatio = AspectRatio.RATIO_4_3))
+        var config by mutableStateOf(CameraConfiguration { aspectRatio = AspectRatio.RATIO_4_3 })
         launch { Remembered(config = config) }
         assertIs<CameraKState.Ready>(current.cameraState.value)
 
-        config = CameraConfiguration(aspectRatio = AspectRatio.RATIO_16_9)
+        config = CameraConfiguration { aspectRatio = AspectRatio.RATIO_16_9 }
         settle()
         assertEquals(listOf("old:start"), log, "the new engine started while the old one was still closing")
 

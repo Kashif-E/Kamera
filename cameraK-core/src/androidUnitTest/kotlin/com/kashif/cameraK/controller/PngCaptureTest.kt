@@ -72,7 +72,7 @@ class PngCaptureTest {
         val platform = FakeAndroidPlatform()
         val engine = platform.engine(
             testScheduler,
-            CameraConfiguration(imageFormat = ImageFormat.PNG),
+            CameraConfiguration { imageFormat = ImageFormat.PNG },
             imageProcessing = DirectExecutor(),
         )
         open(platform, engine)

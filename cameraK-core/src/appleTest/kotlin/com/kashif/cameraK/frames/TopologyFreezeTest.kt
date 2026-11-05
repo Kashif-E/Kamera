@@ -92,7 +92,7 @@ class TopologyFreezeTest {
 
     @Test
     fun registrationAttachesDuringRecordingWhenOutputPresent() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         val output = driver.session.videoDataOutputs.singleOrNull()

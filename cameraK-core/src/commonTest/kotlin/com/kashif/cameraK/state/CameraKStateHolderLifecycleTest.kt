@@ -492,7 +492,10 @@ class CameraKStateHolderLifecycleTest {
 
     @Test
     fun effectiveConfigIsPassedToTheEngineFactory() = runTest {
-        val config = CameraConfiguration(cameraLens = CameraLens.FRONT, imageFormat = ImageFormat.PNG)
+        val config = CameraConfiguration {
+            cameraLens = CameraLens.FRONT
+            imageFormat = ImageFormat.PNG
+        }
         var received: CameraConfiguration? = null
 
         CameraKStateHolder(
@@ -506,7 +509,7 @@ class CameraKStateHolderLifecycleTest {
         )
 
         // CountingPlugin keeps CameraKPlugin's default needsFrames = true, so Decision 14 sets frameAnalysis.
-        assertEquals(config.copy(frameAnalysis = true), received, "the configuration the engine factory got")
+        assertEquals(config.copy { frameAnalysis = true }, received, "the configuration the engine factory got")
     }
 
     @Test

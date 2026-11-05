@@ -43,7 +43,10 @@ class VideoQualityQueryFailureTest {
         val engine = platform.engine(testScheduler)
         open(platform, engine)
 
-        val config = VideoConfiguration(quality = VideoQuality.FHD, enableAudio = false)
+        val config = VideoConfiguration {
+            quality = VideoQuality.FHD
+            enableAudio = false
+        }
         val start = async { engine.startRecording(config) }
         platform.settle(testScheduler)
 

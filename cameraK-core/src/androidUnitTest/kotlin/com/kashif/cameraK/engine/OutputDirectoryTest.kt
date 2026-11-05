@@ -28,7 +28,7 @@ class OutputDirectoryTest {
     fun stillsAndRecordingsGoUnderTheConfiguredOutputDirectory() = runTest {
         val configured = File(platform.context.filesDir, "app-media").canonicalFile
         val ownVideos = File(platform.context.filesDir, "clips").canonicalFile
-        val engine = platform.engine(testScheduler, CameraConfiguration(outputDirectory = configured.path))
+        val engine = platform.engine(testScheduler, CameraConfiguration { outputDirectory = configured.path })
         open(platform, engine)
 
         val capture = async { engine.capture() }
@@ -46,7 +46,7 @@ class OutputDirectoryTest {
         val (second, secondPath) = startRecording(
             platform,
             engine,
-            VideoConfiguration(outputDirectory = ownVideos.path),
+            VideoConfiguration { outputDirectory = ownVideos.path },
         )
         assertEquals(ownVideos, File(secondPath).canonicalFile.parentFile, "a recording that names its own")
         second.finalize()

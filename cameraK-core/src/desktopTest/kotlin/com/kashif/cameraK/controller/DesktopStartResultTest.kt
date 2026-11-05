@@ -15,6 +15,7 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -87,7 +88,7 @@ class DesktopStartResultTest {
     fun aTargetResolutionTheCameraOpensOnlyWithoutIsUnsupported() = runTest {
         val rig = DesktopEngineRig(testScheduler)
         val sut = DesktopCameraEngine(
-            CameraConfiguration(targetResolution = 7680 to 4320),
+            CameraConfiguration { targetResolution = Resolution(7680, 4320) },
             rig.environment(),
             RelaxingSource(rig.source),
             authorization = { PermissionStatus.Granted },

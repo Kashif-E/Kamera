@@ -41,7 +41,7 @@ class VideoQualityTest {
         var presetAtStart: String? = null
         driver.movieRecorder.onStart = { presetAtStart = driver.session.presets.last() }
 
-        val recording = startEngineRecording(driver, engine, VideoConfiguration(quality = VideoQuality.FHD))
+        val recording = startEngineRecording(driver, engine, VideoConfiguration { quality = VideoQuality.FHD })
             .also { written += it.path }
         assertEquals(AVCaptureSessionPreset1920x1080, presetAtStart, "the preset when the movie started")
 
@@ -61,7 +61,7 @@ class VideoQualityTest {
         val engine = driver.createEngine()
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
-        val config = VideoConfiguration(quality = VideoQuality.FHD)
+        val config = VideoConfiguration { quality = VideoQuality.FHD }
         var presetAtStart: String? = null
         driver.movieRecorder.onStart = { presetAtStart = driver.session.presets.last() }
 
@@ -97,7 +97,7 @@ class VideoQualityTest {
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         val presets = driver.session.presets
 
-        val refused = engine.startRecording(VideoConfiguration(quality = VideoQuality.UHD))
+        val refused = engine.startRecording(VideoConfiguration { quality = VideoQuality.UHD })
 
         val error = assertIs<CameraKError.Unsupported>(assertIs<CameraKResult.Failure>(refused).error)
         assertEquals(CameraFeature.VIDEO_QUALITY, error.feature)

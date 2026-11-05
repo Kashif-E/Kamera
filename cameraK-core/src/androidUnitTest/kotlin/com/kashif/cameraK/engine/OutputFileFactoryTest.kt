@@ -35,7 +35,7 @@ class OutputFileFactoryTest {
     fun failedMkdirsIsStorageNotWritableBeforeCameraXIsCalled() = runTest {
         // A directory under a regular file can never be created.
         val blocker = File(platform.context.filesDir, "blocker").apply { writeText("not a directory") }
-        val engine = platform.engine(testScheduler, CameraConfiguration(outputDirectory = File(blocker, "out").path))
+        val engine = platform.engine(testScheduler, CameraConfiguration { outputDirectory = File(blocker, "out").path })
         open(platform, engine)
 
         val capture = async { engine.capture() }
@@ -57,7 +57,13 @@ class OutputFileFactoryTest {
         val stills = File(platform.context.filesDir, "stills")
         val videos = File(platform.context.filesDir, "videos")
         val io = WatchingDispatcher(StandardTestDispatcher(testScheduler), listOf(stills, videos))
-        val engine = platform.engine(testScheduler, CameraConfiguration(outputDirectory = stills.path), background = io)
+        val engine = platform.engine(
+            testScheduler,
+            CameraConfiguration {
+                outputDirectory = stills.path
+            },
+            background = io,
+        )
         open(platform, engine)
 
         val capture = async { engine.capture() }
@@ -65,7 +71,7 @@ class OutputFileFactoryTest {
         platform.backend.captures.single().deliverSaved(byteArrayOf(1))
         platform.settle(testScheduler)
         assertIs<CameraKResult.Success<*>>(capture.await(), "setup: the capture")
-        startRecording(platform, engine, VideoConfiguration(outputDirectory = videos.path))
+        startRecording(platform, engine, VideoConfiguration { outputDirectory = videos.path })
 
         assertEquals(setOf(stills, videos), io.created, "directories created outside the io dispatcher")
         platform.backend.recordings.single().finalize()

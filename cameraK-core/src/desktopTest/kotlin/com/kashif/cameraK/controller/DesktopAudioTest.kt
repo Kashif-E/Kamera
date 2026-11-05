@@ -27,7 +27,7 @@ class DesktopAudioTest {
             steps.open(sut)
             val events = steps.events(sut)
 
-            val start = async { sut.startRecording(VideoConfiguration(enableAudio = true)) }
+            val start = async { sut.startRecording(VideoConfiguration { enableAudio = true }) }
             rig.settle()
 
             val error = assertIs<CameraKError.Unsupported>(assertIs<CameraKResult.Failure>(start.await()).error)

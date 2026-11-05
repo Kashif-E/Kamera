@@ -59,7 +59,7 @@ class AppleFrameDeliveryTest {
 
     @Test
     fun aFrameReachesEveryRegistrationWithItsLumaAndGeometry() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         val synchronous = atomic<Seen?>(null)
@@ -86,7 +86,7 @@ class AppleFrameDeliveryTest {
 
     @Test
     fun aRegistrationThatCannotReadYuvIsRejectedAndNeverActive() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         val called = atomic(false)

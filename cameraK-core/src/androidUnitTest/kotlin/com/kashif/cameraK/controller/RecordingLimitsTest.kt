@@ -43,7 +43,13 @@ class RecordingLimitsTest {
 
     @Test
     fun sizeAndDurationLimits_reachTheRecorder() {
-        start(VideoConfiguration(enableAudio = false, maxDuration = 30.seconds, maxFileSizeBytes = 50_000_000L))
+        start(
+            VideoConfiguration {
+                enableAudio = false
+                maxDuration = 30.seconds
+                maxFileSizeBytes = 50_000_000L
+            },
+        )
 
         val output = backend.recordings.single().output
         assertEquals(30_000L, output.durationLimitMillis, "the duration limit never reached CameraX")
@@ -52,7 +58,7 @@ class RecordingLimitsTest {
 
     @Test
     fun noLimits_recordWithoutLimits() {
-        start(VideoConfiguration(enableAudio = false))
+        start(VideoConfiguration { enableAudio = false })
 
         val output = backend.recordings.single().output
         assertEquals(0L, output.durationLimitMillis)
@@ -61,7 +67,12 @@ class RecordingLimitsTest {
 
     @Test
     fun subMillisecondDurationLimit_isOneMillisecond() {
-        start(VideoConfiguration(enableAudio = false, maxDuration = 500.microseconds))
+        start(
+            VideoConfiguration {
+                enableAudio = false
+                maxDuration = 500.microseconds
+            },
+        )
 
         // CameraX reads 0 as no limit, so a positive limit under a millisecond must not round down to it.
         assertEquals(1L, backend.recordings.single().output.durationLimitMillis, "the limit became unlimited")
@@ -69,7 +80,12 @@ class RecordingLimitsTest {
 
     @Test
     fun recordingStoppedAtItsSizeLimit_keepsItsFile() {
-        start(VideoConfiguration(enableAudio = false, maxFileSizeBytes = 4L))
+        start(
+            VideoConfiguration {
+                enableAudio = false
+                maxFileSizeBytes = 4L
+            },
+        )
         backend.recordings.single().finalize(error = VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED)
         idleMainLooper()
 

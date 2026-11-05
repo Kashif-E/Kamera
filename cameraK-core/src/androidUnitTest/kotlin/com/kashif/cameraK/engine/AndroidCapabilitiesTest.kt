@@ -114,7 +114,7 @@ class AndroidCapabilitiesTest {
         val engine = platform.engine(testScheduler)
         open(platform, engine)
 
-        val result = engine.startRecording(VideoConfiguration(quality = VideoQuality.UHD))
+        val result = engine.startRecording(VideoConfiguration { quality = VideoQuality.UHD })
 
         val error = assertIs<CameraKError.Unsupported>(assertIs<CameraKResult.Failure>(result).error)
         assertEquals(CameraFeature.VIDEO_QUALITY, error.feature)
@@ -127,7 +127,7 @@ class AndroidCapabilitiesTest {
         val engine = platform.engine(testScheduler)
         open(platform, engine)
 
-        startRecording(platform, engine, VideoConfiguration(quality = VideoQuality.HD))
+        startRecording(platform, engine, VideoConfiguration { quality = VideoQuality.HD })
 
         val build = platform.backend.videoCaptureBuilds.single()
         assertEquals(VideoQuality.HD, build.quality)

@@ -64,7 +64,7 @@ class ReleaseFailureTest {
         controller.bindCamera(PreviewView(context))
         idleMainLooper()
         val start = hostScope.async(start = CoroutineStart.UNDISPATCHED) {
-            controller.startRecording(VideoConfiguration(enableAudio = false))
+            controller.startRecording(VideoConfiguration { enableAudio = false })
         }
         idleMainLooper()
         assertTrue(start.isCompleted, "setup: the recording did not start")

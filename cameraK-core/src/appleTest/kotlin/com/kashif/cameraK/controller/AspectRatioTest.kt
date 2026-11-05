@@ -45,7 +45,7 @@ class AspectRatioTest {
     fun tearDown() = removeFiles(written)
 
     private suspend fun TestScope.capture(ratio: AspectRatio, photo: NSData): CapturedImage {
-        val engine = driver.createEngine(CameraConfiguration(aspectRatio = ratio))
+        val engine = driver.createEngine(CameraConfiguration { aspectRatio = ratio })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         val (capture, request) = captureReachingThePhotoOutput(driver, engine)
@@ -130,7 +130,7 @@ class AspectRatioTest {
             PreviewCase(AspectRatio.RATIO_4_3, landscape, null, Box(160.0, 0.0, 480.0, 360.0)),
         )
         cases.forEach { case ->
-            val engine = driver.createEngine(CameraConfiguration(aspectRatio = case.ratio))
+            val engine = driver.createEngine(CameraConfiguration { aspectRatio = case.ratio })
             val layer = engine.preview.createPreviewLayer()
 
             engine.preview.layOutPreviewLayer(layer, case.bounds, case.orientation)
@@ -148,7 +148,7 @@ class AspectRatioTest {
      */
     @Test
     fun theFacadesPreviewFillsTheSameBox() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(aspectRatio = AspectRatio.RATIO_16_9))
+        val engine = driver.createEngine(CameraConfiguration { aspectRatio = AspectRatio.RATIO_16_9 })
         val facade = driver.engine.legacyController
         val layer = facade.createPreviewLayer()
         val host = CALayer().apply { setFrame(CGRectMake(0.0, 0.0, 360.0, 800.0)) }

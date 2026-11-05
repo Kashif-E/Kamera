@@ -81,7 +81,7 @@ class SelectCameraTest {
         val facade = (engine as LegacyControllerAccess).legacyController
         assertEquals(CameraKResult.Success(Unit), engine.start(desired))
         platform.settle(testScheduler)
-        val recording = async { facade.startRecording(VideoConfiguration(enableAudio = false)) }
+        val recording = async { facade.startRecording(VideoConfiguration { enableAudio = false }) }
         platform.settle(testScheduler)
         recording.await()
         val binds = platform.backend.binding.bindCalls

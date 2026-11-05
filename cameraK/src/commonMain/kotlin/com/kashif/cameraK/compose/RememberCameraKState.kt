@@ -41,7 +41,10 @@ import kotlinx.coroutines.flow.combine
  * @Composable
  * fun CameraScreen() {
  *     val cameraState by rememberCameraKState(
- *         config = CameraConfiguration(cameraLens = CameraLens.BACK, flashMode = FlashMode.AUTO),
+ *         config = CameraConfiguration {
+ *             cameraLens = CameraLens.BACK
+ *             flashMode = FlashMode.AUTO
+ *         },
  *     )
  *
  *     when (val state = cameraState) {

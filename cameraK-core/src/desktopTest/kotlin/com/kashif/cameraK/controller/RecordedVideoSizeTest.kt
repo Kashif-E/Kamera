@@ -25,12 +25,12 @@ class RecordedVideoSizeTest {
         val rig = DesktopEngineRig(testScheduler)
         val steps = DesktopRecordingSteps(this, rig)
         // A 4:3 configuration for the 4:3 camera, so the blit crops nothing (D4').
-        val sut = rig.engine(CameraConfiguration(aspectRatio = AspectRatio.RATIO_4_3))
+        val sut = rig.engine(CameraConfiguration { aspectRatio = AspectRatio.RATIO_4_3 })
         try {
             // The scripted camera's frames are 64 x 48.
             steps.open(sut)
             steps.at(1_000)
-            val path = steps.startRecording(sut, steps.video().copy(quality = VideoQuality.FHD))
+            val path = steps.startRecording(sut, steps.video().copy { quality = VideoQuality.FHD })
             steps.frameAt(1_040)
             val video = assertIs<CameraKResult.Success<RecordedVideo>>(steps.stopRecording(sut)).value
 

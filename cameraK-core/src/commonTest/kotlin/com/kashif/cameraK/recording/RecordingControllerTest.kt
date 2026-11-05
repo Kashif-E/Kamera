@@ -293,7 +293,7 @@ class RecordingControllerTest {
         val fake = FakeCameraEngine()
         val holder = readyHolder(fake, cameraKTestEnvironment(checker))
 
-        val result = holder.startRecording(VideoConfiguration(enableAudio = true))
+        val result = holder.startRecording(VideoConfiguration { enableAudio = true })
 
         val error = assertIs<CameraKError.Permission>(assertIs<CameraKResult.Failure>(result).error)
         assertEquals(CameraKPermission.MICROPHONE, error.permission)
@@ -301,7 +301,7 @@ class RecordingControllerTest {
         assertEquals(RecordingState.Idle, holder.recordingState.value)
         assertEquals(0, fake.count("startRecording"), "the engine started a recording without its microphone")
 
-        val silent = holder.recording(VideoConfiguration(enableAudio = false))
+        val silent = holder.recording(VideoConfiguration { enableAudio = false })
         assertFalse(silent.hasAudio)
     }
 

@@ -95,7 +95,7 @@ class LensSwitchSignpostTest {
 
     @Test
     fun intervalEndsAtTheFirstSampleBufferFromTheNewDevice() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         tracer.atEnd = { "at a frame" }
@@ -113,7 +113,7 @@ class LensSwitchSignpostTest {
 
     @Test
     fun aSwitchWhoseFirstFrameNeverComesEndsAtStopMarkedNoFrame() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         tracer.atEnd = { "at stop" }

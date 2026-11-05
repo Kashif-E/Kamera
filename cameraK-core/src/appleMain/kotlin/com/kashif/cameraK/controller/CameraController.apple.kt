@@ -21,6 +21,7 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.InternalCameraKApi
@@ -61,7 +62,7 @@ import kotlin.native.ref.WeakReference
  * class, not a UIViewController: the engine owns the session, [startSession] starts it with no view,
  * and the preview is a layer camerak's CameraPreviewView hosts ([createPreviewLayer]).
  *
- * Built through a public constructor or the builder, it builds an engine of its own; the bridge's
+ * Built through a public constructor, it builds an engine of its own; the bridge's
  * engine builds one over itself. Members that open, stop or switch the camera go through the engine,
  * and so do the flash, torch and zoom setters while the camera is Open; before that the facade keeps
  * them and its startSession passes them to the engine's start. The target and device orientation are
@@ -114,13 +115,13 @@ actual class CameraController private constructor(
     internal constructor(engine: AppleCameraEngine, config: CameraConfiguration) : this(
         flashMode = config.flashMode,
         torchMode = config.torchMode,
-        cameraLens = config.cameraLens,
+        cameraLens = config.cameraLens ?: CameraLens.BACK,
         imageFormat = config.imageFormat,
         qualityPriority = config.qualityPrioritization,
-        directory = config.directory,
+        directory = Directory.DOCUMENTS,
         cameraDeviceType = config.cameraDeviceType,
         aspectRatio = config.aspectRatio,
-        targetResolution = config.targetResolution,
+        targetResolution = config.targetResolution?.let { it.width to it.height },
         mirrorFrontCamera = config.mirrorFrontCamera,
         customController = null,
         engine = engine,
@@ -154,17 +155,16 @@ actual class CameraController private constructor(
 
     /** The engine this facade runs on: its own, unless the engine built the facade over itself. */
     internal val engine: AppleCameraEngine = engine ?: AppleCameraEngine(
-        config = CameraConfiguration(
-            flashMode = flashMode,
-            torchMode = torchMode,
-            cameraLens = cameraLens,
-            imageFormat = imageFormat,
-            qualityPrioritization = qualityPriority,
-            cameraDeviceType = cameraDeviceType,
-            aspectRatio = aspectRatio,
-            targetResolution = targetResolution,
-            directory = directory,
-            mirrorFrontCamera = mirrorFrontCamera,
+        config = facadeConfiguration(
+            flashMode,
+            torchMode,
+            cameraLens,
+            imageFormat,
+            qualityPriority,
+            cameraDeviceType,
+            aspectRatio,
+            targetResolution,
+            mirrorFrontCamera,
         ),
         environment = CameraKEnvironment(),
         custom = customController ?: CustomCameraController(
@@ -708,4 +708,27 @@ internal fun writeDataToFile(data: NSData, filePath: String): Result<Unit> = mem
             ),
         )
     }
+}
+
+// The facade's 1.x arguments as the engine's configuration, named apart from the DSL's fields so none is shadowed.
+private fun facadeConfiguration(
+    flash: FlashMode,
+    torch: TorchMode,
+    lens: CameraLens,
+    format: ImageFormat,
+    quality: QualityPrioritization,
+    deviceType: CameraDeviceType,
+    ratio: AspectRatio,
+    resolution: Pair<Int, Int>?,
+    mirror: Boolean,
+) = CameraConfiguration {
+    flashMode = flash
+    torchMode = torch
+    cameraLens = lens
+    imageFormat = format
+    qualityPrioritization = quality
+    cameraDeviceType = deviceType
+    aspectRatio = ratio
+    targetResolution = resolution?.let { Resolution(it.first, it.second) }
+    mirrorFrontCamera = mirror
 }

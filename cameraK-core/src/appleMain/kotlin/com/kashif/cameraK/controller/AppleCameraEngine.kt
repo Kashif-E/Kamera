@@ -21,7 +21,6 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
-import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
@@ -292,7 +291,6 @@ internal class AppleCameraEngine(
     /** Captures waiting on AVFoundation, which close completes with Closed. Under [lock]. */
     private val pendingStills = mutableSetOf<StillRequest>()
     private val heicRefusalLogged = atomic(false)
-    private val galleryDirectoryLogged = atomic(false)
 
     /** The 1.x facade's image-capture listeners: each still's bytes as written. */
     @Volatile
@@ -885,13 +883,6 @@ internal class AppleCameraEngine(
     /** Writes [photo] where the configuration says, in its format and aspect ratio. Runs off the session queue. */
     private fun saveStill(photo: NSData): CameraKResult<CapturedImage> {
         val format = config.imageFormat
-        if (config.directory != Directory.DOCUMENTS && galleryDirectoryLogged.compareAndSet(false, true)) {
-            CameraKLogger.w(
-                TAG,
-                "CameraK: Directory.${config.directory} is ignored; captures are app-owned files, and " +
-                    "publishing them to Photos is the media saver's job",
-            )
-        }
         val path = try {
             "${appOwnedDirectory(config.outputDirectory)}/IMG_${NSUUID().UUIDString}.${format.extension}"
         } catch (e: Exception) {

@@ -81,7 +81,7 @@ class VideoFileOutcomeTest {
 
     /** Starts a recording, reports it started, and writes some bytes where AVFoundation would. */
     private fun startedRecording(
-        config: VideoConfiguration = VideoConfiguration(enableAudio = false),
+        config: VideoConfiguration = VideoConfiguration { enableAudio = false },
     ): FakeMovieRecorder.Start {
         rig.controller.movieRecorder = recorder
         rig.start()
@@ -155,7 +155,12 @@ class VideoFileOutcomeTest {
     @Test
     fun theMovieOutputKeepsDiskSpaceFreeAndStopsAtTheConfiguredMaximumDuration() {
         use(Directory.DOCUMENTS)
-        val started = startedRecording(VideoConfiguration(enableAudio = false, maxDuration = 5.seconds))
+        val started = startedRecording(
+            VideoConfiguration {
+                enableAudio = false
+                maxDuration = 5.seconds
+            },
+        )
 
         assertTrue(started.output.minFreeDiskSpaceLimit > 0, "the movie output keeps no disk space free")
         assertEquals(5.0, CMTimeGetSeconds(started.output.maxRecordedDuration), "the maximum duration was not set")
@@ -188,7 +193,10 @@ class VideoFileOutcomeTest {
         val failure = runCatching {
             run("startRecording to return") {
                 rig.controller.startRecording(
-                    VideoConfiguration(enableAudio = false, outputDirectory = "$blocker/videos"),
+                    VideoConfiguration {
+                        enableAudio = false
+                        outputDirectory = "$blocker/videos"
+                    },
                 )
             }
         }.exceptionOrNull()

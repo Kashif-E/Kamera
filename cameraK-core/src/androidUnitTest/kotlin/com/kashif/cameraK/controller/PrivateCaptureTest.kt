@@ -7,7 +7,6 @@ import androidx.camera.view.PreviewView
 import androidx.test.core.app.ApplicationProvider
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.result.ImageCaptureResult
-import com.kashif.cameraK.state.CameraConfiguration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -45,14 +44,15 @@ class PrivateCaptureTest {
         hostScope.cancel()
     }
 
+    // DOCUMENTS was the 1.x configuration's default directory; the engine's default is DefaultOutputDirectoryTest's.
     @Test
-    fun defaultConfiguration_keepsTheCaptureOutOfTheGallery() {
-        val result = capture(CameraConfiguration().directory)
+    fun documentsFacadeCapture_staysOutOfTheGallery() {
+        val result = capture(Directory.DOCUMENTS)
 
         assertEquals(
             emptyList(),
             mediaStore.rows.keys.toList(),
-            "a capture with the default configuration was published",
+            "a DOCUMENTS capture was published",
         )
         val path = assertIs<ImageCaptureResult.SuccessWithFile>(result).filePath
         assertTrue(File(path).canonicalPath.startsWith(filesDir.path + File.separator), "$path is not in $filesDir")

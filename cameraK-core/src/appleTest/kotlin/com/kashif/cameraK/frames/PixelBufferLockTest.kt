@@ -64,7 +64,7 @@ class PixelBufferLockTest {
 
     @Test
     fun baseAddressLockedForAnalyzeAndRetainedFrame() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         val buffer = sampleBuffer420f()
@@ -99,7 +99,7 @@ class PixelBufferLockTest {
 
     @Test
     fun pixelBufferOnlyOnASynchronousRegistrationsFrame() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         val buffer = sampleBuffer420f()

@@ -69,12 +69,12 @@ internal class DesktopRecordingSteps(private val scope: TestScope, val rig: Desk
     fun at(millis: Long) = rig.clock.set(millis * NANOS_PER_MILLI)
 
     fun video(maxDurationMillis: Long? = null, maxFileSizeBytes: Long? = null, outputDirectory: String? = null) =
-        VideoConfiguration(
-            enableAudio = false,
-            maxDuration = maxDurationMillis?.milliseconds,
-            maxFileSizeBytes = maxFileSizeBytes,
-            outputDirectory = outputDirectory,
-        )
+        VideoConfiguration {
+            enableAudio = false
+            maxDuration = maxDurationMillis?.milliseconds
+            this.maxFileSizeBytes = maxFileSizeBytes
+            this.outputDirectory = outputDirectory
+        }
 
     companion object {
         const val NANOS_PER_MILLI = 1_000_000L

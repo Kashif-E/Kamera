@@ -56,7 +56,7 @@ class FramePipelineTest {
 
     @Test
     fun analysisBoundAtStartWhenFlagSet() = runTest {
-        val engine = platform.engine(testScheduler, CameraConfiguration(frameAnalysis = true))
+        val engine = platform.engine(testScheduler, CameraConfiguration { frameAnalysis = true })
 
         assertEquals(CameraKResult.Success(Unit), engine.start(desired))
         platform.settle(testScheduler)
@@ -201,11 +201,11 @@ class FramePipelineTest {
     @Test
     fun analysisResolutionAndFormatApplied() = runTest {
         val engine = openEngine(
-            CameraConfiguration(
-                frameAnalysis = true,
-                analysisResolution = Resolution(640, 480),
-                analysisFormat = FrameFormat.RGBA_8888,
-            ),
+            CameraConfiguration {
+                frameAnalysis = true
+                analysisResolution = Resolution(640, 480)
+                analysisFormat = FrameFormat.RGBA_8888
+            },
         )
         val analysis = boundAnalyses().single()
         assertEquals(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888, analysis.outputImageFormat, "the output format")
@@ -228,7 +228,10 @@ class FramePipelineTest {
         val defaults = FakeAndroidPlatform()
         val defaultEngine = defaults.engine(
             testScheduler,
-            CameraConfiguration(frameAnalysis = true, aspectRatio = AspectRatio.RATIO_16_9),
+            CameraConfiguration {
+                frameAnalysis = true
+                aspectRatio = AspectRatio.RATIO_16_9
+            },
             runtime = testWorkers(),
         )
         open(defaults, defaultEngine)
@@ -392,7 +395,12 @@ class FramePipelineTest {
 
     @Test
     fun unacceptedFormatIsRejectedAndNeverActive() = runTest {
-        val engine = openEngine(CameraConfiguration(frameAnalysis = true, analysisFormat = FrameFormat.RGBA_8888))
+        val engine = openEngine(
+            CameraConfiguration {
+                frameAnalysis = true
+                analysisFormat = FrameFormat.RGBA_8888
+            },
+        )
         var rejectedFrames = 0
         var acceptedFrames = 0
         val rejected = engine.frames.register(FrameSpec(acceptedFormats = setOf(FrameFormat.YUV_420))) {
@@ -515,7 +523,13 @@ class FramePipelineTest {
      */
     @Test
     fun aBindFinishingDuringARegistrationLeavesItActive() = runTest {
-        val engine = platform.engine(testScheduler, CameraConfiguration(frameAnalysis = true), runtime = testWorkers())
+        val engine = platform.engine(
+            testScheduler,
+            CameraConfiguration {
+                frameAnalysis = true
+            },
+            runtime = testWorkers(),
+        )
         val pipeline = engine.framePipeline
         pipeline.beforePublishingActive = { pipeline.onBound(true) }
 
@@ -541,7 +555,7 @@ class FramePipelineTest {
     }
 
     private suspend fun TestScope.openEngine(
-        config: CameraConfiguration = CameraConfiguration(frameAnalysis = true),
+        config: CameraConfiguration = CameraConfiguration { frameAnalysis = true },
     ): AndroidCameraEngine {
         val engine = platform.engine(testScheduler, config, runtime = testWorkers())
         open(platform, engine)

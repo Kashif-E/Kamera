@@ -12,7 +12,7 @@ class FakeEngineFrameSourceTest {
     @Test
     fun fakeEngineExposesItsAnalysisFormatThroughItsFrameSource() {
         val fake = FakeCameraEngine()
-        fake.configuration = CameraConfiguration(analysisFormat = FrameFormat.RGBA_8888)
+        fake.configuration = CameraConfiguration { analysisFormat = FrameFormat.RGBA_8888 }
 
         assertEquals(FrameFormat.RGBA_8888, fake.fakeFrames.sessionFormat())
         assertFalse(fake.fakeFrames.isOpen(), "a fake that never started is not open")

@@ -4,7 +4,6 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.engine.EngineRecordingEvent
-import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
@@ -125,7 +124,6 @@ internal class AppleRecorder(
     /** The result of the last recording AVFoundation ended by itself, for the 1.x facade's stopRecording. */
     private val unclaimed = atomic<CameraKResult<RecordedVideo>?>(null)
     private val audioRefusalLogged = atomic(false)
-    private val galleryDirectoryLogged = atomic(false)
 
     /** The 1.x facade's stopRecording after AVFoundation ended the recording by itself: that result, once. */
     fun takeUnclaimedResult(): CameraKResult<RecordedVideo>? = unclaimed.getAndSet(null)
@@ -471,17 +469,9 @@ internal class AppleRecorder(
 
     /**
      * A new file in app-owned storage: the recording's output directory, the camera's, else
-     * Documents/CameraK. PICTURES and DCIM are ignored with a warning: publishing to Photos is the media
-     * saver's job (Decision 10).
+     * Documents/CameraK. Publishing to Photos is the media saver's job (Decision 10).
      */
     private fun moviePath(config: VideoConfiguration): String {
-        if (cameraConfig.directory != Directory.DOCUMENTS && galleryDirectoryLogged.compareAndSet(false, true)) {
-            CameraKLogger.w(
-                TAG,
-                "CameraK: Directory.${cameraConfig.directory} is ignored; recordings are app-owned files, and " +
-                    "publishing them to Photos is the media saver's job",
-            )
-        }
         val directory = appOwnedDirectory(config.outputDirectory ?: cameraConfig.outputDirectory)
         val timestamp = NSDate().timeIntervalSince1970.toLong()
         return "$directory/${config.filePrefix}_${timestamp}_${NSUUID().UUIDString.take(8)}.mp4"

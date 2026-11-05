@@ -50,7 +50,7 @@ class PlatformCounterGoneTest {
         val driver = AppleEngineDriver()
         driver.runCase {
             val holder = CameraKStateHolder(
-                CameraConfiguration(aspectRatio = AspectRatio.RATIO_4_3),
+                CameraConfiguration { aspectRatio = AspectRatio.RATIO_4_3 },
                 CameraEngineFactory { config, _ -> driver.createEngine(config) },
                 environment = cameraKTestEnvironment(),
             )

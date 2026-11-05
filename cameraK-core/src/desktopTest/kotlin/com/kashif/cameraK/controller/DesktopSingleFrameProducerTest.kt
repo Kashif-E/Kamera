@@ -129,10 +129,10 @@ class DesktopSingleFrameProducerTest {
             assertTrue(fake.firstGrabEntered.await(5, TimeUnit.SECONDS), "the grab loop never called grab()")
 
             sut.startRecording(
-                VideoConfiguration(
-                    enableAudio = false,
-                    outputDirectory = Files.createTempDirectory("camerak-producer").toFile().absolutePath,
-                ),
+                VideoConfiguration {
+                    enableAudio = false
+                    outputDirectory = Files.createTempDirectory("camerak-producer").toFile().absolutePath
+                },
             )
             fake.concurrentGrabEntered.await(1, TimeUnit.SECONDS)
             fake.openGate()
@@ -225,10 +225,10 @@ class DesktopSingleFrameProducerTest {
         }
     }
 
-    private fun recordingConfig() = VideoConfiguration(
-        enableAudio = false,
-        outputDirectory = Files.createTempDirectory("camerak-producer").toFile().absolutePath,
-    )
+    private fun recordingConfig() = VideoConfiguration {
+        enableAudio = false
+        outputDirectory = Files.createTempDirectory("camerak-producer").toFile().absolutePath
+    }
 
     private companion object {
         const val CAPTURE_THREAD = "camerak-test-capture-caller"

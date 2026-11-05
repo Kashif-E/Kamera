@@ -84,12 +84,12 @@ class PrepareRecordingTest {
         open(platform, engine)
         assertEquals(
             CameraKResult.Success(Unit),
-            engine.prepareRecording(VideoConfiguration(quality = VideoQuality.HD)),
+            engine.prepareRecording(VideoConfiguration { quality = VideoQuality.HD }),
         )
         platform.settle(testScheduler)
         val binds = platform.backend.binding.bindCalls
 
-        startRecording(platform, engine, VideoConfiguration(quality = VideoQuality.FHD))
+        startRecording(platform, engine, VideoConfiguration { quality = VideoQuality.FHD })
 
         assertEquals(binds + 1, platform.backend.binding.bindCalls, "a start in another quality did not rebind once")
         val build = platform.backend.videoCaptureBuilds.last()

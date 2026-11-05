@@ -39,7 +39,7 @@ import kotlinx.coroutines.job
  * rebind. Otherwise [config] itself.
  */
 internal fun effectiveConfig(config: CameraConfiguration, plugins: List<CameraKPlugin>): CameraConfiguration =
-    if (plugins.any { it.needsFrames }) config.copy(frameAnalysis = true) else config
+    if (plugins.any { it.needsFrames }) config.copy { frameAnalysis = true } else config
 
 /**
  * A holder's plugins. Plugins added before the first session attach once, when that session first

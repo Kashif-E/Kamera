@@ -39,7 +39,7 @@ class MicrophoneTest {
             driver.settle()
             assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
 
-            val refused = engine.startRecording(VideoConfiguration(enableAudio = true))
+            val refused = engine.startRecording(VideoConfiguration { enableAudio = true })
 
             val error = assertIs<CameraKError.Unsupported>(assertIs<CameraKResult.Failure>(refused).error)
             assertEquals(CameraFeature.AUDIO, error.feature)
@@ -61,7 +61,7 @@ class MicrophoneTest {
             driver.settle()
             assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
 
-            val refused = engine.prepareRecording(VideoConfiguration(enableAudio = true))
+            val refused = engine.prepareRecording(VideoConfiguration { enableAudio = true })
 
             val error = assertIs<CameraKError.Unsupported>(assertIs<CameraKResult.Failure>(refused).error)
             assertEquals(CameraFeature.AUDIO, error.feature)
@@ -81,7 +81,7 @@ class MicrophoneTest {
             assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
             driver.session.refuse(driver.microphone)
 
-            val recording = startEngineRecording(driver, engine, VideoConfiguration(enableAudio = true))
+            val recording = startEngineRecording(driver, engine, VideoConfiguration { enableAudio = true })
                 .also { written += it.path }
 
             val started = events.values.filterIsInstance<EngineRecordingEvent.Started>().single()
@@ -110,7 +110,7 @@ class MicrophoneTest {
             assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
             driver.movieRecorder.audioConnectionActive = false
 
-            val recording = startEngineRecording(driver, engine, VideoConfiguration(enableAudio = true))
+            val recording = startEngineRecording(driver, engine, VideoConfiguration { enableAudio = true })
                 .also { written += it.path }
 
             assertTrue(driver.microphone in driver.session.inputs, "the microphone was not added")
@@ -135,7 +135,7 @@ class MicrophoneTest {
             val events = recordingEventsOf(engine)
             assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
 
-            startEngineRecording(driver, engine, VideoConfiguration(enableAudio = true)).also { written += it.path }
+            startEngineRecording(driver, engine, VideoConfiguration { enableAudio = true }).also { written += it.path }
 
             assertTrue(driver.microphone in driver.session.inputs, "the microphone was not added")
             assertTrue(events.values.filterIsInstance<EngineRecordingEvent.Started>().single().hasAudio)

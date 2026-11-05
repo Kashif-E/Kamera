@@ -831,12 +831,15 @@ private fun legacyEnvironment(hostScope: CoroutineScope): CameraKEnvironment {
 private fun CameraKEnvironment.under(parent: Job): CameraKEnvironment =
     CameraKEnvironment(dispatchers, timeSource, parent, permissionChecker).also { it.runtime = runtime }
 
+// A camera id wins over the lens; no lens is the platform default camera (§6.1 "Default lens").
 private fun CameraConfiguration.toDesiredHardware(): DesiredHardware = DesiredHardware(
-    selection = cameraId?.let { CameraSelection.ById(it) } ?: CameraSelection.ByLens(cameraLens, cameraDeviceType),
+    selection = cameraId?.let { CameraSelection.ById(it) }
+        ?: cameraLens?.let { CameraSelection.ByLens(it, cameraDeviceType) }
+        ?: CameraSelection.Default(cameraDeviceType),
     flashMode = flashMode,
     torchMode = torchMode,
-    zoomRatio = 1f,
-    targetOrientation = null,
+    zoomRatio = initialZoomRatio,
+    targetOrientation = targetOrientation,
 )
 
 private fun DesiredHardware.with(

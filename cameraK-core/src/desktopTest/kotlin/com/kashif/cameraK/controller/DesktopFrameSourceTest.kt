@@ -11,8 +11,6 @@ import com.kashif.cameraK.frames.RetainedFrame
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKEngineApi
-import com.kashif.cameraK.utils.CameraKLogger
-import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -164,7 +162,7 @@ class DesktopFrameSourceTest {
     fun retainBeyondMaxRetainedSkipsOnlyThatAnalyzer() = runTest {
         val rig = DesktopEngineRig(testScheduler)
         val steps = DesktopRecordingSteps(this, rig)
-        val sut = rig.engine(CameraConfiguration(analysisFormat = FrameFormat.RGBA_8888))
+        val sut = rig.engine(CameraConfiguration { analysisFormat = FrameFormat.RGBA_8888 })
         val kept = CopyOnWriteArrayList<RetainedFrame>()
         val keptPixels = CopyOnWriteArrayList<ByteArray>()
         val other = AtomicInteger(0)
@@ -201,7 +199,7 @@ class DesktopFrameSourceTest {
     fun unacceptedFormatIsRejectedAndNeverActive() = runTest {
         val rig = DesktopEngineRig(testScheduler)
         val steps = DesktopRecordingSteps(this, rig)
-        val sut = rig.engine(CameraConfiguration(analysisFormat = FrameFormat.RGBA_8888))
+        val sut = rig.engine(CameraConfiguration { analysisFormat = FrameFormat.RGBA_8888 })
         val delivered = AtomicInteger(0)
         try {
             steps.open(sut)
@@ -229,7 +227,7 @@ class DesktopFrameSourceTest {
         // centred 36 x 36 of that, columns 14 to 49, so only the grey band reaches it.
         rig.camera.fill { x, _ -> if (x in 14 until 50) 0xC8C8C8 else 0x000000 }
         val steps = DesktopRecordingSteps(this, rig)
-        val sut = rig.engine(CameraConfiguration(analysisResolution = Resolution(20, 20)))
+        val sut = rig.engine(CameraConfiguration { analysisResolution = Resolution(20, 20) })
         val seen = CopyOnWriteArrayList<String>()
         try {
             steps.open(sut)
@@ -254,7 +252,10 @@ class DesktopFrameSourceTest {
         rig.camera.fill { _, _ -> 0x102030 }
         val steps = DesktopRecordingSteps(this, rig)
         val sut = rig.engine(
-            CameraConfiguration(analysisFormat = FrameFormat.RGBA_8888, analysisResolution = Resolution(32, 18)),
+            CameraConfiguration {
+                analysisFormat = FrameFormat.RGBA_8888
+                analysisResolution = Resolution(32, 18)
+            },
         )
         val seen = CopyOnWriteArrayList<String>()
         try {
@@ -283,8 +284,10 @@ class DesktopFrameSourceTest {
     fun aFrameThatCannotBeConvertedIsSkippedAndItsLeaseReleased() = runTest {
         val rig = DesktopEngineRig(testScheduler)
         val steps = DesktopRecordingSteps(this, rig)
-        // No image has a 0 x 0 size, so every analysis conversion throws.
-        val sut = rig.engine(CameraConfiguration(analysisResolution = Resolution(0, 0)))
+        // Every analysis conversion throws.
+        val sut = rig.engine(
+            analysisConversion = { _, _, _ -> throw IllegalStateException("this frame cannot be converted") },
+        )
         val delivered = AtomicInteger(0)
         try {
             steps.open(sut)
@@ -305,51 +308,6 @@ class DesktopFrameSourceTest {
         }
     }
 
-    // W7b decision, desktop must-fix 2: Resolution accepts these sizes until CF' validates it.
-    @Test
-    fun anUnusableAnalysisResolutionLogsOncePerSessionAndSkipsAnalysis() = runTest {
-        for (size in listOf(Resolution(0, 0), Resolution(-4, 3))) {
-            val rig = DesktopEngineRig(testScheduler)
-            val steps = DesktopRecordingSteps(this, rig)
-            val sut = rig.engine(CameraConfiguration(analysisResolution = size))
-            val lines = CopyOnWriteArrayList<String>()
-            val delivered = AtomicInteger(0)
-            val wasEnabled = CameraKLogger.enabled
-            val wasSink = CameraKLogger.sink
-            try {
-                steps.open(sut)
-                sut.frames.register(FrameSpec()) { delivered.incrementAndGet() }
-                CameraKLogger.enabled = true
-                // Every line the frame source logs about analysis, whatever its level.
-                CameraKLogger.sink = { _, _, message, _ -> if ("analysis" in message.lowercase()) lines += message }
-
-                repeat(LOGGED_FRAMES) { steps.frameAt(1_000L + it * 40) }
-
-                assertEquals(1, lines.size, "lines logged over $LOGGED_FRAMES frames at $size: $lines")
-                assertEquals(0, delivered.get(), "frames analyzed at $size")
-                assertEquals(
-                    nanos(1_000L + (LOGGED_FRAMES - 1) * 40).single(),
-                    sut.preview.frames.value?.timestampNanos,
-                    "the preview's last frame at $size",
-                )
-
-                val stop = async { sut.stop() }
-                rig.settle()
-                stop.await()
-                steps.open(sut)
-                repeat(LOGGED_FRAMES) { steps.frameAt(3_000L + it * 40) }
-
-                assertEquals(2, lines.size, "lines logged over two sessions at $size: $lines")
-                assertEquals(0, delivered.get(), "frames analyzed in the second session at $size")
-            } finally {
-                CameraKLogger.sink = wasSink
-                CameraKLogger.enabled = wasEnabled
-                sut.close()
-                rig.settle()
-            }
-        }
-    }
-
     private fun CameraFrame.describe(): String {
         val luma = ByteArray(width * height)
         planes[0].copyTo(luma, 0, 0, luma.size)
@@ -367,6 +325,5 @@ class DesktopFrameSourceTest {
 
     private companion object {
         const val FRAMES = 20
-        const val LOGGED_FRAMES = 30
     }
 }

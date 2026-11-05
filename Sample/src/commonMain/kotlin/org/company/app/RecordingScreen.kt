@@ -92,11 +92,11 @@ internal fun RecordingState.shownDurationMs(holderElapsed: Duration): Long =
  * error. [reportEnds] turns every end, whoever caused it, into a [notices] line for the screen.
  */
 internal class RecordingFeature(private val recorder: SampleRecorder) {
-    val configuration = VideoConfiguration(
-        quality = VideoQuality.FHD,
-        enableAudio = true,
-        maxDuration = 5.minutes,
-    )
+    val configuration = VideoConfiguration {
+        quality = VideoQuality.FHD
+        enableAudio = true
+        maxDuration = 5.minutes
+    }
 
     // Two quick taps start and then stop, rather than starting twice.
     private val taps = Mutex()

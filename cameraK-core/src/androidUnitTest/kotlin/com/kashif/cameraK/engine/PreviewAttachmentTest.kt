@@ -64,7 +64,7 @@ class PreviewAttachmentTest {
     @Test
     fun theEnginesSourceReportsTheConfiguredAspectRatio() = runTest {
         for (ratio in AspectRatio.entries) {
-            val engine = platform.engine(testScheduler, CameraConfiguration(aspectRatio = ratio))
+            val engine = platform.engine(testScheduler, CameraConfiguration { aspectRatio = ratio })
             assertEquals(ratio, engine.preview.previewAspectRatio(), "the engine's preview source at $ratio")
             engine.closeAndJoin()
         }

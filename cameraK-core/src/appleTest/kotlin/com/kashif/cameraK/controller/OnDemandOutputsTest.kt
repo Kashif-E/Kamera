@@ -97,7 +97,7 @@ class OnDemandOutputsTest {
         awaitTrue("the session to start") { session.isRunning }
         val scope = MainScope()
         try {
-            scope.launch { controller.startRecording(VideoConfiguration(enableAudio = true)) }
+            scope.launch { controller.startRecording(VideoConfiguration { enableAudio = true }) }
             awaitTrue("the recording to start on the movie output") { recorder.starts.isNotEmpty() }
             val started = recorder.starts.single()
             assertTrue(started.output in session.outputs, "the recording's movie output is not attached")

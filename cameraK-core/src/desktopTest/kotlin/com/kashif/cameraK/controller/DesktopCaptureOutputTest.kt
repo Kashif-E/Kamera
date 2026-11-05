@@ -4,7 +4,6 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.engine.EngineState
-import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.error.CameraFeature
@@ -13,7 +12,6 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
-import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -28,7 +26,6 @@ import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import javax.imageio.ImageIO
 import kotlin.test.Test
@@ -42,8 +39,8 @@ import kotlin.test.assertTrue
 /**
  * Desktop captures are real files in app-owned storage (§6.1, Decision 10): a mirrored JPEG is a
  * JPEG; photos go to the configuration's `outputDirectory`, else to the app-owned default
- * `Documents/CameraK` under the user's home, whatever the [Directory] (PICTURES and DCIM are the
- * media saver's from D3'); videos go to their own directory, else the configuration's, else the
+ * `Documents/CameraK` under the user's home (DefaultOutputDirectoryTest; the facade's PICTURES and
+ * DCIM are the media saver's from D3'); videos go to their own directory, else the configuration's, else the
  * user's movies folder, never the process working directory. HEIC is not a desktop format: the
  * start fails with `Unsupported(IMAGE_FORMAT)`.
  */
@@ -98,35 +95,21 @@ class DesktopCaptureOutputTest {
     }
 
     @Test
-    fun captureWritesAppOwnedFile() = runTest {
-        // The facade: a 1.x PICTURES controller.
+    fun captureWritesAppOwnedFile() {
+        // The facade: a 1.x PICTURES controller. The engine's default is DefaultOutputDirectoryTest's.
         assertCaptureLandsIn(Directory.PICTURES, File(home, "Documents/CameraK"))
-
-        // The engine: a PICTURES configuration.
-        val rig = DesktopEngineRig(testScheduler)
-        // A 4:3 configuration for the 4:3 camera, so the blit crops nothing (D4').
-        val sut = rig.engine(CameraConfiguration(directory = Directory.PICTURES, aspectRatio = AspectRatio.RATIO_4_3))
-        try {
-            DesktopRecordingSteps(this, rig).open(sut)
-            val image = engineCapture(rig, sut)
-
-            assertEquals(File(rig.home, "Documents/CameraK").canonicalFile, File(image.path).canonicalFile.parentFile)
-            assertEquals(ImageFormat.JPEG, image.format)
-            assertEquals(64 to 48, image.width to image.height)
-            assertNotNull(ImageIO.read(File(image.path)), "the capture is not a readable image")
-            assertFalse(File(rig.home, "Pictures").exists(), "the engine wrote to the gallery folder")
-        } finally {
-            sut.close()
-            rig.settle()
-            rig.home.deleteRecursively()
-        }
     }
 
     @Test
     fun captureWritesUnderTheConfiguredOutputDirectory() = runTest {
         val rig = DesktopEngineRig(testScheduler)
         val folder = File(rig.home, "app/stills")
-        val sut = rig.engine(CameraConfiguration(imageFormat = ImageFormat.PNG, outputDirectory = folder.path))
+        val sut = rig.engine(
+            CameraConfiguration {
+                imageFormat = ImageFormat.PNG
+                outputDirectory = folder.path
+            },
+        )
         try {
             DesktopRecordingSteps(this, rig).open(sut)
             val image = engineCapture(rig, sut)
@@ -146,10 +129,10 @@ class DesktopCaptureOutputTest {
         val rig = DesktopEngineRig(testScheduler)
         val folder = File(rig.home, "app/media")
         val steps = DesktopRecordingSteps(this, rig)
-        val sut = rig.engine(CameraConfiguration(outputDirectory = folder.path))
+        val sut = rig.engine(CameraConfiguration { outputDirectory = folder.path })
         try {
             steps.open(sut)
-            val path = steps.startRecording(sut, VideoConfiguration(enableAudio = false))
+            val path = steps.startRecording(sut, VideoConfiguration { enableAudio = false })
 
             assertEquals(folder.canonicalFile, File(path).canonicalFile.parentFile, "folder of the recording")
         } finally {
@@ -162,7 +145,7 @@ class DesktopCaptureOutputTest {
     @Test
     fun heicIsUnsupported() = runTest {
         val rig = DesktopEngineRig(testScheduler)
-        val sut = rig.engine(CameraConfiguration(imageFormat = ImageFormat.HEIC))
+        val sut = rig.engine(CameraConfiguration { imageFormat = ImageFormat.HEIC })
         try {
             rig.settle()
             assertFalse(ImageFormat.HEIC in sut.capabilities.value.supportedImageFormats, "HEIC listed as supported")
@@ -210,40 +193,6 @@ class DesktopCaptureOutputTest {
             sut.close()
             rig.settle()
             rig.home.deleteRecursively()
-        }
-    }
-
-    // Characterization: passes before the fix, which logs it. The mutation M37 "the ignored directory
-    // is not logged" fails it.
-    @Test
-    fun aGalleryDirectoryIsLoggedOnceAtWarningAndDocumentsNotAtAll() = runTest {
-        val warnings = CopyOnWriteArrayList<String>()
-        CameraKLogger.enabled = true
-        CameraKLogger.sink = { level, _, message, _ -> if (level == CameraKLogger.Level.WARN) warnings += message }
-        try {
-            for (directory in Directory.entries) {
-                warnings.clear()
-                val rig = DesktopEngineRig(testScheduler)
-                val sut = rig.engine(CameraConfiguration(directory = directory))
-                try {
-                    DesktopRecordingSteps(this, rig).open(sut)
-                    engineCapture(rig, sut)
-                    engineCapture(rig, sut)
-                } finally {
-                    sut.close()
-                    rig.settle()
-                    rig.home.deleteRecursively()
-                }
-                val expected = if (directory == Directory.DOCUMENTS) 0 else 1
-                assertEquals(
-                    expected,
-                    warnings.count { "Directory.$directory" in it },
-                    "warnings for Directory.$directory over two captures: $warnings",
-                )
-            }
-        } finally {
-            CameraKLogger.sink = null
-            CameraKLogger.enabled = false
         }
     }
 
@@ -306,7 +255,7 @@ class DesktopCaptureOutputTest {
         val moviesFolder = if (System.getProperty("os.name").lowercase().contains("mac")) "Movies" else "Videos"
         var path: String? = null
         try {
-            path = sut.startRecording(VideoConfiguration(enableAudio = false))
+            path = sut.startRecording(VideoConfiguration { enableAudio = false })
 
             assertEquals(File(home, "$moviesFolder/CameraK").canonicalFile, File(path).canonicalFile.parentFile)
         } finally {
@@ -387,7 +336,7 @@ class DesktopCaptureOutputTest {
         val moviesFolder = if (System.getProperty("os.name").lowercase().contains("mac")) "Movies" else "Videos"
         session(sut) {
             capture(sut)
-            sut.startRecording(VideoConfiguration(enableAudio = false))
+            sut.startRecording(VideoConfiguration { enableAudio = false })
             withTimeout(10_000) { sut.stopRecording() }
 
             for (folder in listOf(File(home, "Documents/CameraK"), File(home, "$moviesFolder/CameraK"))) {

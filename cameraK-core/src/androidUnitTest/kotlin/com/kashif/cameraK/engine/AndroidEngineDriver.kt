@@ -68,7 +68,7 @@ internal class AndroidEngineDriver :
     override fun releaseCapture() = platform.backend.captures.last().deliverSaved(byteArrayOf(1, 2, 3))
 
     override fun unsupportedConfiguration() =
-        UnsupportedCase(CameraConfiguration(imageFormat = ImageFormat.HEIC), CameraFeature.IMAGE_FORMAT)
+        UnsupportedCase(CameraConfiguration { imageFormat = ImageFormat.HEIC }, CameraFeature.IMAGE_FORMAT)
 
     override fun holdOpen() {
         platform.backend.binding.holdNextOpen = true

@@ -64,7 +64,7 @@ class LensSwitchNoFrameTest {
 
     @Test
     fun aSwitchWhoseFirstFrameNeverComesEndsAtCloseMarkedNoFrame() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
 
@@ -80,7 +80,7 @@ class LensSwitchNoFrameTest {
 
     @Test
     fun aSwitchWhoseFirstFrameNeverComesEndsAtAFailureMarkedNoFrame() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
 
@@ -96,7 +96,7 @@ class LensSwitchNoFrameTest {
 
     @Test
     fun aSwitchWhoseFirstFrameNeverComesEndsAtTheNextSwitchMarkedNoFrame() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
 
@@ -118,7 +118,7 @@ class LensSwitchNoFrameTest {
 
     @Test
     fun aSwitchRequestedBeforeThePreviousOneCommittedEndsItMarkedNoFrame() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
 
@@ -149,7 +149,7 @@ class LensSwitchNoFrameTest {
 
     @Test
     fun aStopBetweenTheSwitchsLiveCheckAndItsCommitEndsTheSwitch() = driver.runCase {
-        driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        driver.createEngine(CameraConfiguration { frameAnalysis = true })
         val engine = driver.engine
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))

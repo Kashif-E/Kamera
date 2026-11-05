@@ -29,6 +29,7 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.InternalCameraKApi
@@ -129,7 +130,7 @@ actual class CameraController internal constructor(
     private val config: CameraConfiguration get() = engine.configuration
 
     /** The facing the next bind or switch asks for. */
-    internal var cameraLens: CameraLens = config.cameraLens
+    internal var cameraLens: CameraLens = config.cameraLens ?: CameraLens.BACK
         private set
 
     /** The device type the next bind or switch asks for. */
@@ -560,17 +561,16 @@ actual class CameraController internal constructor(
             aspectRatio: AspectRatio,
             targetResolution: Pair<Int, Int>?,
             mirrorFrontCamera: Boolean,
-        ) = CameraConfiguration(
-            flashMode = flashMode,
-            torchMode = torchMode,
-            cameraLens = cameraLens,
-            imageFormat = imageFormat,
-            qualityPrioritization = qualityPriority,
-            cameraDeviceType = cameraDeviceType,
-            aspectRatio = aspectRatio,
-            targetResolution = targetResolution,
-            directory = directory,
-            mirrorFrontCamera = mirrorFrontCamera,
-        )
+        ) = CameraConfiguration {
+            this.flashMode = flashMode
+            this.torchMode = torchMode
+            this.cameraLens = cameraLens
+            this.imageFormat = imageFormat
+            qualityPrioritization = qualityPriority
+            this.cameraDeviceType = cameraDeviceType
+            this.aspectRatio = aspectRatio
+            this.targetResolution = targetResolution?.let { Resolution(it.first, it.second) }
+            this.mirrorFrontCamera = mirrorFrontCamera
+        }
     }
 }

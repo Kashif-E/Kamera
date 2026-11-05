@@ -42,7 +42,10 @@ class HeicCaptureTest {
         removeFiles(written)
     }
 
-    private val heic = CameraConfiguration(imageFormat = ImageFormat.HEIC, aspectRatio = AspectRatio.RATIO_4_3)
+    private val heic = CameraConfiguration {
+        imageFormat = ImageFormat.HEIC
+        aspectRatio = AspectRatio.RATIO_4_3
+    }
 
     @Test
     fun heicConfiguredProducesHeicFile() = driver.runCase {

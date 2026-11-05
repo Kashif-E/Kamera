@@ -34,7 +34,6 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
-import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
@@ -108,9 +107,8 @@ private const val TAG = "CameraK"
  * otherwise; the target orientation is configuration, taken in any state but closed. The desired
  * hardware is re-applied once the camera opens and after every bind made while it runs.
  *
- * Stills and recordings are files in app-owned storage only (Decision 10): `outputDirectory`, else
- * `filesDir/CameraK`; a gallery [com.kashif.cameraK.enums.Directory] is ignored with a warning, and
- * publishing is the media saver plugin's job. [capture] returns the written file, a real PNG for a
+ * Stills and recordings are files (Decision 10): `outputDirectory`, used as given, else the app-owned
+ * `filesDir/CameraK`; publishing to the gallery is the media saver plugin's job. [capture] returns the written file, a real PNG for a
  * PNG configuration; HEIC fails [start] with `Unsupported(IMAGE_FORMAT)`. Each recording is observed
  * from CameraX's Start to its Finalize on [recordingEvents] (§5); VideoCapture is built off Main and
  * bound only for a recording or from [prepareRecording] until the engine stops (§2.4).
@@ -195,7 +193,8 @@ internal class AndroidCameraEngine(
         context = context,
         lifecycleOwner = this,
         aspectRatio = config.aspectRatio,
-        targetResolution = config.targetResolution,
+        // The binder takes the size as a pair; the configuration has validated it.
+        targetResolution = config.targetResolution?.let { it.width to it.height },
         isReleased = { closed.value },
         display = { previewSource.display },
         onDisplayChanged = ::onDisplayChanged,
@@ -247,7 +246,7 @@ internal class AndroidCameraEngine(
         private set
 
     /** The facing of the current bind; the facade's front-camera mirroring reads it. */
-    internal var boundLens: CameraLens = config.cameraLens
+    internal var boundLens: CameraLens = config.cameraLens ?: CameraLens.BACK
         private set
 
     override val legacyController: CameraController by lazy { CameraController(this, hostLifecycle = null) }
@@ -289,13 +288,6 @@ internal class AndroidCameraEngine(
         // later only joins it (Decision 14).
         if (config.frameAnalysis) framePipeline.requestAnalysis()
         framePipeline.onConsumersChanged = { onMain(::bindAnalysisOrApplyConsumers) }
-        if (config.directory != Directory.DOCUMENTS) {
-            CameraKLogger.w(
-                TAG,
-                "Directory.${config.directory} no longer publishes to the gallery: captures and recordings stay " +
-                    "in app-owned storage; save them with the media saver plugin",
-            )
-        }
     }
 
     /** One start's generation: every platform report checks it is still the live one before it acts. */

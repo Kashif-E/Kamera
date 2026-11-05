@@ -33,7 +33,7 @@ class DesktopPrepareRecordingTest {
             steps.open(sut)
             val events = steps.events(sut)
 
-            val audio = assertIs<CameraKResult.Failure>(sut.prepareRecording(VideoConfiguration(enableAudio = true)))
+            val audio = assertIs<CameraKResult.Failure>(sut.prepareRecording(VideoConfiguration { enableAudio = true }))
             assertEquals(CameraFeature.AUDIO, assertIs<CameraKError.Unsupported>(audio.error).feature)
 
             val unwritable = sut.prepareRecording(steps.video(outputDirectory = File(notAFolder, "videos").path))

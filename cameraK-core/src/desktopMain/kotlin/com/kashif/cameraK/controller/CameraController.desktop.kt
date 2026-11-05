@@ -22,6 +22,7 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoCaptureResult
@@ -430,7 +431,7 @@ actual class CameraController internal constructor(
     actual suspend fun startRecording(configuration: VideoConfiguration): String {
         val video = if (configuration.enableAudio) {
             CameraKLogger.w("CameraK", "CameraK: Desktop records no audio; the video has no audio track")
-            configuration.copy(enableAudio = false)
+            configuration.copy { enableAudio = false }
         } else {
             configuration
         }
@@ -520,11 +521,10 @@ private class OwnEngine(
     val horizontalFlip: Boolean,
 ) {
     fun build(facade: CameraController, nanoClock: () -> Long, media: DesktopMedia) = DesktopCameraEngine(
-        config = CameraConfiguration(
-            imageFormat = imageFormat,
-            directory = directory,
-            targetResolution = targetResolution,
-        ),
+        config = CameraConfiguration {
+            imageFormat = this@OwnEngine.imageFormat
+            targetResolution = this@OwnEngine.targetResolution?.let { Resolution(it.first, it.second) }
+        },
         environment = CameraKEnvironment(
             CameraKDispatchers(main = Dispatchers.Default, default = Dispatchers.Default, io = Dispatchers.IO),
         ),

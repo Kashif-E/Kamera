@@ -32,8 +32,11 @@ class DesktopRecordingPipelineTest {
 
     private val outputDirectory = Files.createTempDirectory("camerak-recording").toFile()
 
-    private fun config(quality: VideoQuality = VideoQuality.FHD) =
-        VideoConfiguration(quality = quality, enableAudio = false, outputDirectory = outputDirectory.absolutePath)
+    private fun config(quality: VideoQuality = VideoQuality.FHD) = VideoConfiguration {
+        this.quality = quality
+        enableAudio = false
+        outputDirectory = this@DesktopRecordingPipelineTest.outputDirectory.absolutePath
+    }
 
     @Test
     fun eachFrame_isTimestampedWithItsCaptureTimeSinceTheStart_andThePauseIsLeftOut() = runBlocking<Unit> {
@@ -167,7 +170,7 @@ class DesktopRecordingPipelineTest {
     fun aRecordingThatAsksForAudio_declaresNoAudioTrack() {
         val recorder = createFrameRecorder(
             File(outputDirectory, "audio.mp4").absolutePath,
-            VideoConfiguration(enableAudio = true),
+            VideoConfiguration { enableAudio = true },
         )
         try {
             assertEquals(0, (recorder as FFmpegFrameRecorder).audioChannels, "audio channels with nothing to record")

@@ -90,7 +90,7 @@ internal class DesktopEngineDriver :
     override fun releaseCapture() = deliverOpen()
 
     override fun unsupportedConfiguration() =
-        UnsupportedCase(CameraConfiguration(imageFormat = ImageFormat.HEIC), CameraFeature.IMAGE_FORMAT)
+        UnsupportedCase(CameraConfiguration { imageFormat = ImageFormat.HEIC }, CameraFeature.IMAGE_FORMAT)
 
     override fun holdOpen() {
         rig.camera.holdOpen = true

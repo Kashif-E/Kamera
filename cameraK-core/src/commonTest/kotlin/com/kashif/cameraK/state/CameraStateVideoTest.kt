@@ -190,7 +190,7 @@ class CameraStateVideoTest {
 
     @Test
     fun cameraConfiguration_mirrorFrontCameraPropagates() {
-        assertTrue(CameraConfiguration(mirrorFrontCamera = true).mirrorFrontCamera)
-        assertTrue(CameraConfiguration().copy(mirrorFrontCamera = true).mirrorFrontCamera)
+        assertTrue(CameraConfiguration { mirrorFrontCamera = true }.mirrorFrontCamera)
+        assertTrue(CameraConfiguration().copy { mirrorFrontCamera = true }.mirrorFrontCamera)
     }
 }

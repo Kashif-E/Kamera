@@ -50,14 +50,17 @@ class BlitTest {
             AspectRatio.RATIO_4_3 to Seen(64, 48, rgb(0, 0)),
         )
         for ((ratio, frame) in expected) {
-            val consumers = consumersOf(CameraConfiguration(aspectRatio = ratio), back)
+            val consumers = consumersOf(CameraConfiguration { aspectRatio = ratio }, back)
             assertEquals(Consumers(frame, frame, frame, frame), consumers, "$ratio")
         }
     }
 
     @Test
     fun frontMirrorAppliedToAllFourConsumers() = runTest {
-        val config = CameraConfiguration(aspectRatio = AspectRatio.RATIO_4_3, mirrorFrontCamera = true)
+        val config = CameraConfiguration {
+            aspectRatio = AspectRatio.RATIO_4_3
+            mirrorFrontCamera = true
+        }
         val mirrored = Seen(64, 48, rgb(63, 0))
 
         assertEquals(Consumers(mirrored, mirrored, mirrored, mirrored), consumersOf(config, front))
@@ -65,7 +68,10 @@ class BlitTest {
 
     @Test
     fun backCameraNeverMirroredByMirrorFrontCamera() = runTest {
-        val config = CameraConfiguration(aspectRatio = AspectRatio.RATIO_4_3, mirrorFrontCamera = true)
+        val config = CameraConfiguration {
+            aspectRatio = AspectRatio.RATIO_4_3
+            mirrorFrontCamera = true
+        }
         val unmirrored = Seen(64, 48, rgb(0, 0))
 
         assertEquals(Consumers(unmirrored, unmirrored, unmirrored, unmirrored), consumersOf(config, back))
@@ -91,7 +97,7 @@ class BlitTest {
         }
         val steps = DesktopRecordingSteps(this, rig)
         val sut = rig.engine(
-            config.copy(analysisFormat = FrameFormat.RGBA_8888),
+            config.copy { analysisFormat = FrameFormat.RGBA_8888 },
             enumerate = { CameraCapabilities(listOf(camera)) },
         )
         val analyzed = CopyOnWriteArrayList<Seen>()

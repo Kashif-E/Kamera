@@ -56,7 +56,7 @@ class AppleTracerTest {
      */
     @Test
     fun firstFrameEndsAtTheFirstSampleBufferWithAFrameOutput() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         driver.holdOpen()
         val start = async { engine.start(backCamera()) }

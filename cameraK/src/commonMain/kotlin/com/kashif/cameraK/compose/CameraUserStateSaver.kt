@@ -22,7 +22,11 @@ internal data class CameraUserState(
 internal fun CameraConfiguration.seededBy(state: CameraUserState?): CameraConfiguration = if (state == null) {
     this
 } else {
-    copy(cameraLens = state.lens, flashMode = state.flashMode, torchMode = state.torchMode)
+    copy {
+        cameraLens = state.lens
+        flashMode = state.flashMode
+        torchMode = state.torchMode
+    }
 }
 
 /** Saves to the names of the three choices and the zoom ratio, which every platform's saved state can hold. */

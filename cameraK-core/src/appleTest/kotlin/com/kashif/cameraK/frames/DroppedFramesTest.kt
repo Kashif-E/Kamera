@@ -17,7 +17,7 @@ class DroppedFramesTest {
 
     @Test
     fun didDropSampleBufferIsCounted() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         val asynchronous = engine.frames.register(FrameSpec()) { }

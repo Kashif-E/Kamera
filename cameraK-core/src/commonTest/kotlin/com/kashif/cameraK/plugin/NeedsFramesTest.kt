@@ -22,7 +22,10 @@ import kotlin.test.assertTrue
  * derivation is `effectiveConfig`, which the holder passes to its engine factory.
  */
 class NeedsFramesTest {
-    private val config = CameraConfiguration(cameraLens = CameraLens.FRONT, imageFormat = ImageFormat.PNG)
+    private val config = CameraConfiguration {
+        cameraLens = CameraLens.FRONT
+        imageFormat = ImageFormat.PNG
+    }
 
     /** The configuration the engine factory received for a holder created with [plugins]. */
     private fun TestScope.configReceived(plugins: List<CameraKPlugin>): CameraConfiguration {
@@ -44,7 +47,7 @@ class NeedsFramesTest {
         val frames = ContextPlugin(id = "frames", needsFrames = true)
         val saver = ContextPlugin(id = "saver", needsFrames = false)
 
-        assertEquals(config.copy(frameAnalysis = true), configReceived(listOf(saver, frames)))
+        assertEquals(config.copy { frameAnalysis = true }, configReceived(listOf(saver, frames)))
     }
 
     @Test
@@ -59,13 +62,19 @@ class NeedsFramesTest {
     fun effectiveConfigIsPure() {
         val frames = ContextPlugin(id = "frames", needsFrames = true)
         val saver = ContextPlugin(id = "saver", needsFrames = false)
-        val appAsked = config.copy(frameAnalysis = true)
+        val appAsked = config.copy { frameAnalysis = true }
 
-        assertEquals(config.copy(frameAnalysis = true), effectiveConfig(config, listOf(frames)))
+        assertEquals(config.copy { frameAnalysis = true }, effectiveConfig(config, listOf(frames)))
         assertEquals(effectiveConfig(config, listOf(frames)), effectiveConfig(config, listOf(frames)))
         assertSame(config, effectiveConfig(config, listOf(saver)), "nothing to derive, yet a new configuration")
         assertSame(appAsked, effectiveConfig(appAsked, listOf(saver)), "a saver turned the app's own frameAnalysis off")
-        assertEquals(CameraConfiguration(cameraLens = CameraLens.FRONT, imageFormat = ImageFormat.PNG), config)
+        assertEquals(
+            CameraConfiguration {
+                cameraLens = CameraLens.FRONT
+                imageFormat = ImageFormat.PNG
+            },
+            config,
+        )
         assertTrue(
             frames.contexts.isEmpty() && saver.contexts.isEmpty(),
             "deriving the configuration attached a plugin",

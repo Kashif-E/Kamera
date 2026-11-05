@@ -208,7 +208,7 @@ class LegacyControllerEngineTest {
         val sut = engine(controller, DesktopLegacySession(controller, Dispatchers.IO))
         try {
             assertEquals(CameraKResult.Success(Unit), sut.start(desired))
-            val video = VideoConfiguration(enableAudio = false)
+            val video = VideoConfiguration { enableAudio = false }
 
             assertRefused(CameraOperation.CAPTURE, sut.capture())
             assertRefused(CameraOperation.ZOOM, sut.setZoom(1f))

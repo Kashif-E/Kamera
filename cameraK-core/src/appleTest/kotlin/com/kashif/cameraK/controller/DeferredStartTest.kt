@@ -29,7 +29,7 @@ class DeferredStartTest {
 
     @Test
     fun threeCapturesRightAfterReadyAllComplete() = driver.runCase {
-        val engine = driver.createEngine(CameraConfiguration(aspectRatio = AspectRatio.RATIO_4_3))
+        val engine = driver.createEngine(CameraConfiguration { aspectRatio = AspectRatio.RATIO_4_3 })
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
 

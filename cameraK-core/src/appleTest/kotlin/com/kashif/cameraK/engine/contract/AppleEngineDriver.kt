@@ -239,9 +239,9 @@ internal class AppleEngineDriver(
         session = ops
         custom = CustomCameraController(
             qualityPrioritization = config.qualityPrioritization,
-            initialCameraLens = config.cameraLens,
+            initialCameraLens = config.cameraLens ?: CameraLens.BACK,
             aspectRatio = config.aspectRatio,
-            targetResolution = config.targetResolution,
+            targetResolution = config.targetResolution?.let { it.width to it.height },
             sessionFactory = {
                 sessions.incrementAndGet()
                 ops
@@ -349,7 +349,7 @@ internal class AppleEngineDriver(
 
     /** iOS analysis frames are 420f: an RGBA_8888 session fails its start (design §6.1, §8). */
     override fun unsupportedConfiguration(): UnsupportedCase =
-        UnsupportedCase(CameraConfiguration(analysisFormat = FrameFormat.RGBA_8888), CameraFeature.ANALYSIS_FORMAT)
+        UnsupportedCase(CameraConfiguration { analysisFormat = FrameFormat.RGBA_8888 }, CameraFeature.ANALYSIS_FORMAT)
 
     /**
      * AVFoundation delivers one 420f sample buffer (see [sampleBuffer420f]) to the session's video data

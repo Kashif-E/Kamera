@@ -53,7 +53,7 @@ internal class ContractCases(
     )
 
     // Desktop rejects enableAudio = true; no case here is about audio.
-    private val video = VideoConfiguration(enableAudio = false)
+    private val video = VideoConfiguration { enableAudio = false }
     private val reason = InterruptionReason.IN_USE_BY_ANOTHER_CLIENT
     private val success = CameraKResult.Success(Unit)
     private val closed = CameraKResult.Failure(CameraKError.Closed)

@@ -25,19 +25,19 @@ class CameraConfigurationFieldsTest {
 
     @Test
     fun newFieldsKeepWhatTheyAreGiven() {
-        val config = CameraConfiguration(
-            cameraId = "/dev/video2",
-            outputDirectory = "/app/files/shots",
-            frameAnalysis = true,
-            analysisResolution = Resolution(640, 480),
-            analysisFormat = FrameFormat.RGBA_8888,
-        )
+        val config = CameraConfiguration {
+            cameraId = "/dev/video2"
+            outputDirectory = "/app/files/shots"
+            frameAnalysis = true
+            analysisResolution = Resolution(640, 480)
+            analysisFormat = FrameFormat.RGBA_8888
+        }
 
         assertEquals("/dev/video2", config.cameraId)
         assertEquals("/app/files/shots", config.outputDirectory)
         assertEquals(true, config.frameAnalysis)
         assertEquals(Resolution(640, 480), config.analysisResolution)
         assertEquals(FrameFormat.RGBA_8888, config.analysisFormat)
-        assertEquals(config, config.copy(), "the fields take part in equality")
+        assertEquals(config, config.copy {}, "the fields take part in equality")
     }
 }

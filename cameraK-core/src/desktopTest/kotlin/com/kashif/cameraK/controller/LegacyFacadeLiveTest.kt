@@ -49,7 +49,7 @@ class LegacyFacadeLiveTest {
     fun analyzerAndCaptureListenerWorkThroughTheFacade() = runBlocking {
         val camera = FakeFrameGrabber().apply { openGate() }
         // A 4:3 configuration for the 4:3 camera, so the blit crops nothing (D4').
-        val config = CameraConfiguration(aspectRatio = AspectRatio.RATIO_4_3)
+        val config = CameraConfiguration { aspectRatio = AspectRatio.RATIO_4_3 }
         val engine = DesktopCameraEngine(
             config,
             CameraKEnvironment(CameraKDispatchers(main = Dispatchers.Default, default = Dispatchers.Default)),

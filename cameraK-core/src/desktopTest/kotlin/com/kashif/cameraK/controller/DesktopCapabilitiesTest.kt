@@ -121,7 +121,7 @@ class DesktopCapabilitiesTest {
         val steps = DesktopRecordingSteps(this, rig)
         val sut = rig.engine()
         val output = File(rig.home, "bitrate.mp4")
-        val encoder = createFrameRecorder(output.path, VideoConfiguration(quality = VideoQuality.HD))
+        val encoder = createFrameRecorder(output.path, VideoConfiguration { quality = VideoQuality.HD })
         try {
             rig.settle()
             assertEquals(VideoQuality.entries.toSet(), sut.capabilities.value.supportedVideoQualities)
@@ -130,7 +130,7 @@ class DesktopCapabilitiesTest {
 
             steps.open(sut)
             steps.at(1_000)
-            steps.startRecording(sut, steps.video().copy(quality = VideoQuality.SD))
+            steps.startRecording(sut, steps.video().copy { quality = VideoQuality.SD })
             steps.frameAt(1_040)
             val video = assertIs<CameraKResult.Success<RecordedVideo>>(steps.stopRecording(sut)).value
 

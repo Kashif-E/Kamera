@@ -28,7 +28,7 @@ class FirstBindTest {
 
     @Test
     fun oneBindBeforeTheFirstFrameWhenFrameAnalysisIsSet() = runTest {
-        val engine = platform.engine(testScheduler, CameraConfiguration(frameAnalysis = true))
+        val engine = platform.engine(testScheduler, CameraConfiguration { frameAnalysis = true })
         val facade = (engine as LegacyControllerAccess).legacyController
         platform.backend.binding.holdNextOpen = true
         val start = async { engine.start(desired) }

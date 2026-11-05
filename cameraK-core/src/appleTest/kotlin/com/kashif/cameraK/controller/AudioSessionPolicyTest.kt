@@ -34,7 +34,7 @@ class AudioSessionPolicyTest {
 
         var duringStart: Boolean? = null
         driver.movieRecorder.onStart = { duringStart = driver.session.configuresTheAppAudioSession }
-        val recording = startEngineRecording(driver, engine, VideoConfiguration(enableAudio = false))
+        val recording = startEngineRecording(driver, engine, VideoConfiguration { enableAudio = false })
             .also { written += it.path }
         finishRecording(driver, recording)
 
@@ -51,7 +51,7 @@ class AudioSessionPolicyTest {
 
         var duringStart: Boolean? = null
         driver.movieRecorder.onStart = { duringStart = driver.session.configuresTheAppAudioSession }
-        val recording = startEngineRecording(driver, engine, VideoConfiguration(enableAudio = true))
+        val recording = startEngineRecording(driver, engine, VideoConfiguration { enableAudio = true })
             .also { written += it.path }
         assertEquals(true, duringStart, "an audio recording without the session's audio configuration")
 

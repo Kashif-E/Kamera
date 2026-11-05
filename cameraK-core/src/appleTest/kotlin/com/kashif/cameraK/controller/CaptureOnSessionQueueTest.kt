@@ -31,10 +31,10 @@ class CaptureOnSessionQueueTest {
     @Test
     fun queuedSwapToSmallerCameraThenCaptureUsesTheOutputAtThatMoment() = driver.runCase {
         val engine = driver.createEngine(
-            CameraConfiguration(
-                qualityPrioritization = QualityPrioritization.QUALITY,
-                aspectRatio = AspectRatio.RATIO_4_3,
-            ),
+            CameraConfiguration {
+                qualityPrioritization = QualityPrioritization.QUALITY
+                aspectRatio = AspectRatio.RATIO_4_3
+            },
         )
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))

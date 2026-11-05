@@ -79,7 +79,7 @@ class FinalizedContractTest {
                 val invalid =
                     assertIs<CameraKError.InvalidState>(assertIs<CameraKResult.Failure>(stopped).error, attempt)
                 assertEquals(CameraOperation.RECORD_STOP, invalid.operation, attempt)
-                assertIs<CameraKResult.Failure>(engine.startRecording(VideoConfiguration(enableAudio = true)))
+                assertIs<CameraKResult.Failure>(engine.startRecording(VideoConfiguration { enableAudio = true }))
             }
             noUsageDescription.settle()
             assertEquals(emptyList(), events.finalized(), "a Finalized for a recording the engine never began")

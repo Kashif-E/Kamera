@@ -24,6 +24,14 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.EmptyCoroutineContext
 
+/** How a leased frame becomes the analysis planes of [format] at [size]; [LeasedFrame.analysisPlanes] unless a test fails it. */
+internal fun interface AnalysisConversion {
+    fun planes(frame: LeasedFrame, format: FrameFormat, size: Resolution?): List<FramePlane>
+}
+
+/** The production conversion: [LeasedFrame.analysisPlanes]. */
+internal val LeasedFrameConversion = AnalysisConversion { frame, format, size -> frame.analysisPlanes(format, size) }
+
 /**
  * The desktop frame source (§8 desktop). The single producer hands it each leased frame of the
  * open camera ([deliver], on the producer thread). Every registration has its own [AnalyzerGate]
@@ -48,6 +56,8 @@ internal class DesktopFrameSource(
     private val analysisSize: Resolution?,
     private val newWorker: (String) -> WorkerDispatcher,
     private val nanoTime: () -> Long,
+    /** Converts a slot to the analysis planes; tests pass one that fails. */
+    private val convert: AnalysisConversion = LeasedFrameConversion,
 ) : FrameSource {
     private val registrations = CopyOnWriteArrayList<Registration>()
 
@@ -56,11 +66,6 @@ internal class DesktopFrameSource(
     private val poolLock = Any()
 
     @Volatile private var closed = false
-
-    // A size with no pixels (Resolution accepts one until CF' validates it) skips analysis.
-    private val analysisUsable = analysisSize == null || (analysisSize.width > 0 && analysisSize.height > 0)
-
-    @Volatile private var unusableLogged = false
 
     /** The slots the producer's pool may hold for the registrations now counted ([framePoolSize]). */
     @Volatile var poolSize: Int = framePoolSize(retainLimits = 0, analyzers = 0)
@@ -92,21 +97,9 @@ internal class DesktopFrameSource(
         if (pooled.remove(registration)) resizePool()
     }
 
-    /** A new session of the engine began: an unusable analysis size is logged again, once. */
-    fun sessionBegan() {
-        unusableLogged = false
-    }
-
     /** Hands [frame] to every idle registration. Producer thread only, while it holds a lease on [frame]. */
     fun deliver(frame: LeasedFrame) {
         if (registrations.isEmpty()) return
-        if (!analysisUsable) {
-            if (!unusableLogged) {
-                unusableLogged = true
-                CameraKLogger.w(TAG, "The analysis resolution has no pixels; analysis is skipped for this session")
-            }
-            return
-        }
         var planes: List<FramePlane>? = null
         for (registration in registrations) {
             val gate = registration.gate ?: continue
@@ -114,7 +107,7 @@ internal class DesktopFrameSource(
             registration.handed()
             frame.retain()
             val view = planes ?: try {
-                frame.analysisPlanes(format, analysisSize).also { planes = it }
+                convert.planes(frame, format, analysisSize).also { planes = it }
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "A camera frame could not be converted for analysis; the frame is skipped", e)
                 lease.release()

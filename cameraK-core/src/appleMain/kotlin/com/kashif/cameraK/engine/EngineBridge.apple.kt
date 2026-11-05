@@ -4,6 +4,7 @@ package com.kashif.cameraK.engine
 
 import com.kashif.cameraK.controller.AppleCameraEngine
 import com.kashif.cameraK.controller.CustomCameraController
+import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -18,9 +19,9 @@ internal actual fun createPlatformEngine(
     environment = environment,
     custom = CustomCameraController(
         qualityPrioritization = config.qualityPrioritization,
-        initialCameraLens = config.cameraLens,
+        initialCameraLens = config.cameraLens ?: CameraLens.BACK,
         aspectRatio = config.aspectRatio,
-        targetResolution = config.targetResolution,
+        targetResolution = config.targetResolution?.let { it.width to it.height },
         mirrorFrontCamera = config.mirrorFrontCamera,
     ),
 )

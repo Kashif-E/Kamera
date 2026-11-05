@@ -153,7 +153,7 @@ class RecordingTerminalEventTest {
         camera.backend.startFailure = IllegalStateException("Recorder is in use")
 
         val start = hostScope.async(start = CoroutineStart.UNDISPATCHED) {
-            runCatching { camera.controller.startRecording(VideoConfiguration(enableAudio = false)) }
+            runCatching { camera.controller.startRecording(VideoConfiguration { enableAudio = false }) }
         }
         idleMainLooper()
         assertTrue(start.isCompleted, "setup: the refused start did not return")
@@ -195,7 +195,7 @@ class RecordingTerminalEventTest {
 
         fun startRecording(): FakeRecording {
             val start = hostScope.async(start = CoroutineStart.UNDISPATCHED) {
-                controller.startRecording(VideoConfiguration(enableAudio = false))
+                controller.startRecording(VideoConfiguration { enableAudio = false })
             }
             idleMainLooper()
             assertTrue(start.isCompleted, "setup: the recording did not start")

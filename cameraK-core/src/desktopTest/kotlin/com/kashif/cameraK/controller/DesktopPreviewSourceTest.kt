@@ -40,7 +40,7 @@ class DesktopPreviewSourceTest {
         val rig = DesktopEngineRig(testScheduler)
         rig.camera.holdOpen = true
         // A 4:3 configuration for the 4:3 camera, so the blit crops nothing (D4').
-        val sut = rig.engine(CameraConfiguration(aspectRatio = AspectRatio.RATIO_4_3))
+        val sut = rig.engine(CameraConfiguration { aspectRatio = AspectRatio.RATIO_4_3 })
         try {
             assertNull(sut.preview.frames.value, "a frame before any session")
             val start = async { sut.start(desired) }

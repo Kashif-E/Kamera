@@ -79,5 +79,5 @@ internal open class FakeEngineDriver(
     override fun releaseCapture() = fake.releaseCapture()
 
     override fun unsupportedConfiguration(): UnsupportedCase =
-        UnsupportedCase(CameraConfiguration(imageFormat = ImageFormat.HEIC), CameraFeature.IMAGE_FORMAT)
+        UnsupportedCase(CameraConfiguration { imageFormat = ImageFormat.HEIC }, CameraFeature.IMAGE_FORMAT)
 }

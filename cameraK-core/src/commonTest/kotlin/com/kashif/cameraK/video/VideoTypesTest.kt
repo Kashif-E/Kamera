@@ -64,13 +64,13 @@ class VideoTypesTest {
 
     @Test
     fun videoConfiguration_customValues() {
-        val config = VideoConfiguration(
-            quality = VideoQuality.UHD,
-            enableAudio = false,
-            maxDuration = 60.seconds,
-            outputDirectory = "/tmp/videos",
-            filePrefix = "TEST",
-        )
+        val config = VideoConfiguration {
+            quality = VideoQuality.UHD
+            enableAudio = false
+            maxDuration = 60.seconds
+            outputDirectory = "/tmp/videos"
+            filePrefix = "TEST"
+        }
         assertEquals(VideoQuality.UHD, config.quality)
         assertEquals(false, config.enableAudio)
         assertEquals(60.seconds, config.maxDuration)
@@ -80,12 +80,12 @@ class VideoTypesTest {
 
     @Test
     fun videoConfiguration_copyPreservesUnchangedFields() {
-        val original = VideoConfiguration(
-            quality = VideoQuality.HD,
-            enableAudio = false,
-            maxDuration = 30.seconds,
-        )
-        val copy = original.copy(enableAudio = true)
+        val original = VideoConfiguration {
+            quality = VideoQuality.HD
+            enableAudio = false
+            maxDuration = 30.seconds
+        }
+        val copy = original.copy { enableAudio = true }
         assertEquals(VideoQuality.HD, copy.quality)
         assertTrue(copy.enableAudio)
         assertEquals(30.seconds, copy.maxDuration)
@@ -93,16 +93,22 @@ class VideoTypesTest {
 
     @Test
     fun videoConfiguration_equalityByValue() {
-        val a = VideoConfiguration(quality = VideoQuality.FHD, enableAudio = true)
-        val b = VideoConfiguration(quality = VideoQuality.FHD, enableAudio = true)
+        val a = VideoConfiguration {
+            quality = VideoQuality.FHD
+            enableAudio = true
+        }
+        val b = VideoConfiguration {
+            quality = VideoQuality.FHD
+            enableAudio = true
+        }
         assertEquals(a, b)
         assertEquals(a.hashCode(), b.hashCode())
     }
 
     @Test
     fun videoConfiguration_inequalityOnDifferentValues() {
-        val a = VideoConfiguration(quality = VideoQuality.FHD)
-        val b = VideoConfiguration(quality = VideoQuality.HD)
+        val a = VideoConfiguration { quality = VideoQuality.FHD }
+        val b = VideoConfiguration { quality = VideoQuality.HD }
         assertNotEquals(a, b)
     }
 

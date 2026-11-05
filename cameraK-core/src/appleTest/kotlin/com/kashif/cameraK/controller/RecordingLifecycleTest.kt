@@ -22,7 +22,7 @@ class RecordingLifecycleTest {
     private val rig = CaptureRig()
     private val recorder = FakeMovieRecorder()
     private val scope = MainScope()
-    private val config = VideoConfiguration(enableAudio = false)
+    private val config = VideoConfiguration { enableAudio = false }
 
     init {
         rig.controller.movieRecorder = recorder

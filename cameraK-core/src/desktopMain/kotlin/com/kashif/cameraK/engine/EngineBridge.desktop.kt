@@ -49,7 +49,10 @@ internal fun desktopEngine(
     return DesktopCameraEngine(
         config = config,
         environment = environment,
-        source = factory?.let(::FactoryGrabberSource) ?: EnumeratedDeviceSource(devices, config.targetResolution),
+        source = factory?.let(::FactoryGrabberSource) ?: EnumeratedDeviceSource(
+            devices,
+            config.targetResolution?.let { it.width to it.height },
+        ),
         os = os,
         enumerate = {
             val lenses = enumerator.lenses()

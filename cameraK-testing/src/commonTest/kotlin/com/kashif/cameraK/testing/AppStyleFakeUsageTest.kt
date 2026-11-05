@@ -52,7 +52,7 @@ class AppStyleFakeUsageTest {
         fake.autoStartRecording = false
         fake.autoFinalizeRecording = false
         fake.supportsPause = false
-        fake.configuration = CameraConfiguration(imageFormat = ImageFormat.JPEG)
+        fake.configuration = CameraConfiguration { imageFormat = ImageFormat.JPEG }
         fake.captureResult = { CameraKResult.Success(FakeCaptures.image(path = "/fake/IMG_0002.jpg")) }
 
         // The platform side, scripted with nothing open: none of it changes the closed engine.

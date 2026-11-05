@@ -48,7 +48,6 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
-import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
@@ -57,6 +56,7 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKStateHolder
+import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -90,18 +90,16 @@ internal fun CameraContent(
         listOf(analyzer.plugin, imageSaver.plugin, qrScanner.plugin, ocr.plugin)
     }
     val holder = rememberCameraKStateHolder(
-        config = CameraConfiguration(
-            cameraLens = CameraLens.BACK,
-            flashMode = FlashMode.OFF,
-            imageFormat = settings.imageFormat,
-            // The image saver puts each photo in the gallery; a gallery directory here would store it twice.
-            directory = Directory.DOCUMENTS,
-            torchMode = TorchMode.OFF,
-            qualityPrioritization = settings.qualityPrioritization,
-            cameraDeviceType = CameraDeviceType.WIDE_ANGLE,
-            aspectRatio = settings.aspectRatio,
-            targetResolution = settings.resolution,
-        ),
+        config = CameraConfiguration {
+            cameraLens = CameraLens.BACK
+            flashMode = FlashMode.OFF
+            imageFormat = settings.imageFormat
+            torchMode = TorchMode.OFF
+            qualityPrioritization = settings.qualityPrioritization
+            cameraDeviceType = CameraDeviceType.WIDE_ANGLE
+            aspectRatio = settings.aspectRatio
+            targetResolution = settings.resolution?.let { (width, height) -> Resolution(width, height) }
+        },
         plugins = plugins,
     )
     val cameraState by holder.cameraState.collectAsState()

@@ -126,6 +126,7 @@ internal class DesktopEngineRig(
         enumerate: () -> CameraCapabilities = { desktopCapabilities() },
         wrap: (GrabLoopListener) -> GrabLoopListener = { it },
         nanoClock: () -> Long = clock::get,
+        analysisConversion: AnalysisConversion = LeasedFrameConversion,
     ): DesktopCameraEngine = DesktopCameraEngine(
         config,
         environment(),
@@ -135,6 +136,7 @@ internal class DesktopEngineRig(
         listenerWrapper = wrap,
         enumerate = enumerate,
         media = media(),
+        analysisConversion = analysisConversion,
     )
 
     fun settle() {

@@ -22,7 +22,6 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
-import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
@@ -42,7 +41,6 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
-import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -103,8 +101,8 @@ internal val RECOVERY_TIMEOUT: Duration = 10.seconds
  * but closed and applied to nothing (§2.4 desktop).
  *
  * Captures and recordings (D3') are app-owned files ([media]): stills under the configuration's
- * `outputDirectory`, else `Documents/CameraK` under the user's home, whatever the `Directory`
- * (gallery publishing is the media saver's, §6.1); recordings under their own `outputDirectory`,
+ * `outputDirectory`, used as given, else `Documents/CameraK` under the user's home (gallery
+ * publishing is the media saver's, §6.1); recordings under their own `outputDirectory`,
  * else the configuration's, else the user's movies folder. HEIC is not a desktop format, so a start
  * configured with it fails with `Unsupported(IMAGE_FORMAT)`. A recording ([DesktopRecording]) is
  * video only (`enableAudio` is `Unsupported(AUDIO)`), enforces its limits itself, yields one
@@ -133,6 +131,8 @@ internal class DesktopCameraEngine(
     facade: (DesktopCameraEngine) -> CameraController = { CameraController(it, config) },
     /** False for a 1.x controller's own engine, which keeps the camera's own frame (1.x parity). */
     private val cropToAspectRatio: Boolean = true,
+    /** How frames become analysis planes; tests pass one that fails. */
+    analysisConversion: AnalysisConversion = LeasedFrameConversion,
 ) : CameraEngine,
     LegacyControllerAccess {
     private val runtime = environment.runtime
@@ -168,7 +168,13 @@ internal class DesktopCameraEngine(
     private val _recordingEvents = MutableSharedFlow<EngineRecordingEvent>(extraBufferCapacity = EVENT_BUFFER)
     override val recordingEvents: Flow<EngineRecordingEvent> = _recordingEvents.asSharedFlow()
     private val frameSource =
-        DesktopFrameSource(config.analysisFormat, config.analysisResolution, runtime.newWorker, nanoClock)
+        DesktopFrameSource(
+            config.analysisFormat,
+            config.analysisResolution,
+            runtime.newWorker,
+            nanoClock,
+            analysisConversion,
+        )
     override val frames: FrameSource get() = frameSource
 
     private val previewFrames = MutableStateFlow<PreviewFrame?>(null)
@@ -196,7 +202,6 @@ internal class DesktopCameraEngine(
     private val pendingCaptures = mutableSetOf<CompletableDeferred<CameraKResult<CapturedImage>>>()
 
     private val enumeration = lazy(LazyThreadSafetyMode.SYNCHRONIZED) { enumerate() }
-    private val directoryIgnored = atomic(false)
 
     init {
         // On the engine's scope after construction, never in the constructor (§6.3).
@@ -212,7 +217,6 @@ internal class DesktopCameraEngine(
                 active == null -> Session(desired).also {
                     session = it
                     fresh = true
-                    frameSource.sessionBegan()
                     publishLocked(EngineState.Opening)
                 }
                 _state.value == EngineState.Open || _state.value is EngineState.Interrupted ->
@@ -691,18 +695,9 @@ internal class DesktopCameraEngine(
         }
     }
 
-    // The configuration's folder, else the app-owned default; PICTURES and DCIM are the media saver's.
-    private fun stillFolder(): File {
-        config.outputDirectory?.let { return File(it) }
-        if (config.directory != Directory.DOCUMENTS && directoryIgnored.compareAndSet(false, true)) {
-            CameraKLogger.w(
-                TAG,
-                "Core writes app-owned files only: Directory.${config.directory} is not read; " +
-                    "publish to the gallery with the media saver",
-            )
-        }
-        return File(File(media.userHome, "Documents"), "CameraK")
-    }
+    // The configuration's folder, else the app-owned default; the gallery is the media saver's.
+    private fun stillFolder(): File =
+        config.outputDirectory?.let(::File) ?: File(File(media.userHome, "Documents"), "CameraK")
 
     private fun videoFolder(video: VideoConfiguration): File =
         (video.outputDirectory ?: config.outputDirectory)?.let(::File)

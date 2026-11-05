@@ -41,10 +41,10 @@ class DesktopNativeTeardownTest {
         recorderFactory = { _, _ -> nextRecorder() },
     )
 
-    private fun recordingConfig() = VideoConfiguration(
-        enableAudio = false,
-        outputDirectory = Files.createTempDirectory("camerak-teardown").toFile().absolutePath,
-    )
+    private fun recordingConfig() = VideoConfiguration {
+        enableAudio = false
+        outputDirectory = Files.createTempDirectory("camerak-teardown").toFile().absolutePath
+    }
 
     @Test
     fun stop_whileGrabIsInFlight_releasesTheGrabberOnlyAfterGrabReturns() {

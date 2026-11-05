@@ -11,9 +11,10 @@ import kotlin.test.assertTrue
  * gets the rewrite, and none of them compiles.
  */
 class DeprecationHintTest {
-    // The deprecated top-level functions named [name] in the file facade [facade].
+    // The deprecated top-level functions named [name] in the file facade [facade]. A function that takes
+    // an inline class, such as a Duration, has its JVM name mangled to "name-<hash>".
     private fun hints(facade: String, name: String): List<Pair<Method, Deprecated>> = Class.forName(facade).methods
-        .filter { it.name == name }
+        .filter { it.name == name || it.name.startsWith("$name-") }
         .mapNotNull { method -> method.getAnnotation(Deprecated::class.java)?.let { method to it } }
 
     @Test

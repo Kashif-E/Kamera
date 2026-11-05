@@ -44,7 +44,7 @@ class StartRecordingCancelTest {
         idleMainLooper()
 
         val start = hostScope.launch(start = CoroutineStart.UNDISPATCHED) {
-            controller.startRecording(VideoConfiguration(enableAudio = false))
+            controller.startRecording(VideoConfiguration { enableAudio = false })
         }
         // The VideoCapture bind is queued on the main thread; the caller gives up before it runs.
         assertTrue(start.isActive, "setup: startRecording should be waiting for the bind")

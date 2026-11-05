@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
 @RunWith(RobolectricTestRunner::class)
 class SquareCaptureTest {
     private val platform = FakeAndroidPlatform()
-    private val square = CameraConfiguration(aspectRatio = AspectRatio.RATIO_1_1)
+    private val square = CameraConfiguration { aspectRatio = AspectRatio.RATIO_1_1 }
 
     @Test
     fun oneToOneBindsA4By3StreamUnderASquareViewPort() = runTest {

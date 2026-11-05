@@ -44,7 +44,7 @@ class MinimumOsTest {
         val engine = driver.createEngine()
         driver.settle()
         val error = assertIs<EngineState.Failed>(engine.state.value).error
-        val video = VideoConfiguration(enableAudio = false)
+        val video = VideoConfiguration { enableAudio = false }
 
         val results = listOf(
             "start" to engine.start(backCamera()),

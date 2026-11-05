@@ -49,7 +49,7 @@ class HeicTest {
     @Test
     fun heicConfiguredStartIsUnsupportedImageFormat() = runTest {
         val platform = FakeAndroidPlatform()
-        val engine = platform.engine(testScheduler, CameraConfiguration(imageFormat = ImageFormat.HEIC))
+        val engine = platform.engine(testScheduler, CameraConfiguration { imageFormat = ImageFormat.HEIC })
         platform.settle(testScheduler)
 
         val result = engine.start(FakeAndroidPlatform.desired)

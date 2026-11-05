@@ -14,21 +14,27 @@ class VideoConfigurationLimitsTest {
     @Test
     fun negativeFileSizeLimit_isRejected() {
         assertFailsWith<IllegalArgumentException>("a negative file-size limit was accepted") {
-            VideoConfiguration(maxFileSizeBytes = -1L)
+            VideoConfiguration { maxFileSizeBytes = -1L }
         }
     }
 
     @Test
     fun negativeDurationLimit_isRejected() {
         assertFailsWith<IllegalArgumentException>("a negative duration limit was accepted") {
-            VideoConfiguration(maxDuration = (-1).milliseconds)
+            VideoConfiguration { maxDuration = (-1).milliseconds }
         }
     }
 
     @Test
     fun zeroAndPositiveLimits_areAccepted() {
-        val unlimited = VideoConfiguration(maxDuration = Duration.ZERO, maxFileSizeBytes = 0L)
-        val bounded = VideoConfiguration(maxDuration = 1.milliseconds, maxFileSizeBytes = 1L)
+        val unlimited = VideoConfiguration {
+            maxDuration = Duration.ZERO
+            maxFileSizeBytes = 0L
+        }
+        val bounded = VideoConfiguration {
+            maxDuration = 1.milliseconds
+            maxFileSizeBytes = 1L
+        }
 
         assertEquals(0L, unlimited.maxFileSizeBytes)
         assertEquals(1.milliseconds, bounded.maxDuration)

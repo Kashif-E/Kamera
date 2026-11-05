@@ -37,7 +37,10 @@ class MovieLimitsTest {
         val limited = startEngineRecording(
             driver,
             engine,
-            VideoConfiguration(maxFileSizeBytes = 10_000_000L, maxDuration = 30.seconds),
+            VideoConfiguration {
+                maxFileSizeBytes = 10_000_000L
+                maxDuration = 30.seconds
+            },
         ).also { written += it.path }
 
         assertEquals(10_000_000L, limited.start.output.maxRecordedFileSize, "the movie output's size limit")
