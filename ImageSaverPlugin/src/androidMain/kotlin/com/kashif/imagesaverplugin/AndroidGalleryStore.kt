@@ -9,7 +9,6 @@ import android.os.Environment
 import android.provider.MediaStore
 import com.kashif.cameraK.capture.GalleryAsset
 import com.kashif.cameraK.capture.uri
-import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.StorageFailure
@@ -55,7 +54,7 @@ internal class AndroidGalleryStore(
     private val formatMismatchWarned = AtomicBoolean(false)
 
     override val galleryPermission: CameraKPermission?
-        get() = TODO("IS': the gallery permission")
+        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) null else CameraKPermission.GALLERY_ADD
 
     override suspend fun addImage(
         source: MediaSource,
@@ -63,7 +62,7 @@ internal class AndroidGalleryStore(
         name: String?,
     ): CameraKResult<GalleryAsset> {
         val actual = when (source) {
-            is MediaSource.File -> TODO("IS': save(image)")
+            is MediaSource.File -> format
             is MediaSource.Bytes -> bytesFormat(source.bytes)
         }
         val fileName = "${name ?: captureFileName(
@@ -73,7 +72,11 @@ internal class AndroidGalleryStore(
         return insert(source, MediaKind.IMAGE, fileName, actual.mimeType)
     }
 
-    override suspend fun addVideo(path: String, name: String?): CameraKResult<GalleryAsset> = TODO("IS\': save(video)")
+    override suspend fun addVideo(path: String, name: String?): CameraKResult<GalleryAsset> {
+        val extension = path.substringAfterLast('/').substringAfterLast('.', "mp4").lowercase()
+        val fileName = "${name ?: captureFileName("VID", extension).substringBeforeLast('.')}.$extension"
+        return insert(MediaSource.File(path), MediaKind.VIDEO, fileName, videoMimeType(extension))
+    }
 
     private fun bytesFormat(bytes: ByteArray): ImageFormat {
         val format = encodedFormatOf(bytes) ?: config.imageFormat
@@ -93,7 +96,7 @@ internal class AndroidGalleryStore(
         fileName: String,
         mimeType: String,
     ): CameraKResult<GalleryAsset> = withContext(io) {
-        val directory = config.destination.toDirectory().publicDirectoryName
+        val directory = publicDirectory(config.destination, kind)
         val folder = config.folderName ?: DEFAULT_FOLDER
         // Set once the row exists, so every failure after the insert deletes it again (from API 29 it
         // is still IS_PENDING and would otherwise linger as an invisible, unfinished entry).
@@ -182,7 +185,18 @@ internal class AndroidGalleryStore(
         }
     }
 
-    override suspend fun read(asset: GalleryAsset): CameraKResult<ByteArray> = TODO("IS\': readBytes(saved)")
+    override suspend fun read(asset: GalleryAsset): CameraKResult<ByteArray> = withContext(io) {
+        try {
+            val bytes = resolver.openInputStream(asset.uri)?.use(InputStream::readBytes)
+                ?: throw FileNotFoundException("MediaStore opened no input stream")
+            CameraKResult.Success(bytes)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Reading a gallery image failed", e)
+            CameraKResult.Failure(storageError(e))
+        }
+    }
 
     override fun legacyLocation(asset: GalleryAsset): String = asset.uri.toString()
 
@@ -194,7 +208,8 @@ internal class AndroidGalleryStore(
             return resolver.openInputStream(Uri.parse(location))?.use(InputStream::readBytes)
                 ?: throw IOException("MediaStore opened no input stream")
         } catch (e: Exception) {
-            throw IOException("Failed to read image from path/URI: $location", e)
+            CameraKLogger.e(TAG, "Reading an image failed", e)
+            throw IOException("Failed to read the image", e)
         }
     }
 
@@ -205,13 +220,6 @@ internal class AndroidGalleryStore(
 
 private const val TAG = "ImageSaverPlugin"
 private const val DEFAULT_FOLDER = "CameraK"
-
-private val Directory.publicDirectoryName: String
-    get() = when (this) {
-        Directory.PICTURES -> Environment.DIRECTORY_PICTURES
-        Directory.DCIM -> Environment.DIRECTORY_DCIM
-        Directory.DOCUMENTS -> Environment.DIRECTORY_DOCUMENTS
-    }
 
 /** The public directory a [kind] goes to for [destination], per the destination table of GalleryDestination. */
 internal fun publicDirectory(destination: GalleryDestination, kind: MediaKind): String = when (destination) {

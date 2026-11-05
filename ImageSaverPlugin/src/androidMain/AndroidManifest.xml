@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Below API 29 the saver writes a file under the public directory itself; from 29 MediaStore
+         needs no permission for the app's own media. -->
+    <uses-permission
+            android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+            android:maxSdkVersion="28" />
+</manifest>

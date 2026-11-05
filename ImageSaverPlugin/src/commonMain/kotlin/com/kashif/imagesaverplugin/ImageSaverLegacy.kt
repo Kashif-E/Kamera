@@ -56,13 +56,6 @@ internal fun Directory.toGalleryDestination(): GalleryDestination = when (this) 
     Directory.DOCUMENTS -> GalleryDestination.DOCUMENTS
 }
 
-/** The directory of the same name. */
-internal fun GalleryDestination.toDirectory(): Directory = when (this) {
-    GalleryDestination.PICTURES -> Directory.PICTURES
-    GalleryDestination.DCIM -> Directory.DCIM
-    GalleryDestination.DOCUMENTS -> Directory.DOCUMENTS
-}
-
 /** The same settings as a [MediaSaverConfig]; an invalid prefix or folder name throws as that DSL does. */
 internal fun ImageSaverConfig.toMediaSaverConfig(): MediaSaverConfig = MediaSaverConfig {
     autoSave = isAutoSave

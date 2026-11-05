@@ -2,7 +2,6 @@ package com.kashif.imagesaverplugin
 
 import com.kashif.cameraK.capture.GalleryAsset
 import com.kashif.cameraK.capture.path
-import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.StorageFailure
@@ -50,7 +49,7 @@ internal class DesktopGalleryStore(
     private val userHome: File = defaultUserHome(),
 ) : GalleryStore {
     // Desktop folders need no permission.
-    override val galleryPermission: CameraKPermission? get() = TODO("IS': the gallery permission")
+    override val galleryPermission: CameraKPermission? get() = null
 
     override suspend fun addImage(
         source: MediaSource,
@@ -72,7 +71,10 @@ internal class DesktopGalleryStore(
         }
     }
 
-    override suspend fun addVideo(path: String, name: String?): CameraKResult<GalleryAsset> = TODO("IS\': save(video)")
+    override suspend fun addVideo(path: String, name: String?): CameraKResult<GalleryAsset> {
+        val extension = path.substringAfterLast(File.separatorChar).substringAfterLast('.', "mp4")
+        return write(name, extension) { file -> Files.copy(Path.of(path), file, StandardCopyOption.REPLACE_EXISTING) }
+    }
 
     private suspend fun write(name: String?, extension: String, fill: (Path) -> Unit): CameraKResult<GalleryAsset> =
         withContext(Dispatchers.IO) {
@@ -104,7 +106,7 @@ internal class DesktopGalleryStore(
     // The folder name is one validated name, and the folder it names must be that folder of the
     // destination's directory, not a symbolic link to any other.
     private fun resolveOutputDirectory(): File {
-        val base = directoryFolder(config.destination.toDirectory())
+        val base = destinationFolder(config.destination)
         val name = config.folderName?.let { requireSafeFileName(it, "folderName") } ?: OUTPUT_FOLDER
         val folder = File(base, name)
         if (!isOwnFolder(folder, base)) {
@@ -113,20 +115,20 @@ internal class DesktopGalleryStore(
         return folder
     }
 
-    private fun directoryFolder(directory: Directory): File = when (directory) {
-        Directory.PICTURES, Directory.DCIM -> File(userHome, "Pictures")
-        Directory.DOCUMENTS -> File(userHome, "Documents")
+    private fun destinationFolder(destination: GalleryDestination): File = when (destination) {
+        GalleryDestination.PICTURES, GalleryDestination.DCIM -> File(userHome, "Pictures")
+        GalleryDestination.DOCUMENTS -> File(userHome, "Documents")
     }
 
     // The library's own output folders: this store's, and the CameraK folders that CameraK's desktop
     // captures write to. A folder that is a symbolic link, even to its own directory or a folder
     // beside it, is not one of them.
     private fun readRoots(): List<Path> {
-        val captureFolders = listOf(Directory.PICTURES, Directory.DOCUMENTS)
-            .map { directoryFolder(it) }
+        val captureFolders = listOf(GalleryDestination.PICTURES, GalleryDestination.DOCUMENTS)
+            .map { destinationFolder(it) }
             .map { base -> File(base, OUTPUT_FOLDER) to base }
         val ownFolder = try {
-            listOf(resolveOutputDirectory() to directoryFolder(config.destination.toDirectory()))
+            listOf(resolveOutputDirectory() to destinationFolder(config.destination))
         } catch (e: Exception) {
             CameraKLogger.w(TAG, "The saver's output folder is not readable", e)
             emptyList()
@@ -136,7 +138,14 @@ internal class DesktopGalleryStore(
             .map { (folder, _) -> folder.canonicalFile.toPath() }
     }
 
-    override suspend fun read(asset: GalleryAsset): CameraKResult<ByteArray> = TODO("IS\': readBytes(saved)")
+    override suspend fun read(asset: GalleryAsset): CameraKResult<ByteArray> = withContext(Dispatchers.IO) {
+        try {
+            CameraKResult.Success(readOwn(asset.path))
+        } catch (e: IOException) {
+            CameraKLogger.e(TAG, "Reading a gallery image failed", e)
+            CameraKResult.Failure(CameraKError.Storage(StorageFailure.NOT_FOUND, cause = e))
+        }
+    }
 
     override fun legacyLocation(asset: GalleryAsset): String = asset.path
 

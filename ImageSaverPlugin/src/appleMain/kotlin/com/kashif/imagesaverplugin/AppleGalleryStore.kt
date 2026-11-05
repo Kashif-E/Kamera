@@ -17,6 +17,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.IOException
 import platform.CoreFoundation.CFDataRef
 import platform.CoreFoundation.CFRelease
@@ -29,6 +30,7 @@ import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSSearchPathForDirectoriesInDomains
 import platform.Foundation.NSURL
+import platform.Foundation.NSUUID
 import platform.Foundation.NSUserDomainMask
 import platform.ImageIO.CGImageSourceCreateWithData
 import platform.ImageIO.CGImageSourceGetCount
@@ -55,7 +57,7 @@ internal class AppleGalleryStore(
     private val photos: PhotoLibraryGateway = SystemPhotoLibrary,
     private val importTimeout: Duration = IMPORT_TIMEOUT,
 ) : GalleryStore {
-    override val galleryPermission: CameraKPermission get() = TODO("IS': the gallery permission")
+    override val galleryPermission: CameraKPermission get() = CameraKPermission.GALLERY_ADD
 
     // performChanges itself raises the add-only prompt, so a save at NotDetermined goes ahead.
     override val addPrompts: Boolean get() = true
@@ -73,7 +75,32 @@ internal class AppleGalleryStore(
         import(path, MediaKind.VIDEO, name)
 
     private suspend fun import(path: String, kind: MediaKind, name: String?): CameraKResult<GalleryAsset> =
-        TODO("IS\': save(image) and save(video)")
+        withContext(Dispatchers.Default) {
+            val url = fileUrlOf(path)
+            val outcome = withTimeoutOrNull(importTimeout) {
+                suspendCancellableCoroutine { continuation ->
+                    photos.createAsset(url, kind) { localIdentifier, error ->
+                        continuation.resume(localIdentifier to error)
+                    }
+                }
+            }
+            val fileName = url.lastPathComponent ?: "media"
+            val localIdentifier = outcome?.first
+            when {
+                localIdentifier != null -> {
+                    CameraKLogger.d(TAG, "Imported into the Photos library")
+                    val displayName = name?.let { "$it.${fileName.substringAfterLast('.', "")}".trimEnd('.') }
+                    CameraKResult.Success(GalleryAsset(displayName ?: fileName, localIdentifier))
+                }
+                else -> {
+                    val cause = outcome?.second?.let(::PhotosException) ?: PhotosTimeout(importTimeout)
+                    CameraKLogger.e(TAG, "Importing into the Photos library failed; the file is kept", cause)
+                    CameraKResult.Failure(
+                        CameraKError.Storage(StorageFailure.GALLERY_IMPORT_FAILED, keptFilePath = path, cause = cause),
+                    )
+                }
+            }
+        }
 
     // The deprecated byte save: the bytes are stored byte for byte, so EXIF stays and nothing is decoded.
     private suspend fun addBytes(bytes: ByteArray): CameraKResult<GalleryAsset> = withContext(Dispatchers.Default) {
@@ -114,11 +141,34 @@ internal class AppleGalleryStore(
         }
     }
 
-    override suspend fun read(asset: GalleryAsset): CameraKResult<ByteArray> = TODO("IS\': readBytes(saved)")
+    override suspend fun read(asset: GalleryAsset): CameraKResult<ByteArray> = withContext(Dispatchers.Default) {
+        var target: String? = null
+        try {
+            val path = "${cameraKCachesDirectory()}/read_${NSUUID().UUIDString}"
+            target = path
+            val error = suspendCancellableCoroutine { continuation ->
+                val started = photos.writeAssetData(asset.localIdentifier, NSURL.fileURLWithPath(path)) { error ->
+                    continuation.resume(error)
+                }
+                if (!started) continuation.resumeWithException(IOException("There is no such asset in Photos"))
+            }
+            if (error != null) throw PhotosException(error)
+            val data = NSFileManager.defaultManager.contentsAtPath(path) ?: throw IOException("Photos wrote no data")
+            CameraKResult.Success(data.toByteArray())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Reading an asset from Photos failed", e)
+            CameraKResult.Failure(CameraKError.Storage(StorageFailure.NOT_FOUND, cause = e))
+        } finally {
+            target?.let { NSFileManager.defaultManager.removeItemAtPath(it, null) }
+        }
+    }
 
     override fun legacyLocation(asset: GalleryAsset): String = "ph://${asset.localIdentifier}"
 
     override fun readLegacyBlocking(location: String): ByteArray {
+        if (!location.startsWith(PH_SCHEME)) return readFile(location)
         val options = PHImageRequestOptions().apply {
             synchronous = true
             deliveryMode = PHImageRequestOptionsDeliveryModeHighQualityFormat
@@ -134,6 +184,7 @@ internal class AppleGalleryStore(
     }
 
     override suspend fun readLegacy(location: String): ByteArray = withContext(Dispatchers.Default) {
+        if (!location.startsWith(PH_SCHEME)) return@withContext readFile(location)
         val options = PHImageRequestOptions().apply {
             synchronous = false
             deliveryMode = PHImageRequestOptionsDeliveryModeHighQualityFormat
@@ -199,26 +250,3 @@ private const val PH_SCHEME = "ph://"
 
 // Photos holds an import while its add-only prompt is up; this leaves the user time to answer it.
 private val IMPORT_TIMEOUT = 60.seconds
-
-//    /**
-//     * Helper class to handle UIImageWriteToSavedPhotosAlbum callbacks.
-//     */
-//    private class SaveCallback(
-//        private val onSuccess: () -> Unit,
-//        private val onError: (String) -> Unit
-//    ) : NSObject() {
-//
-//        @OptIn(ExperimentalForeignApi::class)
-//        @ObjCAction
-//        fun image_didFinishSavingWithError_contextInfo(
-//            image: UIImage,
-//            error: NSError?,
-//            contextInfo: COpaquePointer?
-//        ) {
-//            if (error == null) {
-//                onSuccess()
-//            } else {
-//                onError(error.localizedDescription ?: "Unknown error")
-//            }
-//        }
-//    }

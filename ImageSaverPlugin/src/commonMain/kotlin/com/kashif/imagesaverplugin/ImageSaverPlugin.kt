@@ -11,6 +11,7 @@ import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.plugin.CameraKPluginContext
 import com.kashif.cameraK.plugin.PluginStatus
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.result.map
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.channels.BufferOverflow
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
 /**
@@ -76,7 +78,24 @@ public class ImageSaverPlugin internal constructor(
     /** Each auto-save's outcome. A collector that falls behind loses the oldest outcomes first. */
     public val results: Flow<CameraKResult<SavedImage>> = _results.asSharedFlow()
 
-    override fun onAttach(context: CameraKPluginContext): Unit = TODO("IS': auto-save from captures")
+    override fun onAttach(context: CameraKPluginContext) {
+        context.scope.launch {
+            context.failure.collect { failure ->
+                _status.value = when {
+                    failure != null -> PluginStatus.Failed(failure)
+                    config.autoSave -> PluginStatus.Running
+                    else -> PluginStatus.Idle
+                }
+            }
+        }
+        if (!config.autoSave) return
+        context.scope.launch {
+            context.captures.collect { image ->
+                // One save per capture, so a slow gallery never holds back the next capture's save.
+                launch(context.dispatchers.io) { autoSave(image) }
+            }
+        }
+    }
 
     override fun onDetach() {
         _status.value = PluginStatus.Idle
@@ -102,7 +121,9 @@ public class ImageSaverPlugin internal constructor(
      *   `A-Z a-z 0-9 . _ -`, or is `.` or `..`. The message never repeats it.
      */
     public suspend fun save(image: CapturedImage, name: String? = null): CameraKResult<SavedImage> {
-        TODO("IS': save(image)")
+        name?.let { requireSafeFileName(it, "name") }
+        return gated { store.addImage(MediaSource.File(image.path), image.format, name) }
+            .map { SavedImage(it.displayName, it) }
     }
 
     /**
@@ -111,11 +132,12 @@ public class ImageSaverPlugin internal constructor(
      * @throws IllegalArgumentException for a [name] that breaks the same rule.
      */
     public suspend fun save(video: RecordedVideo, name: String? = null): CameraKResult<SavedVideo> {
-        TODO("IS': save(video)")
+        name?.let { requireSafeFileName(it, "name") }
+        return gated { store.addVideo(video.path, name) }.map { SavedVideo(it.displayName, it) }
     }
 
     /** The bytes of an image this saver saved, read without blocking the calling thread. */
-    public suspend fun readBytes(saved: SavedImage): CameraKResult<ByteArray> = TODO("IS': readBytes(saved)")
+    public suspend fun readBytes(saved: SavedImage): CameraKResult<ByteArray> = store.read(saved.asset)
 
     // Reads the permission where the platform needs it, then adds; see the class KDoc for the rule.
     private suspend fun <T> gated(add: suspend () -> CameraKResult<T>): CameraKResult<T> {
@@ -162,7 +184,7 @@ public class ImageSaverPlugin internal constructor(
         level = DeprecationLevel.WARNING,
     )
     public suspend fun save(byteArray: ByteArray, imageName: String? = null): ImageSaveResult =
-        when (val result = store.addImage(MediaSource.Bytes(byteArray), config.imageFormat, imageName)) {
+        when (val result = gated { store.addImage(MediaSource.Bytes(byteArray), config.imageFormat, imageName) }) {
             is CameraKResult.Success -> ImageSaveResult.Saved(store.legacyLocation(result.value))
             is CameraKResult.Failure -> ImageSaveResult.Failed(result.error.asThrowable())
         }
