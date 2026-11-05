@@ -12,17 +12,16 @@ import kotlin.time.Duration
  * @property maxDuration The longest the recording may run; null means unlimited. The platform stops
  *                        the recording at it and keeps the file.
  * @property outputDirectory Absolute path to directory for saving the video file.
- *                           Null uses the platform default:
- *                           - Android: `filesDir/CameraK` for [com.kashif.cameraK.enums.Directory.DOCUMENTS],
- *                             public `Movies/CameraK` for PICTURES and DCIM.
- *                           - iOS: `Documents/CameraK` for DOCUMENTS; for PICTURES and DCIM, a temporary
- *                             file that is imported into Photos.
+ *                           Null uses `CameraConfiguration.outputDirectory`, else the platform's
+ *                           app-owned default, whatever the [com.kashif.cameraK.enums.Directory]:
+ *                           - Android: `filesDir/CameraK`.
+ *                           - iOS: `Documents/CameraK`.
  *                           - Desktop: `~/Movies/CameraK` on macOS, `~/Videos/CameraK` on Linux and Windows.
+ *                           No recording reaches MediaStore, the media scanner or Photos.
  * @property filePrefix Prefix for the generated filename: 1 to 64 characters from `A-Z a-z 0-9 . _ -`,
  *                     and not `.` or `..`, so it can never name another directory.
- * @property maxFileSizeBytes The largest the file may grow; null means unlimited. On Android the
- *                           recording stops when the file reaches it, and stopRecording returns
- *                           the file; other platforms do not apply it yet.
+ * @property maxFileSizeBytes The largest the file may grow; null means unlimited. The platform stops
+ *                           the recording when the file reaches it and keeps the file.
  * @throws IllegalArgumentException if [maxDuration] or [maxFileSizeBytes] is negative, or [filePrefix]
  *   is not a valid prefix.
  */

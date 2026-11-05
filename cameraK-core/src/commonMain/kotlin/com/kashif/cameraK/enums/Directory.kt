@@ -4,14 +4,12 @@ package com.kashif.cameraK.enums
  * Where captured images are stored. The same value means different places for the camera
  * controller and for ImageSaverPlugin.
  *
- * Camera controller (`takePictureToFile()`, `CameraConfiguration.directory`):
- * - DOCUMENTS (the default): Saves to the app's own storage, not shared with other apps or synced
- *   with Photos (Android: `filesDir/CameraK` in internal storage; iOS: the app's Documents directory)
- * - PICTURES: opts in to the shared gallery. Android inserts the photo into MediaStore under
- *   `Pictures/CameraK` and returns its `content://` URI; iOS saves to the Photos library
- * - DCIM: like PICTURES, under `DCIM/CameraK` on Android
- * - Desktop: PICTURES and DCIM save to `~/Pictures/CameraK`, DOCUMENTS to `~/Documents/CameraK`,
- *   readable only by the user where the file system has POSIX permissions
+ * Camera (`capture()`, `takePictureToFile()`, recordings, `CameraConfiguration.directory`): every
+ * capture and recording is an app-owned file, whatever the value. It goes to
+ * `CameraConfiguration.outputDirectory` when set, else to `filesDir/CameraK` on Android,
+ * `Documents/CameraK` on iOS and `~/Documents/CameraK` on desktop. PICTURES and DCIM are ignored, with
+ * one logged warning: the core never inserts into MediaStore, runs the media scanner or imports into
+ * Photos. To publish a capture to the gallery, save it with ImageSaverPlugin.
  *
  * ImageSaverPlugin:
  * - PICTURES and DCIM: Android saves to the public `Pictures/` or `DCIM/` directory, desktop to
