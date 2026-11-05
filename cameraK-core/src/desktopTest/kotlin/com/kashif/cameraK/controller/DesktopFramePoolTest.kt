@@ -122,6 +122,37 @@ class DesktopFramePoolTest {
         }
     }
 
+    // The registration is closed while its analyzer still holds its frames: they keep their slots
+    // until released, so the pool stays sized for them.
+    @Test
+    fun framesAClosedRegistrationStillRetainsStallNoOtherConsumer() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val steps = DesktopRecordingSteps(this, rig)
+        val sut = rig.engine()
+        val kept = CopyOnWriteArrayList<RetainedFrame>()
+        val other = CopyOnWriteArrayList<Long>()
+        try {
+            steps.open(sut)
+            val retaining = sut.frames.register(FrameSpec(maxRetained = RETAINED)) { frame -> kept += frame.retain() }
+            sut.frames.register(FrameSpec()) { frame -> other += frame.timestampNanos }
+            repeat(RETAINED) { steps.frameAt(frameMillis(it)) }
+
+            retaining.close()
+            repeat(MORE) { steps.frameAt(frameMillis(RETAINED + it)) }
+
+            assertEquals(times(0 until RETAINED + MORE), other.toList(), "the second analyzer's frames")
+            assertEquals(
+                times(RETAINED + MORE - 1 until RETAINED + MORE).single(),
+                sut.preview.frames.value?.timestampNanos,
+                "the preview's last frame",
+            )
+        } finally {
+            kept.forEach { it.close() }
+            sut.close()
+            rig.settle()
+        }
+    }
+
     private fun frameMillis(index: Int): Long = 1_040L + index * 40L
 
     private fun times(indices: IntRange): List<Long> =
