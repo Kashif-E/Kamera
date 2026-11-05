@@ -86,9 +86,15 @@ internal class FramePipeline(
         registrations.update { it + registration }
         analysisRequested = true
         resizePool()
-        val bound = outputBound
+        var bound = outputBound
         beforePublishingActive()
         registration.publishActive(bound)
+        // A bind that finished on Main after the read published to this registration before the stale
+        // value above did: publish again until the value read after a publish is the one published.
+        while (outputBound != bound) {
+            bound = outputBound
+            registration.publishActive(bound)
+        }
         onConsumersChanged()
         return registration
     }
@@ -170,8 +176,9 @@ internal class FramePipeline(
         analysis?.let { backend.clearAnalyzer(it) }
     }
 
-    /** Drops every consumer and closes every registration. */
+    /** Drops every consumer and closes every registration; a registration made after it is never active. */
     fun clearConsumers() {
+        outputBound = false
         consumers.value = emptyList()
         registrations.value.forEach { it.close() }
     }
