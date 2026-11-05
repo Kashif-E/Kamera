@@ -357,7 +357,7 @@ internal class VideoRecorder(
         if (run.done) return
         // Finalized before CameraX reported the start, while the start still waits: it started nothing.
         if (!run.startConfirmed && run.awaitingStart) run.startFailed = true
-        val probe = probe(run.file)
+        val probe = backend.probeRecording(run.file)
         val video = RecordedVideo(
             path = run.file.absolutePath,
             duration = event.recordedDurationNanos.nanoseconds,
@@ -469,33 +469,6 @@ internal class VideoRecorder(
         ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
 
-    private class Probe(val playable: Boolean, val width: Int?, val height: Int?, val bitrateBps: Int?)
-
-    // §4.1's playable probe: the file exists and MediaMetadataRetriever reads a duration above zero.
-    private fun probe(file: File): Probe {
-        if (!file.isFile || file.length() == 0L) return Probe(false, null, null, null)
-        val retriever = MediaMetadataRetriever()
-        return try {
-            retriever.setDataSource(file.absolutePath)
-            fun read(key: Int) = retriever.extractMetadata(key)?.toLongOrNull()
-            Probe(
-                playable = (read(MediaMetadataRetriever.METADATA_KEY_DURATION) ?: 0L) > 0L,
-                width = read(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt(),
-                height = read(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt(),
-                bitrateBps = read(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toInt(),
-            )
-        } catch (e: Exception) {
-            CameraKLogger.w(TAG, "Reading the recorded file's metadata failed; treating it as not playable", e)
-            Probe(false, null, null, null)
-        } finally {
-            try {
-                retriever.release()
-            } catch (e: Exception) {
-                CameraKLogger.w(TAG, "Releasing the metadata reader failed", e)
-            }
-        }
-    }
-
     /** One recording CameraX is running or ran. Main thread. */
     private class Run(val file: File, val config: VideoConfiguration, val withAudio: Boolean, val legacy: Boolean) {
         var session: RecordingSession? = null
@@ -509,5 +482,33 @@ internal class VideoRecorder(
         var pendingToggle: CompletableDeferred<Unit>? = null
         var claimed = false
         var done = false
+    }
+}
+
+/** What §4.1's playable probe read from a recording's file. */
+internal class RecordingProbe(val playable: Boolean, val width: Int?, val height: Int?, val bitrateBps: Int?)
+
+/** §4.1's playable probe: the file exists and MediaMetadataRetriever reads a duration above zero from it. */
+internal fun probeRecordedFile(file: File): RecordingProbe {
+    if (!file.isFile || file.length() == 0L) return RecordingProbe(false, null, null, null)
+    val retriever = MediaMetadataRetriever()
+    return try {
+        retriever.setDataSource(file.absolutePath)
+        fun read(key: Int) = retriever.extractMetadata(key)?.toLongOrNull()
+        RecordingProbe(
+            playable = (read(MediaMetadataRetriever.METADATA_KEY_DURATION) ?: 0L) > 0L,
+            width = read(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt(),
+            height = read(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt(),
+            bitrateBps = read(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toInt(),
+        )
+    } catch (e: Exception) {
+        CameraKLogger.w(TAG, "Reading the recorded file's metadata failed; treating it as not playable", e)
+        RecordingProbe(false, null, null, null)
+    } finally {
+        try {
+            retriever.release()
+        } catch (e: Exception) {
+            CameraKLogger.w(TAG, "Releasing the metadata reader failed", e)
+        }
     }
 }

@@ -105,6 +105,14 @@ internal class FakeCameraXBackend : CameraXBackend {
         return byId[id].orEmpty()
     }
 
+    /** The thread each playable probe ran on, oldest first. */
+    val probeThreads = mutableListOf<Thread>()
+
+    override fun probeRecording(file: File): RecordingProbe {
+        synchronized(probeThreads) { probeThreads += Thread.currentThread() }
+        return super.probeRecording(file)
+    }
+
     /** The per-frame callback of each preview built, oldest first. */
     val previewFrameCallbacks = mutableListOf<() -> Unit>()
 

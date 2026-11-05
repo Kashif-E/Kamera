@@ -27,6 +27,7 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.lifecycle.LifecycleOwner
 import com.kashif.cameraK.video.VideoQuality
+import java.io.File
 import java.util.concurrent.Executor
 
 /**
@@ -130,6 +131,12 @@ internal interface CameraXBackend {
         Recorder.getVideoCapabilities(cameraInfo).getSupportedQualities(DynamicRange.SDR)
             .mapNotNull { quality -> VideoQuality.entries.firstOrNull { it.toCameraXQuality() == quality } }
             .toSet()
+
+    /**
+     * §4.1's playable probe over a finished recording's [file], with the size and bitrate it reads.
+     * It reads and parses the file, so it runs off the main thread.
+     */
+    fun probeRecording(file: File): RecordingProbe = probeRecordedFile(file)
 
     /** Makes [analyzer] the consumer of [analysis]'s frames, run on [executor]. */
     fun setAnalyzer(analysis: ImageAnalysis, executor: Executor, analyzer: ImageAnalysis.Analyzer)
