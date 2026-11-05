@@ -11,17 +11,16 @@ import com.google.zxing.common.HybridBinarizer
 import com.kashif.cameraK.frames.FrameRect
 import com.kashif.cameraK.utils.CameraKLogger
 import java.util.EnumMap
-import kotlin.math.ceil
-import kotlin.math.floor
 import com.google.zxing.BarcodeFormat as ZxingFormat
 
 internal actual fun createBarcodeDecoder(formats: Set<BarcodeFormat>): BarcodeDecoder = ZxingBarcodeDecoder(formats)
 
 /**
  * ZXing over the plugin's luma, on Android and desktop. It cuts out the image's area, downscales
- * it by a whole factor to at most [MAX_DECODE_SIDE] px a side, and reads it; ZXing's slower
- * TRY_HARDER pass runs on every [SLOW_PASS_EVERY]th attempt, and a pass for light-on-dark codes on
- * every [INVERTED_PASS_EVERY]th one that found nothing.
+ * it by a whole factor to at most [MAX_DECODE_SIDE] px a side, turns it upright by the frame's
+ * rotation, so a 1D barcode in a portrait frame lies along ZXing's scan lines (#168), and reads it.
+ * ZXing's slower TRY_HARDER pass runs on every [SLOW_PASS_EVERY]th attempt, and a pass for
+ * light-on-dark codes on every [INVERTED_PASS_EVERY]th one that found nothing.
  *
  * Not thread-safe: the plugin calls it from its registration's worker, and the buffer it decodes
  * from is reused on the next call.
@@ -31,6 +30,7 @@ internal class ZxingBarcodeDecoder(
     private val reader: LumaReader = ZxingLumaReader(formats),
 ) : BarcodeDecoder {
     private var buffer = ByteArray(0)
+    private var upright = ByteArray(0)
     private var sums = IntArray(0)
     private var attempts = 0L
 
@@ -38,6 +38,7 @@ internal class ZxingBarcodeDecoder(
     private var originX = 0
     private var originY = 0
     private var scale = 1
+    private var geometry = UprightGeometry(0, 0, 0)
 
     override fun decode(image: LumaImage): List<Barcode> {
         val source = prepare(image)
@@ -49,8 +50,18 @@ internal class ZxingBarcodeDecoder(
         return codes.map { Barcode(it.text, it.bytes, it.format, boundingBox(it.points)) }
     }
 
-    /** The luma ZXing reads for [image]: its area, downscaled to at most 1280 px a side. */
+    /** The luma ZXing reads for [image]: its area, downscaled to at most 1280 px a side, upright. */
     fun prepare(image: LumaImage): LumaSource {
+        val cut = cut(image)
+        geometry = UprightGeometry(cut.width, cut.height, image.rotationDegrees)
+        if (geometry.quarterTurns == 0) return cut
+        if (upright.size < cut.width * cut.height) upright = ByteArray(cut.width * cut.height)
+        geometry.turnUpright(cut.data, upright)
+        return LumaSource(upright, geometry.uprightWidth, geometry.uprightHeight)
+    }
+
+    // The area, downscaled, as the frame holds it.
+    private fun cut(image: LumaImage): LumaSource {
         val area = image.area
         val areaWidth = area.right - area.left
         val areaHeight = area.bottom - area.top
@@ -97,24 +108,16 @@ internal class ZxingBarcodeDecoder(
         }
     }
 
-    // The points' bounds in frame pixels; a 1D code's two end points get a box one pixel high.
+    // The points' bounds in frame pixels; a 1D code's two end points get a box one source pixel thick.
     private fun boundingBox(points: FloatArray): FrameRect? {
         if (points.size < 2) return null
-        var minX = Float.MAX_VALUE
-        var minY = Float.MAX_VALUE
-        var maxX = -Float.MAX_VALUE
-        var maxY = -Float.MAX_VALUE
-        for (i in points.indices step 2) {
-            val x = originX + points[i] * scale
-            val y = originY + points[i + 1] * scale
-            minX = minOf(minX, x)
-            minY = minOf(minY, y)
-            maxX = maxOf(maxX, x)
-            maxY = maxOf(maxY, y)
-        }
-        val left = floor(minX).toInt()
-        val top = floor(minY).toInt()
-        return FrameRect(left, top, maxOf(ceil(maxX).toInt(), left + 1), maxOf(ceil(maxY).toInt(), top + 1))
+        val box = geometry.toImage(points)
+        return FrameRect(
+            originX + box.left * scale,
+            originY + box.top * scale,
+            originX + box.right * scale,
+            originY + box.bottom * scale,
+        )
     }
 
     private companion object {

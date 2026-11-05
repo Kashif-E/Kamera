@@ -2,7 +2,6 @@
 
 package com.kashif.qrscannerplugin
 
-import com.kashif.cameraK.frames.FrameRect
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -31,6 +30,9 @@ import platform.CoreVideo.kCVPixelFormatType_OneComponent8
 import platform.CoreVideo.kCVReturnSuccess
 import platform.Foundation.NSError
 import platform.ImageIO.CGImagePropertyOrientation
+import platform.ImageIO.kCGImagePropertyOrientationDown
+import platform.ImageIO.kCGImagePropertyOrientationLeft
+import platform.ImageIO.kCGImagePropertyOrientationRight
 import platform.ImageIO.kCGImagePropertyOrientationUp
 import platform.Vision.VNBarcodeObservation
 import platform.Vision.VNBarcodeSymbologyAztec
@@ -71,7 +73,7 @@ internal class VisionBarcodeDecoder(formats: Set<BarcodeFormat>) : BarcodeDecode
         val buffer = lumaPixelBuffer(image) ?: error("Vision barcode decoding could not allocate its luma buffer")
         try {
             val request = request(image)
-            val handler = VNImageRequestHandler(buffer, kCGImagePropertyOrientationUp, emptyMap<Any?, Any?>())
+            val handler = VNImageRequestHandler(buffer, orientation(image), emptyMap<Any?, Any?>())
             memScoped {
                 val nsError = alloc<ObjCObjectVar<NSError?>>()
                 if (!handler.performRequests(listOf(request), nsError.ptr)) {
@@ -85,16 +87,21 @@ internal class VisionBarcodeDecoder(formats: Set<BarcodeFormat>) : BarcodeDecode
         }
     }
 
-    /** The request for [image]: the configured symbologies, and the image's area as the region of interest. */
+    /**
+     * The request for [image]: the configured symbologies, and the image's area as the region of
+     * interest. Vision reads the image upright ([orientation]), so the region is the area turned
+     * upright, normalised, with its origin at the bottom left.
+     */
     fun request(image: LumaImage): VNDetectBarcodesRequest = VNDetectBarcodesRequest().apply {
         setSymbologies(requested)
-        val area = image.area
-        val width = image.width.toDouble()
-        val height = image.height.toDouble()
+        val geometry = UprightGeometry(image.width, image.height, image.rotationDegrees)
+        val area = geometry.toUpright(image.area)
+        val width = geometry.uprightWidth.toDouble()
+        val height = geometry.uprightHeight.toDouble()
         setRegionOfInterest(
             CGRectMake(
                 area.left / width,
-                (image.height - area.bottom) / height,
+                (geometry.uprightHeight - area.bottom) / height,
                 (area.right - area.left) / width,
                 (area.bottom - area.top) / height,
             ),
@@ -102,7 +109,13 @@ internal class VisionBarcodeDecoder(formats: Set<BarcodeFormat>) : BarcodeDecode
     }
 
     /** The orientation Vision reads [image] in. */
-    fun orientation(image: LumaImage): CGImagePropertyOrientation = kCGImagePropertyOrientationUp
+    fun orientation(image: LumaImage): CGImagePropertyOrientation =
+        when (UprightGeometry(image.width, image.height, image.rotationDegrees).quarterTurns) {
+            1 -> kCGImagePropertyOrientationRight
+            2 -> kCGImagePropertyOrientationDown
+            3 -> kCGImagePropertyOrientationLeft
+            else -> kCGImagePropertyOrientationUp
+        }
 
     /** A one-plane 8-bit buffer holding [image]'s luma, which the caller releases; null when it cannot be made. */
     fun lumaPixelBuffer(image: LumaImage): CVPixelBufferRef? = memScoped {
@@ -139,21 +152,22 @@ internal class VisionBarcodeDecoder(formats: Set<BarcodeFormat>) : BarcodeDecode
         buffer
     }
 
-    // Vision reports the box normalised to the region of interest, origin bottom left.
+    // Vision reports the box in the upright image, normalised to the region of interest, origin bottom left.
     private fun VNBarcodeObservation.toBarcode(image: LumaImage): Barcode? {
         val format = FORMATS_BY_SYMBOLOGY[symbology] ?: return null
-        val area = image.area
-        val areaWidth = area.right - area.left
-        val areaHeight = area.bottom - area.top
-        val box = boundingBox.useContents {
-            FrameRect(
-                area.left + (origin.x * areaWidth).toInt(),
-                area.top + ((1 - origin.y - size.height) * areaHeight).toInt(),
-                area.left + ((origin.x + size.width) * areaWidth).toInt(),
-                area.top + ((1 - origin.y) * areaHeight).toInt(),
+        val geometry = UprightGeometry(image.width, image.height, image.rotationDegrees)
+        val area = geometry.toUpright(image.area)
+        val areaWidth = (area.right - area.left).toDouble()
+        val areaHeight = (area.bottom - area.top).toDouble()
+        val corners = boundingBox.useContents {
+            floatArrayOf(
+                (area.left + origin.x * areaWidth).toFloat(),
+                (area.top + (1 - origin.y - size.height) * areaHeight).toFloat(),
+                (area.left + (origin.x + size.width) * areaWidth).toFloat(),
+                (area.top + (1 - origin.y) * areaHeight).toFloat(),
             )
         }
-        return Barcode(payloadStringValue, null, format, box)
+        return Barcode(payloadStringValue, null, format, geometry.toImage(corners))
     }
 
     private companion object {
