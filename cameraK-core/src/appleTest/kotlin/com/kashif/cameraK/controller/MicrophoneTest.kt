@@ -22,7 +22,8 @@ import kotlin.test.assertTrue
  * A recording with audio needs NSMicrophoneUsageDescription in the app's Info.plist: TCC kills an app
  * that touches the microphone without it. So the engine checks the key first and fails fast with
  * Unsupported(AUDIO), naming the key, before any microphone call (design §5). A microphone the session
- * does not take leaves the recording without audio, and the recording says so: hasAudio is false.
+ * does not take, or whose audio connection is not active, leaves the recording without audio, and the
+ * recording says so: hasAudio is false.
  */
 class MicrophoneTest {
     private val written = mutableListOf<String>()
@@ -85,6 +86,36 @@ class MicrophoneTest {
 
             val started = events.values.filterIsInstance<EngineRecordingEvent.Started>().single()
             assertFalse(started.hasAudio, "a recording whose microphone the session refused reported audio")
+            val stop = async { engine.stopRecording() }
+            driver.settle()
+            finishRecording(driver, recording)
+            repeat(20) { if (!stop.isCompleted) driver.settle() }
+            val video = assertIs<CameraKResult.Success<RecordedVideo>>(stop.await()).value
+            assertFalse(video.hasAudio, "the finished recording reported an audio track")
+            engine.close()
+        }
+    }
+
+    /**
+     * hasAudio comes from the movie output's audio connection, not from the microphone having been
+     * added: a microphone the session took whose connection is not active records no audio track.
+     */
+    @Test
+    fun anInactiveAudioConnectionReportsHasAudioFalse() {
+        val driver = AppleEngineDriver()
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+            val events = recordingEventsOf(engine)
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            driver.movieRecorder.audioConnectionActive = false
+
+            val recording = startEngineRecording(driver, engine, VideoConfiguration(enableAudio = true))
+                .also { written += it.path }
+
+            assertTrue(driver.microphone in driver.session.inputs, "the microphone was not added")
+            val started = events.values.filterIsInstance<EngineRecordingEvent.Started>().single()
+            assertFalse(started.hasAudio, "a recording without an active audio connection reported audio")
             val stop = async { engine.stopRecording() }
             driver.settle()
             finishRecording(driver, recording)
