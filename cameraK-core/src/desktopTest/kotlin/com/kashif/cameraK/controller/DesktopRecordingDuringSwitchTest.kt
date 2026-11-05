@@ -23,7 +23,7 @@ import kotlin.test.assertIs
 /**
  * A camera switch during a recording is refused with `Busy` and changes nothing (Decision 7): the
  * recording goes on, on the same device, and no grab loop starts for another one. `Busy(LENS)`,
- * or `Busy(DEVICE_TYPE)` when the switch keeps the lens and changes only the device type. The 1.x
+ * or `Busy(DEVICE_TYPE)` when the switch keeps the lens, as the holder's `switchOperation` decides. The 1.x
  * facade's toggle, which goes through `engine.selectCamera`, logs the refusal once at warning.
  * The desktop twin of Android's `SelectCameraTest.selectDuringRecordingIsBusyAndNothingRebinds`.
  */
@@ -67,6 +67,36 @@ class DesktopRecordingDuringSwitchTest {
             assertEquals(back, sut.hardware.value.camera, "the camera during the recording")
             steps.frameAt(1_080)
             assertEquals(2, rig.recorders.single().recordCount.get(), "the recording stopped taking frames")
+            assertIs<CameraKResult.Success<RecordedVideo>>(steps.stopRecording(sut))
+        } finally {
+            sut.close()
+            rig.settle()
+        }
+    }
+
+    // The holder's switchOperation: a switch that keeps the lens is DEVICE_TYPE, even between two
+    // webcams of the same lens and device type (w7 decisions, D3' carry-over 1).
+    @Test
+    fun aSecondWebcamOfTheSameLensAndTypeIsBusyDeviceType() = runTest {
+        val other = webcam("usb-other", CameraLens.BACK, CameraDeviceType.DEFAULT)
+        val rig = DesktopEngineRig(testScheduler)
+        val steps = DesktopRecordingSteps(this, rig)
+        val sut = rig.engine(enumerate = { CameraCapabilities(listOf(back, other)) })
+        try {
+            steps.open(sut, DesktopRecordingSteps.desiredOn(CameraSelection.ById(back.id)))
+            steps.at(1_000)
+            steps.startRecording(sut)
+            steps.frameAt(1_040)
+
+            assertBusy(
+                CameraOperation.DEVICE_TYPE,
+                sut.selectCamera(CameraSelection.ById(other.id)),
+                "to another BACK/DEFAULT webcam",
+            )
+            rig.settle()
+
+            assertEquals(1, rig.camera.startCount, "a grab loop started for another device")
+            assertEquals(back, sut.hardware.value.camera, "the camera during the recording")
             assertIs<CameraKResult.Success<RecordedVideo>>(steps.stopRecording(sut))
         } finally {
             sut.close()

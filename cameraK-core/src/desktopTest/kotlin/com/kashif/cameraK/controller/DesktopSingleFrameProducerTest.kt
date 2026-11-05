@@ -179,22 +179,27 @@ class DesktopSingleFrameProducerTest {
         }
     }
 
+    // W6 G4's rule (w7 decisions, D3' carry-over 3): a recording the session's stop ends with a kept,
+    // playable file is a 1.x Success with that path, as on Android.
     @Test
-    fun recording_whenTheCameraStops_endsAndReportsAnError() = runBlocking {
+    fun recording_whenTheCameraStops_returnsTheKeptFile() = runBlocking {
         val fake = FakeFrameGrabber().apply { openGate() }
         val recorder = FakeFrameRecorder().apply { finishFirstRecord() }
         val sut = controller(fake, recorder)
         try {
             sut.startSession()
-            sut.startRecording(recordingConfig())
+            val path = sut.startRecording(recordingConfig())
             assertTrue(recorder.fiveFramesRecorded.await(10, TimeUnit.SECONDS), "the recorder was not fed frames")
 
             // The producer ends while the recording runs: the recording must not sit waiting for
-            // frames that will never come, and must not later be reported as a success.
+            // frames that will never come.
             sut.stopSession()
             assertTrue(recorder.releasedLatch.await(5, TimeUnit.SECONDS), "the recording outlived its camera")
 
-            assertIs<VideoCaptureResult.Error>(withTimeout(10_000) { sut.stopRecording() })
+            val kept = assertIs<VideoCaptureResult.Success>(withTimeout(10_000) { sut.stopRecording() })
+            assertEquals(path, kept.filePath, "the kept recording's path")
+            assertTrue(File(kept.filePath).exists(), "the kept recording's file")
+            assertTrue(recorder.recordCount.get() >= 5, "frames the kept file holds: ${recorder.recordCount.get()}")
             assertEquals(emptyList(), recorder.violations.toList())
         } finally {
             sut.cleanup()
