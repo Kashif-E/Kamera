@@ -26,7 +26,6 @@ import kotlinx.coroutines.test.TestResult
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.bytedeco.javacv.FrameGrabber
-import java.awt.image.BufferedImage
 import java.io.IOException
 
 /**
@@ -97,7 +96,7 @@ internal class DesktopEngineDriver :
         rig.camera.holdOpen = true
     }
 
-    override fun deliverOpen() = deliver(live = { rig.camera.deliverFrame() }, dead = { it.onFrame(lateFrame(), 0) })
+    override fun deliverOpen() = deliver(live = { rig.camera.deliverFrame() }, dead = { it.onFrame(lateFrame()) })
 
     override fun failOpen() = fail(FrameGrabber.Exception("Could not grab a frame: Input/output error"))
 
@@ -135,7 +134,8 @@ internal class DesktopEngineDriver :
         if (rig.camera.isOpen) live() else lastListener?.let(dead)
     }
 
-    private fun lateFrame() = BufferedImage(64, 48, BufferedImage.TYPE_3BYTE_BGR)
+    // A stale run's frame: the engine drops it without taking a lease.
+    private fun lateFrame() = LeasedFrame(64, 48)
 
     private fun webcam(id: String) =
         LensInfo(id, CameraDeviceType.DEFAULT, CameraLens.BACK, 1f, 1f, hasFlash = false, isLogical = false)
@@ -147,12 +147,12 @@ internal class DesktopEngineDriver :
 
     /** The engine's own listener; its next frame callback throws when the kit asks. */
     private inner class ScriptedListener(private val engine: GrabLoopListener) : GrabLoopListener by engine {
-        override fun onFrame(image: BufferedImage, captureNanos: Long) {
+        override fun onFrame(frame: LeasedFrame) {
             if (throwOnNextFrame) {
                 throwOnNextFrame = false
                 throw IllegalStateException("scripted failure in the grab loop's frame listener")
             }
-            engine.onFrame(image, captureNanos)
+            engine.onFrame(frame)
         }
     }
 }

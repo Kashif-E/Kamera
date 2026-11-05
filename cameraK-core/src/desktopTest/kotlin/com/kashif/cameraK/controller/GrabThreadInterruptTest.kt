@@ -9,7 +9,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber
-import java.awt.image.BufferedImage
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,7 +26,7 @@ class GrabThreadInterruptTest {
         val camera = SelfInterruptingGrabber()
         val failures = CopyOnWriteArrayList<Throwable>()
         val listener = object : GrabLoopListener {
-            override fun onFrame(image: BufferedImage, captureNanos: Long) = Unit
+            override fun onFrame(frame: LeasedFrame) = Unit
 
             override fun onFailure(failure: Throwable, opened: Boolean) {
                 failures += failure

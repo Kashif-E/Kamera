@@ -10,14 +10,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.onSubscription
-import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -34,9 +28,11 @@ import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The single producer of desktop camera frames. One grab loop, on its own thread, is the only code
- * that calls `grab()` or the frame converter. Preview frames go to `frameFlow`; capture and
- * recording read copies of the same frames through [awaitSnapshot] and [frames], so they never
- * grab from the camera themselves or steal frames from the preview.
+ * that calls `grab()` or the frame converter. It converts each frame into a leased slot of the
+ * converter's pool (§8 desktop) and holds the two latest for the preview; preview frames go to
+ * `frameFlow` (or the engine's listener, which also hands them to analysis), the recording reads
+ * the same leased frames through [openFeed], and a capture copies one through [awaitSnapshot], so
+ * none of them grabs from the camera or steals frames from the preview.
  */
 class CameraGrabber(
     private val frameFlow: MutableSharedFlow<BufferedImage>,
@@ -63,22 +59,23 @@ class CameraGrabber(
 
     @Volatile private var isHorizontallyFlipped = false
 
-    /** The analysis frames converted to YUV_420 (D4' red stub). */
+    /** How many analysis frames the grab loops converted to YUV_420. */
     internal val yuvConversions = AtomicLong()
 
-    /** The slots of the running loop's frame pool (D4' red stub). */
-    internal val slotsAllocated: Int get() = 0
+    @Volatile private var converterInUse: FrameConverter? = null
+
+    /** The slots the running grab loop's pool has allocated; 0 without one. */
+    internal val slotsAllocated: Int get() = converterInUse?.slotCount ?: 0
 
     /** The width and height of the frames the grab loop last produced, or null before the first. */
     @Volatile internal var frameSize: Pair<Int, Int>? = null
         private set
 
-    // Copies of the loop's frames, made only while someone collects. Each copy is new and never
-    // written again, so a collector may keep it. null marks the end of a run.
-    private val snapshots = MutableSharedFlow<CapturedFrame?>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
+    // The consumers' feeds of the loop's leased frames. A run owns them from its launch; when any
+    // run ends, every feed is closed, as a camera cut ends a recording.
+    private val feedLock = Any()
+    private var feedOwner: Any? = null
+    private val feeds = mutableListOf<FrameFeed>()
 
     fun setHorizontalFlip(flip: Boolean) {
         this.isHorizontallyFlipped = flip
@@ -114,18 +111,27 @@ class CameraGrabber(
 
     /** A copy of the grab loop's next frame, or null if the loop is not running or none arrives in time. */
     internal suspend fun awaitSnapshot(): BufferedImage? {
-        if (job.value?.isActive != true) return null
-        return withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) { snapshots.first()?.image }
+        val feed = openFeed()
+        try {
+            val frame = withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) { feed.next() } ?: return null
+            return try {
+                frame.image.copy()
+            } finally {
+                frame.release()
+            }
+        } finally {
+            feed.cancel()
+        }
     }
 
     /**
-     * Copies of the grab loop's frames from now until the loop stops. Completes at once if no loop
-     * is running, so a consumer never waits for frames that will not come.
+     * A feed of the grab loop's leased frames from now until the loop stops; closed at once if no
+     * loop is running, so a consumer never waits for frames that will not come. The consumer
+     * releases each frame it takes and cancels the feed when done.
      */
-    internal fun frames(): Flow<CapturedFrame> = snapshots
-        .onSubscription { if (job.value?.isActive != true) emit(null) }
-        .takeWhile { it != null }
-        .filterNotNull()
+    internal fun openFeed(): FrameFeed = synchronized(feedLock) {
+        FrameFeed().also { if (feedOwner == null) it.close() else feeds += it }
+    }
 
     /**
      * Starts the grab loop in [coroutineScope], on a dedicated thread. The loop owns the grabber and
@@ -138,13 +144,14 @@ class CameraGrabber(
     fun start(coroutineScope: CoroutineScope, customGrabber: FrameGrabber? = null): Unit = synchronized(startLock) {
         if (job.value?.isActive == true) return
         val source = customGrabber?.let(::CustomGrabberSource) ?: DefaultDeviceSource(targetResolution)
-        launchRun(coroutineScope, source, desktopLensInfo(), ::newDedicatedWorker, legacyListener)
+        launchRun(coroutineScope, source, desktopLensInfo(), ::newDedicatedWorker, legacyListener, FrameBlit.NONE)
     }
 
     /**
      * Starts one run of the grab loop for the desktop engine, after the previous run has released
      * the camera: the engine cancels a run it replaces before it starts the next. The run reports
-     * to [listener] on [newWorker]'s thread, one worker per run (§2.4 desktop).
+     * to [listener] on [newWorker]'s thread, one worker per run (§2.4 desktop). Each frame is
+     * blitted with [blit]'s crop and mirror, and mirrored as well while [setHorizontalFlip] is on.
      */
     internal fun startRun(
         scope: CoroutineScope,
@@ -152,7 +159,8 @@ class CameraGrabber(
         device: LensInfo,
         newWorker: (String) -> WorkerDispatcher,
         listener: GrabLoopListener,
-    ): Job = synchronized(startLock) { launchRun(scope, source, device, newWorker, listener) }
+        blit: FrameBlit = FrameBlit.NONE,
+    ): Job = synchronized(startLock) { launchRun(scope, source, device, newWorker, listener, blit) }
 
     private fun launchRun(
         scope: CoroutineScope,
@@ -160,12 +168,15 @@ class CameraGrabber(
         device: LensInfo,
         newWorker: (String) -> WorkerDispatcher,
         listener: GrabLoopListener,
+        blit: FrameBlit,
     ): Job {
         val previous = job.value
         val deviceLock = cameraDeviceLock(source.deviceKey(device))
         val producer = newWorker(PRODUCER_THREAD)
+        val run = Any()
+        synchronized(feedLock) { feedOwner = run }
         val loop = scope.launch(producer.dispatcher, start = CoroutineStart.ATOMIC) {
-            runLoop(previous, deviceLock, source, device, listener)
+            runLoop(previous, deviceLock, source, device, listener, blit, run)
         }
         loop.invokeOnCompletion { producer.close() }
         job.value = loop
@@ -179,11 +190,18 @@ class CameraGrabber(
         source: GrabberSource,
         device: LensInfo,
         listener: GrabLoopListener,
+        blit: FrameBlit,
+        run: Any,
     ) {
         var owned: FrameGrabber? = null
         var holdsDevice = false
         var opened = false
-        val converter = FrameConverter()
+        val converter = FrameConverter(yuvConversions)
+        converterInUse = converter
+        // The two latest frames, held for the preview: a frame is not written again while the next
+        // two are converted and published.
+        val held = ArrayDeque<LeasedFrame>(PREVIEW_HELD + 1)
+        val mirrored = FrameBlit(blit.aspectRatio, mirrored = true)
         try {
             previous?.join()
             deviceLock.lock()
@@ -224,16 +242,16 @@ class CameraGrabber(
                     continue
                 }
                 framesWithoutImage = 0
-                converter.setHorizontalFlip(isHorizontallyFlipped)
-                val image = converter.convert(frame) ?: continue
+                val leased = converter.convertLeased(frame, if (isHorizontallyFlipped) mirrored else blit, captureNanos)
+                    ?: continue
+                held.addLast(leased)
                 val size = frameSize
-                if (size == null || size.first != image.width || size.second != image.height) {
-                    frameSize = image.width to image.height
+                if (size == null || size.first != leased.width || size.second != leased.height) {
+                    frameSize = leased.width to leased.height
                 }
-                guarded(listener, "frame") { listener.onFrame(image, captureNanos) }
-                if (snapshots.subscriptionCount.value > 0) {
-                    snapshots.tryEmit(CapturedFrame(image.copy(), captureNanos))
-                }
+                guarded(listener, "frame") { listener.onFrame(leased) }
+                synchronized(feedLock) { if (feeds.isNotEmpty()) feeds.removeAll { !it.offer(leased) } }
+                if (held.size > PREVIEW_HELD) held.removeFirst().release()
             }
         } catch (e: CancellationException) {
             throw e
@@ -245,16 +263,23 @@ class CameraGrabber(
             // runInterruptible clears its own interrupt; a stray one must not reach the native release.
             Thread.interrupted()
             owned?.let { release(it, listener) }
+            synchronized(feedLock) {
+                feeds.forEach { it.close() }
+                feeds.clear()
+                if (feedOwner === run) feedOwner = null
+            }
+            held.forEach { it.release() }
+            held.clear()
+            if (converterInUse === converter) converterInUse = null
             releaseConverter(converter, listener)
             if (holdsDevice) deviceLock.unlock()
-            snapshots.tryEmit(null)
         }
     }
 
     // The 1.x callers' listener: frames to frameFlow, every failure to errorHandler.
     private val legacyListener = object : GrabLoopListener {
-        override fun onFrame(image: BufferedImage, captureNanos: Long) {
-            frameFlow.tryEmit(image)
+        override fun onFrame(frame: LeasedFrame) {
+            frameFlow.tryEmit(frame.image)
         }
 
         override fun onFailure(failure: Throwable, opened: Boolean) = errorHandler(failure)
@@ -442,9 +467,6 @@ private fun cameraDeviceLock(deviceKey: Any): Mutex = when (deviceKey) {
     else -> synchronized(cameraDeviceLocks) { cameraDeviceLocks.getOrPut(deviceKey) { Mutex() } }
 }
 
-/** A copy of one of the grab loop's frames, which its receiver may keep, and when it was grabbed. */
-internal class CapturedFrame(val image: BufferedImage, val captureNanos: Long)
-
 private fun BufferedImage.copy(): BufferedImage = BufferedImage(colorModel, copyData(null), isAlphaPremultiplied, null)
 
 // The frame rate the default camera is asked for.
@@ -452,6 +474,9 @@ private const val DEFAULT_CAMERA_FRAME_RATE = 30.0
 
 private const val TAG = "CameraK"
 private const val PRODUCER_THREAD = "CameraK-grabber"
+
+// The latest frame and the one before it, which a preview collector one frame behind still reads.
+private const val PREVIEW_HELD = 2
 
 // Long enough for a slow webcam's first frame; capture and recording fail rather than wait forever.
 private const val SNAPSHOT_TIMEOUT_MS = 5_000L

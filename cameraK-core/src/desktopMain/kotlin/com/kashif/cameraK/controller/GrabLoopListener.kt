@@ -1,7 +1,6 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.utils.CameraKLogger
-import java.awt.image.BufferedImage
 
 /**
  * What one grab loop reports, on its producer thread. The loop calls each member inside its own
@@ -12,8 +11,11 @@ internal interface GrabLoopListener {
     /** The grabber started; [relaxed] when it opened only at the camera's own mode (§4.1 row 3). */
     fun onOpened(relaxed: Boolean) = Unit
 
-    /** A converted frame from the producer's ring: valid until the next frames replace it. */
-    fun onFrame(image: BufferedImage, captureNanos: Long)
+    /**
+     * A converted frame from the producer's pool, which the producer holds a lease on while this
+     * runs: valid until the next two frames are published, unless the listener [LeasedFrame.retain]s it.
+     */
+    fun onFrame(frame: LeasedFrame)
 
     /** The run ended on its own; [opened] says whether the grabber had started. */
     fun onFailure(failure: Throwable, opened: Boolean)

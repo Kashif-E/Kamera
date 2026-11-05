@@ -13,12 +13,12 @@ import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineRecordingEvent
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.HardwareState
-import com.kashif.cameraK.engine.InactiveFrameSource
 import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewFrame
 import com.kashif.cameraK.engine.TraceNames
 import com.kashif.cameraK.engine.Tracer
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
@@ -30,6 +30,7 @@ import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.InterruptionReason
+import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.recording.SHUTDOWN_STOP_TIMEOUT
@@ -110,6 +111,12 @@ internal val RECOVERY_TIMEOUT: Duration = 10.seconds
  * `Finalized` in [recordingEvents], and is finalized before the camera closes on [stop] or [close]
  * (§2.3 rule 7). A camera switch during one is `Busy`. Until C1' it carries the 1.x facade over
  * itself, [legacyController].
+ *
+ * Frames (D4', §8 desktop): the producer blits each frame once into a leased slot, cropped to the
+ * configured aspect ratio and mirrored for a FRONT camera under `mirrorFrontCamera` (and for every
+ * camera under the facade's horizontal flip), so the preview, stills, recordings and analysis all
+ * see the same pixels. Analysis frames reach [frames]' registrations only while Open, from the
+ * current run, in the configured `analysisFormat`. The recorder writes the leased frames themselves.
  */
 internal class DesktopCameraEngine(
     private val config: CameraConfiguration,
@@ -124,6 +131,8 @@ internal class DesktopCameraEngine(
     /** Where and how stills and recordings are written. */
     internal val media: DesktopMedia = DesktopMedia(),
     facade: (DesktopCameraEngine) -> CameraController = { CameraController(it, config) },
+    /** False for a 1.x controller's own engine, which keeps the camera's own frame (1.x parity). */
+    private val cropToAspectRatio: Boolean = true,
 ) : CameraEngine,
     LegacyControllerAccess {
     private val runtime = environment.runtime
@@ -158,7 +167,8 @@ internal class DesktopCameraEngine(
     // Emitted under lock, so every recording's events are in order and recordings follow start order.
     private val _recordingEvents = MutableSharedFlow<EngineRecordingEvent>(extraBufferCapacity = EVENT_BUFFER)
     override val recordingEvents: Flow<EngineRecordingEvent> = _recordingEvents.asSharedFlow()
-    override val frames: FrameSource = InactiveFrameSource()
+    private val frameSource = DesktopFrameSource(config.analysisFormat, runtime.newWorker, nanoClock)
+    override val frames: FrameSource get() = frameSource
 
     private val previewFrames = MutableStateFlow<PreviewFrame?>(null)
     override val preview: PlatformPreviewSource = object : PlatformPreviewSource {
@@ -262,7 +272,12 @@ internal class DesktopCameraEngine(
         val run = Run(session, switching)
         session.run = run
         val listener = listenerWrapper(RunListener(run))
-        val job = grabber.startRun(scope, source, checkNotNull(session.device), runtime.newWorker, listener)
+        val device = checkNotNull(session.device)
+        val blit = FrameBlit(
+            aspectRatio = config.aspectRatio.takeIf { cropToAspectRatio },
+            mirrored = config.mirrorFrontCamera && device.lens == CameraLens.FRONT,
+        )
+        val job = grabber.startRun(scope, source, device, runtime.newWorker, listener, blit)
         run.job = job
         liveRuns += job
         job.invokeOnCompletion { synchronized(lock) { liveRuns -= job } }
@@ -319,6 +334,7 @@ internal class DesktopCameraEngine(
             closed = true
             pendingCaptures.forEach { it.complete(CameraKResult.Failure(CameraKError.Closed)) }
             pendingCaptures.clear()
+            frameSource.close()
             val live = recording
             session?.let { endLocked(it, keepRun = live != null) }
             session = null
@@ -360,9 +376,10 @@ internal class DesktopCameraEngine(
         }
     }
 
-    private fun onRunFrame(run: Run, image: BufferedImage, captureNanos: Long) = synchronized(lock) {
+    // True when the frame is the current run's and the engine is Open: analysis may have it.
+    private fun onRunFrame(run: Run, image: BufferedImage, captureNanos: Long): Boolean = synchronized(lock) {
         val session = run.session
-        if (!isCurrentRun(run)) return
+        if (!isCurrentRun(run)) return false
         previewFrames.value = PreviewFrame(image, captureNanos)
         session.frames.incrementAndGet()
         // The first frame of this run: the platform confirmed the device it opened (§2.3 rule 1),
@@ -370,7 +387,7 @@ internal class DesktopCameraEngine(
         if (run.firstFrame.complete(true)) {
             _hardware.value = HardwareState(FlashMode.OFF, TorchMode.OFF, session.device, null)
         }
-        if (_state.value == EngineState.Open) return
+        if (_state.value == EngineState.Open) return true
         _state.value = EngineState.Open
         session.outcome.complete(CameraKResult.Success(Unit))
         startWatchdogLocked(session)
@@ -378,6 +395,7 @@ internal class DesktopCameraEngine(
             session.opened = true
             tracer.marker(TraceNames.FIRST_FRAME)
         }
+        true
     }
 
     private fun onRunFailure(run: Run, failure: Throwable) {
@@ -759,7 +777,7 @@ internal class DesktopCameraEngine(
             is CameraKResult.Success -> created.value
         }
         // Readied before it is listed, so a stop or close always reaches it, and releases it if it never ran.
-        live.prepare(scope, runtime.newWorker(RECORDER_THREAD), grabber.frames(), grabber.frameSize)
+        live.prepare(scope, runtime.newWorker(RECORDER_THREAD), grabber::openFeed, grabber.frameSize)
         synchronized(lock) {
             if (closed || startAbandoned) {
                 // As a camera start that a stop met: Closed, and the recording never runs.
@@ -904,7 +922,10 @@ internal class DesktopCameraEngine(
     private inner class RunListener(private val run: Run) : GrabLoopListener {
         override fun onOpened(relaxed: Boolean) = onRunOpened(run, relaxed)
 
-        override fun onFrame(image: BufferedImage, captureNanos: Long) = onRunFrame(run, image, captureNanos)
+        // Analysis runs outside the engine's lock: a synchronous analyzer is app code.
+        override fun onFrame(frame: LeasedFrame) {
+            if (onRunFrame(run, frame.image, frame.captureNanos)) frameSource.deliver(frame)
+        }
 
         override fun onFailure(failure: Throwable, opened: Boolean) = onRunFailure(run, failure)
     }
@@ -947,8 +968,9 @@ internal fun desktopLensInfo(): LensInfo = LensInfo(
  * The capabilities of the desktop cameras [lenses] (the 1.x enumerator's one camera by default):
  * flash and torch OFF only (from `hasFlash`), pause and resume through the common RecordingClock,
  * JPEG and PNG stills without HEIC, and all four video qualities with the quality's bitrate as the
- * encoder's target (D3', §6.3). The recording has the camera's frame size, which `RecordedVideo`
- * reports. Aspect ratios and analysis formats keep the 1.x constructor's values until D4'.
+ * encoder's target (D3', §6.3). The recording has the blitted frame's size, which `RecordedVideo`
+ * reports. Every aspect ratio, 1:1 included, is a crop in the producer's blit, and analysis frames
+ * come in either format (D4').
  */
 internal fun desktopCapabilities(lenses: List<LensInfo> = listOf(desktopLensInfo())): CameraCapabilities {
     val legacy = CameraCapabilities(lenses)
@@ -960,9 +982,9 @@ internal fun desktopCapabilities(lenses: List<LensInfo> = listOf(desktopLensInfo
         supportsPauseResume = true,
         supportedVideoQualities = VideoQuality.entries.toSet(),
         supportsVideoBitrate = true,
-        supportedAspectRatios = legacy.supportedAspectRatios,
+        supportedAspectRatios = AspectRatio.entries.toSet(),
         supportedImageFormats = setOf(ImageFormat.JPEG, ImageFormat.PNG),
-        supportedAnalysisFormats = legacy.supportedAnalysisFormats,
-        supportsSquareCapture = legacy.supportsSquareCapture,
+        supportedAnalysisFormats = FrameFormat.entries.toSet(),
+        supportsSquareCapture = true,
     )
 }

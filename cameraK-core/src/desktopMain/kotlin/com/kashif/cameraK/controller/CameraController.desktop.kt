@@ -283,8 +283,9 @@ actual class CameraController internal constructor(
      */
     actual fun getImageFormat(): ImageFormat = imageFormat
 
-    // Reports the configured ratio so multiplatform UI can size consistently. The desktop capture
-    // path itself renders the webcam's native frame (no ViewPort crop), so it doesn't enforce it.
+    // Reports the configured ratio so multiplatform UI can size consistently. A controller built with
+    // a public constructor keeps the webcam's own frame, as 1.x did; the bridge's engine crops every
+    // frame to its configuration's ratio (D4').
     actual fun getAspectRatio(): AspectRatio = aspectRatio
 
     /**
@@ -532,5 +533,6 @@ private class OwnEngine(
         horizontalFlip = horizontalFlip,
         media = media,
         facade = { facade },
+        cropToAspectRatio = false,
     )
 }

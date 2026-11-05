@@ -19,8 +19,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bytedeco.javacv.FrameRecorder
@@ -41,7 +39,8 @@ internal interface RecordingListener {
 /**
  * One desktop recording (§5). A coroutine of its own, on its own worker thread, owns the recorder
  * from `start()` to `release()`: it is the only code that calls them, so `stop()` never runs while
- * `record()` encodes. It writes the producer's frames stamped by the common [RecordingClock], so a
+ * `record()` encodes. It writes the producer's leased frames (§8 desktop: no copy per frame, each
+ * lease given back once the frame is written), stamped by the common [RecordingClock], so a
  * pause is left out of the file, and enforces both limits itself: `maxDuration` on the recorded
  * time and `maxFileSizeBytes` on the file's length after each frame.
  *
@@ -91,17 +90,17 @@ internal class DesktopRecording(
 
     /**
      * Readies the recording's coroutine in [scope], on [worker], which it closes when it ends: once
-     * [start]ed, it starts the recorder at [frameSize] (the camera's, so no frame is rescaled) and
-     * writes [frames] until the recording ends. Called before the engine lists the recording, so
-     * [requestStop] always reaches it.
+     * [start]ed, it starts the recorder at [frameSize] (the producer's, so no frame is rescaled),
+     * then opens a feed of the producer's frames ([openFeed]) and writes them until the recording
+     * ends. Called before the engine lists the recording, so [requestStop] always reaches it.
      */
     fun prepare(
         scope: CoroutineScope,
         worker: WorkerDispatcher,
-        frames: Flow<CapturedFrame>,
+        openFeed: () -> FrameFeed,
         frameSize: Pair<Int, Int>?,
     ) {
-        job = scope.launch(worker.dispatcher, start = CoroutineStart.LAZY) { run(frames, frameSize) }
+        job = scope.launch(worker.dispatcher, start = CoroutineStart.LAZY) { run(openFeed, frameSize) }
         job.invokeOnCompletion {
             worker.close()
             // Cancelled before it ran (a stop or close during the start): nothing was started.
@@ -159,14 +158,24 @@ internal class DesktopRecording(
         return true
     }
 
-    private suspend fun run(frames: Flow<CapturedFrame>, frameSize: Pair<Int, Int>?) {
+    private suspend fun run(openFeed: () -> FrameFeed, frameSize: Pair<Int, Int>?) {
         ran = true
         var failure: Exception? = null
+        var feed: FrameFeed? = null
         try {
             if (!startRecorder(frameSize)) return
+            val frames = openFeed().also { feed = it }
+            var limited = false
+            while (!limited) {
+                val frame = frames.next() ?: break
+                limited = try {
+                    write(frame)
+                } finally {
+                    frame.release()
+                }
+            }
             // Frames ending before a limit or a stop is the camera's cut.
-            val ended = frames.firstOrNull { write(it) }
-            if (ended == null) endReason.compareAndSet(null, RecordingEndReason.INTERRUPTED)
+            if (!limited) endReason.compareAndSet(null, RecordingEndReason.INTERRUPTED)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -174,6 +183,7 @@ internal class DesktopRecording(
             failure = e
             endReason.compareAndSet(null, RecordingEndReason.ERROR)
         } finally {
+            feed?.cancel()
             if (started.isCompleted && clock != null) withContext(NonCancellable) { finish(failure) }
         }
     }
@@ -214,10 +224,10 @@ internal class DesktopRecording(
         JavaCvErrorMapper.recordingFailure(e, playable = false, path, diskFull(File(path).absoluteFile.parentFile))
             ?: CameraKError.Internal(e)
 
-    /** Writes [captured] if it belongs to the recording; true when a limit ends the recording. */
-    private fun write(captured: CapturedFrame): Boolean {
+    /** Writes [frame] if it belongs to the recording; true when a limit ends the recording. */
+    private fun write(frame: LeasedFrame): Boolean {
         // Frames captured while paused, or not after the previous one, have no timestamp.
-        val timestamp = clock?.timestampMicros(captured.captureNanos) ?: return false
+        val timestamp = clock?.timestampMicros(frame.captureNanos) ?: return false
         val maxDuration = config.maxDuration?.takeIf { it.isPositive() }
         if (maxDuration != null && timestamp >= maxDuration.inWholeMicroseconds) {
             endReason.compareAndSet(null, RecordingEndReason.MAX_DURATION)
@@ -230,7 +240,7 @@ internal class DesktopRecording(
         if (frameNumber <= lastFrameNumber) return false
         lastFrameNumber = frameNumber
         recorder.timestamp = timestamp
-        recorder.record(converter.convert(captured.image))
+        recorder.record(converter.convert(frame.image))
         framesWritten++
         lastTimestampMicros = timestamp
         val maxSize = config.maxFileSizeBytes?.takeIf { it > 0 }
