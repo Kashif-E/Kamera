@@ -20,6 +20,7 @@ import platform.CoreVideo.CVPixelBufferRelease
 import platform.CoreVideo.CVPixelBufferUnlockBaseAddress
 import platform.CoreVideo.kCVPixelBufferLock_ReadOnly
 import platform.CoreVideo.kCVPixelFormatType_OneComponent8
+import platform.ImageIO.kCGImagePropertyOrientationRight
 import platform.Vision.VNBarcodeSymbologyEAN13
 import platform.Vision.VNBarcodeSymbologyQR
 import kotlin.math.abs
@@ -46,6 +47,27 @@ class VisionDecoderTest {
         request.regionOfInterest.useContents {
             val actual = listOf(origin.x, origin.y, size.width, size.height)
             val expected = listOf(0.1, 0.1, 0.5, 0.8)
+            assertTrue(
+                actual.zip(expected).all { (a, e) ->
+                    abs(a - e) < 1e-9
+                },
+                "region of interest $actual, not $expected",
+            )
+        }
+    }
+
+    @Test
+    fun aRotatedFrameIsReadUprightWithItsRegionOfInterestInTheUprightImage() {
+        val decoder = VisionBarcodeDecoder(setOf(BarcodeFormat.QR_CODE))
+        val image = LumaImage(ByteArray(100 * 50), 100, 50, FrameRect(10, 5, 60, 45), rotationDegrees = 90)
+
+        val request = decoder.request(image)
+
+        assertEquals(kCGImagePropertyOrientationRight, decoder.orientation(image), "orientation")
+        // Upright, the frame is 50 x 100 and the area [5, 10, 45, 60).
+        request.regionOfInterest.useContents {
+            val actual = listOf(origin.x, origin.y, size.width, size.height)
+            val expected = listOf(0.1, 0.4, 0.8, 0.5)
             assertTrue(
                 actual.zip(expected).all { (a, e) ->
                     abs(a - e) < 1e-9

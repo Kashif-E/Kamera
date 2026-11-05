@@ -175,6 +175,19 @@ class ZxingDecoderTest {
     }
 
     @Test
+    fun aPortrait1DBarcodeDecodesByTheFramesRotation() {
+        // #168: a barcode printed across the scene, in a portrait frame that needs 90 degrees clockwise.
+        val frame = codeScene("PORTRAIT-128", 480, 240, format = ZxingFormat.CODE_128).turnedAnticlockwise()
+
+        val found = decoder(setOf(BarcodeFormat.CODE_128)).decode(frame.lumaImage(rotationDegrees = 90))
+
+        assertEquals(listOf("PORTRAIT-128"), found.map { it.rawValue })
+        val box = assertNotNull(found.single().boundingBox).edges()
+        assertTrue(box[3] - box[1] > box[2] - box[0], "the code runs down the portrait frame: $box")
+        assertTrue(box[0] >= 0 && box[1] >= 0 && box[2] <= 240 && box[3] <= 480, "the box is inside the frame: $box")
+    }
+
+    @Test
     fun aQrCodesBytesAreItsByteSegments() {
         val found = decoder().decode(codeScene("héllo", 240, 240).lumaImage()).single()
 

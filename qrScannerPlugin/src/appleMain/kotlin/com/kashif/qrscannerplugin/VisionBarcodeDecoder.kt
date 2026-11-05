@@ -30,6 +30,7 @@ import platform.CoreVideo.CVPixelBufferUnlockBaseAddress
 import platform.CoreVideo.kCVPixelFormatType_OneComponent8
 import platform.CoreVideo.kCVReturnSuccess
 import platform.Foundation.NSError
+import platform.ImageIO.CGImagePropertyOrientation
 import platform.ImageIO.kCGImagePropertyOrientationUp
 import platform.Vision.VNBarcodeObservation
 import platform.Vision.VNBarcodeSymbologyAztec
@@ -99,6 +100,9 @@ internal class VisionBarcodeDecoder(formats: Set<BarcodeFormat>) : BarcodeDecode
             ),
         )
     }
+
+    /** The orientation Vision reads [image] in. */
+    fun orientation(image: LumaImage): CGImagePropertyOrientation = kCGImagePropertyOrientationUp
 
     /** A one-plane 8-bit buffer holding [image]'s luma, which the caller releases; null when it cannot be made. */
     fun lumaPixelBuffer(image: LumaImage): CVPixelBufferRef? = memScoped {
