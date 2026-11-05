@@ -1404,7 +1404,7 @@ internal class AppleCameraEngine(
     private fun resolve(selection: CameraSelection): CaptureDeviceOps? = when (selection) {
         is CameraSelection.ById -> custom.findCameraById(selection.id)
         is CameraSelection.ByLens -> custom.findCamera(selection.lens, selection.deviceType)
-        is CameraSelection.Default -> null
+        is CameraSelection.Default -> custom.findCamera(CameraLens.BACK, selection.deviceType)
     }
 
     /**
@@ -1549,10 +1549,17 @@ internal class AppleCameraEngine(
 
 private fun CaptureDeviceOps.lens(): CameraLens = if (isFront) CameraLens.FRONT else CameraLens.BACK
 
-private fun CameraSelection.lens(): CameraLens? = (this as? CameraSelection.ByLens)?.lens
+private fun CameraSelection.lens(): CameraLens? = when (this) {
+    is CameraSelection.ByLens -> lens
+    is CameraSelection.Default -> CameraLens.BACK
+    is CameraSelection.ById -> null
+}
 
-private fun CameraSelection.deviceType(): CameraDeviceType =
-    (this as? CameraSelection.ByLens)?.deviceType ?: CameraDeviceType.DEFAULT
+private fun CameraSelection.deviceType(): CameraDeviceType = when (this) {
+    is CameraSelection.ByLens -> deviceType
+    is CameraSelection.Default -> deviceType
+    is CameraSelection.ById -> CameraDeviceType.DEFAULT
+}
 
 internal fun FlashMode.toAVCaptureFlashMode() = when (this) {
     FlashMode.ON -> AVCaptureFlashModeOn

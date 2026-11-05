@@ -43,7 +43,8 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * A scripted camera engine for tests: the test plays the platform. It follows the engine contract
  * (`CameraEngine`'s KDoc) and passes the contract kit, so a holder or plugin test over it sees what
- * a real engine would do.
+ * a real engine would do. A start on the platform default camera (a configuration with no lens)
+ * opens what the BACK lens opens, as Android and iOS do.
  *
  * Nothing in its scripting surface names an opt-in type, so app tests use it without `@OptIn`.
  * Calling the engine members whose signatures name engine types (`state`, `hardware`, `start`,
@@ -585,11 +586,15 @@ public class FakeCameraEngine(
                 }
                     ?: facing.firstOrNull()
             }
-            is CameraSelection.Default -> null
+            is CameraSelection.Default -> resolve(CameraSelection.ByLens(CameraLens.BACK, selection.deviceType))
         }
     }
 
-    private fun lensOf(selection: CameraSelection): CameraLens? = (selection as? CameraSelection.ByLens)?.lens
+    private fun lensOf(selection: CameraSelection): CameraLens? = when (selection) {
+        is CameraSelection.ByLens -> selection.lens
+        is CameraSelection.Default -> CameraLens.BACK
+        is CameraSelection.ById -> null
+    }
 
     private fun markStarted(active: ActiveRecording) {
         _recordingEvents.tryEmit(EngineRecordingEvent.Started(active.path, active.hasAudio))

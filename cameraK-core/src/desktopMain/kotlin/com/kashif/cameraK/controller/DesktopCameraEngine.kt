@@ -259,15 +259,13 @@ internal class DesktopCameraEngine(
 
     // ById must name an enumerated device (§4.1 row 2). ByLens takes the first device facing that
     // way, external cameras included, else the first device: a webcam faces no particular way, and
-    // 1.x opened the one camera whatever lens was configured (§2.4 desktop).
+    // 1.x opened the one camera whatever lens was configured (§2.4 desktop). Default takes the system
+    // default device, which every DesktopDevices list puts first (§6.1 "Default lens").
     private fun select(capabilities: CameraCapabilities, selection: CameraSelection): LensInfo? = when (selection) {
         is CameraSelection.ById -> capabilities.allLenses.firstOrNull { it.id == selection.id }
         is CameraSelection.ByLens -> capabilities.allLenses.firstOrNull { it.lens == selection.lens }
             ?: capabilities.allLenses.firstOrNull()
-        is CameraSelection.Default -> select(
-            capabilities,
-            CameraSelection.ByLens(CameraLens.BACK, selection.deviceType),
-        )
+        is CameraSelection.Default -> capabilities.allLenses.firstOrNull()
     }
 
     private fun launchRunLocked(session: Session, switching: Boolean = false): Run {

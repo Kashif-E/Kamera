@@ -669,10 +669,14 @@ internal class AndroidCameraEngine(
     private fun resolve(selection: CameraSelection): ResolvedCamera? = when (selection) {
         is CameraSelection.ByLens -> selectorResolver.resolveFacing(selection.lens, selection.deviceType)
         is CameraSelection.ById -> selectorResolver.resolveId(selection.id)
-        is CameraSelection.Default -> null
+        is CameraSelection.Default -> selectorResolver.resolveFacing(CameraLens.BACK, selection.deviceType)
     }
 
-    private fun lensOf(selection: CameraSelection): CameraLens? = (selection as? CameraSelection.ByLens)?.lens
+    private fun lensOf(selection: CameraSelection): CameraLens? = when (selection) {
+        is CameraSelection.ByLens -> selection.lens
+        is CameraSelection.Default -> CameraLens.BACK
+        is CameraSelection.ById -> null
+    }
 
     /** Binds the use cases on [resolved]; null when bound, else the error. Main thread. */
     private fun bind(resolved: ResolvedCamera, binding: CameraBinding): CameraKError? {
