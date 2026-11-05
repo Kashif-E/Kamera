@@ -923,8 +923,8 @@ internal class AndroidCameraEngine(
         boundCamera != null && !videoRecorder.isRecording && binder.viewPortOrientationChanged()
 
     /**
-     * Rebinds the camera when the display rotation flips between portrait and landscape, so the
-     * (immutable) ViewPort is rebuilt with the matching Rational.
+     * Rebinds the camera when the display flips between portrait and landscape or its rotation turns
+     * a quarter, so the (immutable) ViewPort is rebuilt with the matching Rational and rotation.
      */
     internal fun rebindIfViewPortOrientationChanged() {
         if (binder.camera == null || !binder.viewPortOrientationChanged()) return

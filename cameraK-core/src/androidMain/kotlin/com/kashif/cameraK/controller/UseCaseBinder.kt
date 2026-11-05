@@ -51,10 +51,15 @@ internal class UseCaseBinder(
     // the whole process, so rebinds and teardown unbind exactly these, never unbindAll().
     private val boundUseCases = linkedSetOf<UseCase>()
 
-    // Portrait/landscape category of the display rotation used to build the current ViewPort. The
-    // ViewPort is immutable once bound, so when the display flips category we must rebind to rebuild
-    // it — otherwise the capture crop stays at the old orientation (reintroduces #136 after rotation).
+    // Portrait or landscape, and whether the rotation was a quarter turn, for the display the current
+    // ViewPort was built on. The ViewPort is immutable once bound, so when either changes we must
+    // rebind to rebuild it — otherwise the capture crop stays at the old orientation (reintroduces
+    // #136 after rotation). On one display the two change together; a move to a panel of the other
+    // natural orientation can change the quarter alone, and CameraX maps the ViewPort's ratio into
+    // sensor space by its rotation, so that too crops the wrong orientation (#182). A half turn
+    // changes neither and keeps the ViewPort: the centred crop is the same.
     private var lastViewPortPortrait: Boolean? = null
+    private var lastViewPortQuarterTurned: Boolean? = null
 
     // Display events, not the accelerometer, drive the ViewPort and the capture rotation: the
     // accelerometer crosses a bucket hundreds of ms before the display rotates, and a host that
@@ -141,6 +146,7 @@ internal class UseCaseBinder(
         val rotation = displayRotation()
         val portrait = displayIsPortrait()
         lastViewPortPortrait = portrait
+        lastViewPortQuarterTurned = rotation.isQuarterTurn()
         val rational = when (aspectRatio) {
             AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 ->
                 if (portrait) Rational(9, 16) else Rational(16, 9)
@@ -154,14 +160,14 @@ internal class UseCaseBinder(
     }
 
     /**
-     * Whether the display rotation has flipped between portrait and landscape since the bound
-     * ViewPort was built, so the (immutable) ViewPort needs a rebind. Gated on the *display*
-     * rotation: an activity locked to one orientation never rotates the display, so it never
+     * Whether the display has flipped between portrait and landscape, or its rotation by a quarter
+     * turn, since the bound ViewPort was built, so the (immutable) ViewPort needs a rebind. Gated on
+     * the *display*: an activity locked to one orientation never rotates the display, so it never
      * needlessly rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
      */
     fun viewPortOrientationChanged(): Boolean {
-        val portrait = displayIsPortrait()
-        return lastViewPortPortrait != null && portrait != lastViewPortPortrait
+        val built = lastViewPortPortrait ?: return false
+        return displayIsPortrait() != built || displayRotation().isQuarterTurn() != lastViewPortQuarterTurned
     }
 
     /**
@@ -174,8 +180,7 @@ internal class UseCaseBinder(
         val display = currentDisplay() ?: return true
         val mode = display.mode
         val naturalPortrait = mode.physicalHeight >= mode.physicalWidth
-        val quarterTurned = display.rotation == Surface.ROTATION_90 || display.rotation == Surface.ROTATION_270
-        return naturalPortrait != quarterTurned
+        return naturalPortrait != display.rotation.isQuarterTurn()
     }
 
     /** The rotation of the display the preview is attached on, else the default display's. */
@@ -209,6 +214,8 @@ internal class UseCaseBinder(
         (context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager)?.unregisterDisplayListener(listener)
     }
 }
+
+private fun Int.isQuarterTurn(): Boolean = this == Surface.ROTATION_90 || this == Surface.ROTATION_270
 
 private fun AspectRatio.toCameraXAspectRatioStrategy(): AspectRatioStrategy = when (this) {
     AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
