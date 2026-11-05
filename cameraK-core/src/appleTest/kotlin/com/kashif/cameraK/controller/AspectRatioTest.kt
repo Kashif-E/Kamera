@@ -1,9 +1,10 @@
-@file:OptIn(CameraKEngineApi::class, ExperimentalForeignApi::class)
+@file:OptIn(CameraKEngineApi::class, ExperimentalForeignApi::class, InternalCameraKApi::class)
 
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
+import com.kashif.cameraK.engine.layOutPreviewLayer
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
@@ -18,9 +19,9 @@ import platform.AVFoundation.AVCaptureSessionPresetPhoto
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
 import platform.CoreGraphics.CGRect
-import platform.QuartzCore.CALayer
 import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSData
+import platform.QuartzCore.CALayer
 import platform.UIKit.UIInterfaceOrientation
 import platform.UIKit.UIInterfaceOrientationLandscapeRight
 import platform.UIKit.UIInterfaceOrientationPortrait
@@ -146,7 +147,6 @@ class AspectRatioTest {
      * host's bounds, the layer's superlayer.
      */
     @Test
-    @OptIn(InternalCameraKApi::class)
     fun theFacadesPreviewFillsTheSameBox() = driver.runCase {
         val engine = driver.createEngine(CameraConfiguration(aspectRatio = AspectRatio.RATIO_16_9))
         val facade = driver.engine.legacyController

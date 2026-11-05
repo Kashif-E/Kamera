@@ -1,4 +1,4 @@
-@file:OptIn(CameraKEngineApi::class)
+@file:OptIn(CameraKEngineApi::class, InternalCameraKApi::class)
 
 package com.kashif.cameraK.compose
 
@@ -9,8 +9,10 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitView
 import com.kashif.cameraK.engine.PlatformPreviewSource
+import com.kashif.cameraK.engine.layOutPreviewLayer
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readValue
 import platform.AVFoundation.AVCaptureVideoPreviewLayer

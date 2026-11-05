@@ -1,13 +1,15 @@
-@file:OptIn(CameraKEngineApi::class, ExperimentalForeignApi::class)
+@file:OptIn(CameraKEngineApi::class, ExperimentalForeignApi::class, InternalCameraKApi::class)
 
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
+import com.kashif.cameraK.engine.layOutPreviewLayer
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.test.TestScope
 import platform.AVFoundation.AVCaptureVideoOrientationLandscapeRight

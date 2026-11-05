@@ -16,6 +16,7 @@ import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.engine.InactiveFrameSource
 import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.PlatformPreviewSource
+import com.kashif.cameraK.engine.PreviewLayerLayout
 import com.kashif.cameraK.engine.TraceNames
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
@@ -291,11 +292,11 @@ internal class AppleCameraEngine(
         }
     }
 
-    override val preview: PlatformPreviewSource = object : PlatformPreviewSource {
+    override val preview: PlatformPreviewSource = object : PlatformPreviewSource, PreviewLayerLayout {
         override fun createPreviewLayer(): AVCaptureVideoPreviewLayer {
             val avSession = session?.avSession
             val layer = avSession?.let { AVCaptureVideoPreviewLayer(session = it) } ?: AVCaptureVideoPreviewLayer()
-            // ResizeAspectFill inside a box of the configured aspect ratio (layOutPreviewLayer): the frame
+            // ResizeAspectFill inside a box of the configured aspect ratio (layOutPreview): the frame
             // is cropped as the still is, so the preview shows what gets captured (#119, w6 decision G1).
             layer.videoGravity = AVLayerVideoGravityResizeAspectFill
             custom.adoptPreviewLayer(layer)
@@ -308,18 +309,25 @@ internal class AppleCameraEngine(
             return layer
         }
 
-        /**
-         * Fills a centred box of the configured aspect ratio, and turns the layer: by the rotation
-         * coordinator's preview angle when it drives this layer, otherwise to the interface.
-         */
-        override fun layOutPreviewLayer(
+        override fun layOut(
             layer: AVCaptureVideoPreviewLayer,
             bounds: CValue<CGRect>,
             interfaceOrientation: UIInterfaceOrientation?,
-        ) {
-            layer.setFrame(previewFrame(bounds, config.aspectRatio, interfaceOrientation))
-            turnPreview(layer, interfaceOrientation?.toVideoOrientation())
-        }
+        ) = layOutPreview(layer, bounds, interfaceOrientation)
+    }
+
+    /**
+     * Main thread: [layer], in a host of [bounds] under an interface in [interfaceOrientation], fills a
+     * centred box of the configured aspect ratio (w6 decision G1) and turns: by the rotation
+     * coordinator's preview angle when it drives this layer, otherwise to the interface.
+     */
+    internal fun layOutPreview(
+        layer: AVCaptureVideoPreviewLayer,
+        bounds: CValue<CGRect>,
+        interfaceOrientation: UIInterfaceOrientation?,
+    ) {
+        layer.setFrame(previewFrame(bounds, config.aspectRatio, interfaceOrientation))
+        turnPreview(layer, interfaceOrientation?.toVideoOrientation())
     }
 
     override val legacyController: CameraController

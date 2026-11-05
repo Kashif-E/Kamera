@@ -1,4 +1,4 @@
-@file:OptIn(CameraKEngineApi::class)
+@file:OptIn(CameraKEngineApi::class, ExperimentalNativeApi::class)
 
 package com.kashif.cameraK.controller
 
@@ -29,7 +29,6 @@ import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.update
-import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
@@ -43,7 +42,6 @@ import platform.AVFoundation.AVCaptureMetadataOutputObjectsDelegateProtocol
 import platform.AVFoundation.AVCaptureOutput
 import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
-import platform.CoreGraphics.CGRect
 import platform.Foundation.NSData
 import platform.Foundation.NSDataWritingAtomic
 import platform.Foundation.NSError
@@ -55,6 +53,8 @@ import platform.darwin.dispatch_get_global_queue
 import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_queue_create
 import kotlin.concurrent.Volatile
+import kotlin.experimental.ExperimentalNativeApi
+import kotlin.native.ref.WeakReference
 
 /**
  * The 1.x iOS camera, kept until 2.0's C1' as a facade over an [AppleCameraEngine]. It is a plain
@@ -271,32 +271,30 @@ actual class CameraController private constructor(
      * CameraPreviewView hosts it. Main thread only.
      */
     @InternalCameraKApi
-    fun createPreviewLayer(): AVCaptureVideoPreviewLayer = engine.preview.createPreviewLayer()
+    fun createPreviewLayer(): AVCaptureVideoPreviewLayer =
+        engine.preview.createPreviewLayer().also { hostedLayers += WeakReference(it) }
 
     /**
      * The view hosting the preview laid out again, under an interface in [orientation] (null when it
-     * has no window scene yet): the preview turns to the interface. Main thread only.
-     */
-    @InternalCameraKApi
-    fun previewLayoutChanged(orientation: UIInterfaceOrientation?) {
-        hostInterfaceOrientation = orientation?.toVideoOrientation()
-        applyPreviewOrientation()
-    }
-
-    /**
-     * Lays out [layer], one [createPreviewLayer] made, in a host view whose bounds are [bounds] under
-     * an interface in [orientation], as the engine's own preview does. Main thread only.
+     * has no window scene yet). Each layer [createPreviewLayer] made fills a centred box of the
+     * configured aspect ratio inside its host, the layer's superlayer, as the engine's own preview
+     * does (w6 decision G1), and the preview turns to the interface, or by the rotation coordinator
+     * from iOS 17. Main thread only.
      */
     @InternalCameraKApi
     @OptIn(ExperimentalForeignApi::class)
-    fun layOutPreviewLayer(
-        layer: AVCaptureVideoPreviewLayer,
-        bounds: CValue<CGRect>,
-        orientation: UIInterfaceOrientation?,
-    ) {
+    fun previewLayoutChanged(orientation: UIInterfaceOrientation?) {
         hostInterfaceOrientation = orientation?.toVideoOrientation()
-        engine.preview.layOutPreviewLayer(layer, bounds, orientation)
+        hostedLayers.removeAll { it.value == null }
+        hostedLayers.forEach { reference ->
+            val layer = reference.value ?: return@forEach
+            layer.superlayer?.let { host -> engine.layOutPreview(layer, host.bounds, orientation) }
+        }
+        applyPreviewOrientation()
     }
+
+    /** The layers [createPreviewLayer] made, for their hosts' layouts. Main thread only. */
+    private val hostedLayers = mutableListOf<WeakReference<AVCaptureVideoPreviewLayer>>()
 
     /** The interface orientation the preview's host last reported. Main thread only. */
     private var hostInterfaceOrientation: AVCaptureVideoOrientation? = null
