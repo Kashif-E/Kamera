@@ -244,7 +244,9 @@ class RetainedHolderTest {
         val attachments = mutableListOf<Pair<CountingPlugin, StateFlow<CameraKState>>>()
         launch {
             // A recreated composition remembers new instances, as an app's remembered plugins do.
-            val plugins = remember { listOf(CountingPlugin("saver", attachments), CountingPlugin("qr", attachments)) }
+            val plugins = remember<List<CameraKPlugin>> {
+                listOf(CountingPlugin("saver", attachments), CountingPlugin("qr", attachments))
+            }
             Remembered(plugins = plugins)
         }
         val first = current
