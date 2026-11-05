@@ -92,6 +92,41 @@ class DesktopFacadeRecordingOutcomeTest {
         }
     }
 
+    // Characterization: passes before the fix, which restores the claim. The mutation M21 "a cancelled
+    // stop drops the claim" fails it.
+    @Test
+    fun aCancelledFacadeStopLeavesTheRecordingForTheNextStop() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val steps = DesktopRecordingSteps(this, rig)
+        val sut = rig.engine()
+        val facade = sut.legacyController
+        try {
+            steps.open(sut)
+            steps.at(1_000)
+            val path = facadeStart(facade, rig, steps.video())
+            steps.frameAt(1_040)
+            steps.frameAt(1_080)
+            val recorder = rig.recorders.single().apply { holdStop = true }
+
+            // The engine's stop is finalizing, held in the recorder's stop(), when the caller gives up.
+            val cancelled = async { facade.stopRecording() }
+            rig.settle()
+            assertEquals(1, recorder.stopCount.get(), "the cancelled stop reached the recorder")
+            cancelled.cancel()
+            rig.settle()
+            recorder.finishStop()
+            rig.settle()
+            assertTrue(cancelled.isCancelled, "the first stop was cancelled")
+
+            assertEquals(VideoCaptureResult.Success(path, 80), facadeStop(facade, rig), "the stop after it")
+            val again = assertIs<VideoCaptureResult.Error>(facadeStop(facade, rig), "a third stop")
+            assertEquals("No active recording", again.exception.message)
+        } finally {
+            facade.cleanup()
+            rig.settle()
+        }
+    }
+
     // A recording the holder started through the engine is the holder's to report.
     @Test
     fun anEngineRecordingTheFacadeDidNotStartIsNotTheFacadeStopsResult() = runTest {

@@ -12,6 +12,7 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -26,6 +27,7 @@ import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import javax.imageio.ImageIO
 import kotlin.test.Test
@@ -178,6 +180,68 @@ class DesktopCaptureOutputTest {
             sut.close()
             rig.settle()
             rig.home.deleteRecursively()
+        }
+    }
+
+    // Characterization: passes before the fix, which deletes it. The mutation M32 "a still finished
+    // after close is kept" fails it.
+    @Test
+    fun aStillFinishedAfterCloseIsNotKept() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        lateinit var sut: DesktopCameraEngine
+        rig.writeCapture = { image, format, file ->
+            // The engine closes while the still is being written.
+            sut.close()
+            writeImage(image, format, file)
+        }
+        sut = rig.engine()
+        try {
+            DesktopRecordingSteps(this, rig).open(sut)
+            val pending = async { sut.capture() }
+            rig.settle()
+            rig.camera.deliverFrame()
+            rig.settle()
+
+            assertEquals(CameraKError.Closed, assertIs<CameraKResult.Failure>(pending.await()).error, "the capture")
+            assertEquals(emptyList(), rig.home.walk().filter { it.isFile }.toList(), "files kept after close")
+        } finally {
+            sut.close()
+            rig.settle()
+            rig.home.deleteRecursively()
+        }
+    }
+
+    // Characterization: passes before the fix, which logs it. The mutation M37 "the ignored directory
+    // is not logged" fails it.
+    @Test
+    fun aGalleryDirectoryIsLoggedOnceAtWarningAndDocumentsNotAtAll() = runTest {
+        val warnings = CopyOnWriteArrayList<String>()
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { level, _, message, _ -> if (level == CameraKLogger.Level.WARN) warnings += message }
+        try {
+            for (directory in Directory.entries) {
+                warnings.clear()
+                val rig = DesktopEngineRig(testScheduler)
+                val sut = rig.engine(CameraConfiguration(directory = directory))
+                try {
+                    DesktopRecordingSteps(this, rig).open(sut)
+                    engineCapture(rig, sut)
+                    engineCapture(rig, sut)
+                } finally {
+                    sut.close()
+                    rig.settle()
+                    rig.home.deleteRecursively()
+                }
+                val expected = if (directory == Directory.DOCUMENTS) 0 else 1
+                assertEquals(
+                    expected,
+                    warnings.count { "Directory.$directory" in it },
+                    "warnings for Directory.$directory over two captures: $warnings",
+                )
+            }
+        } finally {
+            CameraKLogger.sink = null
+            CameraKLogger.enabled = false
         }
     }
 
