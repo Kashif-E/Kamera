@@ -7,17 +7,21 @@ import com.kashif.cameraK.engine.TraceNames
 import com.kashif.cameraK.engine.Tracer
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import platform.Foundation.NSLock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * A lens switch is one `CameraK.lensSwitch` interval, from the engine's selectCamera to the new input
  * live: it ends after the swap's commitConfiguration, with the session running on the new camera, and
- * before selectCamera returns. The session has no video data output before I4', so the interval does
- * not wait for a frame. A refused input ends the interval too, marked failed, so none is left open.
+ * before selectCamera returns, when no video data output is attached. With the frame output attached
+ * (I4') the interval ends at the first sample buffer whose input is the new camera's, and a switch
+ * whose first frame never comes ends at the engine's stop, marked noFrame. A refused input ends the
+ * interval too, marked failed, so none is left open.
  */
 class LensSwitchSignpostTest {
     /** Records the lens-switch events, and at each interval's end what the session then had. */
@@ -87,5 +91,39 @@ class LensSwitchSignpostTest {
             "a refused switch's interval when selectCamera returned",
         )
         engine.close()
+    }
+
+    @Test
+    fun intervalEndsAtTheFirstSampleBufferFromTheNewDevice() = driver.runCase {
+        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        tracer.atEnd = { "at a frame" }
+
+        assertIs<CameraKResult.Success<*>>(engine.selectCamera(CameraSelection.ById(AppleEngineDriver.FRONT_ID)))
+        assertEquals(listOf("begin"), tracer.events, "the interval ended before any frame from the new camera")
+        assertTrue(driver.deliverFrame(driver.back.input), "no frame output took the previous camera's buffer")
+        assertEquals(listOf("begin"), tracer.events, "a buffer still arriving from the previous camera ended it")
+        assertTrue(driver.deliverFrame(driver.front.input), "no frame output took the new camera's buffer")
+        assertEquals(listOf("begin", "end at a frame"), tracer.events, "the first buffer from the new camera")
+        assertTrue(driver.deliverFrame(driver.front.input), "no frame output took the next buffer")
+        assertEquals(listOf("begin", "end at a frame"), tracer.events, "a later buffer ended the interval again")
+        engine.close()
+    }
+
+    @Test
+    fun aSwitchWhoseFirstFrameNeverComesEndsAtStopMarkedNoFrame() = driver.runCase {
+        val engine = driver.createEngine(CameraConfiguration(frameAnalysis = true))
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        tracer.atEnd = { "at stop" }
+
+        assertIs<CameraKResult.Success<*>>(engine.selectCamera(CameraSelection.ById(AppleEngineDriver.FRONT_ID)))
+        assertEquals(listOf("begin"), tracer.events, "the interval ended before any frame from the new camera")
+        engine.stop()
+        val ended = listOf("begin", "mark ${AppleTraceNames.LENS_SWITCH_NO_FRAME}", "end at stop")
+        assertEquals(ended, tracer.events, "a switch with no frame from the new camera, at the engine's stop")
+        engine.close()
+        assertEquals(ended, tracer.events, "the close ended the interval again")
     }
 }

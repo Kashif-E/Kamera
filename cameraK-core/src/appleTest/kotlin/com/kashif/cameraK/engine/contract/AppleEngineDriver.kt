@@ -1,4 +1,4 @@
-@file:OptIn(CameraKEngineApi::class)
+@file:OptIn(CameraKEngineApi::class, ExperimentalForeignApi::class)
 
 package com.kashif.cameraK.engine.contract
 
@@ -16,7 +16,9 @@ import com.kashif.cameraK.controller.PhotoDimensions
 import com.kashif.cameraK.controller.RotationSourceFactory
 import com.kashif.cameraK.controller.VideoRotation
 import com.kashif.cameraK.controller.captureInputWithoutCamera
+import com.kashif.cameraK.controller.defaultLuma
 import com.kashif.cameraK.controller.orientedJpeg
+import com.kashif.cameraK.controller.sampleBuffer420f
 import com.kashif.cameraK.controller.spinUntil
 import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.engine.CameraEngine
@@ -27,10 +29,15 @@ import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.InterruptionReason
+import com.kashif.cameraK.frames.CoreVideoPixelBufferLocker
+import com.kashif.cameraK.frames.FrameFormat
+import com.kashif.cameraK.frames.PixelBufferLocker
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.atomicfu.atomic
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
@@ -42,6 +49,7 @@ import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCaptureFlashModeAuto
 import platform.AVFoundation.AVCaptureFlashModeOff
 import platform.AVFoundation.AVCaptureFlashModeOn
+import platform.AVFoundation.AVCaptureInput
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonAudioDeviceInUseByAnotherClient
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonVideoDeviceInUseByAnotherClient
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonVideoDeviceNotAvailableDueToSystemPressure
@@ -54,6 +62,7 @@ import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVErrorDeviceAlreadyUsedByAnotherSession
 import platform.AVFoundation.AVErrorDeviceWasDisconnected
+import platform.CoreFoundation.CFRelease
 import platform.UIKit.UIDeviceOrientation
 import kotlin.concurrent.Volatile
 
@@ -89,11 +98,14 @@ internal class AppleEngineDriver(
     private val hasUsageDescription: (String) -> Boolean = { true },
     /** The rotation coordinators the engine makes; null keeps the production factory, which makes none for a fake camera. */
     private val rotationSources: RotationSourceFactory? = null,
+    /** Locks analysis frames' pixel buffers; null keeps Core Video's. */
+    private val pixelBufferLocker: PixelBufferLocker? = null,
 ) : ThrowingCallbackDriver,
     PreOpenInterruptionDriver,
     ReadBackFlashDriver,
     CaptureDriver,
-    RecordingDriver {
+    RecordingDriver,
+    UnsupportedConfigurationDriver {
     val back = FakeDevice(
         isFront = false,
         uniqueId = BACK_ID,
@@ -259,6 +271,7 @@ internal class AppleEngineDriver(
                 }
             },
             rotationSources = rotationSources ?: CoordinatorRotationSources,
+            pixelBufferLocker = pixelBufferLocker ?: CoreVideoPixelBufferLocker,
         ) {
             enumerations.incrementAndGet()
             lenses
@@ -333,6 +346,33 @@ internal class AppleEngineDriver(
     override fun deliverRecordingFinalized() {
         movieRecorder.starts.lastOrNull()?.let { movieRecorder.reportFinished(it, error = null) }
     }
+
+    /** iOS analysis frames are 420f: an RGBA_8888 session fails its start (design §6.1, §8). */
+    override fun unsupportedConfiguration(): UnsupportedCase =
+        UnsupportedCase(CameraConfiguration(analysisFormat = FrameFormat.RGBA_8888), CameraFeature.ANALYSIS_FORMAT)
+
+    /**
+     * AVFoundation delivers one 420f sample buffer (see [sampleBuffer420f]) to the session's video data
+     * output, captured through [input]: the camera input in use unless given. Returns whether an
+     * attached frame output took it.
+     */
+    fun deliverFrame(
+        input: AVCaptureInput? = (custom.currentDevice as? FakeDevice)?.input,
+        width: Int = 8,
+        height: Int = 4,
+        timestampNanos: Long = 1_000_000,
+        luma: (Int, Int) -> Int = defaultLuma(width),
+    ): Boolean {
+        val buffer = sampleBuffer420f(width, height, timestampNanos, luma)
+        try {
+            return session.deliverSampleBuffer(buffer, input)
+        } finally {
+            CFRelease(buffer)
+        }
+    }
+
+    /** AVFoundation drops a late sample buffer at the frame output; false when none is attached. */
+    fun dropFrame(): Boolean = session.dropSampleBuffer()
 
     // The fake photo output never finishes a capture on its own, so every capture is held.
     override fun holdNextCapture() = Unit

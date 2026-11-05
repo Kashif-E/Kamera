@@ -15,6 +15,12 @@ import kotlinx.cinterop.ExperimentalForeignApi
 internal object AppleTraceNames {
     /** Marks a lens switch whose input the session refused, inside its `CameraK.lensSwitch` interval. */
     const val LENS_SWITCH_FAILED = "CameraK.lensSwitch.failed"
+
+    /**
+     * Marks a lens switch whose first frame from the new camera never came, inside its
+     * `CameraK.lensSwitch` interval, which then ends at the engine's stop, close, failure or next switch.
+     */
+    const val LENS_SWITCH_NO_FRAME = "CameraK.lensSwitch.noFrame"
 }
 
 /**

@@ -31,7 +31,9 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.error.StorageFailure
+import com.kashif.cameraK.frames.CoreVideoPixelBufferLocker
 import com.kashif.cameraK.frames.FrameSource
+import com.kashif.cameraK.frames.PixelBufferLocker
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
@@ -146,6 +148,8 @@ internal class AppleCameraEngine(
     private val hasUsageDescription: (key: String) -> Boolean = ::hasInfoPlistKey,
     /** The rotation coordinators of iOS 17 and later; tests answer for the simulator, which has no camera. */
     private val rotationSources: RotationSourceFactory = CoordinatorRotationSources,
+    /** Locks analysis frames' pixel buffers; tests count the locks. */
+    private val pixelBufferLocker: PixelBufferLocker = CoreVideoPixelBufferLocker,
     private val enumerateLenses: () -> List<LensInfo> = custom::getCameraCapabilities,
 ) : CameraEngine,
     LegacyControllerAccess {

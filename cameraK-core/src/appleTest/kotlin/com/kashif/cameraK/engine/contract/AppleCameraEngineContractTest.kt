@@ -6,7 +6,8 @@ package com.kashif.cameraK.engine.contract
  * check that the switch re-applies the desired hardware. The runtime-error, interruption and did-start-running
  * observers are its platform callbacks; the throwing one is the did-start-running observer, whose
  * read of the session's interruption the fake makes throw once. Flash is read back from the photo
- * output, so the driver is a [ReadBackFlashDriver].
+ * output, so the driver is a [ReadBackFlashDriver]. Its unsupported configuration is an RGBA_8888
+ * analysis format: iOS frames are 420f only (I4').
  */
 internal class AppleCameraEngineContractTest :
     CameraEngineContractTest(
@@ -17,5 +18,6 @@ internal class AppleCameraEngineContractTest :
             ReadBackFlashDriver::class,
             CaptureDriver::class,
             RecordingDriver::class,
+            UnsupportedConfigurationDriver::class,
         ),
     )

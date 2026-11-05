@@ -1,5 +1,9 @@
+@file:OptIn(ExperimentalForeignApi::class)
+
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.frames.FrameOutputDelegate
+import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AVFoundation.AVCaptureInput
 import platform.AVFoundation.AVCaptureOutput
 import platform.AVFoundation.AVCaptureSession
@@ -9,11 +13,15 @@ import platform.AVFoundation.AVCaptureSessionInterruptionEndedNotification
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonKey
 import platform.AVFoundation.AVCaptureSessionRuntimeErrorNotification
 import platform.AVFoundation.AVCaptureSessionWasInterruptedNotification
+import platform.AVFoundation.AVCaptureVideoDataOutput
 import platform.AVFoundation.AVFoundationErrorDomain
+import platform.CoreMedia.CMSampleBufferRef
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
+import platform.darwin.dispatch_queue_t
+import platform.darwin.dispatch_sync
 
 /**
  * A session the engine tests script as AVFoundation would run it. Its notifications are AVFoundation's
@@ -99,7 +107,47 @@ internal class FakeSessionOps : CaptureSessionOps {
 
     override fun canAddOutput(output: AVCaptureOutput): Boolean = locked { output !in outputList }
 
-    override fun addOutput(output: AVCaptureOutput) = locked { outputList += output }
+    override fun addOutput(output: AVCaptureOutput) = locked {
+        outputList += output
+        addedIn[output] = if (depth > 0) begins else 0
+    }
+
+    private val addedIn = mutableMapOf<AVCaptureOutput, Int>()
+
+    /**
+     * The configuration transaction [output] was last added in, counted from 1 as [configurationsBegun]
+     * counts them; 0 for an add outside any transaction, null for an output never added.
+     */
+    fun transactionOf(output: AVCaptureOutput): Int? = locked { addedIn[output] }
+
+    /** The video data outputs attached now: CameraK's frame output, when it is attached. */
+    val videoDataOutputs: List<AVCaptureVideoDataOutput>
+        get() = outputs.filterIsInstance<AVCaptureVideoDataOutput>()
+
+    /**
+     * AVFoundation delivering [buffer], captured through [input], to the attached video data output:
+     * on the output's own callback queue, returning once the delegate has. Returns false, delivering
+     * nothing, when no video data output with CameraK's delegate is attached.
+     */
+    fun deliverSampleBuffer(buffer: CMSampleBufferRef, input: AVCaptureInput?): Boolean {
+        val (delegate, queue) = frameOutput() ?: return false
+        dispatch_sync(queue) { delegate.deliver(buffer, input) }
+        return true
+    }
+
+    /** AVFoundation dropping a late sample buffer at the attached video data output; false without one. */
+    fun dropSampleBuffer(): Boolean {
+        val (delegate, queue) = frameOutput() ?: return false
+        dispatch_sync(queue) { delegate.drop() }
+        return true
+    }
+
+    private fun frameOutput(): Pair<FrameOutputDelegate, dispatch_queue_t>? {
+        val output = videoDataOutputs.firstOrNull() ?: return null
+        val delegate = output.sampleBufferDelegate as? FrameOutputDelegate ?: return null
+        val queue = output.sampleBufferCallbackQueue ?: return null
+        return delegate to queue
+    }
 
     override fun removeOutput(output: AVCaptureOutput) = locked { outputList -= output }
 

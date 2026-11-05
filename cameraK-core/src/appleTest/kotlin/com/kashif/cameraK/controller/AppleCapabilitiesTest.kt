@@ -9,6 +9,7 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoQuality
@@ -170,6 +171,18 @@ class AppleCapabilitiesTest {
                 engine.capabilities.value.supportsVideoBitrate,
                 "AVCaptureMovieFileOutput records at its preset's rate",
             )
+            engine.close()
+        }
+    }
+
+    /** iOS analysis frames are 420f only (I4', design §8): RGBA_8888 fails the start instead. */
+    @Test
+    fun analysisFormatsYuvOnly() {
+        val driver = AppleEngineDriver()
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+            assertEquals(setOf(FrameFormat.YUV_420), engine.capabilities.value.supportedAnalysisFormats)
             engine.close()
         }
     }
