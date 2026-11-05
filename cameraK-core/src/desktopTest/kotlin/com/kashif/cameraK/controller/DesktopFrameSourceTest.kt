@@ -276,6 +276,32 @@ class DesktopFrameSourceTest {
         }
     }
 
+    @Test
+    fun aFrameThatCannotBeConvertedIsSkippedAndItsLeaseReleased() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val steps = DesktopRecordingSteps(this, rig)
+        // No image has a 0 x 0 size, so every analysis conversion throws.
+        val sut = rig.engine(CameraConfiguration(analysisResolution = Resolution(0, 0)))
+        val delivered = AtomicInteger(0)
+        try {
+            steps.open(sut)
+            sut.frames.register(FrameSpec()) { delivered.incrementAndGet() }
+
+            repeat(FRAMES) { steps.frameAt(1_000L + it * 40) }
+
+            assertEquals(0, delivered.get(), "frames delivered that could not be converted")
+            assertEquals(
+                nanos(1_000L + (FRAMES - 1) * 40).single(),
+                sut.preview.frames.value?.timestampNanos,
+                "the preview's last frame",
+            )
+            assertTrue(sut.grabber.slotsAllocated <= 3, "slots after $FRAMES frames: ${sut.grabber.slotsAllocated}")
+        } finally {
+            sut.close()
+            rig.settle()
+        }
+    }
+
     private fun CameraFrame.describe(): String {
         val luma = ByteArray(width * height)
         planes[0].copyTo(luma, 0, 0, luma.size)
