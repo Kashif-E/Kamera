@@ -54,6 +54,13 @@ internal val START_TIMEOUT: Duration = 10.seconds
 internal val ENGINE_CLOSE_TIMEOUT: Duration = 5.seconds
 
 /**
+ * How long a holder built to replace another waits for the old engine to close before it starts its
+ * own: a camera the old engine still holds would refuse the open, and one that never closes cannot
+ * keep the new holder from starting beyond it.
+ */
+internal val PREVIOUS_CLOSE_TIMEOUT: Duration = 10.seconds
+
+/**
  * The state a start that timed out leaves: `Timeout(START)`, or `Permission(NotDetermined)` while
  * the checker still reports NotDetermined, because a platform that prompts on open (macOS) is still
  * waiting for the user's answer, and the re-check on resume then starts it.

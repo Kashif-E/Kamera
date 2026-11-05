@@ -120,6 +120,30 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     )
 
     /**
+     * For `:cameraK`'s retained holder: the engine constructor, whose first start waits for
+     * [startAfter], the old holder's [closeCompletion], at most ten seconds. Public only because
+     * `:cameraK` is another module.
+     */
+    @InternalCameraKApi
+    @CameraKEngineApi
+    public constructor(
+        config: CameraConfiguration,
+        engineFactory: CameraEngineFactory,
+        plugins: List<CameraKPlugin>,
+        environment: CameraKEnvironment,
+        @Suppress("UNUSED_PARAMETER") startAfter: Job?,
+    ) : this(config, engineFactory, plugins, environment)
+
+    /** For `:cameraK`'s retained holder: the production constructor, starting after [startAfter]. */
+    @InternalCameraKApi
+    public constructor(
+        config: CameraConfiguration,
+        platformContext: CameraKPlatformContext,
+        plugins: List<CameraKPlugin>,
+        @Suppress("UNUSED_PARAMETER") startAfter: Job?,
+    ) : this(config, platformContext, plugins)
+
+    /**
      * The 1.x constructor. [controllerFactory] runs in the first start, on [coroutineScope]'s
      * dispatcher, and the holder's scope is a child of [coroutineScope]'s job. It checks no
      * permission, as 1.x did not.
@@ -162,6 +186,10 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     private val readyState = CameraKState.Ready(engine as? LegacyControllerAccess)
 
     private val closing = atomic(false)
+
+    /** Completes once the engine has closed after [close]. Public only because `:cameraK` is another module. */
+    @InternalCameraKApi
+    public val closeCompletion: Job = Job()
 
     // Set when the first session reaches Ready: from then until close, the 1.x facade is live.
     private val facadeLive = atomic(false)

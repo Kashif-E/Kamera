@@ -5,9 +5,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.kashif.cameraK.engine.CameraEngineFactory
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.state.CameraConfiguration
@@ -74,6 +76,7 @@ internal fun rememberCameraKStateHolder(
     lifecycleOwner: LifecycleOwner?,
     engineFactory: CameraEngineFactory,
     environment: CameraKEnvironment,
+    @Suppress("UNUSED_PARAMETER") viewModelStoreOwner: ViewModelStoreOwner? = LocalViewModelStoreOwner.current,
 ): CameraKStateHolder = rememberLifecycleHolder(config, lifecycleOwner) {
     CameraKStateHolder(config, engineFactory, plugins, environment)
 }
