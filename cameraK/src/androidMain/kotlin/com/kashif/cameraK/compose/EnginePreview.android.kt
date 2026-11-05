@@ -1,4 +1,4 @@
-@file:OptIn(CameraKEngineApi::class)
+@file:OptIn(CameraKEngineApi::class, InternalCameraKApi::class)
 
 package com.kashif.cameraK.compose
 
@@ -16,8 +16,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalView
 import com.kashif.cameraK.engine.PlatformPreviewSource
+import com.kashif.cameraK.engine.previewAspectRatio
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /** The engine's preview in CameraXViewfinder, with the overlay in the preview's box. */
@@ -48,6 +51,7 @@ internal fun ViewfinderPreview(
     deviceOrientation: DeviceOrientation,
     modifier: Modifier,
     overlay: (@Composable CameraPreviewScope.() -> Unit)?,
+    aspectRatio: AspectRatio? = source.previewAspectRatio(),
     coordinateTransformer: MutableCoordinateTransformer = remember { MutableCoordinateTransformer() },
     viewfinder: @Composable (SurfaceRequest, MutableCoordinateTransformer, Modifier) -> Unit =
         { request, transformer, viewfinderModifier -> FitViewfinder(request, transformer, viewfinderModifier) },

@@ -1,11 +1,15 @@
-@file:OptIn(CameraKEngineApi::class)
+@file:OptIn(CameraKEngineApi::class, InternalCameraKApi::class)
 
 package com.kashif.cameraK.engine
 
+import android.view.Display
 import androidx.camera.core.Preview
 import com.kashif.cameraK.engine.FakeAndroidPlatform.Companion.desired
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,5 +59,25 @@ class PreviewAttachmentTest {
         platform.settle(testScheduler)
         assertSame(first, platform.boundPreview().surfaceProvider)
         engine.closeAndJoin()
+    }
+
+    @Test
+    fun theEnginesSourceReportsTheConfiguredAspectRatio() = runTest {
+        for (ratio in AspectRatio.entries) {
+            val engine = platform.engine(testScheduler, CameraConfiguration(aspectRatio = ratio))
+            assertEquals(ratio, engine.preview.previewAspectRatio(), "the engine's preview source at $ratio")
+            engine.closeAndJoin()
+        }
+    }
+
+    @Test
+    fun anotherSourceReportsNoAspectRatio() {
+        val other = object : PlatformPreviewSource {
+            override fun attach(provider: Preview.SurfaceProvider, display: Display?): PreviewAttachment =
+                object : PreviewAttachment {
+                    override fun close() = Unit
+                }
+        }
+        assertNull(other.previewAspectRatio(), "a source that is not the engine's")
     }
 }

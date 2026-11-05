@@ -89,17 +89,25 @@ internal class FakeCameraXBackend : CameraXBackend {
     /** The thread each video-quality query ran on, oldest first. */
     val qualityQueryThreads = mutableListOf<Thread>()
 
-    /** The quality, bitrate and thread of each VideoCapture built, oldest first. */
+    /** When set, every video-quality query throws it, as reading the encoder profiles can. */
+    var qualityFailure: RuntimeException? = null
+
+    /** The quality, bitrate, fallback and thread of each VideoCapture built, oldest first. */
     val videoCaptureBuilds = mutableListOf<VideoCaptureBuild>()
 
-    override fun buildVideoCapture(quality: VideoQuality, bitrateBps: Int?): VideoCapture<Recorder> {
-        val built = super.buildVideoCapture(quality, bitrateBps)
-        videoCaptureBuilds += VideoCaptureBuild(quality, bitrateBps, Thread.currentThread(), built)
+    override fun buildVideoCapture(
+        quality: VideoQuality,
+        bitrateBps: Int?,
+        fallback: QualityFallback,
+    ): VideoCapture<Recorder> {
+        val built = super.buildVideoCapture(quality, bitrateBps, fallback)
+        videoCaptureBuilds += VideoCaptureBuild(quality, bitrateBps, fallback, Thread.currentThread(), built)
         return built
     }
 
     override fun videoQualities(cameraInfo: CameraInfo): Set<VideoQuality> {
         qualityQueryThreads += Thread.currentThread()
+        qualityFailure?.let { throw it }
         val byId = qualitiesById ?: return supportedQualities
         val id = binding.cameras.last { it.camera.cameraInfo === cameraInfo }.id
         return byId[id].orEmpty()
@@ -170,10 +178,11 @@ internal class FakeCameraXBackend : CameraXBackend {
     }
 }
 
-/** A VideoCapture the engine had built: for [quality] at [bitrateBps], on [thread]. */
+/** A VideoCapture the engine had built: for [quality] at [bitrateBps] with [fallback], on [thread]. */
 internal class VideoCaptureBuild(
     val quality: VideoQuality,
     val bitrateBps: Int?,
+    val fallback: QualityFallback,
     val thread: Thread,
     val videoCapture: VideoCapture<Recorder>,
 )

@@ -13,6 +13,8 @@ import androidx.camera.core.SurfaceRequest
 import androidx.camera.core.impl.CameraInfoInternal
 import androidx.camera.core.impl.CameraInternal
 import androidx.camera.viewfinder.compose.MutableCoordinateTransformer
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -20,12 +22,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewAttachment
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.utils.CameraKEngineApi
 import org.junit.Test
@@ -33,6 +40,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.lang.reflect.Proxy
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -137,11 +145,49 @@ class ViewfinderSurfaceRequestTest {
         }
         request.willNotProvideSurface()
     }
+
+    @Test
+    fun overlaySpansTheImageBoxAt16By9And4By3InAPortraitContainer() {
+        // A 300x450 px portrait container: the image box is the configured ratio turned portrait and
+        // fitted inside it, centred, so the overlay's coordinates are the camera image's, with no bars.
+        // 9:16 fills the height (450 * 9 / 16 = 253.125 px wide), 3:4 fills the width (300 * 4 / 3 = 400).
+        val cases = listOf(AspectRatio.RATIO_16_9 to IntSize(253, 450), AspectRatio.RATIO_4_3 to IntSize(300, 400))
+        for ((ratio, box) in cases) {
+            var container: Rect? = null
+            var overlay: Rect? = null
+            runComposeUiTest {
+                setContent {
+                    val (width, height) = with(LocalDensity.current) { 300.toDp() to 450.toDp() }
+                    ViewfinderPreview(
+                        source = KeptProviderSource(),
+                        deviceOrientation = DeviceOrientation.PORTRAIT,
+                        modifier = Modifier.size(width, height).onGloballyPositioned { container = it.pixelBounds() },
+                        overlay = {
+                            Box(Modifier.fillMaxSize().onGloballyPositioned { overlay = it.pixelBounds() })
+                        },
+                        aspectRatio = ratio,
+                    )
+                }
+                waitForIdle()
+            }
+            val outer = assertNotNull(container, "the container was never laid out")
+            val inner = assertNotNull(overlay, "the overlay was never laid out at $ratio")
+            assertEquals(box, IntSize(inner.width(), inner.height()), "the overlay's size at $ratio")
+            assertTrue(
+                abs(inner.centerX() - outer.centerX()) <= 1 && abs(inner.centerY() - outer.centerY()) <= 1,
+                "the overlay at $ratio is not centred in its container: $inner in $outer",
+            )
+        }
+    }
 }
 
 // android.graphics.Matrix computes in single precision; across the scale, rotation and inversion here
 // that is well under a hundredth of a buffer pixel.
 private const val MATRIX_TOLERANCE = 0.01f
+
+private fun LayoutCoordinates.pixelBounds(): Rect = boundsInRoot().let {
+    Rect(it.left.roundToInt(), it.top.roundToInt(), it.right.roundToInt(), it.bottom.roundToInt())
+}
 
 private fun assertNear(expected: Offset, actual: Offset, what: String) {
     assertTrue(

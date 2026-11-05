@@ -77,6 +77,15 @@ internal class RecordingFinalized(val error: Int, val cause: Throwable?, val rec
     val hasError: Boolean get() = error != VideoRecordEvent.Finalize.ERROR_NONE
 }
 
+/** The CameraX FallbackStrategy a Recorder's QualitySelector is built with. */
+internal enum class QualityFallback {
+    /** `FallbackStrategy.higherQualityOrLowerThan(requested)`. */
+    HIGHER_OR_LOWER,
+
+    /** `FallbackStrategy.lowerQualityOrHigherThan(requested)`, 1.x's rule. */
+    LOWER_OR_HIGHER,
+}
+
 /**
  * The CameraX entry points [CameraController] calls that need camera hardware: obtaining the
  * process camera provider, taking a still and recording video. Production uses
@@ -110,9 +119,14 @@ internal interface CameraXBackend {
 
     /**
      * A VideoCapture over a new Recorder for [quality], with [bitrateBps] as the encoder's target
-     * video bitrate when it is set. Builds no platform session, so it may run off the main thread.
+     * video bitrate when it is set, and [fallback] as CameraX's rule when the camera cannot record
+     * [quality]. Builds no platform session, so it may run off the main thread.
      */
-    fun buildVideoCapture(quality: VideoQuality, bitrateBps: Int?): VideoCapture<Recorder> {
+    fun buildVideoCapture(
+        quality: VideoQuality,
+        bitrateBps: Int?,
+        fallback: QualityFallback = QualityFallback.HIGHER_OR_LOWER,
+    ): VideoCapture<Recorder> {
         val cameraXQuality = quality.toCameraXQuality()
         val recorder = Recorder.Builder()
             .setQualitySelector(
