@@ -93,7 +93,7 @@ internal class DesktopGalleryStore(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                CameraKLogger.e(TAG, "Saving to the gallery folder failed", e)
+                // The saver logs the failure once, with this cause.
                 CameraKResult.Failure(
                     CameraKError.Storage(
                         kind = if (e is NoSuchFileException) StorageFailure.NOT_FOUND else StorageFailure.NOT_WRITABLE,

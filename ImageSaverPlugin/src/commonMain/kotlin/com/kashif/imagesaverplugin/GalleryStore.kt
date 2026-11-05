@@ -20,7 +20,8 @@ internal sealed interface MediaSource {
 /**
  * One platform's gallery: MediaStore on Android, the Photos library on iOS, a folder under the user's
  * home on desktop. The saver reads the permission and builds the saved values; a store only writes
- * and reads. Its failures are values, and it never deletes the file it copies.
+ * and reads. Its failures are values carrying the platform's exception as their cause, and it never
+ * deletes the file it copies. A failed add is logged by the saver, once, so a store does not log it.
  */
 internal interface GalleryStore {
     /** What adding needs at this API level, or null when nothing; the permission is read only when non-null. */

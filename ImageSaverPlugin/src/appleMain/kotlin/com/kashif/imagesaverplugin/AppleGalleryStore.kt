@@ -93,8 +93,8 @@ internal class AppleGalleryStore(
                     CameraKResult.Success(GalleryAsset(displayName ?: fileName, localIdentifier))
                 }
                 else -> {
+                    // The saver logs the failure once, with this cause.
                     val cause = outcome?.second?.let(::PhotosException) ?: PhotosTimeout(importTimeout)
-                    CameraKLogger.e(TAG, "Importing into the Photos library failed; the file is kept", cause)
                     CameraKResult.Failure(
                         CameraKError.Storage(StorageFailure.GALLERY_IMPORT_FAILED, keptFilePath = path, cause = cause),
                     )
@@ -123,7 +123,7 @@ internal class AppleGalleryStore(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Failed to save image to Photos", e)
+            // The saver logs the failure once, with this cause.
             CameraKResult.Failure(CameraKError.Storage(StorageFailure.GALLERY_IMPORT_FAILED, cause = e))
         }
     }

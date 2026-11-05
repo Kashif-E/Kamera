@@ -139,8 +139,8 @@ internal class AndroidGalleryStore(
             throw e
         } catch (e: Exception) {
             // SecurityException and IllegalArgumentException from MediaStore are as likely as
-            // IOException; none of them may escape into the caller's coroutine.
-            CameraKLogger.e(TAG, "Saving to MediaStore failed", e)
+            // IOException; none of them may escape into the caller's coroutine. The saver logs the
+            // failure once, with this cause.
             insertedUri?.let(::deleteUnfinishedRow)
             claimedFile?.let(::deleteUnfinishedFile)
             CameraKResult.Failure(storageError(e))
