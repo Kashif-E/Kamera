@@ -35,7 +35,6 @@ import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterIsInstance
@@ -182,18 +181,6 @@ internal fun rememberRecordingFeature(holder: CameraKStateHolder): RecordingFeat
     val recording = remember(holder) { RecordingFeature(holder.asSampleRecorder()) }
     LaunchedEffect(recording) { recording.reportEnds() }
     return recording
-}
-
-/** While [isRecording], publishes the recording's elapsed time to [onDurationChange] four times a second. */
-@Composable
-internal fun RecordingEffects(recording: RecordingFeature, isRecording: Boolean, onDurationChange: (Long) -> Unit) {
-    LaunchedEffect(isRecording) {
-        while (isRecording) {
-            onDurationChange(recording.durationMs)
-            delay(250L)
-        }
-        onDurationChange(0L)
-    }
 }
 
 @Composable

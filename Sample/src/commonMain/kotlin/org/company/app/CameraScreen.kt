@@ -1,6 +1,5 @@
 package org.company.app
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -13,13 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,16 +25,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.decodeToImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Lucide
@@ -46,7 +39,7 @@ import com.composables.icons.lucide.X
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.compose.CameraKScreen
 import com.kashif.cameraK.compose.rememberCameraKStateHolder
-import com.kashif.cameraK.controller.CameraController
+import com.kashif.cameraK.compose.rememberRecordingElapsed
 import com.kashif.cameraK.controls.cycleFlashMode
 import com.kashif.cameraK.controls.toggleLens
 import com.kashif.cameraK.controls.toggleTorch
@@ -61,16 +54,16 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.CameraKResult
-import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.state.CameraConfiguration
-import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
-import kotlinx.coroutines.delay
+import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
-import org.jetbrains.compose.resources.ExperimentalResourceApi
-import kotlin.uuid.ExperimentalUuidApi
 
 @Composable
 internal fun CameraContent(
@@ -85,39 +78,31 @@ internal fun CameraContent(
     val recognizedText = rememberRecognizedText(ocr)
 
     // Config-level settings with no runtime setter: changing one rebuilds the CameraConfiguration
-    // and re-initializes the camera (data-class equality keeps it stable while unchanged).
-    var aspectRatio by remember { mutableStateOf(AspectRatio.RATIO_4_3) }
-    var resolution by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    var imageFormat by remember { mutableStateOf(ImageFormat.JPEG) }
-    var qualityPrioritization by remember { mutableStateOf(QualityPrioritization.BALANCED) }
-    // Device type is applied with the runtime setter (live re-bind), so it's NOT part of the
-    // re-init config; the initial value seeds the first bind and CameraScreen re-applies the
-    // current selection whenever the holder is (re)created.
-    var cameraDeviceType by remember { mutableStateOf(CameraDeviceType.WIDE_ANGLE) }
+    // and re-initializes the camera. Saved, so a rotation rebuilds an equal configuration and the
+    // retained holder, with any recording, carries on. The device type is applied with the runtime
+    // setter (a live re-bind), so it is not part of the configuration; CameraScreen applies it.
+    var settings by rememberSaveable(stateSaver = CameraSettingsSaver) { mutableStateOf(CameraSettings()) }
 
+    // Present at creation, so the holder binds frame analysis in the first bind. A recreated screen
+    // remembers new plugin instances, and the holder swaps them for the old ones.
+    val plugins = remember(analyzer, imageSaver, qrScanner, ocr) {
+        listOf(analyzer.plugin, imageSaver.plugin, qrScanner.plugin, ocr.plugin)
+    }
     val holder = rememberCameraKStateHolder(
         config = CameraConfiguration(
             cameraLens = CameraLens.BACK,
             flashMode = FlashMode.OFF,
-            imageFormat = imageFormat,
+            imageFormat = settings.imageFormat,
             // The image saver puts each photo in the gallery; a gallery directory here would store it twice.
             directory = Directory.DOCUMENTS,
             torchMode = TorchMode.OFF,
-            qualityPrioritization = qualityPrioritization,
+            qualityPrioritization = settings.qualityPrioritization,
             cameraDeviceType = CameraDeviceType.WIDE_ANGLE,
-            aspectRatio = aspectRatio,
-            targetResolution = resolution,
-            // The frame plugins attach below, after the holder exists, so the holder cannot derive
-            // the flag from them: declared here, ImageAnalysis is in the first bind.
-            frameAnalysis = true,
+            aspectRatio = settings.aspectRatio,
+            targetResolution = settings.resolution,
         ),
+        plugins = plugins,
     )
-    LaunchedEffect(holder) {
-        holder.attachPlugin(analyzer.plugin)
-        holder.attachPlugin(imageSaver.plugin)
-        holder.attachPlugin(qrScanner.plugin)
-        holder.attachPlugin(ocr.plugin)
-    }
     val cameraState by holder.cameraState.collectAsState()
 
     CameraKScreen(
@@ -160,10 +145,9 @@ internal fun CameraContent(
                 }
             }
         },
-    ) { state ->
+    ) { _ ->
         CameraScreen(
             holder = holder,
-            cameraState = state,
             imageSaver = imageSaver,
             qrScanner = qrScanner,
             ocr = ocr,
@@ -172,16 +156,16 @@ internal fun CameraContent(
             qrCodes = qrCodes,
             recognizedText = recognizedText,
             latestFrame = latestFrame,
-            aspectRatio = aspectRatio,
-            onAspectRatioChange = { aspectRatio = it },
-            resolution = resolution,
-            onResolutionChange = { resolution = it },
-            imageFormat = imageFormat,
-            onImageFormatChange = { imageFormat = it },
-            qualityPrioritization = qualityPrioritization,
-            onQualityPrioritizationChange = { qualityPrioritization = it },
-            cameraDeviceType = cameraDeviceType,
-            onCameraDeviceTypeChange = { cameraDeviceType = it },
+            aspectRatio = settings.aspectRatio,
+            onAspectRatioChange = { settings = settings.copy(aspectRatio = it) },
+            resolution = settings.resolution,
+            onResolutionChange = { settings = settings.copy(resolution = it) },
+            imageFormat = settings.imageFormat,
+            onImageFormatChange = { settings = settings.copy(imageFormat = it) },
+            qualityPrioritization = settings.qualityPrioritization,
+            onQualityPrioritizationChange = { settings = settings.copy(qualityPrioritization = it) },
+            cameraDeviceType = settings.cameraDeviceType,
+            onCameraDeviceTypeChange = { settings = settings.copy(cameraDeviceType = it) },
         )
     }
 }
@@ -192,7 +176,6 @@ internal enum class CameraMode { Photo, Video }
 @Composable
 private fun CameraScreen(
     holder: CameraKStateHolder,
-    cameraState: CameraKState.Ready,
     imageSaver: ImageSaverFeature,
     qrScanner: QrScannerFeature,
     ocr: OcrFeature,
@@ -214,18 +197,21 @@ private fun CameraScreen(
     onCameraDeviceTypeChange: (CameraDeviceType) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    // The capture button stays on the 1.x controller; recording runs on the holder.
-    val cameraController = cameraState.controller
-    var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    val capture = remember(holder) { CaptureFeature(holder.asSampleCapturer()) }
+    LaunchedEffect(capture) {
+        capture.notices.collect { snackbarHostState.showSnackbar(it) }
+    }
     var isCapturing by remember { mutableStateOf(false) }
     val uiState by holder.uiState.collectAsState()
     val zoom by holder.zoom.collectAsState()
     val deviceOrientation by holder.deviceOrientation.collectAsState()
 
-    // Re-apply the selected camera device type whenever the holder is (re)created — config
-    // re-inits (aspect ratio, etc.) start from the default, so this preserves the user's choice.
+    // Re-apply the selected camera device type when a new holder (a configuration change) starts
+    // from the default. A holder kept across a rotation already has it, so nothing re-binds.
     LaunchedEffect(holder) {
-        holder.selectCamera(uiState.cameraLens ?: CameraLens.BACK, cameraDeviceType)
+        if (holder.uiState.value.cameraDeviceType != cameraDeviceType) {
+            holder.selectCamera(uiState.cameraLens ?: CameraLens.BACK, cameraDeviceType)
+        }
     }
 
     var cameraMode by remember { mutableStateOf(CameraMode.Photo) }
@@ -235,7 +221,7 @@ private fun CameraScreen(
     LaunchedEffect(recording) {
         recording.notices.collect { snackbarHostState.showSnackbar(it) }
     }
-    var recordingDurationMs by remember { mutableStateOf(0L) }
+    val recordingElapsed by rememberRecordingElapsed(holder)
 
     var isQRScanningEnabled by remember { mutableStateOf(true) }
     var isOCREnabled by remember { mutableStateOf(true) }
@@ -243,12 +229,6 @@ private fun CameraScreen(
 
     var showSettings by remember { mutableStateOf(false) }
     var lockedOrientation by remember { mutableStateOf<DeviceOrientation?>(null) }
-
-    RecordingEffects(
-        recording = recording,
-        isRecording = isRecording,
-        onDurationChange = { recordingDurationMs = it },
-    )
 
     QrScanningEffect(qrScanner, isQRScanningEnabled)
 
@@ -280,7 +260,7 @@ private fun CameraScreen(
             torchMode = uiState.torchMode ?: TorchMode.OFF,
             aspectRatio = aspectRatio,
             isRecording = isRecording,
-            recordingDurationMs = recordingDurationMs,
+            recordingDurationMs = if (isRecording) recordingElapsed.inWholeMilliseconds else 0L,
             onFlashToggle = { scope.launch { holder.cycleFlashMode() } },
             onTorchToggle = { scope.launch { holder.toggleTorch() } },
             onAspectRatioCycle = {
@@ -353,10 +333,7 @@ private fun CameraScreen(
                             if (!isCapturing) {
                                 isCapturing = true
                                 scope.launch {
-                                    handleImageCapture(
-                                        cameraController = cameraController,
-                                        onImageCaptured = { imageBitmap = it },
-                                    )
+                                    capture.takePhoto()
                                     isCapturing = false
                                 }
                             }
@@ -408,69 +385,6 @@ private fun CameraScreen(
                 onDismiss = { showSettings = false },
             )
         }
-
-        CapturedImagePreview(imageBitmap = imageBitmap) { imageBitmap = null }
-    }
-}
-
-@OptIn(ExperimentalResourceApi::class, ExperimentalUuidApi::class)
-private suspend fun handleImageCapture(cameraController: CameraController, onImageCaptured: (ImageBitmap) -> Unit) {
-    when (val result = cameraController.takePictureToFile()) {
-        is ImageCaptureResult.SuccessWithFile -> {
-            println("Image captured: ${result.filePath}")
-        }
-
-        is ImageCaptureResult.SuccessWithUri -> {
-            println("Image published to the gallery: ${result.uri}")
-        }
-
-        is ImageCaptureResult.Success -> {
-            println("Image captured (${result.byteArray.size} bytes)")
-            onImageCaptured(result.byteArray.decodeToImageBitmap())
-        }
-
-        is ImageCaptureResult.Error -> {
-            println("Capture error: ${result.exception.message}")
-        }
-    }
-}
-
-@Composable
-private fun CapturedImagePreview(imageBitmap: ImageBitmap?, onDismiss: () -> Unit) {
-    imageBitmap?.let { bitmap ->
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Color.Black.copy(alpha = 0.9f),
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = "Captured Image",
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    contentScale = ContentScale.Fit,
-                )
-
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .background(ChipBg, CircleShape),
-                ) {
-                    Icon(
-                        imageVector = Lucide.X,
-                        contentDescription = "Close Preview",
-                        tint = TextPrimary,
-                        modifier = Modifier.rotate(120f),
-                    )
-                }
-            }
-        }
-
-        LaunchedEffect(bitmap) {
-            delay(3000)
-            onDismiss()
-        }
     }
 }
 
@@ -502,23 +416,81 @@ internal data class CameraSettings(
     val cameraDeviceType: CameraDeviceType = CameraDeviceType.WIDE_ANGLE,
 )
 
+/** Saves each setting as its name, and the resolution as two numbers or none: what an Android Bundle holds. */
 internal val CameraSettingsSaver: Saver<CameraSettings, Any> = Saver(
-    save = { TODO("LC'") },
-    restore = { TODO("LC'") },
+    save = { settings ->
+        listOf(
+            settings.aspectRatio.name,
+            settings.resolution?.let { listOf(it.first, it.second) },
+            settings.imageFormat.name,
+            settings.qualityPrioritization.name,
+            settings.cameraDeviceType.name,
+        )
+    },
+    restore = ::restoreCameraSettings,
 )
+
+// Null for anything this saver did not write; the screen then starts from the defaults.
+private fun restoreCameraSettings(saved: Any): CameraSettings? {
+    val values = saved as? List<*> ?: return null
+    if (values.size != SETTINGS_FIELDS) return null
+    val resolution = when (val size = values[1]) {
+        null -> null
+        is List<*> -> (size.getOrNull(0) as? Int ?: return null) to (size.getOrNull(1) as? Int ?: return null)
+        else -> return null
+    }
+    return CameraSettings(
+        aspectRatio = AspectRatio.entries.firstOrNull { it.name == values[0] } ?: return null,
+        resolution = resolution,
+        imageFormat = ImageFormat.entries.firstOrNull { it.name == values[2] } ?: return null,
+        qualityPrioritization = QualityPrioritization.entries.firstOrNull { it.name == values[3] } ?: return null,
+        cameraDeviceType = CameraDeviceType.entries.firstOrNull { it.name == values[4] } ?: return null,
+    )
+}
+
+private const val SETTINGS_FIELDS = 5
 
 /** The holder's capture, as the Sample's photo button uses it. */
 internal interface SampleCapturer {
     suspend fun capture(): CameraKResult<CapturedImage>
 }
 
-/** The Sample's photo action. */
+internal fun CameraKStateHolder.asSampleCapturer(): SampleCapturer {
+    val holder = this
+    return object : SampleCapturer {
+        override suspend fun capture(): CameraKResult<CapturedImage> = holder.capture()
+    }
+}
+
+/**
+ * The Sample's photo action, on the holder's capture: every photo reaches the holder's captures,
+ * where the image saver picks it up and puts it in the gallery.
+ */
 internal class CaptureFeature(private val capturer: SampleCapturer) {
-    /** The last photo taken, for the screen to show. */
-    val lastPhoto: StateFlow<CapturedImage?> get() = TODO("LC'")
+    private val _lastPhoto = MutableStateFlow<CapturedImage?>(null)
 
-    /** One line per photo, for the screen to show. */
-    val notices: Flow<String> get() = TODO("LC'")
+    /** The last photo taken. */
+    val lastPhoto: StateFlow<CapturedImage?> = _lastPhoto.asStateFlow()
 
-    suspend fun takePhoto(): Unit = TODO("LC'")
+    private val _notices = Channel<String>(Channel.BUFFERED)
+
+    /** One line per photo taken or failed, for the screen to show. */
+    val notices: Flow<String> = _notices.receiveAsFlow()
+
+    suspend fun takePhoto() {
+        when (val result = capturer.capture()) {
+            is CameraKResult.Success -> {
+                _lastPhoto.value = result.value
+                _notices.trySend("Photo saved")
+            }
+            is CameraKResult.Failure -> {
+                CameraKLogger.w(TAG, "Taking a photo failed: ${result.error::class.simpleName}", result.error.cause)
+                _notices.trySend("Photo failed: ${result.error.displayText()}")
+            }
+        }
+    }
+
+    private companion object {
+        const val TAG = "Sample"
+    }
 }
