@@ -152,4 +152,52 @@ class PluginContainmentTest {
         assertFalse(context.scope.coroutineContext.job.isActive, "the scope outlived the attachment")
         assertTrue(job.isCancelled, "a coroutine of the detached plugin kept running")
     }
+
+    /** Characterization: green on the base. Dropping the routing through the context's `fail` in PluginHost.detach fails it. */
+    @Test
+    fun throwingOnDetachIsPluginFailedAndTheNextPluginStillDetaches() = runTest {
+        captureLogs()
+        val thrown = IllegalStateException("plugin detach failed")
+        val thrower = object : ContextPlugin(id = "thrower") {
+            override fun onDetach() {
+                super.onDetach()
+                throw thrown
+            }
+        }
+        val next = ContextPlugin(id = "next")
+        val s = pluginSession(thrower, next)
+        startReady(s)
+        val throwerContext = thrower.context
+
+        s.holder.close()
+        runCurrent()
+
+        assertEquals(1, next.detaches, "the plugin after the thrower was not detached")
+        val failure = assertIs<CameraKError.Internal>(throwerContext.failure.value, "the thrower's failure")
+        assertSame(thrown, failure.cause)
+        val reported = s.pluginFailures.single()
+        assertEquals("thrower", reported.pluginId, "PluginFailed names the plugin by its id")
+        assertSame(failure, reported.error, "the event carries the context's failure")
+        assertTrue(logged.any { it === thrown }, "the throwable was not logged: $logged")
+    }
+
+    @Test
+    fun aFailureReportedAfterDetachIsLoggedAndNotReported() = runTest {
+        val messages = mutableListOf<String>()
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { _, _, message, _ -> messages += message }
+        val plugin = ContextPlugin(id = "late")
+        val s = pluginSession(plugin)
+        startReady(s)
+        val context = plugin.context
+
+        s.holder.detachPlugin(plugin)
+        runCurrent()
+        context.reportFailure(CameraKError.Unsupported(CameraFeature.ANALYSIS_FORMAT))
+        runCurrent()
+
+        assertEquals(emptyList(), s.pluginFailures, "a detached plugin's failure was reported")
+        assertNull(context.failure.value, "a detached attachment's failure was set")
+        assertTrue(messages.any { "detach" in it }, "the ignored failure was not logged: $messages")
+    }
 }
