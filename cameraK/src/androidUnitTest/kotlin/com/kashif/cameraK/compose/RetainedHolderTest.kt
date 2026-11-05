@@ -288,9 +288,11 @@ class RetainedHolderTest {
         assertIs<CameraKResult.Success<*>>(command { first.selectCamera(CameraLens.FRONT) })
         assertIs<CameraKResult.Success<*>>(command { first.setFlashMode(FlashMode.ON) })
         assertIs<CameraKResult.Success<*>>(command { first.setTorchMode(TorchMode.ON) })
+        assertIs<CameraKResult.Success<*>>(command { first.setZoom(2f) })
         // The platform reports what it applied; the camera came with the switch.
         firstFake.reportFlash(FlashMode.ON)
         firstFake.reportTorch(TorchMode.ON)
+        firstFake.reportZoom(2f, minRatio = 1f, maxRatio = 4f)
         settle()
 
         val saved = Bundle()
@@ -306,6 +308,7 @@ class RetainedHolderTest {
         assertEquals(FakeCapabilities.FRONT_ID, restored.appliedCameraId, "the lens was not restored")
         assertEquals(FlashMode.ON, restored.appliedFlashMode, "the flash mode was not restored")
         assertEquals(TorchMode.ON, restored.appliedTorchMode, "the torch mode was not restored")
+        assertEquals(2f, restored.appliedZoomRatio, "the zoom was not restored")
     }
 
     private fun <T> command(block: suspend () -> T): T {
