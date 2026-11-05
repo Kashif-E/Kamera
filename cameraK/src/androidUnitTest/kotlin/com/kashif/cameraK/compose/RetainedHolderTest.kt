@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.engine.CameraEngine
@@ -20,6 +21,9 @@ import com.kashif.cameraK.engine.CameraEngineFactory
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.enums.AspectRatio
+import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.FlashMode
+import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.plugin.CameraKPluginContext
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.recording.RecordingState
@@ -30,6 +34,7 @@ import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.testing.FakeCameraEngine
+import com.kashif.cameraK.testing.FakeCapabilities
 import com.kashif.cameraK.testing.FakePermissionChecker
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.CompletableDeferred
@@ -269,6 +274,62 @@ class RetainedHolderTest {
         assertTrue(attachments.all { it.second === first.cameraState }, "a plugin attached to another holder")
         val attachedNow = (old + new).filter { it.attaches > it.detaches }
         assertEquals(listOf("qr", "saver"), attachedNow.map { it.kind }.sorted(), "a plugin type is attached twice")
+    }
+
+    // Process death on the path apps use: the Activity's ViewModelStore is cleared, so the holder
+    // rebuilt from the saved Bundle comes from a fresh ViewModel, which seeds it with the saved choices.
+    @Test
+    fun processDeathRestoresTheUserChoicesOnTheViewModelPath() {
+        nextEngine = { FakeCameraEngine(flashAndTorchOnBothCameras()) }
+        launch { Remembered() }
+        val first = current
+        assertIs<CameraKState.Ready>(first.cameraState.value)
+        val firstFake = engines.single() as FakeCameraEngine
+        assertIs<CameraKResult.Success<*>>(command { first.selectCamera(CameraLens.FRONT) })
+        assertIs<CameraKResult.Success<*>>(command { first.setFlashMode(FlashMode.ON) })
+        assertIs<CameraKResult.Success<*>>(command { first.setTorchMode(TorchMode.ON) })
+        // The platform reports what it applied; the camera came with the switch.
+        firstFake.reportFlash(FlashMode.ON)
+        firstFake.reportTorch(TorchMode.ON)
+        settle()
+
+        val saved = Bundle()
+        assertNotNull(controller).pause().stop().saveInstanceState(saved).destroy()
+        settle()
+        assertEquals(CameraKState.Closed, first.cameraState.value, "leaving for good did not close the holder")
+        controller = Robolectric.buildActivity(HostActivity::class.java).setup(saved)
+        settle()
+
+        assertEquals(2, built.size, "the new process did not build a new holder")
+        assertIs<CameraKState.Ready>(current.cameraState.value)
+        val restored = engines.last() as FakeCameraEngine
+        assertEquals(FakeCapabilities.FRONT_ID, restored.appliedCameraId, "the lens was not restored")
+        assertEquals(FlashMode.ON, restored.appliedFlashMode, "the flash mode was not restored")
+        assertEquals(TorchMode.ON, restored.appliedTorchMode, "the torch mode was not restored")
+    }
+
+    private fun <T> command(block: suspend () -> T): T {
+        var result: T? = null
+        test.launch { result = block() }
+        test.runCurrent()
+        return assertNotNull(result, "the command did not finish")
+    }
+
+    // Both cameras offer flash and torch, so every choice can differ from the configuration's.
+    private fun flashAndTorchOnBothCameras(): CameraCapabilities {
+        val base = FakeCapabilities.backAndFront()
+        return CameraCapabilities(
+            allLenses = base.allLenses,
+            flashModes = base.allLenses.associate { it.id to setOf(FlashMode.OFF, FlashMode.ON) },
+            torchModes = base.allLenses.associate { it.id to setOf(TorchMode.OFF, TorchMode.ON) },
+            supportsPauseResume = base.supportsPauseResume,
+            supportedVideoQualities = base.supportedVideoQualities,
+            supportsVideoBitrate = base.supportsVideoBitrate,
+            supportedAspectRatios = base.supportedAspectRatios,
+            supportedImageFormats = base.supportedImageFormats,
+            supportedAnalysisFormats = base.supportedAnalysisFormats,
+            supportsSquareCapture = base.supportsSquareCapture,
+        )
     }
 
     /** Records each attach with the camera state of the holder it came from, and each detach. */
