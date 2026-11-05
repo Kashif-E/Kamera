@@ -4,8 +4,10 @@ package com.kashif.cameraK.controller
 
 import android.view.Display
 import androidx.camera.core.Preview
+import com.kashif.cameraK.engine.AspectRatioPreview
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewAttachment
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.utils.CameraKEngineApi
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -16,12 +18,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  * current one, so an outgoing preview in a crossfade never blanks the incoming one.
  *
  * [onMain] runs a block on the engine's main dispatcher, at once when already there; every field
- * here is read and written only inside such a block.
+ * here is read and written only inside such a block. [aspectRatio] is the configured one, which the
+ * ViewPort crops the preview to.
  */
 internal class EnginePreviewSource(
+    override val aspectRatio: AspectRatio,
     private val onMain: (() -> Unit) -> Unit,
     private val onDisplayAttached: () -> Unit,
-) : PlatformPreviewSource {
+) : PlatformPreviewSource,
+    AspectRatioPreview {
     private var current: Attachment? = null
     private var preview: Preview? = null
 

@@ -2,23 +2,28 @@
 
 package com.kashif.cameraK.compose
 
+import android.content.res.Configuration
 import androidx.camera.compose.CameraXViewfinder
 import androidx.camera.core.SurfaceRequest
 import androidx.camera.viewfinder.compose.MutableCoordinateTransformer
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalView
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.previewAspectRatio
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.enums.previewAspectRatio
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +46,11 @@ internal actual fun EnginePreview(
  * opens from the session, not from here: closing the attachment on dispose clears the provider only if
  * it is still the current one, so an incoming preview keeps its surface.
  *
+ * With an [aspectRatio], the engine's own, the viewfinder and the overlay share one centred box of
+ * that ratio, turned to the screen's orientation and fitted inside [modifier]'s bounds: the image the
+ * ViewPort crops to, so the overlay's coordinates map 1:1 to the camera image, with no letterbox bars
+ * (as on iOS since w6 G1). Without one, as for a fake source, both fill the bounds.
+ *
  * [coordinateTransformer] maps the viewfinder's coordinates to the camera frame's, for overlays and
  * tap-to-focus. In inspection mode (Android Studio previews, layoutlib snapshots) there is no camera,
  * so only the overlay is drawn.
@@ -56,11 +66,18 @@ internal fun ViewfinderPreview(
     viewfinder: @Composable (SurfaceRequest, MutableCoordinateTransformer, Modifier) -> Unit =
         { request, transformer, viewfinderModifier -> FitViewfinder(request, transformer, viewfinderModifier) },
 ) {
-    Box(modifier = modifier) {
-        if (!LocalInspectionMode.current) {
-            AttachedViewfinder(source, coordinateTransformer, viewfinder, Modifier.matchParentSize())
+    val imageBox = aspectRatio?.let { ratio ->
+        val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val screen = if (landscape) DeviceOrientation.LANDSCAPE_LEFT else DeviceOrientation.PORTRAIT
+        Modifier.aspectRatio(ratio.previewAspectRatio(screen))
+    }
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Box(modifier = imageBox ?: Modifier.matchParentSize()) {
+            if (!LocalInspectionMode.current) {
+                AttachedViewfinder(source, coordinateTransformer, viewfinder, Modifier.matchParentSize())
+            }
+            if (overlay != null) CameraPreviewOverlay(deviceOrientation, overlay)
         }
-        if (overlay != null) CameraPreviewOverlay(deviceOrientation, overlay)
     }
 }
 

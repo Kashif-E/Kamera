@@ -18,10 +18,12 @@ import com.kashif.cameraK.utils.InternalCameraKApi
  * The camera preview for [holder], with [overlay] drawn over it. The frame is fitted to the preview's
  * box, letterboxed where their aspect ratios differ, and what the overlay's coordinates (a focus
  * reticle, a detection box) are relative to depends on the platform. On desktop the overlay's box is
- * the frame's, so they land on the frame. On Android it is the preview's whole box, bars included:
- * the viewfinder's coordinate transformer maps it to the frame. On iOS the preview layer fills a
- * centred box of the configured aspect ratio with `AVLayerVideoGravityResizeAspectFill`, so it shows
- * what a capture keeps; the overlay's box is still the preview's whole box and spans the bars.
+ * the frame's, so they land on the frame. On Android the viewfinder and the overlay share a centred
+ * box of the configured aspect ratio, turned to the screen's orientation: the image the camera crops
+ * to, so the overlay's coordinates map 1:1 to the camera image, with no bars. On iOS the preview
+ * layer fills a centred box of the configured aspect ratio with `AVLayerVideoGravityResizeAspectFill`,
+ * so it shows what a capture keeps; the overlay's box is still the preview's whole box and spans the
+ * bars.
  *
  * The preview only attaches to the camera's session and detaches when it leaves the composition: it
  * never opens or closes the camera, which the holder does. Two previews of one holder, as in a
