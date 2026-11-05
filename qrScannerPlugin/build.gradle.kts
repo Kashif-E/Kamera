@@ -17,15 +17,25 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
 
+    // Android and desktop share one ZXing decoder: jvmMain sits between commonMain and the two JVM targets.
+    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi::class)
+    applyDefaultHierarchyTemplate {
+        common {
+            group("jvm") {
+                withAndroidTarget()
+                withJvm()
+            }
+        }
+    }
+
     sourceSets {
-        val desktopMain by getting {
+        val jvmMain by getting {
             dependencies {
                 implementation(libs.zxing.core)
             }
         }
 
-        // javase's BufferedImageLuminanceSource is the reference QrLuminanceTest compares the scanner's
-        // own luminance against. It stays off desktopMain, where checkPublishedClasspath forbids it.
+        // javase renders the test images. It stays off desktopMain, where checkPublishedClasspath forbids it.
         val desktopTest by getting {
             dependencies {
                 implementation(libs.zxing.javase)
@@ -39,6 +49,7 @@ kotlin {
 
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation(projects.cameraKTesting)
 
             // Test-only, and it must stay that way. On the runtime classpath, coroutines-test
             // installs TestMainDispatcherFactory via ServiceLoader, which takes over
@@ -53,19 +64,7 @@ kotlin {
             implementation(libs.robolectric)
             implementation(libs.androidx.test.core)
         }
-
-        androidMain.dependencies {
-            implementation(libs.zxing.core)
-        }
     }
-}
-
-// The desktop tests drive a real CameraController with a fake grabber whose frames are JavaCV
-// Frames, which allocate through JavaCPP, so they need this machine's JavaCPP natives.
-dependencies {
-    val javacppPlatform = rootProject.extra["javacppPlatform"] as String
-    val desktopTestRuntimeOnly = kotlin.sourceSets.getByName("desktopTest").runtimeOnlyConfigurationName
-    add(desktopTestRuntimeOnly, variantOf(libs.javacpp) { classifier(javacppPlatform) })
 }
 
 android {
@@ -98,4 +97,12 @@ dokka {
     dokkaSourceSets.configureEach {
         samples.from("src/commonTest/kotlin")
     }
+}
+
+// The desktop tests drive a real CameraController with a fake grabber whose frames are JavaCV
+// Frames, which allocate through JavaCPP, so they need this machine's JavaCPP natives.
+dependencies {
+    val javacppPlatform = rootProject.extra["javacppPlatform"] as String
+    val desktopTestRuntimeOnly = kotlin.sourceSets.getByName("desktopTest").runtimeOnlyConfigurationName
+    add(desktopTestRuntimeOnly, variantOf(libs.javacpp) { classifier(javacppPlatform) })
 }

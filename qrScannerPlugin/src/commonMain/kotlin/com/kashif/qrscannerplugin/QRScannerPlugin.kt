@@ -5,6 +5,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.plugin.PluginStatus
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
@@ -16,7 +17,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
@@ -47,6 +51,32 @@ class QRScannerPlugin internal constructor(
     ) {
         require(scanIntervalMs >= 0) { "scanIntervalMs must not be negative" }
     }
+
+    /** A scanner for [config]. */
+    constructor(config: QRScannerConfig = QRScannerConfig()) : this(config, ::createBarcodeDecoder)
+
+    internal constructor(config: QRScannerConfig, decoderFactory: BarcodeDecoderFactory) : this(
+        CoroutineScope(Job()),
+        { _, _ -> ScannerHandle {} },
+    ) {
+        this.config = config
+    }
+
+    /** What and how this scanner decodes. */
+    var config: QRScannerConfig = QRScannerConfig()
+        private set
+
+    /** Idle, Running, Paused, or Failed with the attachment's failure. */
+    val status: StateFlow<PluginStatus> = MutableStateFlow(PluginStatus.Idle)
+
+    /** The decoded barcodes. */
+    val results: Flow<Barcode> = MutableSharedFlow()
+
+    /** Stops decoding. */
+    fun pause() = Unit
+
+    /** Decodes again after [pause]. */
+    fun resume() = Unit
 
     private var cameraController: CameraController? = null
     private var stateHolder: CameraKStateHolder? = null

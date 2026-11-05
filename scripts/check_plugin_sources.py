@@ -6,7 +6,8 @@
 - KDoc code samples: a fenced block in KDoc, which no compiler checks. Samples go in a compiled
   function referenced with @sample.
 - Source-set layout: every plugin module keeps its code in the standard
-  source sets (commonMain, androidMain, appleMain, desktopMain and their tests), under
+  source sets (commonMain, androidMain, appleMain, desktopMain and their tests, and jvmMain, the
+  code Android and desktop share), under
   <sourceSet>/kotlin/ in directories that match the package.
 - The media saver does not use core's Directory: its main sources name `com.kashif.cameraK.enums.Directory`
   only in ImageSaverLegacy.kt, which holds the deprecated 1.x API until C1' removes it (decision G4).
@@ -34,6 +35,7 @@ SOURCE_SETS = {
     "appleTest",
     "desktopMain",
     "desktopTest",
+    "jvmMain",
 }
 PACKAGE = re.compile(r"^package\s+([A-Za-z0-9_.]+)", re.M)
 
