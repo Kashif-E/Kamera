@@ -85,6 +85,10 @@ internal class DesktopRecording(
     /** Whether the recorder started and the engine announced it. */
     val isStarted: Boolean get() = clock != null && started.isCompleted
 
+    /** Whether the engine emitted `Started` for it, which a `Finalized` then follows; false if it never will. */
+    @Volatile var announced = false
+        private set
+
     /**
      * Readies the recording's coroutine in [scope], on [worker], which it closes when it ends: once
      * [start]ed, it starts the recorder at [frameSize] (the camera's, so no frame is rescaled) and
@@ -188,6 +192,7 @@ internal class DesktopRecording(
             finalized.complete(CameraKResult.Failure(CameraKError.Closed))
             return false
         }
+        announced = true
         started.complete(CameraKResult.Success(path))
         return true
     }

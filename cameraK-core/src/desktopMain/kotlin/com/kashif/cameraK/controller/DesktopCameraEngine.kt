@@ -178,6 +178,9 @@ internal class DesktopCameraEngine(
     // The recording from its registration until its Finalized; a start is in flight before that.
     private var recording: DesktopRecording? = null
     private var recordingStarting = false
+
+    // A stop met the start in flight before it listed its recording: the start lists none.
+    private var startAbandoned = false
     private val pendingCaptures = mutableSetOf<CompletableDeferred<CameraKResult<CapturedImage>>>()
 
     private val enumeration = lazy(LazyThreadSafetyMode.SYNCHRONIZED) { enumerate() }
@@ -726,6 +729,7 @@ internal class DesktopCameraEngine(
             }
             if (video.enableAudio) return unsupportedAudio()
             recordingStarting = true
+            startAbandoned = false
         }
         // In the engine's scope: a caller that gives up leaves a recording the engine can still stop.
         return onIo {
@@ -745,8 +749,9 @@ internal class DesktopCameraEngine(
         // Readied before it is listed, so a stop or close always reaches it, and releases it if it never ran.
         live.prepare(scope, runtime.newWorker(RECORDER_THREAD), grabber.frames(), grabber.frameSize)
         synchronized(lock) {
-            if (closed) {
-                live.requestStop(RecordingEndReason.SHUTDOWN)
+            if (closed || startAbandoned) {
+                // As a camera start that a stop met: Closed, and the recording never runs.
+                live.requestStop(if (closed) RecordingEndReason.SHUTDOWN else RecordingEndReason.USER)
                 return CameraKResult.Failure(CameraKError.Closed)
             }
             recording = live
@@ -796,15 +801,26 @@ internal class DesktopCameraEngine(
         }
     }
 
-    /** Finalizes the live recording and returns its outcome; `InvalidState` when none was begun. */
+    /**
+     * Finalizes the live recording and returns its outcome. `InvalidState` when none was begun: no
+     * recording, a start still creating its recorder (which then lists none), or a recording that
+     * ends without `Started` (stopped before its thread ran, or its recorder failed to start). That
+     * answer owes no `Finalized`; every other answer is the recording's one `Finalized`.
+     */
     override suspend fun stopRecording(): CameraKResult<RecordedVideo> {
         val live = synchronized(lock) {
             if (closed) return CameraKResult.Failure(CameraKError.Closed)
-            recording ?: return CameraKResult.Failure(CameraKError.InvalidState(CameraOperation.RECORD_STOP))
+            recording ?: run {
+                if (recordingStarting) startAbandoned = true
+                return notRecording()
+            }
         }
         live.requestStop(RecordingEndReason.USER)
-        return live.finalized.await()
+        val outcome = live.finalized.await()
+        return if (live.announced) outcome else notRecording()
     }
+
+    private fun notRecording() = CameraKResult.Failure(CameraKError.InvalidState(CameraOperation.RECORD_STOP))
 
     /** Pauses the recording's clock: frames from now are not written, and the pause is left out of the file. */
     override suspend fun pauseRecording(): CameraKResult<Unit> = synchronized(lock) {
