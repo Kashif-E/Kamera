@@ -167,7 +167,8 @@ internal class DesktopCameraEngine(
     // Emitted under lock, so every recording's events are in order and recordings follow start order.
     private val _recordingEvents = MutableSharedFlow<EngineRecordingEvent>(extraBufferCapacity = EVENT_BUFFER)
     override val recordingEvents: Flow<EngineRecordingEvent> = _recordingEvents.asSharedFlow()
-    private val frameSource = DesktopFrameSource(config.analysisFormat, config.analysisResolution, runtime.newWorker, nanoClock)
+    private val frameSource =
+        DesktopFrameSource(config.analysisFormat, config.analysisResolution, runtime.newWorker, nanoClock)
     override val frames: FrameSource get() = frameSource
 
     private val previewFrames = MutableStateFlow<PreviewFrame?>(null)

@@ -129,11 +129,12 @@ internal class LeasedFrame internal constructor(
         return planes
     }
 
-    private fun scaledTo(size: Resolution): ScaledImage = scaled?.takeIf { it.width == size.width && it.height == size.height }
-        ?: ScaledImage(image, size.width, size.height).also {
-            scaled?.dispose()
-            scaled = it
-        }
+    private fun scaledTo(size: Resolution): ScaledImage =
+        scaled?.takeIf { it.width == size.width && it.height == size.height }
+            ?: ScaledImage(image, size.width, size.height).also {
+                scaled?.dispose()
+                scaled = it
+            }
 
     /** Frees the slot's drawing state; its image stays readable for a consumer still holding it. */
     internal fun dispose() {
