@@ -2,14 +2,13 @@ package com.kashif.cameraK.testing
 
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.frames.AnalyzerAdmission
 import com.kashif.cameraK.frames.CameraFrame
 import com.kashif.cameraK.frames.FrameAnalyzer
 import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FrameRegistration
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.frames.FrameSpec
-import com.kashif.cameraK.frames.isFatalAnalyzerFailure
-import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,9 +19,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * [FrameSpec.acceptedFormats] holds the session format is active until it is closed. Any other is
  * rejected with `Unsupported(ANALYSIS_FORMAT)` and stays inactive.
  *
- * [emit] delivers a frame on the calling thread. It does not apply [FrameSpec.maxFps] or
- * [FrameSpec.maxRetained]: every frame emitted while the session is open reaches every active
- * registration, so a test sets the frame rate by what it emits.
+ * [emit] delivers a frame on the calling thread, through the same admission as the platform
+ * sources: a registration whose analyzer is still running skips the frame, and one with a
+ * [FrameSpec.maxFps] skips every frame stamped inside that interval since the last frame it
+ * received. The clock is the emitted frames' [CameraFrame.timestampNanos], so a test sets the rate
+ * by the timestamps it emits and keeps them non-decreasing. An admitted frame reaches the analyzer
+ * as the object emitted. [FrameSpec.maxRetained] is not enforced: holding frames is the platform
+ * sources' job, and a [TestFrame] holds nothing.
  *
  * [FakeCameraEngine.fakeFrames] reads the session format from the engine's configuration and the
  * open state from the engine; the no-argument constructor, for a source used on its own, has a
@@ -41,8 +44,9 @@ public class FakeFrameSource internal constructor(
 
     /**
      * Delivers [frame] to every active registration, in registration order, while the session is
-     * open; while it is not, the frame reaches nobody. What an analyzer throws is caught and logged,
-     * and the others still receive the frame, as the production frame sources do: a failed
+     * open; while it is not, the frame reaches nobody. Each registration admits it or skips it as
+     * the class KDoc says. What an analyzer throws is caught and logged, and the others still
+     * receive the frame, as the production frame sources do: a failed
      * assertion inside an analyzer is logged too, so a test asserts on what the analyzer recorded,
      * after [emit] returns. A fatal throwable, such as an OutOfMemoryError, propagates.
      *
@@ -65,32 +69,31 @@ public class FakeFrameSource internal constructor(
             } else {
                 CameraKError.Unsupported(CameraFeature.ANALYSIS_FORMAT)
             }
-        return Registration(analyzer, rejection).also { registered += it }
+        return Registration(spec, analyzer, rejection).also { registered += it }
     }
 
-    private inner class Registration(private val analyzer: FrameAnalyzer, override val rejection: CameraKError?) :
-        FrameRegistration {
+    @OptIn(InternalCameraKApi::class)
+    private inner class Registration(
+        spec: FrameSpec,
+        private val analyzer: FrameAnalyzer,
+        override val rejection: CameraKError?,
+    ) : FrameRegistration {
         private val _active = MutableStateFlow(rejection == null)
         override val active: StateFlow<Boolean> = _active.asStateFlow()
 
-        @OptIn(InternalCameraKApi::class)
+        // The admission's clock: the timestamp of the frame being admitted.
+        private var frameTime = 0L
+        private val admission = AnalyzerAdmission(spec.maxFps) { frameTime }
+
         fun deliver(frame: CameraFrame) {
             if (!_active.value) return
-            try {
-                analyzer.analyze(frame)
-            } catch (e: Throwable) {
-                if (e.isFatalAnalyzerFailure()) throw e
-                CameraKLogger.w(TAG, "Frame analyzer threw; the other analyzers still receive the frame", e)
-            }
+            frameTime = frame.timestampNanos
+            admission.deliver { analyzer.analyze(frame) }
         }
 
         override fun close() {
             _active.value = false
             registered.remove(this)
         }
-    }
-
-    private companion object {
-        const val TAG = "CameraK"
     }
 }

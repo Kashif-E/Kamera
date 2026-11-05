@@ -166,3 +166,25 @@ internal class AnalyzerRetain internal constructor(internal val lease: AnalyzerL
     /** Releases this retain, once; a second call does nothing, and never releases another retain or the entry. */
     fun release() = lease.releaseRetain(this)
 }
+
+/**
+ * One registration's admission through its own [AnalyzerGate], for a frame source outside this
+ * module: camerak-testing's `FakeFrameSource`, which has no access to the gate's internal types. It
+ * applies the gate's busy skip, `maxFps` throttle and failure rule, and holds no retain: the frame
+ * reaches [deliver]'s callback as the caller passes it.
+ */
+@InternalCameraKApi
+public class AnalyzerAdmission(maxFps: Float?, nanoTime: () -> Long) {
+    private val gate = AnalyzerGate(maxFps, nanoTime)
+
+    /**
+     * Runs [analyze] once when the gate admits the frame, catching and logging what it throws as
+     * [AnalyzerLease.deliver] does; returns false, without running it, when the analyzer is busy or
+     * throttled.
+     */
+    public fun deliver(analyze: () -> Unit): Boolean {
+        val lease = gate.tryEnter() ?: return false
+        lease.deliver(analyze)
+        return true
+    }
+}
