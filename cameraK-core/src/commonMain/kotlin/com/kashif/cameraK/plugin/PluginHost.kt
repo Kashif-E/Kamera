@@ -19,6 +19,7 @@ import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.state.CameraUIState
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.InternalCameraKApi
+import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -150,6 +151,7 @@ internal class PluginHost(
             val error = CameraKError.Internal(e)
             if (context != null) context.fail(error) else emit(CameraKEvent.PluginFailed(plugin.id, error))
         } finally {
+            context?.markDetached()
             context?.scope?.cancel()
         }
     }
@@ -157,6 +159,9 @@ internal class PluginHost(
     /** One attachment of [plugin]. The host is the only writer of [failure]. */
     internal inner class PluginContext(val plugin: CameraKPlugin) : CameraKPluginContext {
         private val _failure = MutableStateFlow<CameraKError?>(null)
+
+        // Set once onDetach has returned; a failure after it belongs to no attachment.
+        private val detached = atomic(false)
         override val failure: StateFlow<CameraKError?> = _failure.asStateFlow()
 
         @OptIn(InternalCameraKApi::class)
@@ -195,10 +200,21 @@ internal class PluginHost(
             fail(error)
         }
 
-        /** Sets [failure] and emits PluginFailed for this attachment's first failure; a later one is only logged by its caller. */
+        /**
+         * Sets [failure] and emits PluginFailed for this attachment's first failure; a later one is
+         * only logged by its caller. After the detach it does neither and logs that it ignored one.
+         */
         @OptIn(InternalCameraKApi::class)
         fun fail(error: CameraKError) {
+            if (detached.value) {
+                CameraKLogger.w(TAG, "A plugin failed after its detach; the failure is ignored", error.cause)
+                return
+            }
             if (_failure.compareAndSet(expect = null, update = error)) emit(CameraKEvent.PluginFailed(plugin.id, error))
+        }
+
+        fun markDetached() {
+            detached.value = true
         }
     }
 
