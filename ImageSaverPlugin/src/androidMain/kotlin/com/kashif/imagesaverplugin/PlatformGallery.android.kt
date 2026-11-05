@@ -6,7 +6,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.platformPermissionStatus
 import com.kashif.cameraK.platform.CameraKPlatformContext
-import com.kashif.cameraK.platform.androidApplicationContext
+import com.kashif.cameraK.plugin.androidApplicationContext
 import com.kashif.cameraK.utils.InternalCameraKApi
 
 @OptIn(InternalCameraKApi::class)
