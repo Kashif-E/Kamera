@@ -12,8 +12,9 @@ import java.util.concurrent.atomic.AtomicLong
  * each with its crop and mirror ([FrameBlit]) in one draw. Java2DFrameConverter writes every frame
  * into the same image, so its output never leaves this class. A slot is written again only when
  * its lease count is zero (§8 desktop): a frame the producer, an analyzer or the recorder still
- * holds is never overwritten. The pool grows while every slot is leased, up to [MAX_SLOTS]; past
- * that, a frame is skipped.
+ * holds is never overwritten. The pool grows while every slot is leased, up to [capacity] slots
+ * ([framePoolSize]); past that, a frame is skipped. When the capacity falls, free slots beyond it
+ * are dropped.
  *
  * [convert] is the 1.x call: the image it returns is not written again until two further frames
  * have been converted.
@@ -21,7 +22,10 @@ import java.util.concurrent.atomic.AtomicLong
  * Not thread-safe: the producer thread that grabs the frames is its only caller. Leases are given
  * back from any thread.
  */
-class FrameConverter internal constructor(private val yuvConversions: AtomicLong) {
+class FrameConverter internal constructor(
+    private val yuvConversions: AtomicLong,
+    private val capacity: () -> Int = { framePoolSize(retainLimits = 0, analyzers = 0) },
+) {
     constructor() : this(AtomicLong())
 
     private val converter = Java2DFrameConverter()
@@ -64,6 +68,13 @@ class FrameConverter internal constructor(private val yuvConversions: AtomicLong
     internal val slotCount: Int get() = slots.size
 
     private fun freeSlot(width: Int, height: Int): LeasedFrame? {
+        val limit = capacity()
+        val slot = pickSlot(width, height, limit)
+        trim(limit, keep = slot)
+        return slot
+    }
+
+    private fun pickSlot(width: Int, height: Int, limit: Int): LeasedFrame? {
         slots.firstOrNull { it.leaseCount == 0 && it.width == width && it.height == height }?.let { return it }
         // A free slot of another size (the camera's mode changed) is replaced.
         val stale = slots.indexOfFirst { it.leaseCount == 0 }
@@ -71,7 +82,7 @@ class FrameConverter internal constructor(private val yuvConversions: AtomicLong
             slots[stale].dispose()
             return LeasedFrame(width, height, yuvConversions).also { slots[stale] = it }
         }
-        if (slots.size >= MAX_SLOTS) {
+        if (slots.size >= limit) {
             if (!exhaustedLogged) {
                 exhaustedLogged = true
                 CameraKLogger.w("CameraK", "CameraK: Every frame slot is leased; frames are skipped until one is free")
@@ -79,6 +90,21 @@ class FrameConverter internal constructor(private val yuvConversions: AtomicLong
             return null
         }
         return LeasedFrame(width, height, yuvConversions).also { slots += it }
+    }
+
+    // Only the producer leases a free slot, so a slot found free here stays free while it is dropped.
+    private fun trim(limit: Int, keep: LeasedFrame?) {
+        var excess = slots.size - limit
+        if (excess <= 0) return
+        val iterator = slots.iterator()
+        while (excess > 0 && iterator.hasNext()) {
+            val slot = iterator.next()
+            if (slot !== keep && slot.leaseCount == 0) {
+                slot.dispose()
+                iterator.remove()
+                excess--
+            }
+        }
     }
 
     private fun draw(slot: LeasedFrame, source: BufferedImage, crop: Crop, mirrored: Boolean) {
@@ -103,12 +129,23 @@ class FrameConverter internal constructor(private val yuvConversions: AtomicLong
     private companion object {
         // The frame being collected and the one buffered behind it, for a 1.x caller of convert().
         const val LEGACY_HELD = 2
-
-        // Two for the preview's hold, one being converted, and the frames analyzers and the
-        // recorder hold; each analyzer is bounded by its maxRetained.
-        const val MAX_SLOTS = 16
     }
 }
+
+/**
+ * The slots the producer's pool may hold (W7b): [retainLimits], the sum of every registration's
+ * `maxRetained`, plus one slot for each consumer (the preview, a still, the recorder and each of the
+ * [analyzers]) and two of headroom. Each consumer other than the preview keeps at most one frame
+ * besides an analyzer's retains, and the preview's two held frames and the one being converted take
+ * its slot and the headroom, so the pool never runs dry while an analyzer at its `maxRetained` is
+ * skipped.
+ */
+internal fun framePoolSize(retainLimits: Int, analyzers: Int): Int =
+    retainLimits + FIXED_CONSUMERS + analyzers + HEADROOM_SLOTS
+
+// The preview, a still and the recorder.
+private const val FIXED_CONSUMERS = 3
+private const val HEADROOM_SLOTS = 2
 
 /**
  * The producer's blit of one frame: the centred crop to [aspectRatio] (none when null) and a

@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.EmptyCoroutineContext
 
 /**
@@ -36,6 +37,11 @@ import kotlin.coroutines.EmptyCoroutineContext
  * desktop has no platform buffer to hand it. A registration whose `acceptedFormats` lacks [format] is
  * rejected with `Unsupported(ANALYSIS_FORMAT)` and never active. Every other registration is active
  * from the start, because a desktop session always has its frames: there is no output to add.
+ *
+ * The producer's pool is sized from the registrations ([poolSize], W7b): a registration counts from
+ * its registration until it is closed and every frame it was handed has come back, so an analyzer
+ * at its `maxRetained` is skipped alone and the preview, stills, the recording and every other
+ * analyzer keep getting frames.
  */
 internal class DesktopFrameSource(
     private val format: FrameFormat,
@@ -45,7 +51,15 @@ internal class DesktopFrameSource(
 ) : FrameSource {
     private val registrations = CopyOnWriteArrayList<Registration>()
 
+    // The registrations the pool is sized for: the open ones and the closed ones still holding frames.
+    private val pooled = CopyOnWriteArrayList<Registration>()
+    private val poolLock = Any()
+
     @Volatile private var closed = false
+
+    /** The slots the producer's pool may hold for the registrations now counted ([framePoolSize]). */
+    @Volatile var poolSize: Int = framePoolSize(retainLimits = 0, analyzers = 0)
+        private set
 
     override fun register(spec: FrameSpec, analyzer: FrameAnalyzer): FrameRegistration {
         if (format !in spec.acceptedFormats) {
@@ -57,9 +71,20 @@ internal class DesktopFrameSource(
         if (closed) return Registration(spec, analyzer, null, worker = null, gate = gate).also { it.close() }
         val worker = if (spec.synchronous) null else newWorker(ANALYZER_THREAD)
         return Registration(spec, analyzer, null, worker, gate).also {
+            // Sized before the first frame can reach it.
+            pooled += it
+            resizePool()
             registrations += it
             if (closed) it.close()
         }
+    }
+
+    private fun resizePool() = synchronized(poolLock) {
+        poolSize = framePoolSize(retainLimits = pooled.sumOf { it.retainLimit }, analyzers = pooled.size)
+    }
+
+    private fun leavePool(registration: Registration) {
+        if (pooled.remove(registration)) resizePool()
     }
 
     /** Hands [frame] to every idle registration. Producer thread only, while it holds a lease on [frame]. */
@@ -68,7 +93,8 @@ internal class DesktopFrameSource(
         var planes: List<FramePlane>? = null
         for (registration in registrations) {
             val gate = registration.gate ?: continue
-            val lease = gate.tryEnter(onReleased = frame::release) ?: continue
+            val lease = gate.tryEnter(onReleased = { registration.returned(frame) }) ?: continue
+            registration.handed()
             frame.retain()
             val view = planes ?: try {
                 frame.analysisPlanes(format, analysisSize).also { planes = it }
@@ -99,6 +125,21 @@ internal class DesktopFrameSource(
 
         @Volatile private var open = rejection == null
 
+        /** The frames the registration may keep, as its gate counts them. */
+        val retainLimit: Int = spec.maxRetained.coerceAtLeast(1)
+
+        // Frames handed to the analyzer and not yet given back: an entry or a retain still holds them.
+        private val outstanding = AtomicInteger(0)
+
+        fun handed() {
+            outstanding.incrementAndGet()
+        }
+
+        fun returned(frame: LeasedFrame) {
+            frame.release()
+            if (outstanding.decrementAndGet() == 0 && !open) leavePool(this)
+        }
+
         fun dispatch(frame: CameraFrame, lease: AnalyzerLease) {
             if (spec.synchronous || worker == null) {
                 lease.deliver { analyzer.analyze(frame) }
@@ -121,6 +162,7 @@ internal class DesktopFrameSource(
             open = false
             _active.value = false
             if (registrations.remove(this)) worker?.close()
+            if (outstanding.get() == 0) leavePool(this)
         }
     }
 

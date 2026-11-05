@@ -144,7 +144,9 @@ class CameraGrabber(
     fun start(coroutineScope: CoroutineScope, customGrabber: FrameGrabber? = null): Unit = synchronized(startLock) {
         if (job.value?.isActive == true) return
         val source = customGrabber?.let(::CustomGrabberSource) ?: DefaultDeviceSource(targetResolution)
-        launchRun(coroutineScope, source, desktopLensInfo(), ::newDedicatedWorker, legacyListener, FrameBlit.NONE)
+        launchRun(coroutineScope, source, desktopLensInfo(), ::newDedicatedWorker, legacyListener, FrameBlit.NONE) {
+            framePoolSize(retainLimits = 0, analyzers = 0)
+        }
     }
 
     /**
@@ -152,6 +154,7 @@ class CameraGrabber(
      * the camera: the engine cancels a run it replaces before it starts the next. The run reports
      * to [listener] on [newWorker]'s thread, one worker per run (§2.4 desktop). Each frame is
      * blitted with [blit]'s crop and mirror, and mirrored as well while [setHorizontalFlip] is on.
+     * The run's frame pool holds at most [poolSize] slots, read again at each frame.
      */
     internal fun startRun(
         scope: CoroutineScope,
@@ -160,7 +163,8 @@ class CameraGrabber(
         newWorker: (String) -> WorkerDispatcher,
         listener: GrabLoopListener,
         blit: FrameBlit = FrameBlit.NONE,
-    ): Job = synchronized(startLock) { launchRun(scope, source, device, newWorker, listener, blit) }
+        poolSize: () -> Int = { framePoolSize(retainLimits = 0, analyzers = 0) },
+    ): Job = synchronized(startLock) { launchRun(scope, source, device, newWorker, listener, blit, poolSize) }
 
     private fun launchRun(
         scope: CoroutineScope,
@@ -169,6 +173,7 @@ class CameraGrabber(
         newWorker: (String) -> WorkerDispatcher,
         listener: GrabLoopListener,
         blit: FrameBlit,
+        poolSize: () -> Int,
     ): Job {
         val previous = job.value
         val deviceLock = cameraDeviceLock(source.deviceKey(device))
@@ -176,7 +181,7 @@ class CameraGrabber(
         val run = Any()
         synchronized(feedLock) { feedOwner = run }
         val loop = scope.launch(producer.dispatcher, start = CoroutineStart.ATOMIC) {
-            runLoop(previous, deviceLock, source, device, listener, blit, run)
+            runLoop(previous, deviceLock, source, device, listener, blit, run, poolSize)
         }
         loop.invokeOnCompletion { producer.close() }
         job.value = loop
@@ -192,11 +197,12 @@ class CameraGrabber(
         listener: GrabLoopListener,
         blit: FrameBlit,
         run: Any,
+        poolSize: () -> Int,
     ) {
         var owned: FrameGrabber? = null
         var holdsDevice = false
         var opened = false
-        val converter = FrameConverter(yuvConversions)
+        val converter = FrameConverter(yuvConversions, poolSize)
         converterInUse = converter
         // The two latest frames, held for the preview: a frame is not written again while the next
         // two are converted and published.

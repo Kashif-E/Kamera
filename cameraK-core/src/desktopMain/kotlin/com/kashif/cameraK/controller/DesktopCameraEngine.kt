@@ -278,7 +278,7 @@ internal class DesktopCameraEngine(
             aspectRatio = config.aspectRatio.takeIf { cropToAspectRatio },
             mirrored = config.mirrorFrontCamera && device.lens == CameraLens.FRONT,
         )
-        val job = grabber.startRun(scope, source, device, runtime.newWorker, listener, blit)
+        val job = grabber.startRun(scope, source, device, runtime.newWorker, listener, blit) { frameSource.poolSize }
         run.job = job
         liveRuns += job
         job.invokeOnCompletion { synchronized(lock) { liveRuns -= job } }
