@@ -41,6 +41,7 @@ class CaptureFeatureTest {
 
         assertEquals(1, capturer.calls, "the photo action captured ${capturer.calls} times")
         assertEquals(capturer.image, feature.lastPhoto.value, "the screen does not show the photo")
-        assertEquals(listOf("Photo saved"), notices)
+        // The capture is not the save: the image saver saves from the holder's captures afterwards.
+        assertEquals(listOf("Photo taken"), notices, "the photo action claimed a save it does not make")
     }
 }
