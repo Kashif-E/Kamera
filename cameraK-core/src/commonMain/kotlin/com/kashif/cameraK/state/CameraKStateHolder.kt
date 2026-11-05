@@ -63,6 +63,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -292,6 +293,17 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         frames = engine.frames,
         recordingState = recording.state,
     ) { _events.tryEmit(it) }
+
+    /**
+     * True while the holder asks for the platform default camera: the configuration names no lens and
+     * no camera id, and no camera was selected since. `:cameraK` saves no lens while it is true, so a
+     * restored configuration keeps meaning the platform default (§6.1 "Default lens").
+     */
+    @InternalCameraKApi
+    public val selectsPlatformDefault: StateFlow<Boolean> = DerivedStateFlow(
+        read = { desiredHardware.value.selection is CameraSelection.Default },
+        changes = desiredHardware.map { it.selection is CameraSelection.Default },
+    )
 
     /**
      * The camera's properties, derived from what the engine reports, the captures in flight, the

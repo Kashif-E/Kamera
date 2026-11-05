@@ -83,8 +83,9 @@ fun rememberCameraKState(
  * the plugins no longer listed and attaches the new ones; never attach plugins from an effect keyed
  * on the holder.
  *
- * The user's lens, flash and torch are saved with rememberSaveable, so after process death the new
- * holder starts with them; the zoom is saved too, and restored once the configuration can carry it.
+ * The user's lens, device type, flash, torch and zoom are saved with rememberSaveable, so after
+ * process death the new holder starts with them. A configuration with no lens keeps the platform
+ * default until the user picks a camera.
  *
  * When [lifecycleOwner] is not null, the holder starts when it reaches STARTED and stops when it
  * drops below, and on every resume it re-checks the camera permission, so a permission granted in
@@ -142,6 +143,7 @@ internal fun rememberCameraKStateHolder(
  * [viewModelStoreOwner], or, without one, remembered and closed on dispose. Applies [plugins]
  * changes and drives the holder from [lifecycleOwner].
  */
+@OptIn(InternalCameraKApi::class)
 @Composable
 internal fun rememberLifecycleHolder(
     config: CameraConfiguration,
@@ -165,7 +167,7 @@ internal fun rememberLifecycleHolder(
         holder = rememberDisposedHolder(config, plugins, seed, factory)
     }
     LaunchedEffect(holder) {
-        combine(holder.uiState, holder.zoom) { ui, zoom ->
+        combine(holder.uiState, holder.zoom, holder.selectsPlatformDefault) { ui, zoom, platformDefault ->
             val lens = ui.cameraLens
             val flash = ui.flashMode
             val torch = ui.torchMode
@@ -175,8 +177,10 @@ internal fun rememberLifecycleHolder(
                 torch == null
             ) {
                 null
+            } else if (platformDefault) {
+                CameraUserState(null, null, flash, torch, zoom.ratio)
             } else {
-                CameraUserState(lens, flash, torch, zoom.ratio)
+                CameraUserState(lens, ui.cameraDeviceType, flash, torch, zoom.ratio)
             }
         }.collect { reported -> if (reported != null) userState.value = reported }
     }
