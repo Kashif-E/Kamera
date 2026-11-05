@@ -42,7 +42,7 @@ import java.util.concurrent.ExecutorService
  * commands replace it. Session and binding belong to the engine; nothing here binds or opens a
  * camera on its own. [startSession], [stopSession], [cleanup], the lens and device-type switches,
  * the preview, flash, torch, zoom, the target orientation, capture and recording go through the
- * engine; analyzers keep their 1.x bodies on the engine's frame pipeline until A4'.
+ * engine; analyzers are 1.x consumers of the engine's frame pipeline, with 1.x close semantics.
  *
  * Captures and recordings are app-owned files, whatever the [Directory] (Decision 10). The engine's
  * recording outcome reaches the 1.x result as 1.x reported a playable file: a recording, or one a
@@ -237,14 +237,15 @@ actual class CameraController internal constructor(
 
     /**
      * Registers an [ImageAnalysis.Analyzer] to receive camera frames.
-     * Multiple analyzers can be registered simultaneously — they share a single
-     * [ImageAnalysis] use case via ref-counted frame dispatch. Safe to call from any thread; only the
-     * first registration binds anything.
+     * Multiple analyzers can be registered simultaneously — they share the engine's single
+     * [ImageAnalysis] use case, beside the holder's FrameSource registrations. Safe to call from any
+     * thread; only the first registration binds anything.
      *
-     * Analyzers run one after another on the analysis thread, and the frame is released once every
-     * analyzer has closed it, so close it before returning or copy what you need first. Each
-     * analyzer reads the frame's planes through its own read-only buffers; a throwing analyzer is
-     * logged and its share of the frame closed.
+     * Analyzers run one after another on the analysis thread, after the FrameSource registrations,
+     * and the frame is released once every analyzer has closed it, so close it before returning or
+     * copy what you need first: until then CameraX delivers no next frame to anyone. Each analyzer
+     * reads the frame's planes through its own read-only buffers; a throwing analyzer is logged and
+     * its share of the frame closed.
      */
     fun registerImageAnalyzer(analyzer: ImageAnalysis.Analyzer) {
         frames.add(analyzer)
@@ -278,6 +279,7 @@ actual class CameraController internal constructor(
             // The bound camera rather than a bare lens facing: a pinned physical lens must carry the
             // same selector-level pin as the main bind.
             engine.binder.bindAlone({ engine.boundCameraOr(cameraLens, cameraDeviceType) }, analysis)
+            frames.onBound(true)
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Binding image analysis during a recording failed", e)
         }

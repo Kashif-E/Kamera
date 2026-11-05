@@ -26,7 +26,6 @@ import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineRecordingEvent
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.HardwareState
-import com.kashif.cameraK.engine.InactiveFrameSource
 import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.TraceNames
@@ -42,6 +41,7 @@ import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
+import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
@@ -115,8 +115,14 @@ private const val TAG = "CameraK"
  * from CameraX's Start to its Finalize on [recordingEvents] (§5); VideoCapture is built off Main and
  * bound only for a recording or from [prepareRecording] until the engine stops (§2.4).
  *
+ * [frames] is the [FramePipeline] (§8): one ImageAnalysis in the configured analysis format and size,
+ * bound from the first bind when `frameAnalysis` is set, otherwise by the first registration's one
+ * late bind, never during a recording (the recording's end binds it). Registering and unregistering
+ * never rebind.
+ *
  * The 1.x [CameraController] is a facade over this engine ([legacyController]): its capture and
- * recording run on the engine's own paths; frame analysis runs on the collaborators below until A4'.
+ * recording run on the engine's own paths, and its analyzers are 1.x consumers of the same frame
+ * pipeline, with 1.x close semantics, until C1'.
  */
 internal class AndroidCameraEngine(
     private val config: CameraConfiguration,
@@ -173,9 +179,7 @@ internal class AndroidCameraEngine(
 
     override val recordingEvents: Flow<EngineRecordingEvent> get() = videoRecorder.events
 
-    // The engine's own frame source comes with A4'; until then the 1.x facade feeds analyzers through
-    // the frame pipeline below.
-    override val frames: FrameSource = InactiveFrameSource()
+    override val frames: FrameSource get() = framePipeline
 
     private val previewSource =
         EnginePreviewSource(config.aspectRatio, onMain = ::onMain, onDisplayAttached = ::onDisplayChanged)
@@ -219,7 +223,13 @@ internal class AndroidCameraEngine(
         imageCapture = { stillCapturer.imageCapture },
         readFlash = backend::flashModeOf,
     )
-    internal val framePipeline = FramePipeline(backend, analyzerExecutor)
+    internal val framePipeline = FramePipeline(
+        backend = backend,
+        analyzerExecutor = analyzerExecutor,
+        sessionFormat = config.analysisFormat,
+        newWorker = { name -> environment.runtime.newWorker(name) },
+        resolutionSelector = binder.analysisResolutionSelector(config.analysisResolution),
+    )
     internal val videoRecorder =
         VideoRecorder(
             context = context,
@@ -267,6 +277,9 @@ internal class AndroidCameraEngine(
     private var teardown: Job? = null
     private val awaitingFirstFrame = AtomicBoolean(false)
 
+    // A late bind of the ImageAnalysis a registration asked for is queued. Main thread.
+    private var analysisBindPending = false
+
     // The bound camera's video qualities (§6.3), queried off Main after every bind.
     private var boundQualities: Set<VideoQuality> = emptySet()
     private var qualityQuery: Deferred<Set<VideoQuality>>? = null
@@ -275,6 +288,7 @@ internal class AndroidCameraEngine(
         // Declared up front, so the first bind includes the ImageAnalysis and a plugin that registers
         // later only joins it (Decision 14).
         if (config.frameAnalysis) framePipeline.requestAnalysis()
+        framePipeline.onConsumersChanged = { onMain(::bindAnalysisOrApplyConsumers) }
         if (config.directory != Directory.DOCUMENTS) {
             CameraKLogger.w(
                 TAG,
@@ -324,7 +338,8 @@ internal class AndroidCameraEngine(
                 ?: return fail(live, CameraKError.NoCamera(lensOf(desired.selection)))
             // The display listener runs only while started, so a display that turned while stopped
             // left the ViewPort stale: the start rebinds then, even on the same camera.
-            if (resolved != boundCamera || viewPortStale() || videoRecorder.videoBindStale) {
+            val stale = viewPortStale() || videoRecorder.videoBindStale || framePipeline.analysisMissing
+            if (resolved != boundCamera || stale) {
                 val bindProvider = awaitUnlessEnded(live, providerAsync()) ?: return live.opened.await()
                 val error = bindProvider.fold(
                     onSuccess = { bind(resolved, it) },
@@ -597,6 +612,29 @@ internal class AndroidCameraEngine(
         }
     }
 
+    /**
+     * Attaches or detaches the frame multiplexer for the current consumers, or, when a registration
+     * asked for an ImageAnalysis the bind lacks, binds it once (Decision 14's late bind). Before the
+     * first bind, and during a recording, it waits: that bind, or the one the recording's end makes
+     * ([VideoHost.onNoActiveRecording]), includes it. Main thread.
+     */
+    private fun bindAnalysisOrApplyConsumers() {
+        if (closed.value) return
+        if (!framePipeline.analysisMissing) {
+            framePipeline.applyConsumers()
+            return
+        }
+        if (session == null || !isBound || videoRecorder.isRecording || analysisBindPending) return
+        analysisBindPending = true
+        scope.launch(mainImmediate) {
+            try {
+                if (framePipeline.analysisMissing) rebind()
+            } finally {
+                analysisBindPending = false
+            }
+        }
+    }
+
     /** Rebinds the bound camera with the current use cases, if a session has one. Main thread. */
     internal suspend fun rebind() {
         val live = session ?: return
@@ -665,12 +703,14 @@ internal class AndroidCameraEngine(
             binder.bindGroup(resolved, useCases)
         } catch (e: SecurityException) {
             CameraKLogger.e(TAG, "Binding the camera was refused", e)
+            framePipeline.onBound(false)
             return CameraKError.Permission(
                 CameraKPermission.CAMERA,
                 PermissionStatus.Denied(shouldShowRationale = false),
                 e,
             )
         } catch (e: IllegalArgumentException) {
+            framePipeline.onBound(false)
             if (video != null) {
                 // CameraX found no stream combination that includes VideoCapture (§4.1).
                 CameraKLogger.e(TAG, "CameraX refused the use cases with VideoCapture", e)
@@ -680,9 +720,11 @@ internal class AndroidCameraEngine(
             return CameraKError.NoCamera(resolved.lens, e)
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Binding the use cases failed", e)
+            framePipeline.onBound(false)
             return CameraKError.Internal(e)
         }
         boundCamera = resolved
+        framePipeline.onBound(framePipeline.analysis != null)
         if (video == null) videoRecorder.onBoundWithoutVideo()
         queryVideoQualities(camera)
         hardwareControls.revalidateFlash()
@@ -996,12 +1038,15 @@ internal class AndroidCameraEngine(
             scope.launch(mainImmediate) { rebind() }
         }
 
-        // Applies any rotation flip that was deferred while recording was in progress.
+        // Applies any rotation flip that was deferred while recording was in progress, then binds an
+        // ImageAnalysis a registration made during the recording asked for, unless that rebind or the
+        // recording's own included it.
         override fun onNoActiveRecording() {
             if (pendingViewPortRebind && !closed.value) {
                 pendingViewPortRebind = false
                 rebindIfViewPortOrientationChanged()
             }
+            if (framePipeline.analysisMissing) scope.launch(mainImmediate) { bindAnalysisOrApplyConsumers() }
         }
     }
 
@@ -1081,8 +1126,8 @@ internal class AndroidCameraEngine(
  * OFF and ON on a lens with a flash unit, OFF only otherwise (CameraX has no AUTO torch); pause and
  * resume, which CameraX's Recorder supports; [videoQualities], the bound camera's own (empty before
  * the first bind), each recorded at its `VideoQuality.bitrateBps` as the encoder's target rate; JPEG
- * and PNG; every aspect ratio, 1:1 as the square file the 1:1 ViewPort crops from a 4:3 stream; the
- * 1.x shape's analysis formats until A4'.
+ * and PNG; every aspect ratio, 1:1 as the square file the 1:1 ViewPort crops from a 4:3 stream;
+ * YUV_420 and RGBA_8888 analysis, the two formats ImageAnalysis outputs.
  */
 @OptIn(CameraKEngineApi::class)
 internal fun androidCapabilities(
@@ -1099,7 +1144,7 @@ internal fun androidCapabilities(
         supportsVideoBitrate = true,
         supportedAspectRatios = AspectRatio.entries.toSet(),
         supportedImageFormats = setOf(ImageFormat.JPEG, ImageFormat.PNG),
-        supportedAnalysisFormats = legacy.supportedAnalysisFormats,
+        supportedAnalysisFormats = setOf(FrameFormat.YUV_420, FrameFormat.RGBA_8888),
         supportsSquareCapture = true,
     )
 }

@@ -21,6 +21,7 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.lifecycle.LifecycleOwner
 import com.kashif.cameraK.enums.AspectRatio
+import com.kashif.cameraK.state.Resolution
 
 /**
  * Binds the engine's use cases to the process camera provider and unbinds exactly those. Owns the
@@ -88,6 +89,22 @@ internal class UseCaseBinder(
             )
         }
         return builder.build()
+    }
+
+    /**
+     * The analysis resolution selector (design §8): the configured aspect ratio, as the preview has,
+     * and [resolution] as the preferred size within it. Without one the preferred size is CameraX's
+     * own analysis default, VGA: a selector with no resolution strategy would make CameraX pick the
+     * largest size the camera has.
+     */
+    fun analysisResolutionSelector(resolution: Resolution?): ResolutionSelector {
+        val preferred = resolution?.let { Size(it.width, it.height) } ?: ANALYSIS_DEFAULT_SIZE
+        return ResolutionSelector.Builder()
+            .setAspectRatioStrategy(aspectRatio.toCameraXAspectRatioStrategy())
+            .setResolutionStrategy(
+                ResolutionStrategy(preferred, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
+            )
+            .build()
     }
 
     /** The preview use case for the next bind, with no surface yet; [configure] adds to its builder. */
@@ -214,6 +231,9 @@ internal class UseCaseBinder(
         (context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager)?.unregisterDisplayListener(listener)
     }
 }
+
+// ImageAnalysis's own default size in CameraX 1.5 (SizeUtil.RESOLUTION_VGA).
+private val ANALYSIS_DEFAULT_SIZE = Size(640, 480)
 
 private fun Int.isQuarterTurn(): Boolean = this == Surface.ROTATION_90 || this == Surface.ROTATION_270
 
