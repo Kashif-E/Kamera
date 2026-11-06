@@ -104,8 +104,10 @@ android {
     }
 }
 
+// The @sample functions the KDoc names. Only commonMain gets them: Dokka refuses two source sets that
+// share a sample root, and every Android source set would.
 dokka {
-    dokkaSourceSets.configureEach {
+    dokkaSourceSets.named("commonMain") {
         samples.from("src/commonTest/kotlin")
     }
 }

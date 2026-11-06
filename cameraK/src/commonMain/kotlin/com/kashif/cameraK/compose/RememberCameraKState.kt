@@ -1,6 +1,7 @@
 package com.kashif.cameraK.compose
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositeKeyHashCode
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -194,4 +195,4 @@ private class DisposedHolders {
     var applied: List<CameraKPlugin> = emptyList()
 }
 
-private fun holderKey(compositeKey: Long): String = "com.kashif.cameraK.CameraKHolder:$compositeKey"
+private fun holderKey(compositeKey: CompositeKeyHashCode): String = "com.kashif.cameraK.CameraKHolder:$compositeKey"
