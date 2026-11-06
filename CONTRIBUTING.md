@@ -24,7 +24,7 @@ scripts/verify.sh
 (`ANDROID_HOME`, default `~/Library/Android/sdk`).
 
 ```bash
-scripts/verify.sh                            # full run: spotless, every module's desktop, Android and iOS tests, Android lint, screenshots, Sample build and iOS framework link
+scripts/verify.sh                            # full run: spotless, every module's desktop, Android and iOS tests, Android lint, screenshots, the Sample's tests, build and iOS framework link, and the publish step
 scripts/verify.sh --quick                    # desktop JVM tests only, the fastest loop
 scripts/verify.sh --module qrScannerPlugin   # one module
 scripts/verify.sh --only android             # one target: desktop, android, ios, screenshots, lint or sample
@@ -32,7 +32,15 @@ scripts/verify.sh --only android             # one target: desktop, android, ios
 
 The Gradle log goes to `build/verify/<mode>-<timestamp>.log`, and the summary goes to
 `build/verify/summary.md` and `summary.json`. The run is RED if Gradle fails, if a test fails, or
-if a requested target ran zero tests. Results left over from earlier runs are ignored.
+if a requested target ran zero tests. Results left over from earlier runs are ignored. The sample
+target runs the Sample's own tests (`:Sample:desktopTest`) and counts them as `Sample / sample`.
+
+**The publish step.** A `--full` run (and no narrower one) also publishes every published module, the
+BOM and the relocation POMs, unsigned, to `build/verify/m2`, which it empties first; nothing goes to
+`~/.m2` or Maven Central. The run is RED unless every coordinate a release uploads is there: each
+artifact's root and its `android`, `desktop`, `iosarm64` and `iossimulatorarm64` variants (`.module`
+and `.pom`), the BOM's root, and each relocation POM pointing at its 2.0 id. Compiling the tests never
+builds the metadata compilations behind a root artifact, so only publishing shows they work.
 `./gradlew verifyAll` runs the same tasks without the summary.
 
 **Adding a lint check.** Register the task with `group = lintGroup` in the root build (in a
@@ -81,6 +89,38 @@ scripts/verify.sh --record-screenshots
 
 When a comparison fails, the actual render and a diff are written to
 `cameraK/build/reports/screenshots-desktop/` and `cameraKScreenshotTests/build/paparazzi/failures/`.
+
+**Public API and ABI dumps.** Every published module is compiled in explicit API mode, so each
+declaration states its visibility, and checks its ABI against the dumps committed under its `api/`
+directory (`api/android/*.api`, `api/desktop/*.api`, `api/*.klib.api`). Each `checkKotlinAbi` runs in
+the lint target, so an API change the dumps do not record fails `verify.sh`. After reviewing a change
+to the public API, rewrite the dumps and commit them with it:
+
+```bash
+./gradlew updateKotlinAbi
+```
+
+The lint target also rejects a public `data class`, a `Channel` or `MutableStateFlow`/`MutableSharedFlow`
+in a public signature, a public sealed type or enum whose KDoc does not open with "Closed" or "Open",
+and an ABI dump that names an atomicfu type (`checkBuildGateRules`). ERROR-level deprecation hints are
+exempt.
+
+**Dependency verification.** Gradle checks the sha256 of every dependency it downloads against
+`gradle/verification-metadata.xml`. Any dependency change, a Dependabot update included, fails the build
+until the file is regenerated, in the same commit, over everything CI and a release resolve:
+
+```bash
+./gradlew --write-verification-metadata sha256 --continue verifyAll -Pcamerak.verify.rerunTests=true \
+    -Pcamerak.verify.publishRepo="$PWD/build/verify/m2" -PsignAllPublications=false
+./gradlew --write-verification-metadata sha256 --dry-run publishAllPublicationsToMavenCentralRepository
+mv gradle/verification-metadata.dryrun.xml gradle/verification-metadata.xml
+```
+
+The second command adds what signing a release resolves; with `--dry-run` it uploads nothing and
+writes `verification-metadata.dryrun.xml`, the first file plus those entries. Review the new entries
+before committing. CI runs on Apple silicon macOS, which is what the file covers; on another OS the
+desktop tests' bytedeco natives and the Kotlin/Native toolchain differ, so run the first command there
+and do not commit the result.
 
 ## Releasing
 
