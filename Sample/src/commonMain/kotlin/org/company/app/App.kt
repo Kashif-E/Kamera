@@ -43,7 +43,7 @@ fun App() = AppTheme {
         // letterbox bars) never flashes the default white surface.
         containerColor = Color.Black,
     ) {
-        if (permissions.statuses[CameraKPermission.CAMERA] == PermissionStatus.Granted) {
+        if (cameraGranted(permissions.statuses[CameraKPermission.CAMERA])) {
             CameraContent(
                 analyzer = analyzer,
                 imageSaver = imageSaver,
@@ -62,6 +62,9 @@ fun App() = AppTheme {
  */
 internal fun samplePermissions(autoSave: Boolean): List<CameraKPermission> =
     if (autoSave) listOf(CameraKPermission.CAMERA, CameraKPermission.GALLERY_ADD) else listOf(CameraKPermission.CAMERA)
+
+/** Whether the Sample shows the camera for this camera permission status. */
+internal fun cameraGranted(status: PermissionStatus?): Boolean = status == PermissionStatus.Granted
 
 /** The line the screen shows when the camera was refused; a refused gallery only stops the saving. */
 internal fun permissionNotice(results: Map<CameraKPermission, PermissionStatus>): String? =
