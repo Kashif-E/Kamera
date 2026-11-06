@@ -1,194 +1,146 @@
-
-
 # Video Recording
 
-Record high-quality videos with Kamera’s VideoRecorderPlugin. This guide matches the actual usage patterns from the sample app.
+Recording is part of the core: the holder records, with no plugin. Its commands return their
+outcome, and `holder.recordingState` says where the recording is.
 
----
+## Permissions
 
-## Overview
-
-Kamera’s video recording is powered by the `VideoRecorderPlugin`, which provides a simple API for starting, stopping, and monitoring video capture. It supports audio, duration limits, and quality selection.
-
----
-
-
-## 1. Prerequisites & Permissions
-
-- Kamera and VideoRecorderPlugin dependencies added to your project
-- Camera and storage permissions granted (Android/iOS)
-
-### Android: Update `AndroidManifest.xml`
-
-Add the following permissions:
-
-```xml
-<uses-permission android:name="android.permission.CAMERA" />
-<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-<uses-permission android:name="android.permission.RECORD_AUDIO" /> <!-- Required for video recording with audio -->
-```
-
-### iOS: Update `Info.plist`
-
-Add these keys for camera, photo library, and microphone access:
-
-```xml
-<key>NSCameraUsageDescription</key>
-<string>Camera access required for taking photos and videos</string>
-<key>NSPhotoLibraryAddUsageDescription</key>
-<string>Photo library access required for saving videos</string>
-<key>NSMicrophoneUsageDescription</key>
-<string>Microphone access required for video recording</string>
-```
-
----
-
-## 2. Installation
-
-From 2.0, recording is part of the core library; the video recorder plugin is no longer published.
-Add the core library to your `build.gradle.kts`:
+A recording is silent unless its `VideoConfiguration` sets `enableAudio = true`. With audio it needs
+the microphone permission: `RECORD_AUDIO` in the Android manifest and `NSMicrophoneUsageDescription`
+in the iOS `Info.plist` (see [Installation](../getting-started/installation.md)). Ask for it before
+recording:
 
 ```kotlin
-dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:2.0")
-}
+val microphone = rememberCameraKPermissionState(CameraKPermission.MICROPHONE)
 ```
 
----
+Without it, `startRecording` with audio returns `Failure(CameraKError.Permission(MICROPHONE, status))`
+and nothing records. Desktop records no audio: a recording with `enableAudio = true` returns
+`Failure(CameraKError.Unsupported(CameraFeature.AUDIO))`.
 
-## 3. Plugin Setup
-
-Configure the plugin with your desired options:
-
-```kotlin
-val videoRecorderPlugin = rememberVideoRecorderPlugin(
-    config = VideoConfiguration(
-        quality = VideoQuality.FHD, // SD, HD, FHD, UHD
-        enableAudio = true,         // Record with audio
-        maxDurationMs = 300_000L    // Optional: max duration in ms
-    )
-)
-```
-
-Attach the plugin in the `setupPlugins` lambda of `rememberCameraKState`:
+## Start and stop
 
 ```kotlin
-val cameraState by rememberCameraKState(
-    config = CameraConfiguration(/* ... */),
-    setupPlugins = { stateHolder ->
-        stateHolder.attachPlugin(videoRecorderPlugin)
-        // Attach other plugins as needed
-    }
-)
-```
-
----
-
-## 4. Handling Recording Events
-
-Monitor recording state and results using the `recordingEvents` flow:
-
-```kotlin
-var isRecording by remember { mutableStateOf(false) }
-var recordingDurationMs by remember { mutableStateOf(0L) }
-
-LaunchedEffect(videoRecorderPlugin) {
-    videoRecorderPlugin.recordingEvents.collect { event ->
-        when (event) {
-            is CameraKEvent.RecordingStarted -> {
-                isRecording = true
-            }
-            is CameraKEvent.RecordingStopped,
-            is CameraKEvent.RecordingFailed,
-            is CameraKEvent.RecordingMaxDurationReached -> {
-                isRecording = false
-                recordingDurationMs = 0L
-            }
-            else -> {}
-        }
-    }
-}
-
-LaunchedEffect(isRecording) {
-    if (isRecording) {
-        while (true) {
-            recordingDurationMs = videoRecorderPlugin.recordingDurationMs
-            delay(250L)
-        }
-    }
-}
-```
-
----
-
-## 5. UI Integration Example
-
-```kotlin
-// Inside your CameraScreen composable:
-Row(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.SpaceBetween,
-) {
-    // ... other controls ...
-    ShutterButton(
-        mode = cameraMode,
-        isRecording = isRecording,
-        isCapturing = isCapturing,
-        onPhotoCapture = { /* ... */ },
-        onVideoToggle = {
-            if (isRecording) {
-                videoRecorderPlugin.stopRecording()
-            } else {
-                videoRecorderPlugin.startRecording()
-            }
+scope.launch {
+    holder.startRecording(
+        VideoConfiguration {
+            quality = VideoQuality.FHD
+            maxDuration = 60.seconds
         },
-    )
-    // ... other controls ...
+    ).onFailure { error -> showError(error) }
+}
+
+scope.launch {
+    holder.stopRecording()                      // CameraKResult<RecordedVideo>
+        .onSuccess { video -> show(video.path, video.duration) }
 }
 ```
 
----
+`startRecording` returns once the platform confirms that recording began, with the
+`RecordingState.Recording` it is in. A second start while one is live is
+`Failure(Busy(RECORD_START))`, and a start the platform does not confirm within five seconds is
+`Failure(Timeout(RECORD_START))`.
 
-## 6. Configuration Options
+`stopRecording` returns the finished `RecordedVideo`: its `path`, `duration`, `width`, `height`,
+`bitrateBps` and `hasAudio`. Stopping when nothing records is `Failure(InvalidState)`. A stop also
+runs while the camera is Interrupted, so the platform can still finish the file.
 
-| Option         | Description                        | Example Value         |
-| -------------- | ---------------------------------- | -------------------- |
-| `quality`      | Video quality (SD/HD/FHD/UHD)      | `VideoQuality.FHD`   |
-| `enableAudio`  | Record audio with video            | `true`               |
-| `maxDurationMs`| Max duration in milliseconds       | `300_000L`           |
+To avoid the short rebind the first recording can cause, call `holder.prepareRecording(config)`
+when the recording screen opens.
 
----
+## Pause and resume
 
-## 7. Output Location
+```kotlin
+scope.launch { holder.pauseRecording() }
+scope.launch { holder.resumeRecording() }
+```
 
-- **Android:** Videos saved to DCIM or Pictures directory
-- **iOS:** Videos saved to Photos library
-- File path is provided in event callbacks
+Where the platform cannot pause, `pauseRecording` is `Failure(Unsupported(PAUSE_RESUME))`;
+`holder.capabilities.value.supportsPauseResume` says so up front. Both are `Failure(NotReady)`
+while the camera is Interrupted.
 
----
+## The recording's state
 
-## 8. Troubleshooting & Tips
+```kotlin
+val recording by holder.recordingState.collectAsStateWithLifecycle()
+val elapsed by rememberRecordingElapsed(holder)
 
-### Recording does not start
-- Ensure camera and storage permissions are granted
-- Check that the plugin is attached before camera is ready
+when (val state = recording) {
+    RecordingState.Idle -> RecordButton(onClick = { scope.launch { holder.startRecording() } })
+    is RecordingState.Starting -> Text("Starting...")
+    is RecordingState.Recording, is RecordingState.Paused -> {
+        Text("${elapsed.inWholeMinutes}:${(elapsed.inWholeSeconds % 60).toString().padStart(2, '0')}")
+        StopButton(onClick = { scope.launch { holder.stopRecording() } })
+    }
+    is RecordingState.Stopping -> Text("Saving...")
+    is RecordingState.Finished -> {
+        state.result.onSuccess { video -> Text("Saved ${video.duration}") }
+        RecordButton(onClick = { scope.launch { holder.startRecording() } })
+    }
+}
+```
 
-### Recording stops unexpectedly
-- Max duration reached? Listen for `RecordingMaxDurationReached`
-- Check for errors in `RecordingFailed` event
+`RecordingState` is closed: `Idle`, `Starting`, `Recording`, `Paused`, `Stopping`, then `Finished`
+with the `result` and the `reason` after any end. `rememberRecordingElapsed(holder)` (camerak) is
+the recorded time, updated once a second while recording, held while paused and zero otherwise;
+outside Compose, `recordingState.value.elapsed()` reads it.
 
-### File not found after recording
-- Use the file path from the event, and check platform-specific storage rules
+## Ends you did not ask for
 
----
+A recording that ends without `stopRecording` (a limit, an interruption, an error, the screen
+stopping, `close()`) arrives as `CameraKEvent.RecordingEnded` on `holder.events`, with the same
+outcome in `recordingState` as `Finished`:
 
-## 9. See Also
+```kotlin
+LaunchedEffect(holder) {
+    holder.events.collect { event ->
+        if (event is CameraKEvent.RecordingEnded) {
+            when (event.reason) {
+                RecordingEndReason.MAX_DURATION -> showMessage("Time limit reached")
+                RecordingEndReason.MAX_FILE_SIZE -> showMessage("Size limit reached")
+                else -> event.result.onFailure { error -> showError(error) }
+            }
+        }
+    }
+}
+```
 
-- [Sample App Usage](https://github.com/Kashif-E/Kamera/blob/main/Sample/src/commonMain/kotlin/org/company/app/App.kt)
-- [Plugins Guide](plugins.md)
-- [CameraKScreen API](../api/camera-k-screen.md)
+The reasons are `USER`, `MAX_DURATION`, `MAX_FILE_SIZE`, `INTERRUPTED`, `ERROR` and `SHUTDOWN`. A
+file that the platform kept after a failure is named by `CameraKError.Storage.keptFilePath`.
 
----
+## Rotation
 
-**Need more help?** See the [Troubleshooting](../troubleshooting.md) page or open an issue on GitHub.
+`rememberCameraKStateHolder` keeps the holder across an Activity recreation, and a stop followed by
+a start within two seconds carries on with the same recording. A rotation therefore does not end a
+recording; leaving the screen does, with reason `INTERRUPTED`.
+
+## Configuration
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `quality` | `FHD` | `SD`, `HD`, `FHD` or `UHD`: size and bitrate |
+| `enableAudio` | `false` | Record the microphone; needs its permission |
+| `maxDuration` | `null` | The longest the recording runs; null is unlimited. The file is kept |
+| `maxFileSizeBytes` | `null` | The largest the file grows; null is unlimited. The file is kept |
+| `outputDirectory` | `null` | Where the file goes; null uses `CameraConfiguration.outputDirectory`, else app-owned storage |
+| `filePrefix` | `"VID"` | 1 to 64 characters from `A-Z a-z 0-9 . _ -` |
+
+A negative limit or an invalid prefix throws `IllegalArgumentException` when the configuration is
+built.
+
+## Where files go
+
+Recordings are app-owned files: `filesDir/CameraK` on Android, `Documents/CameraK` on iOS,
+`~/Movies/CameraK` on macOS and `~/Videos/CameraK` on Linux and Windows, unless an
+`outputDirectory` says otherwise. To publish one to the gallery, pass it to
+`MediaSaverPlugin.save(video)` (see [Plugins](plugins.md#media-saver-plugin)).
+
+## Lens switches
+
+`selectCamera` and `toggleLens` during a recording return `Failure(Busy(LENS))` (or
+`Busy(DEVICE_TYPE)`) and change nothing.
+
+## Next Steps
+
+- [Plugins](plugins.md)
+- [CameraKStateHolder reference](../api/state-holder.md)

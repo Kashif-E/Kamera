@@ -1,365 +1,123 @@
 # Camera Capture
 
-Capture photos with type-safe result handling.
+`holder.capture()` takes a photo, writes it to an app-owned file and returns
+`CameraKResult<CapturedImage>`.
 
-## Basic Capture
+## Basic capture
 
 ```kotlin
-@Composable
-fun CaptureExample() {
-    val scope = rememberCoroutineScope()
-    val cameraState by rememberCameraKState(config = CameraConfiguration())
+val scope = rememberCoroutineScope()
 
-    when (val state = cameraState) {
-        is CameraKState.Ready -> {
-            val controller = state.controller
-
-            Button(onClick = {
-                scope.launch {
-                    when (val result = controller.takePictureToFile()) {
-                        is ImageCaptureResult.SuccessWithFile -> {
-                            println("Saved to: ${result.filePath}")
-                        }
-                        is ImageCaptureResult.Error -> {
-                            println("Error: ${result.exception.message}")
-                        }
-                    }
-                }
-            }) {
-                Text("Capture Photo")
-            }
+Button(onClick = {
+    scope.launch {
+        when (val result = holder.capture()) {
+            is CameraKResult.Success -> show(result.value.path)
+            is CameraKResult.Failure -> showError(result.error)
         }
-        is CameraKState.Error -> Text("Camera error: ${state.message}")
-        CameraKState.Initializing -> CircularProgressIndicator()
+    }
+}) { Text("Capture") }
+```
+
+`CapturedImage` carries the file's `path`, its `format` and its `width` and `height`. The file is
+in `CameraConfiguration.outputDirectory`, or in app-owned storage when that is null:
+`filesDir/CameraK` on Android, `Documents/CameraK` on iOS, `~/Documents/CameraK` on desktop. It
+never reaches the gallery on its own; publish it with [`MediaSaverPlugin`](plugins.md#media-saver-plugin).
+
+The result helpers keep the call short:
+
+```kotlin
+holder.capture()
+    .onSuccess { image -> thumbnails += image.path }
+    .onFailure { error -> snackbar.showSnackbar("Capture failed") }
+```
+
+## Every capture, from anywhere
+
+`holder.captures` emits every successful capture once its file is written, including one whose
+caller was cancelled (the screen left while the shutter was open). Collect it where the app keeps
+its gallery:
+
+```kotlin
+LaunchedEffect(holder) {
+    holder.captures.collect { image -> gallery.add(image.path) }
+}
+```
+
+It is not replayed: collect it before you capture.
+
+## Showing that a capture is in flight
+
+```kotlin
+val uiState by holder.uiState.collectAsStateWithLifecycle()
+
+Button(
+    onClick = { scope.launch { holder.capture() } },
+    enabled = !uiState.isCapturing,
+) { Text(if (uiState.isCapturing) "Saving..." else "Capture") }
+```
+
+`uiState.isCapturing` is true while any capture is in flight, and `pendingCaptures` counts them.
+Up to three captures may run at once; a fourth returns `Failure(CameraKError.Busy(CameraOperation.CAPTURE))`.
+
+## Errors
+
+A failed capture is a `CameraKError`:
+
+| Error | When | Retry? |
+|-------|------|--------|
+| `NotReady` | The camera is not Ready (starting, interrupted, failed) | Yes, once it is Ready |
+| `Closed` | The holder was closed | No |
+| `Busy(CAPTURE)` | Three captures already in flight | Yes |
+| `Storage(kind, keptFilePath)` | The file could not be written: `FULL`, `NOT_WRITABLE`, `NOT_FOUND` | Unless `FULL` |
+| `Unsupported(IMAGE_FORMAT)` | The camera cannot write the configured format, e.g. HEIC without HEVC on iOS | No |
+| `Hardware`, `Timeout(CAPTURE)` | The platform failed or did not answer | Yes |
+
+`error.isRetryable` says whether trying again can succeed, and `error.cause` keeps the platform's
+throwable. Its message may contain a path, so do not send it off the device unscrubbed.
+
+```kotlin
+holder.capture().onFailure { error ->
+    message = when (error) {
+        is CameraKError.Storage -> "Not enough space or no access to the folder"
+        CameraKError.NotReady -> "The camera is not ready yet"
+        else -> if (error.isRetryable) "Try again" else "Capture is not available"
     }
 }
 ```
 
-## Recommended: `takePictureToFile()`
+## Capture with flash
 
-**Fast, efficient direct file capture** — saves directly to disk without memory overhead.
-
-```kotlin
-suspend fun takePictureToFile(): ImageCaptureResult
-```
-
-**Returns:**
-- `ImageCaptureResult.SuccessWithFile(filePath: String)`
-- `ImageCaptureResult.Error(exception: Exception)`
-
-**Benefits:**
-- Direct disk write — no ByteArray conversion
-- Lower memory usage — no decode/encode cycles
-
-**Example with error handling:**
+The flash mode applies to captures. Set it before the shutter:
 
 ```kotlin
 scope.launch {
-    try {
-        when (val result = controller.takePictureToFile()) {
-            is ImageCaptureResult.SuccessWithFile -> {
-                val file = File(result.filePath)
-                println("Photo saved: ${file.absolutePath}")
-                println("File size: ${file.length()} bytes")
-
-                // Load into image viewer
-                loadImage(result.filePath)
-            }
-            is ImageCaptureResult.Error -> {
-                showError("Capture failed: ${result.exception.message}")
-            }
-        }
-    } catch (e: CancellationException) {
-        println("Capture was cancelled")
-        throw e  // Re-throw cancellation
-    }
+    holder.setFlashMode(FlashMode.ON)
+        .onFailure { /* Unsupported: this camera has no flash */ }
+    holder.capture()
 }
 ```
 
-## Result Types
+See [Flash and Torch](flash-and-torch.md).
 
-Sealed class ensures exhaustive pattern matching:
-
-```kotlin
-sealed class ImageCaptureResult {
-    data class Success(val byteArray: ByteArray) : ImageCaptureResult()
-    data class SuccessWithFile(val filePath: String) : ImageCaptureResult()
-    data class Error(val exception: Exception) : ImageCaptureResult()
-}
-```
-
-`takePictureToFile()` only ever returns `SuccessWithFile` or `Error` — the `Success(byteArray)` variant is never produced by it. Since `ImageCaptureResult` is a sealed class, the `when` must still be exhaustive, so keep a `Success` branch as defensive handling (it simply won't be hit for this API):
+## A custom folder
 
 ```kotlin
-when (result) {
-    is ImageCaptureResult.SuccessWithFile -> {
-        // File saved, path available
-        val path = result.filePath
-    }
-    is ImageCaptureResult.Error -> {
-        // Error occurred
-        val error = result.exception
-    }
-    is ImageCaptureResult.Success -> {
-        // Not produced by takePictureToFile(); handle defensively
-    }
-}
-```
-
-## Capture with UI Feedback
-
-Show loading state during capture:
-
-```kotlin
-@Composable
-fun CaptureWithFeedback() {
-    val scope = rememberCoroutineScope()
-    val cameraState by rememberCameraKState(config = CameraConfiguration())
-    var isCapturing by remember { mutableStateOf(false) }
-    var lastCapturedPath by remember { mutableStateOf<String?>(null) }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val state = cameraState) {
-            is CameraKState.Ready -> {
-                val controller = state.controller
-
-                CameraPreviewView(
-                    controller = controller,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // Capture button with loading
-                FloatingActionButton(
-                    onClick = {
-                        scope.launch {
-                            isCapturing = true
-                            when (val result = controller.takePictureToFile()) {
-                                is ImageCaptureResult.SuccessWithFile -> {
-                                    lastCapturedPath = result.filePath
-                                }
-                                is ImageCaptureResult.Error -> {
-                                    println("Error: ${result.exception.message}")
-                                }
-                            }
-                            isCapturing = false
-                        }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(32.dp)
-                ) {
-                    if (isCapturing) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    } else {
-                        Icon(Icons.Default.CameraAlt, "Capture")
-                    }
-                }
-
-                // Show thumbnail of last capture
-                lastCapturedPath?.let { path ->
-                    AsyncImage(
-                        model = path,
-                        contentDescription = "Last capture",
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(16.dp)
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
-                }
-            }
-
-            is CameraKState.Error -> Text("Camera error: ${state.message}")
-            CameraKState.Initializing -> CircularProgressIndicator()
-        }
-    }
-}
-```
-
-## Burst Capture
-
-Capture multiple photos quickly:
-
-```kotlin
-fun captureBurst(controller: CameraController, count: Int) {
-    val scope = CoroutineScope(Dispatchers.Default)
-
-    scope.launch {
-        val results = mutableListOf<String>()
-
-        repeat(count) { index ->
-            when (val result = controller.takePictureToFile()) {
-                is ImageCaptureResult.SuccessWithFile -> {
-                    results.add(result.filePath)
-                    println("Captured ${index + 1}/$count")
-                }
-                is ImageCaptureResult.Error -> {
-                    println("Burst failed at ${index + 1}: ${result.exception.message}")
-                    return@launch
-                }
-            }
-
-            // Small delay between captures
-            delay(100)
-        }
-
-        println("Burst complete: ${results.size} photos")
-    }
-}
-```
-
-**Limitations:**
-- Maximum 3 concurrent captures (queued automatically)
-- Rapid captures may reduce quality on some devices
-- Memory pressure increases with burst count
-
-## Capture with Flash Control
-
-Toggle flash before capture:
-
-```kotlin
-Button(onClick = {
-    scope.launch {
-        // Enable flash
-        controller.setFlashMode(FlashMode.ON)
-
-        // Capture with flash
-        val result = controller.takePictureToFile()
-
-        // Disable flash
-        controller.setFlashMode(FlashMode.OFF)
-
-        when (result) {
-            is ImageCaptureResult.SuccessWithFile -> {
-                println("Flash photo: ${result.filePath}")
-            }
-            is ImageCaptureResult.Error -> {
-                println("Error: ${result.exception.message}")
-            }
-        }
-    }
-}) {
-    Text("Capture with Flash")
-}
-```
-
-## Save to Custom Location
-
-By default, images save to the configured directory. To customize:
-
-```kotlin
-// Configure save directory
-val cameraState by rememberCameraKState(
-    config = CameraConfiguration(
-        directory = Directory.DCIM  // Save to Camera roll
-    )
+val holder = rememberCameraKStateHolder(
+    CameraConfiguration { outputDirectory = "$appFilesDir/photos" },
 )
 ```
 
-**Options:**
-- `Directory.DOCUMENTS` — App-private storage (default; not visible in the gallery)
-- `Directory.PICTURES` — Publishes each capture to the shared gallery (`Pictures/CameraK`)
-- `Directory.DCIM` — Publishes each capture to the camera roll (`DCIM/CameraK`)
+The directory is used as given, and nothing checks that it belongs to the app.
 
-**File naming:**
-Files are named with the capture time in epoch milliseconds and a random suffix, so captures in
-the same second never share a name:
-```
-IMG_1706538622123_9f2c4a1b.jpg
-```
+## Image formats
 
-## Error Handling
-
-Handle common error scenarios:
-
-```kotlin
-scope.launch {
-    when (val result = controller.takePictureToFile()) {
-        is ImageCaptureResult.SuccessWithFile -> {
-            handleSuccess(result.filePath)
-        }
-        is ImageCaptureResult.Error -> {
-            when (result.exception) {
-                is IOException -> {
-                    // Storage full or permission issue
-                    showError("Cannot save photo: storage issue")
-                }
-                is IllegalStateException -> {
-                    // Camera not ready
-                    showError("Camera not ready, try again")
-                }
-                is CancellationException -> {
-                    // User cancelled
-                    println("Capture cancelled")
-                }
-                else -> {
-                    // Unknown error
-                    showError("Capture failed: ${result.exception.message}")
-                }
-            }
-        }
-    }
-}
-```
-
-## Common Issues
-
-### "Camera not initialized"
-
-**Cause:** Attempting capture before camera is ready.
-
-**Solution:** Only capture when state is `Ready`:
-
-```kotlin
-when (cameraState) {
-    is CameraKState.Ready -> {
-        // Safe to capture
-        controller.takePictureToFile()
-    }
-    else -> {
-        println("Camera not ready")
-    }
-}
-```
-
-### "Storage permission denied" (Android)
-
-**Cause:** Missing storage permission on Android < 10.
-
-**Solution:** Add permission to manifest:
-
-```xml
-<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-    android:maxSdkVersion="28" />
-```
-
-### "Burst queue full"
-
-**Cause:** Too many concurrent capture requests.
-
-**Solution:** Limit to 3 concurrent captures or wait for completion:
-
-```kotlin
-scope.launch {
-    val result1 = controller.takePictureToFile()
-    // Wait for first to complete before next
-    val result2 = controller.takePictureToFile()
-}
-```
-
-## Performance Tips
-
-1. **Use `takePictureToFile()`** — direct file capture avoids holding the full image in memory
-2. **Lower resolution** — Set `targetResolution` in `CameraConfiguration` for faster capture
-3. **JPEG format** — Faster than PNG
-4. **Quality prioritization** — Use `QualityPrioritization.SPEED` for rapid capture
-5. **Avoid burst on low-end devices** — Limit to 3-5 photos
+`ImageFormat.JPEG` (the default) and `PNG` work everywhere. `HEIC` works on iOS where the camera
+offers HEVC; elsewhere the start, or on iOS the capture, fails with `Unsupported(IMAGE_FORMAT)`.
+`holder.capabilities.value.supportedImageFormats` lists what the platform writes. On Android a PNG
+capture is decoded from CameraX's JPEG and written upright, which takes longer than a JPEG.
 
 ## Next Steps
 
-- [Flash and Torch](flash-and-torch.md) — Control camera lighting
-- [Zoom Control](zoom-control.md) — Implement zoom functionality
-- [CameraController API](../api/controller.md) — Full API reference
+- [Flash and Torch](flash-and-torch.md)
+- [Plugins](plugins.md): save captures to the gallery, read text from them
+- [Video Recording](video-recording.md)

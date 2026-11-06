@@ -1,141 +1,85 @@
 # Kamera Documentation
 
-**Modern camera SDK for Kotlin Multiplatform** -- Android, iOS, and Desktop with a unified API.
+**A camera library for Kotlin Multiplatform**: Android (CameraX), iOS (AVFoundation) and desktop JVM (JavaCV) behind one API, with Compose Multiplatform UI on top.
+
+Upgrading from 1.x? Start with the [2.0 migration guide](migration/2.0.md).
 
 ## Get Started in 60 Seconds
 
 ```kotlin
-dependencies {
-    implementation("io.github.kashif-mehmood-km:camerak:2.0")
+kotlin {
+    sourceSets {
+        commonMain.dependencies {
+            implementation("io.github.kashif-mehmood-km:camerak:2.0")
+        }
+    }
 }
 ```
 
 ```kotlin
 @Composable
 fun CameraScreen() {
+    val holder = rememberCameraKStateHolder()
     val scope = rememberCoroutineScope()
-    val cameraState by rememberCameraKState()
 
-    CameraKScreen(
-        cameraState = cameraState,
-        showPreview = true
-    ) { readyState ->
-        // Camera preview shown automatically
+    CameraKScreen(holder, loading = { CircularProgressIndicator() }) {
         FloatingActionButton(
-            onClick = {
-                scope.launch {
-                    readyState.controller.takePictureToFile()
-                }
-            }
+            onClick = { scope.launch { holder.capture() } },
+            modifier = Modifier.align(Alignment.BottomCenter).keepUpright(),
         ) {
-            Icon(Icons.Default.CameraAlt, "Capture")
+            Icon(Icons.Default.CameraAlt, contentDescription = "Capture")
         }
     }
 }
 ```
 
-**That's it!** `CameraKScreen` handles all state management automatically.
-
-## Features
-
-- **Cross-Platform**: Single API works on Android, iOS, and Desktop
-- **Compose-First**: Built for Jetpack Compose with reactive StateFlow
-- **Plugin System**: Add QR scanning, OCR, and custom processing
-- **Performance**: Direct file capture avoids memory overhead
-- **Type-Safe**: Sealed classes for errors, no runtime surprises
-
-## Installation
-
-Start with installation and configuration:
-
-- [Installation](getting-started/installation.md) -- Add Kamera to your project
-- [Quick Start](getting-started/quick-start.md) -- Build your first camera app in 5 minutes
-- [Configuration](getting-started/configuration.md) -- Customize camera behavior
-- [Android Example](examples/android.md) -- Android-specific setup
+`rememberCameraKStateHolder` opens the camera while the screen is started, keeps it across a rotation and closes it when the screen goes away. `CameraKScreen` shows the preview with your controls over it.
 
 ## Core Concepts
 
-### State Management
+### The state holder
 
-Kamera uses reactive state management via `CameraKStateHolder`:
+`CameraKStateHolder` owns one camera. What it reports is `StateFlow`s:
 
-```kotlin
-sealed class CameraKState {
-    object Initializing : CameraKState()
-    data class Ready(val controller: CameraController, val uiState: CameraUIState) : CameraKState()
-    data class Error(val exception: Exception, val message: String, val isRetryable: Boolean) : CameraKState()
-}
-```
+- `cameraState`: `Idle`, `Starting`, `Ready`, `Interrupted(reason)`, `Error(error)`, `Closed`. Closed, so a `when` needs no `else`.
+- `uiState`: the bound camera's flash, torch, lens and device type, and the captures in flight, as the platform reports them.
+- `zoom`, `capabilities`, `deviceOrientation`, `recordingState`.
 
-State flows automatically: `Initializing` -> `Ready` -> capture photos.
+What it does is suspend commands that return `CameraKResult<T>`: `capture()`, `setZoom(ratio)`, `setFlashMode(mode)`, `setTorchMode(mode)`, `selectCamera(...)`, `startRecording(config)`, `stopRecording()` and more. A failure is a typed `CameraKError` that says whether a retry can succeed.
 
-### Camera Controller
+### Plugins and frames
 
-Low-level camera operations exposed when state is `Ready`:
+Plugins add scanning, OCR, encoded frames and gallery saving. They read the same frame source an app reads through `holder.frames`, and they are passed when the holder is created:
 
 ```kotlin
-expect class CameraController {
-    suspend fun takePictureToFile(): ImageCaptureResult
-    fun setZoom(zoom: Float)
-    fun setFlashMode(mode: FlashMode)
-    fun toggleCameraLens()
-}
+val scanner = rememberQRScannerPlugin()
+val holder = rememberCameraKStateHolder(plugins = listOf(scanner))
 ```
 
-### Plugins
+## Guides
 
-Extend camera functionality modularly:
+**Getting Started**: [Installation](getting-started/installation.md), [Quick Start](getting-started/quick-start.md), [Configuration](getting-started/configuration.md)
 
-```kotlin
-// Create plugins in composable scope, then attach the instances inside setupPlugins.
-val qrScannerPlugin = rememberQRScannerPlugin()
-val ocrPlugin = rememberOcrPlugin()
-val cameraState by rememberCameraKState(
-    config = CameraConfiguration(
-        cameraLens = CameraLens.BACK,
-    ),
-    setupPlugins = { stateHolder ->
-        stateHolder.attachPlugin(qrScannerPlugin)
-        stateHolder.attachPlugin(ocrPlugin)
-    },
-)
-```
+**Guides**: [Camera Capture](guides/camera-capture.md), [Flash and Torch](guides/flash-and-torch.md), [Zoom Control](guides/zoom-control.md), [Camera Switching](guides/camera-switching.md), [Video Recording](guides/video-recording.md), [Plugins](guides/plugins.md), [Testing](guides/testing.md)
 
-## Quick Links
+**API Reference**: [CameraKStateHolder](api/state-holder.md), [CameraKScreen and CameraPreview](api/camera-k-screen.md)
 
-**Getting Started**
-- [Installation](getting-started/installation.md)
-- [Quick Start](getting-started/quick-start.md)
-- [Configuration](getting-started/configuration.md)
-
-**Guides**
-- [Camera Capture](guides/camera-capture.md)
-- [Flash and Torch](guides/flash-and-torch.md)
-- [Zoom Control](guides/zoom-control.md)
-- [Camera Switching](guides/camera-switching.md)
-- [Plugins](guides/plugins.md)
-
-**API Reference**
-- [CameraKStateHolder](api/state-holder.md)
-- [CameraController](api/controller.md)
-
-**Plugins**
-- [Plugin System](guides/plugins.md) -- Using and creating plugins
+**Migrating**: [From 1.x to 2.0](migration/2.0.md)
 
 ## Platform Requirements
 
 | Platform | Minimum Version | Backend |
 |----------|-----------------|---------|
 | Android  | API 23 (6.0)    | CameraX |
-| iOS      | 13.0 (arm64 devices and Apple-silicon simulators) | AVFoundation |
+| iOS      | iOS 16.0+ (arm64 devices and Apple-silicon simulators) | AVFoundation |
 | Desktop  | JDK 17+         | JavaCV |
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/Kashif-E/Kamera/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/Kashif-E/Kamera/discussions)
-- **Examples**: [Sample Projects](https://github.com/Kashif-E/Kamera/tree/main/Sample)
+- **Examples**: [Sample app](https://github.com/Kashif-E/Kamera/tree/main/Sample)
 
 ## License
 
-Apache 2.0 -- [View License](license.md)
+Apache License 2.0. See [License](license.md).

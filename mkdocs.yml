@@ -70,10 +70,10 @@ nav:
     - Camera Switching: guides/camera-switching.md
     - Video Recording: guides/video-recording.md
     - Plugins: guides/plugins.md
+    - Testing: guides/testing.md
   - API Reference:
     - CameraKStateHolder: api/state-holder.md
-    - CameraController: api/controller.md
-    - CameraKScreen: api/camera-k-screen.md
+    - CameraKScreen and CameraPreview: api/camera-k-screen.md
   - Examples:
     - Android: examples/android.md
   - Migrating to 2.0: migration/2.0.md
@@ -87,7 +87,7 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/kashif-e/Kamera
       name: GitHub
-  version: 1.0
+  version: 2.0
 
 extra_css:
   - stylesheets/extra.css

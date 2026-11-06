@@ -50,7 +50,7 @@ class DocsApiTest {
             REMOVED.flatMap { (pattern, replacement) ->
                 pattern.findAll(text).map { match ->
                     val line = text.substring(0, match.range.first).count { it == '\n' } + 1
-                    "$doc:$line: '${match.value.trim()}' ($replacement)"
+                    "$doc:$line: '${match.value.replace(Regex("\\s+"), " ").trim()}' ($replacement)"
                 }
             }
         }

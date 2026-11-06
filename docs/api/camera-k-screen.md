@@ -1,472 +1,138 @@
-# CameraKScreen
+# CameraKScreen and CameraPreview
 
-Convenience wrapper composable that simplifies camera state handling with automatic preview management.
+The Compose UI in `camerak` (`com.kashif.cameraK.compose`). Both take a `CameraKStateHolder`,
+usually from `rememberCameraKStateHolder`, and neither opens or closes the camera: the holder does.
 
-## Overview
-
-`CameraKScreen` is a slot-based composable that handles camera state (Initializing/Ready/Error) automatically, showing appropriate UI for each state with sensible defaults.
-
-**Benefits:**
-- Automatic state handling (no when expression needed)
-- Built-in loading and error screens
-- Camera preview shown automatically (optional)
-- Slot-based API for custom content
-- Less boilerplate than manual state handling
-
-## Function Signature
+## CameraKScreen
 
 ```kotlin
 @Composable
 fun CameraKScreen(
+    holder: CameraKStateHolder,
     modifier: Modifier = Modifier,
-    cameraState: CameraKState,
-    deviceOrientation: DeviceOrientation = DeviceOrientation.PORTRAIT,
-    loadingContent: @Composable () -> Unit = { DefaultLoadingScreen() },
-    errorContent: @Composable (CameraKState.Error) -> Unit = { DefaultErrorScreen(it) },
-    showPreview: Boolean = true,
-    overlay: @Composable (CameraPreviewScope.() -> Unit)? = null,
-    content: @Composable (CameraKState.Ready) -> Unit
+    loading: @Composable () -> Unit = {},
+    error: @Composable (error: CameraKError, retry: () -> Unit) -> Unit = /* retries once */,
+    content: @Composable CameraPreviewScope.() -> Unit = {},
 )
 ```
 
-## Parameters
+| `cameraState` | Shows |
+|---------------|-------|
+| `Idle`, `Starting` | `loading` |
+| `Ready`, `Interrupted` | The preview, with `content` over it. Both stay composed from one state to the other, so a Stop button stays reachable while a phone call holds the camera |
+| `Error` | `error(error, retry)`; `retry` calls `holder.retry()` |
+| `Closed` | Nothing |
 
-### cameraState
-
-```kotlin
-cameraState: CameraKState
-```
-
-Camera state from `rememberCameraKState()`. Can be one of:
-- `CameraKState.Initializing` -- Camera starting
-- `CameraKState.Ready` -- Camera operational
-- `CameraKState.Error` -- Initialization failed
-
-### showPreview
+The defaults draw no text or colours of the library's own. The default `error` slot retries a
+retryable error once, until the camera is Ready again; it leaves `Error(Permission)` to the
+holder's resume re-check.
 
 ```kotlin
-showPreview: Boolean = true
-```
+val holder = rememberCameraKStateHolder()
+val scope = rememberCoroutineScope()
 
-Whether to automatically show camera preview when ready.
-
-- `true` (default) -- Preview shown automatically in background
-- `false` -- No preview, useful for custom preview implementations
-
-### deviceOrientation
-
-```kotlin
-deviceOrientation: DeviceOrientation = DeviceOrientation.PORTRAIT
-```
-
-Orientation passed to the preview so frames and captures are rotated correctly. One of `PORTRAIT`, `LANDSCAPE_LEFT`, `PORTRAIT_UPSIDE_DOWN`, `LANDSCAPE_RIGHT`.
-
-### overlay
-
-```kotlin
-overlay: @Composable (CameraPreviewScope.() -> Unit)? = null
-```
-
-Optional content drawn on top of the preview (e.g. focus reticles, grids). Receives a `CameraPreviewScope`. Defaults to `null` (no overlay).
-
-### loadingContent
-
-```kotlin
-loadingContent: @Composable () -> Unit = { DefaultLoadingScreen() }
-```
-
-Content shown during camera initialization. Default shows loading spinner with "Initializing Camera..." text.
-
-**Custom example:**
-
-```kotlin
-loadingContent = {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        CircularProgressIndicator()
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Starting camera...")
-    }
-}
-```
-
-### errorContent
-
-```kotlin
-errorContent: @Composable (CameraKState.Error) -> Unit = { DefaultErrorScreen(it) }
-```
-
-Content shown on camera error. Receives `CameraKState.Error` with exception, message, and isRetryable details.
-
-**Custom example:**
-
-```kotlin
-errorContent = { error ->
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(Icons.Default.Error, "Error", tint = Color.Red)
-        Text("Camera Error: ${error.message}")
-        if (error.isRetryable) {
-            Button(onClick = { /* retry logic */ }) {
-                Text("Retry")
-            }
-        }
-    }
-}
-```
-
-### content
-
-```kotlin
-content: @Composable (CameraKState.Ready) -> Unit
-```
-
-Main content shown when camera is ready. Receives `CameraKState.Ready` with access to:
-- `readyState.controller` -- Camera controller for operations
-- `readyState.uiState` -- UI state with zoom, flash, torch, lens, etc.
-
-**This is where you add your camera controls.**
-
-## Basic Example
-
-```kotlin
-@Composable
-fun SimpleCameraApp() {
-    val scope = rememberCoroutineScope()
-    val cameraState by rememberCameraKState()
-
-    CameraKScreen(
-        cameraState = cameraState
-    ) { readyState ->
-        // Camera preview shown automatically
-        // Add controls overlay
-        FloatingActionButton(
-            onClick = {
-                scope.launch {
-                    readyState.controller.takePictureToFile()
-                }
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .wrapContentSize(Alignment.BottomCenter)
-                .padding(32.dp)
-        ) {
-            Icon(Icons.Default.CameraAlt, "Capture")
-        }
-    }
-}
-```
-
-## Custom Loading/Error Screens
-
-```kotlin
-@Composable
-fun CameraWithCustomScreens() {
-    val scope = rememberCoroutineScope()
-    val cameraState by rememberCameraKState()
-
-    CameraKScreen(
-        cameraState = cameraState,
-        loadingContent = {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surface),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    CircularProgressIndicator()
-                    Text(
-                        "Preparing camera...",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-            }
-        },
-        errorContent = { error ->
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.padding(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Error,
-                        contentDescription = "Error",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Text(
-                        "Unable to start camera",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        error.message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center
-                    )
-                    if (error.isRetryable) {
-                        Button(onClick = { /* retry */ }) {
-                            Text("Try Again")
-                        }
-                    }
-                }
-            }
-        }
-    ) { readyState ->
-        // Camera controls
-        CameraControls(controller = readyState.controller)
-    }
-}
-```
-
-## No Auto-Preview Mode
-
-Disable automatic preview for custom implementations:
-
-```kotlin
-@Composable
-fun CustomPreviewCamera() {
-    val cameraState by rememberCameraKState()
-
-    CameraKScreen(
-        cameraState = cameraState,
-        showPreview = false  // Disable automatic preview
-    ) { readyState ->
-        // Implement custom preview
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Custom camera preview with filters/effects
-            CustomCameraPreviewWithFilters(controller = readyState.controller)
-
-            // Controls overlay
-            CameraControls(
-                controller = readyState.controller,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
-        }
-    }
-}
-```
-
-## With Plugins
-
-```kotlin
-@Composable
-fun CameraWithPlugins() {
-    // Create plugins in composable scope, then attach them inside setupPlugins.
-    val qrScannerPlugin = rememberQRScannerPlugin()
-    val ocrPlugin = rememberOcrPlugin()
-    val cameraState by rememberCameraKState(
-        setupPlugins = { stateHolder ->
-            stateHolder.attachPlugin(qrScannerPlugin)
-            stateHolder.attachPlugin(ocrPlugin)
-        }
-    )
-
-    // Listen for plugin events
-    LaunchedEffect(cameraState) {
-        val ready = cameraState as? CameraKState.Ready ?: return@LaunchedEffect
-        // Plugin results arrive via CameraKEvent through the events SharedFlow
-    }
-
-    CameraKScreen(cameraState = cameraState) { readyState ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Capture button
-            FloatingActionButton(
-                onClick = {
-                    scope.launch {
-                        readyState.controller.takePictureToFile()
-                    }
+CameraKScreen(
+    holder = holder,
+    modifier = Modifier.fillMaxSize(),
+    loading = { CircularProgressIndicator() },
+    error = { error, retry ->
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                when (error) {
+                    is CameraKError.Permission -> "Camera permission needed"
+                    is CameraKError.CameraInUse -> "Another app is using the camera"
+                    else -> "The camera failed"
                 },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(32.dp)
-            ) {
-                Icon(Icons.Default.CameraAlt, "Capture")
-            }
-        }
-    }
-}
-```
-
-## Complete Camera App
-
-Full-featured camera with all controls:
-
-```kotlin
-@Composable
-fun FullFeaturedCamera() {
-    val scope = rememberCoroutineScope()
-    val cameraState by rememberCameraKState(
-        config = CameraConfiguration(
-            cameraLens = CameraLens.BACK,
-            flashMode = FlashMode.AUTO,
-            aspectRatio = AspectRatio.RATIO_16_9
-        )
-    )
-
-    CameraKScreen(cameraState = cameraState) { readyState ->
-        val controller = readyState.controller
-        val uiState = readyState.uiState
-
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Top controls
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Flash toggle
-                IconButton(onClick = { controller.toggleFlashMode() }) {
-                    Icon(
-                        when (uiState.flashMode) {
-                            FlashMode.ON -> Icons.Default.FlashOn
-                            FlashMode.OFF -> Icons.Default.FlashOff
-                            FlashMode.AUTO -> Icons.Default.FlashAuto
-                            else -> Icons.Default.FlashOff
-                        },
-                        "Flash"
-                    )
-                }
-
-                // Camera switch
-                IconButton(onClick = { controller.toggleCameraLens() }) {
-                    Icon(Icons.Default.Cameraswitch, "Switch Camera")
-                }
-            }
-
-            // Zoom indicator
-            if (uiState.zoomLevel > 1.0f) {
-                Text(
-                    text = "${String.format("%.1f", uiState.zoomLevel)}x",
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(16.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = Color.White
-                )
-            }
-
-            // Pinch to zoom
-            val maxZoom = uiState.maxZoom
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, _, zoom, _ ->
-                            val newZoom = (uiState.zoomLevel * zoom).coerceIn(1f, maxZoom)
-                            controller.setZoom(newZoom)
-                        }
-                    }
             )
-
-            // Capture button
-            FloatingActionButton(
-                onClick = {
-                    scope.launch {
-                        when (val result = controller.takePictureToFile()) {
-                            is ImageCaptureResult.SuccessWithFile -> {
-                                // Show success toast
-                            }
-                            is ImageCaptureResult.Error -> {
-                                // Show error
-                            }
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(32.dp)
-            ) {
-                if (uiState.isCapturing) {
-                    CircularProgressIndicator(
-                        color = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                } else {
-                    Icon(Icons.Default.CameraAlt, "Capture")
-                }
-            }
+            if (error.isRetryable) Button(onClick = retry) { Text("Try again") }
         }
+    },
+) {
+    val state by holder.cameraState.collectAsStateWithLifecycle()
+    if (state is CameraKState.Interrupted) {
+        Text("Paused", Modifier.align(Alignment.Center))
     }
+    Button(
+        onClick = { scope.launch { holder.capture() } },
+        modifier = Modifier.align(Alignment.BottomCenter).keepUpright(),
+    ) { Text("Capture") }
 }
 ```
 
-## Comparison: Manual vs CameraKScreen
+## CameraPreview
 
-### Manual State Handling
+The preview alone, for a layout of your own:
 
 ```kotlin
 @Composable
-fun ManualApproach() {
-    val cameraState by rememberCameraKState()
+fun CameraPreview(
+    holder: CameraKStateHolder,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+    overlay: @Composable CameraPreviewScope.() -> Unit = {},
+)
+```
 
-    when (cameraState) {
-        CameraKState.Initializing -> {
-            CircularProgressIndicator()
-        }
-        is CameraKState.Ready -> {
-            val ready = cameraState as CameraKState.Ready
-            CameraPreviewView(controller = ready.controller)
-            // Your UI here
-        }
-        is CameraKState.Error -> {
-            Text("Error: ${(cameraState as CameraKState.Error).message}")
-        }
+```kotlin
+val state by holder.cameraState.collectAsStateWithLifecycle()
+Column {
+    if (state is CameraKState.Ready) {
+        CameraPreview(holder, Modifier.weight(1f).fillMaxWidth(), contentDescription = "Camera preview")
     }
+    Controls(holder)
 }
 ```
 
-### Using CameraKScreen
+The frame is fitted into the preview's box, letterboxed where the aspect ratios differ. What the
+overlay's box covers depends on the platform:
+
+- **Android**: the viewfinder and the overlay share a centred box of the configured aspect ratio,
+  turned to the screen's orientation, so overlay coordinates map 1:1 to the camera image.
+- **iOS**: the preview fills a centred box of the configured aspect ratio, showing what a capture
+  keeps; the overlay's box is the whole preview box.
+- **Desktop**: the overlay's box is the frame's.
+
+Two previews of one holder, as in a crossfade, both show it. To run the camera with no preview at
+all, use the holder without `CameraPreview`.
+
+## CameraPreviewScope
+
+The `content` of `CameraKScreen` and the `overlay` of `CameraPreview` run in a
+`CameraPreviewScope`, a `BoxScope` with:
+
+- `deviceOrientation`: the device's physical orientation.
+- `Modifier.keepUpright()`: turns a control to the device's orientation, for a screen locked to
+  portrait.
+
+## rememberCameraKPermissionState
 
 ```kotlin
 @Composable
-fun WithCameraKScreen() {
-    val cameraState by rememberCameraKState()
-
-    CameraKScreen(cameraState = cameraState) { readyState ->
-        // Your UI here - loading/error/preview handled automatically
-    }
-}
+fun rememberCameraKPermissionState(
+    vararg permissions: CameraKPermission,
+    onResult: (Map<CameraKPermission, PermissionStatus>) -> Unit = {},
+): CameraKPermissionState
 ```
 
-**Result:** 60% less boilerplate, same functionality.
+`statuses` holds each permission's `PermissionStatus` (`Granted`, `Limited`, `Denied`,
+`PermanentlyDenied`, `Restricted`, `NotDetermined`), read again on every resume and after each
+request; `allGranted` is true when all are `Granted`. `launchRequest()` shows the system prompts for
+what can still be asked; call it from an event handler, never from composition. A permanently
+denied permission gets no prompt: send the user to the system settings.
 
-## Default Screens
+The permissions are `CAMERA`, `MICROPHONE` (recordings with audio) and `GALLERY_ADD` (the media
+saver).
 
-### DefaultLoadingScreen
+## rememberRecordingElapsed
 
-Shows:
-- Black background
-- White circular progress indicator
-- "Initializing Camera..." text
+```kotlin
+val elapsed by rememberRecordingElapsed(holder, tick = 1.seconds)
+```
 
-### DefaultErrorScreen
-
-Shows:
-- Black background
-- "Camera Error" title in red
-- Error message in white
-- "Please try again" hint (if retryable)
-
-**Override these by passing custom `loadingContent` and `errorContent`.**
+The live recording's elapsed time as `State<Duration>`: updated once per `tick` while recording,
+held while paused, zero otherwise.
 
 ## See Also
 
-- [CameraKStateHolder](state-holder.md) -- State management
-- [CameraController](controller.md) -- Camera operations
-- [Quick Start](../getting-started/quick-start.md) -- Usage examples
+- [CameraKStateHolder](state-holder.md)
+- [Quick Start](../getting-started/quick-start.md)

@@ -1,507 +1,131 @@
-# CameraKStateHolder API
+# CameraKStateHolder
 
-Core state management for Kamera. Manages camera lifecycle, exposes reactive state, and handles plugin coordination.
+`com.kashif.cameraK.state.CameraKStateHolder`, in `camerak-core`. It owns one camera: its
+coroutine scope, the platform engine, the plugins and the recording. It has no Compose dependency.
 
-## Overview
+## Creating one
 
-`CameraKStateHolder` is the primary class for camera operations. It manages:
-- Camera lifecycle (initialization -> ready -> cleanup)
-- Reactive state via `StateFlow`
-- Plugin lifecycle and coordination
-- One-shot events via `SharedFlow`
-
-## Creation
+In Compose, `rememberCameraKStateHolder` (camerak) creates it, starts and stops it with the
+screen's lifecycle and closes it when the screen goes away:
 
 ```kotlin
-@Composable
-expect fun rememberCameraKState(
-    config: CameraConfiguration = CameraConfiguration(),
-    setupPlugins: suspend (CameraKStateHolder) -> Unit = {},
-): State<CameraKState>
-```
-
-**Parameters:**
-- `config` -- Camera configuration data class with defaults
-- `setupPlugins` -- Suspend function to attach plugins to the state holder
-
-**Example:**
-
-```kotlin
-// Create plugins in composable scope first — the remember…Plugin(...) factories
-// are @Composable and cannot be called inside the setupPlugins lambda.
-val qrScannerPlugin = rememberQRScannerPlugin()
-val ocrPlugin = rememberOcrPlugin()
-
-val cameraState by rememberCameraKState(
-    config = CameraConfiguration(
-        cameraLens = CameraLens.BACK,
-        flashMode = FlashMode.AUTO,
-        aspectRatio = AspectRatio.RATIO_16_9
-    ),
-    setupPlugins = { stateHolder ->
-        stateHolder.attachPlugin(qrScannerPlugin)
-        stateHolder.attachPlugin(ocrPlugin)
-    }
+val holder = rememberCameraKStateHolder(
+    config = CameraConfiguration { cameraLens = CameraLens.BACK },
+    plugins = listOf(scanner),
+    lifecycleOwner = LocalLifecycleOwner.current,   // the default; null to start and stop it yourself
 )
 ```
 
-## Properties
+The holder lives in a ViewModel of the nearest `ViewModelStoreOwner`, one per call site, so an
+Activity recreation keeps it, with its plugins and any recording. A new `config` closes it and
+builds a new one, which opens its camera once the old one has closed.
 
-### cameraState
-
-```kotlin
-val cameraState: StateFlow<CameraKState>
-```
-
-Observable camera lifecycle state. Emits:
-- `CameraKState.Initializing` -- Camera starting
-- `CameraKState.Ready(controller, uiState)` -- Camera operational
-- `CameraKState.Error(exception, message, isRetryable)` -- Initialization failed
-
-**Usage:**
+Without Compose, build it with the platform context and drive it yourself:
 
 ```kotlin
-val cameraState by rememberCameraKState()
-
-when (cameraState) {
-    is CameraKState.Initializing -> CircularProgressIndicator()
-    is CameraKState.Ready -> {
-        val ready = cameraState as CameraKState.Ready
-        CameraPreviewView(controller = ready.controller)
-    }
-    is CameraKState.Error -> {
-        val error = cameraState as CameraKState.Error
-        Text("Error: ${error.message}")
-    }
-}
+val holder = CameraKStateHolder(CameraConfiguration(), CameraKPlatformContext(applicationContext))
+val binding = holder.bindToLifecycle(lifecycle)   // start at STARTED, stop below, re-check on resume
+// later
+binding.close()
+holder.close()
 ```
 
-### uiState
-
-```kotlin
-val uiState: StateFlow<CameraUIState>
-```
-
-Observable UI properties (zoom level, flash mode, capturing state, etc.)
-
-**CameraUIState structure:**
-
-```kotlin
-data class CameraUIState(
-    val zoomLevel: Float = 1.0f,
-    val maxZoom: Float = 1.0f,
-    val flashMode: FlashMode? = null,
-    val torchMode: TorchMode? = null,
-    val cameraLens: CameraLens? = null,
-    val imageFormat: ImageFormat = ImageFormat.JPEG,
-    val qualityPrioritization: QualityPrioritization = QualityPrioritization.BALANCED,
-    val cameraDeviceType: CameraDeviceType = CameraDeviceType.DEFAULT,
-    val isCapturing: Boolean = false,
-    val lastError: String? = null,
-    val isRecording: Boolean = false,
-    val isPaused: Boolean = false,
-    val recordingDurationMs: Long = 0L,
-)
-```
-
-**Usage:**
-
-```kotlin
-val uiState by stateHolder.uiState.collectAsStateWithLifecycle()
-
-Text("Zoom: ${uiState.zoomLevel}x")
-Text("Max: ${uiState.maxZoom}x")
-```
-
-### events
-
-```kotlin
-val events: SharedFlow<CameraKEvent>
-```
-
-One-shot events (not persisted). Collect to handle events like capture success/failure.
-
-**CameraKEvent types:**
-
-```kotlin
-sealed class CameraKEvent {
-    data object None : CameraKEvent()
-    data class ImageCaptured(val result: ImageCaptureResult) : CameraKEvent()
-    data class CaptureFailed(val exception: Exception) : CameraKEvent()
-    data class QRCodeScanned(val qrCode: String) : CameraKEvent()
-    data class TextRecognized(val text: String) : CameraKEvent()
-    data class PermissionDenied(val permission: String) : CameraKEvent()
-    data class RecordingStarted(val filePath: String) : CameraKEvent()
-    data class RecordingStopped(val result: VideoCaptureResult) : CameraKEvent()
-    data class RecordingFailed(val exception: Exception) : CameraKEvent()
-    data class RecordingMaxDurationReached(val filePath: String, val durationMs: Long) : CameraKEvent()
-}
-```
-
-**Usage:**
-
-```kotlin
-LaunchedEffect(Unit) {
-    stateHolder.events.collect { event ->
-        when (event) {
-            is CameraKEvent.ImageCaptured -> {
-                showToast("Photo captured!")
-            }
-            is CameraKEvent.CaptureFailed -> {
-                showToast("Capture failed: ${event.exception.message}")
-            }
-            is CameraKEvent.QRCodeScanned -> {
-                showToast("QR: ${event.qrCode}")
-            }
-            is CameraKEvent.TextRecognized -> {
-                showToast("OCR: ${event.text}")
-            }
-            else -> {}
-        }
-    }
-}
-```
-
-### pluginScope
-
-```kotlin
-val pluginScope: CoroutineScope
-```
-
-CoroutineScope for plugin operations. Automatically cancelled when state holder is disposed.
-
-## Methods
-
-### getController()
-
-```kotlin
-fun getController(): CameraController?
-```
-
-Get camera controller if available (state is `Ready`).
-
-**Returns:** `CameraController` or `null` if camera not ready.
-
-**Example:**
-
-```kotlin
-val controller = stateHolder.getController()
-if (controller != null) {
-    controller.setZoom(2.0f)
-} else {
-    println("Camera not ready")
-}
-```
-
-### getReadyCameraController()
-
-```kotlin
-suspend fun getReadyCameraController(): CameraController?
-```
-
-Suspends until camera is ready, then returns controller. Use in plugins.
-
-**Returns:** `CameraController` or `null` if error occurs.
-
-**Example:**
-
-```kotlin
-scope.launch {
-    val controller = stateHolder.getReadyCameraController()
-    controller?.setFlashMode(FlashMode.ON)
-}
-```
-
-### captureImage()
-
-```kotlin
-fun captureImage()
-```
-
-Captures an image and emits `CameraKEvent.ImageCaptured` or `CameraKEvent.CaptureFailed`.
-
-**Example:**
-
-```kotlin
-Button(onClick = { stateHolder.captureImage() }) {
-    Text("Capture")
-}
-
-// Listen for result
-LaunchedEffect(Unit) {
-    stateHolder.events.collect { event ->
-        when (event) {
-            is CameraKEvent.ImageCaptured -> {
-                when (val result = event.result) {
-                    is ImageCaptureResult.SuccessWithFile -> {
-                        println("Saved: ${result.filePath}")
-                    }
-                    is ImageCaptureResult.Error -> {
-                        println("Error: ${result.exception.message}")
-                    }
-                }
-            }
-        }
-    }
-}
-```
-
-### setZoom()
-
-```kotlin
-fun setZoom(zoom: Float)
-```
-
-Sets zoom level. Updates `uiState.zoomLevel`.
-
-**Parameters:**
-- `zoom` -- Zoom level (1.0 to maxZoom)
-
-**Example:**
-
-```kotlin
-stateHolder.setZoom(2.5f)
-```
-
-### toggleFlashMode()
-
-```kotlin
-fun toggleFlashMode()
-```
-
-Cycles through flash modes: OFF -> ON -> AUTO -> OFF
-
-**Example:**
-
-```kotlin
-IconButton(onClick = { stateHolder.toggleFlashMode() }) {
-    Icon(Icons.Default.FlashOn, "Toggle Flash")
-}
-```
-
-### setFlashMode()
-
-```kotlin
-fun setFlashMode(mode: FlashMode)
-```
-
-Sets flash mode directly.
-
-**Example:**
-
-```kotlin
-stateHolder.setFlashMode(FlashMode.AUTO)
-```
-
-### toggleTorchMode()
-
-```kotlin
-fun toggleTorchMode()
-```
-
-Toggles torch ON / OFF.
-
-**Example:**
-
-```kotlin
-IconButton(onClick = { stateHolder.toggleTorchMode() }) {
-    Icon(Icons.Default.FlashlightOn, "Toggle Torch")
-}
-```
-
-### setTorchMode()
-
-```kotlin
-fun setTorchMode(mode: TorchMode)
-```
-
-Sets torch mode directly.
-
-**Example:**
-
-```kotlin
-stateHolder.setTorchMode(TorchMode.ON)
-```
-
-### toggleCameraLens()
-
-```kotlin
-fun toggleCameraLens()
-```
-
-Switches between front and back cameras.
-
-**Example:**
-
-```kotlin
-IconButton(onClick = { stateHolder.toggleCameraLens() }) {
-    Icon(Icons.Default.Cameraswitch, "Switch Camera")
-}
-```
-
-### attachPlugin()
-
-```kotlin
-fun attachPlugin(plugin: CameraKPlugin)
-```
-
-Attaches a plugin to the state holder. The plugin's `onAttach` method is called.
-
-### detachPlugin()
-
-```kotlin
-fun detachPlugin(plugin: CameraKPlugin)
-```
-
-Detaches a plugin from the state holder. The plugin's `onDetach` method is called.
-
-### updateUIState()
-
-```kotlin
-fun updateUIState(update: (CameraUIState) -> CameraUIState)
-```
-
-Updates the UI state using a transformation function.
-
-### emitEvent()
-
-```kotlin
-suspend fun emitEvent(event: CameraKEvent)
-```
-
-Emits an event to the events SharedFlow.
-
-### initialize()
-
-```kotlin
-suspend fun initialize()
-```
-
-Initializes camera. Called automatically by `rememberCameraKState`. Don't call manually.
-
-### shutdown()
-
-```kotlin
-fun shutdown()
-```
-
-Cleans up resources. Called automatically when composable leaves composition.
-
-## Complete Example
-
-```kotlin
-@Composable
-fun CompleteStateHolderExample() {
-    val scope = rememberCoroutineScope()
-    val qrScannerPlugin = rememberQRScannerPlugin()
-
-    val cameraState by rememberCameraKState(
-        config = CameraConfiguration(
-            cameraLens = CameraLens.BACK,
-            flashMode = FlashMode.AUTO,
-            aspectRatio = AspectRatio.RATIO_16_9
-        ),
-        setupPlugins = { stateHolder ->
-            stateHolder.attachPlugin(qrScannerPlugin)
-        }
-    )
-
-    // Listen for events
-    val readyState = cameraState as? CameraKState.Ready
-
-    LaunchedEffect(readyState) {
-        readyState ?: return@LaunchedEffect
-        // Events can be collected from the controller's parent state holder
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val state = cameraState) {
-            is CameraKState.Ready -> {
-                val controller = state.controller
-                val uiState = state.uiState
-
-                CameraPreviewView(
-                    controller = controller,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // UI State display
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(16.dp)
-                ) {
-                    Text("Zoom: ${uiState.zoomLevel}x / ${uiState.maxZoom}x")
-                    Text("Flash: ${uiState.flashMode}")
-                    Text("Lens: ${uiState.cameraLens}")
-                }
-
-                // Capture button
-                FloatingActionButton(
-                    onClick = {
-                        scope.launch {
-                            controller.takePictureToFile()
-                        }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(32.dp)
-                ) {
-                    if (uiState.isCapturing) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                    } else {
-                        Icon(Icons.Default.CameraAlt, "Capture")
-                    }
-                }
-
-                // Zoom slider
-                Slider(
-                    value = uiState.zoomLevel,
-                    onValueChange = { controller.setZoom(it) },
-                    valueRange = 1f..uiState.maxZoom,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .width(200.dp)
-                        .graphicsLayer { rotationZ = 270f }
-                )
-            }
-
-            is CameraKState.Error -> {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("Camera error: ${state.message}")
-                    if (state.isRetryable) {
-                        Button(onClick = { /* retry */ }) {
-                            Text("Retry")
-                        }
-                    }
-                }
-            }
-
-            CameraKState.Initializing -> {
-                CircularProgressIndicator()
-            }
-        }
-    }
-}
-```
-
-## Thread Safety
-
-All public methods are thread-safe. State updates are synchronized internally.
+`CameraKPlatformContext` takes the Android `Context`, nothing on iOS, and on desktop optionally a
+`DesktopGrabberFactory`.
+
+## State
+
+| Member | Type | What it is |
+|--------|------|------------|
+| `cameraState` | `StateFlow<CameraKState>` | `Idle`, `Starting`, `Ready`, `Interrupted(reason)`, `Error(error)`, `Closed` |
+| `uiState` | `StateFlow<CameraUIState>` | `flashMode`, `torchMode`, `cameraLens`, `cameraDeviceType`, `cameraId`, `targetOrientation`, `isCapturing`, `pendingCaptures` |
+| `zoom` | `StateFlow<ZoomState>` | `ratio`, `minRatio`, `maxRatio` |
+| `capabilities` | `StateFlow<CameraCapabilities>` | Every camera's `LensInfo`, and the modes, formats and features each supports |
+| `deviceOrientation` | `StateFlow<DeviceOrientation>` | The device's physical orientation |
+| `recordingState` | `StateFlow<RecordingState>` | `Idle`, `Starting`, `Recording`, `Paused`, `Stopping`, `Finished` |
+| `captures` | `SharedFlow<CapturedImage>` | Every successful capture, not replayed |
+| `events` | `SharedFlow<CameraKEvent>` | `RecordingEnded` and `PluginFailed`, not replayed |
+| `frames` | `FrameSource` | Analysis frames for your own code |
+
+`uiState`, `zoom` and the hardware fields change only when the platform reports a change, never
+from the requested value. `CameraKState` is closed, so a `when` over it needs no `else`;
+`CameraKEvent` is open, so a `when` over an event needs one.
 
 ## Lifecycle
 
-1. **Creation** -- `rememberCameraKState()` creates state holder
-2. **Initialization** -- Camera hardware initialized
-3. **Ready** -- Camera operational, plugins activated
-4. **Cleanup** -- Resources released when composable leaves composition
+| Call | What it does |
+|------|--------------|
+| `start()` | Opens the camera from `Idle`, or again from `Error`. Returns at once. |
+| `stop()` | Closes the camera and returns to `Idle`. A live recording first gets two seconds, so a rotation's stop and start carry on with it. |
+| `retry(): Boolean` | Starts again from `Error`; false in any other state. |
+| `recheckPermission()` | From `Error(Permission)`, opens the camera once the permission allows it. Call it on resume. |
+| `close()` | Releases everything, once; the state becomes `Closed` and every command returns `Failure(Closed)`. |
+| `closeAndJoin()` | `close()`, then waits until the release has finished. |
+
+Before opening, the holder checks the camera permission and publishes `Error(Permission)` if it is
+missing. It never prompts.
+
+## Commands
+
+Each is a suspend function that returns `CameraKResult<T>`. Before the camera is `Ready` a command
+returns `Failure(NotReady)`, and after `close()` `Failure(Closed)`.
+
+| Command | Result | Notes |
+|---------|--------|-------|
+| `capture()` | `CapturedImage` | Up to three at once; then `Busy(CAPTURE)` |
+| `setZoom(ratio)` | `ZoomState` | Clamped into the range; latest wins |
+| `setFlashMode(mode)` | `FlashMode` | `Unsupported` for a mode the camera lacks |
+| `setTorchMode(mode)` | `TorchMode` | `Unsupported` for a mode the camera lacks |
+| `selectCamera(lens, deviceType)` | `LensInfo` | One rebind; `NoCamera` keeps the current camera; `Busy(LENS)` while recording |
+| `selectCamera(id)` | `LensInfo` | A `LensInfo.id` from `capabilities` |
+| `setTargetOrientation(orientation)` | `Unit` | Fixes capture and recording orientation; null follows the device |
+| `prepareRecording(config)` | `Unit` | Adds the recording outputs ahead of time |
+| `startRecording(config)` | `RecordingState.Recording` | Once the platform confirms it |
+| `stopRecording()` | `RecordedVideo` | Also while Interrupted |
+| `pauseRecording()`, `resumeRecording()` | `Unit` | `Unsupported(PAUSE_RESUME)` where the platform cannot |
+
+In `com.kashif.cameraK.controls`: `cycleFlashMode()`, `toggleTorch()` and `toggleLens()`.
+
+## Plugins
+
+`attachPlugin(plugin)` and `detachPlugin(plugin)`; or pass `plugins` at creation, which also binds
+frame analysis up front for plugins that read frames. See [Plugins](../guides/plugins.md).
+
+## Errors
+
+`CameraKError` is a closed hierarchy. Each error has `cause` (the platform throwable, if any) and
+`isRetryable`:
+
+| Error | Meaning |
+|-------|---------|
+| `Permission(permission, status)` | A permission is missing; `needsSettings` when only the system settings can grant it |
+| `CameraInUse`, `CameraDisabled`, `NoCamera(lens)`, `Disconnected` | The camera could not be opened or went away |
+| `Storage(kind, keptFilePath)` | A file could not be written; `keptFilePath` names a file the platform kept |
+| `Unsupported(feature)` | The platform or camera cannot do it |
+| `NativeLibraryMissing(platform)` | Desktop natives are missing |
+| `Hardware(platformCode)`, `Timeout(operation)` | The platform failed or did not answer |
+| `Busy(operation)`, `InvalidState(operation)` | The command clashes with one in progress, or makes no sense now |
+| `NotReady`, `Closed` | The camera is not open, or the holder is closed |
+| `Internal` | A bug; its `cause` is the throwable |
+
+```kotlin
+when (val state = holder.cameraState.value) {
+    is CameraKState.Error -> when (val error = state.error) {
+        is CameraKError.Permission -> if (error.needsSettings) showOpenSettings() else requestPermission()
+        else -> if (error.isRetryable) holder.retry()
+    }
+    else -> Unit
+}
+```
+
+## Threads
+
+Every member may be called from any thread. The flows are `StateFlow`s and `SharedFlow`s; collect
+them where you like. A frame analyzer runs on its registration's own worker, or on the producer
+thread when it asks for `synchronous` frames.
 
 ## See Also
 
-- [CameraController API](controller.md) -- Low-level camera operations
-- [Configuration](../getting-started/configuration.md) -- Configuration options
-- [Camera Capture Guide](../guides/camera-capture.md) -- Capture examples
+- [CameraKScreen and CameraPreview](camera-k-screen.md)
+- [Configuration](../getting-started/configuration.md)
+- [Testing](../guides/testing.md)

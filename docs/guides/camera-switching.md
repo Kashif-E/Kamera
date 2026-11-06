@@ -1,301 +1,94 @@
 # Camera Switching
 
-Switch between front and back cameras.
-
-## Toggle Camera Lens
-
-Switch between front and back cameras:
+## Front and back
 
 ```kotlin
-controller.toggleCameraLens()  // BACK <-> FRONT
-```
-
-## Set Initial Camera
-
-The initial camera lens is set via `CameraConfiguration`. At runtime, use `toggleCameraLens()` to switch:
-
-```kotlin
-val cameraState by rememberCameraKState(
-    config = CameraConfiguration(cameraLens = CameraLens.FRONT)  // Start with selfie camera
-)
-```
-
-## Get Current Camera
-
-```kotlin
-val currentLens = controller.getCameraLens()
-when (currentLens) {
-    CameraLens.FRONT -> println("Using front camera")
-    CameraLens.BACK -> println("Using back camera")
-    null -> println("Camera not initialized")
+scope.launch {
+    holder.toggleLens()                                  // CameraKResult<LensInfo>
 }
 ```
 
-## UI Example
+`toggleLens()` (in `com.kashif.cameraK.controls`) switches to the back camera from the front, and to
+the front from any other, with device type `DEFAULT`. The result is the camera that is live
+afterwards.
+
+## A lens and device type
 
 ```kotlin
-@Composable
-fun CameraWithSwitching() {
-    val scope = rememberCoroutineScope()
-    val cameraState by rememberCameraKState(config = CameraConfiguration())
+scope.launch {
+    holder.selectCamera(CameraLens.BACK, CameraDeviceType.ULTRA_WIDE)
+        .onFailure { error -> if (error is CameraKError.NoCamera) showMessage("No ultra-wide camera") }
+}
+```
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val state = cameraState) {
-            is CameraKState.Ready -> {
-                val controller = state.controller
+The switch is one rebind. `NoCamera` leaves the current camera in place.
 
-                CameraPreviewView(
-                    controller = controller,
-                    modifier = Modifier.fillMaxSize()
-                )
+## An exact camera
 
-                // Camera switch button
-                IconButton(
-                    onClick = { controller.toggleCameraLens() },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Cameraswitch,
-                        contentDescription = "Switch Camera",
-                        tint = Color.White
-                    )
-                }
+`holder.capabilities` lists every camera with its `LensInfo`: `id`, `lens`, `deviceType`, the
+zoom range, `hasFlash`, `isLogical` and `isExternal`.
 
-                // Capture button
-                FloatingActionButton(
-                    onClick = {
-                        scope.launch {
-                            controller.takePictureToFile()
-                        }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(32.dp)
-                ) {
-                    Icon(Icons.Default.CameraAlt, "Capture")
-                }
-            }
+```kotlin
+val capabilities by holder.capabilities.collectAsStateWithLifecycle()
 
-            is CameraKState.Error -> Text("Camera error: ${state.message}")
-            CameraKState.Initializing -> CircularProgressIndicator()
+LazyColumn {
+    items(capabilities.allLenses) { lens ->
+        TextButton(onClick = { scope.launch { holder.selectCamera(lens.id) } }) {
+            Text("${lens.lens} ${lens.deviceType}${if (lens.isExternal) " (external)" else ""}")
         }
     }
 }
 ```
 
-## Smooth Camera Switch
+`capabilities.lenses(CameraLens.BACK)` lists a facing's built-in cameras,
+`availableDeviceTypes(CameraLens.BACK)` their device types, and `externalLenses` the USB and
+Continuity cameras. On desktop every webcam is a lens with its own `id`. Until the engine has
+enumerated the cameras, `capabilities` is `CameraCapabilities.EMPTY`.
 
-Add loading indicator during switch:
+## The current camera
 
 ```kotlin
-@Composable
-fun CameraWithSmoothSwitch() {
-    val scope = rememberCoroutineScope()
-    val cameraState by rememberCameraKState(config = CameraConfiguration())
-    var isSwitching by remember { mutableStateOf(false) }
+val uiState by holder.uiState.collectAsStateWithLifecycle()
+uiState.cameraLens          // FRONT or BACK; null before the first bind
+uiState.cameraDeviceType
+uiState.cameraId            // the bound camera's LensInfo.id
+```
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val state = cameraState) {
-            is CameraKState.Ready -> {
-                val controller = state.controller
+## While recording
 
-                CameraPreviewView(
-                    controller = controller,
-                    modifier = Modifier.fillMaxSize()
-                )
+A switch during a recording is refused, and nothing changes: `Failure(CameraKError.Busy(LENS))`, or
+`Busy(DEVICE_TYPE)` when only the device type would change. Disable the switch while
+`holder.recordingState` is live.
 
-                // Switch button
-                IconButton(
-                    onClick = {
-                        scope.launch {
-                            isSwitching = true
-                            delay(100)  // Brief delay for smooth animation
-                            controller.toggleCameraLens()
-                            delay(300)  // Wait for camera switch
-                            isSwitching = false
-                        }
-                    },
-                    enabled = !isSwitching,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                ) {
-                    if (isSwitching) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Cameraswitch,
-                            contentDescription = "Switch Camera",
-                            tint = Color.White
-                        )
-                    }
-                }
-            }
+## What survives a switch
 
-            is CameraKState.Error -> Text("Camera error: ${state.message}")
-            CameraKState.Initializing -> CircularProgressIndicator()
-        }
-    }
+The flash, torch and zoom you set are applied again on the new camera where it offers them; read
+`uiState` and `zoom` for what it reports. `rememberCameraKStateHolder` saves the chosen camera and
+restores it after process death.
+
+## The camera at open
+
+```kotlin
+CameraConfiguration {
+    cameraLens = CameraLens.FRONT
+    cameraDeviceType = CameraDeviceType.WIDE_ANGLE
 }
+// or an exact camera:
+CameraConfiguration { cameraId = savedCameraId }
 ```
 
-## Platform-Specific Behavior
+With no lens and no id the platform default opens: the back camera on Android and iOS, the system
+default device on desktop.
 
-### Android
-- Seamless switching via CameraX
-- Preview may pause briefly (<100ms)
-- Flash settings reset per camera
+## Platforms
 
-### iOS
-- Swift AVFoundation switch
-- Preview updates smoothly
-- Flash/torch settings persist per camera
-
-### Desktop
-- Requires multiple webcams
-- Switching cycles through available devices
-- Single webcam: no effect
-
-## Preserve Settings After Switch
-
-Save and restore settings:
-
-```kotlin
-fun switchCameraPreserveSettings(controller: CameraController) {
-    // Save current settings
-    val savedFlashMode = controller.getFlashMode()
-    val savedZoom = controller.getZoom()
-
-    // Switch camera
-    controller.toggleCameraLens()
-
-    // Wait for switch to complete
-    scope.launch {
-        delay(200)
-
-        // Restore settings (if supported on new camera)
-        savedFlashMode?.let { controller.setFlashMode(it) }
-        controller.setZoom(savedZoom.coerceIn(1f, controller.getMaxZoom()))
-    }
-}
-```
-
-## Disable Flash When Switching to Front
-
-Most front cameras don't have flash:
-
-```kotlin
-fun switchAndAdjustFlash(controller: CameraController) {
-    controller.toggleCameraLens()
-    // After switching, check the current lens and adjust flash
-    val currentLens = controller.getCameraLens()
-    if (currentLens == CameraLens.FRONT) {
-        controller.setFlashMode(FlashMode.OFF)  // Disable flash for front camera
-    } else {
-        controller.setFlashMode(FlashMode.AUTO)  // Re-enable flash for back camera
-    }
-}
-```
-
-## Animated Camera Icon
-
-Show which camera is active:
-
-```kotlin
-@Composable
-fun AnimatedCameraSwitch() {
-    val cameraState by rememberCameraKState(config = CameraConfiguration())
-    var isFrontCamera by remember { mutableStateOf(false) }
-    val rotation by animateFloatAsState(
-        targetValue = if (isFrontCamera) 180f else 0f,
-        animationSpec = tween(durationMillis = 300)
-    )
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val state = cameraState) {
-            is CameraKState.Ready -> {
-                val controller = state.controller
-
-                CameraPreviewView(
-                    controller = controller,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                IconButton(
-                    onClick = {
-                        controller.toggleCameraLens()
-                        isFrontCamera = !isFrontCamera
-                    },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Cameraswitch,
-                        contentDescription = "Switch Camera",
-                        tint = Color.White,
-                        modifier = Modifier.graphicsLayer { rotationY = rotation }
-                    )
-                }
-            }
-
-            is CameraKState.Error -> Text("Camera error: ${state.message}")
-            CameraKState.Initializing -> CircularProgressIndicator()
-        }
-    }
-}
-```
-
-## Common Issues
-
-### Preview Freezes After Switch
-
-**Cause:** Camera needs time to reinitialize.
-
-**Solution:** Add small delay after switch:
-
-```kotlin
-controller.toggleCameraLens()
-delay(300)
-// Camera ready
-```
-
-### Flash Doesn't Work After Switching
-
-**Cause:** Front cameras usually lack flash.
-
-**Solution:** Disable flash UI for front camera:
-
-```kotlin
-val currentLens = controller.getCameraLens()
-val showFlashButton = currentLens == CameraLens.BACK
-```
-
-### Settings Don't Persist
-
-**Cause:** Each camera has independent settings.
-
-**Solution:** Store settings externally and reapply after switch.
-
-## Best Practices
-
-1. **Disable button during switch** — Prevent multiple rapid switches
-2. **Show loading indicator** — Provide visual feedback
-3. **Reset zoom** — Front camera may have different zoom range
-4. **Disable flash for front camera** — Avoid confusion
-5. **Test on real devices** — Emulators have limited camera support
+| Platform | Device types |
+|----------|--------------|
+| Android | Classified relative to the main lens: 1.6x its focal length or more is `TELEPHOTO`, 0.75x or less `ULTRA_WIDE`; macro modules are `MACRO` |
+| iOS | From the AVFoundation device type (wide, ultra-wide, telephoto) |
+| Desktop | Each connected device is a lens with its own `id`; choose one with `selectCamera(id)` |
 
 ## Next Steps
 
-- [Flash and Torch](flash-and-torch.md) — Control lighting per camera
-- [Zoom Control](zoom-control.md) — Handle different zoom ranges
-- [Configuration](../getting-started/configuration.md) — Set initial camera
+- [Zoom Control](zoom-control.md)
+- [Configuration](../getting-started/configuration.md)
