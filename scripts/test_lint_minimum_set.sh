@@ -48,7 +48,9 @@ checks=(
 )
 
 {
+    # An init script runs in every build, build-logic's included build too; only the root build has the checks.
     echo 'gradle.projectsEvaluated {'
+    echo '    if (gradle.parent != null) return'
     echo '    rootProject.tasks.register("probeLintCheck") { group = "camerak lint" }'
     for check in "${checks[@]}"; do
         echo "    rootProject.tasks.getByPath(\"$check\").group = \"moved out of camerak lint\""
