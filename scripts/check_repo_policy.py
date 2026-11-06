@@ -1301,6 +1301,10 @@ RELEASE_GATE_BENCHMARKS = [
 BENCHMARK_SOURCES = "benchmark/src/main/kotlin/com/kashif/cameraK/benchmark"
 INSTRUMENTED_COMPILE = ":cameraK-core:compileDebugAndroidTestKotlinAndroid"
 BENCHMARK_BUILD = re.compile(r'":benchmark:(?:compile|assemble)[A-Za-z]*"')
+INSTRUMENTED_SOURCES = "cameraK-core/src/androidInstrumentedTest"
+SAMPLE_ANDROID_SOURCES = "Sample/src/androidMain/kotlin"
+# The Sample has no benchmark source set, so its benchmark build type merges the androidMain manifest.
+SAMPLE_MANIFEST = "Sample/src/androidMain/AndroidManifest.xml"
 
 
 def braced_body(text: str, start: int) -> str:
@@ -1328,10 +1332,18 @@ def verify_target_blocks(build_text: str, target: str) -> List[str]:
     return [braced_body(body, match.end()) for match in re.finditer(rf'\bif \("{target}" in targets\)', body)]
 
 
-def release_gate_problems(settings_text: str, build_text: str, sources: Dict[str, str]) -> List[str]:
+def release_gate_problems(
+    settings_text: str,
+    build_text: str,
+    sources: Dict[str, str],
+    instrumented: Dict[str, str],
+    sample_sources: Dict[str, str],
+    manifest: str | None,
+) -> List[str]:
     """release_gate_harness_is_built: the release gate's device harness is in the build and compiled by
     verify.sh, though only the maintainer runs it on a device (design §12.4 B1). [sources] maps each Kotlin
-    file under BENCHMARK_SOURCES to its text."""
+    file under BENCHMARK_SOURCES to its text, [instrumented] each one under INSTRUMENTED_SOURCES,
+    [sample_sources] each one under SAMPLE_ANDROID_SOURCES; [manifest] is SAMPLE_MANIFEST's text."""
     problems = []
     if ":benchmark" not in {":" + include.lstrip(":") for include in SETTINGS_INCLUDE.findall(settings_text)}:
         problems.append("settings.gradle.kts does not include :benchmark, the release gate's Macrobenchmark module")
@@ -1369,14 +1381,45 @@ def check_release_gate() -> List[str]:
         + "}\n"
         for name in {b.split(".")[0] for b in RELEASE_GATE_BENCHMARKS}
     }
-    if release_gate_problems(built_settings, built_build, built_sources):
+    built_instrumented = {
+        f"{INSTRUMENTED_SOURCES}/kotlin/a/DeviceContractTest.kt": "internal class DeviceContractTest :\n"
+        "    CameraEngineContractTest(DeviceEngineDriver(), requires = emptySet())\n",
+        f"{INSTRUMENTED_SOURCES}/kotlin/a/DeviceEngineDriver.kt": "internal class DeviceEngineDriver : EngineContractDriver\n",
+    }
+    built_sample = {f"{SAMPLE_ANDROID_SOURCES}/b/BareCameraXActivity.kt": "class BareCameraXActivity : ComponentActivity() {\n}\n"}
+    built_manifest = (
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <application>\n'
+        '        <activity android:name=".BareCameraXActivity" android:exported="true" />\n'
+        '        <profileable android:shell="true" />\n    </application>\n</manifest>\n'
+    )
+    whole = (built_instrumented, built_sample, built_manifest)
+    if release_gate_problems(built_settings, built_build, built_sources, *whole):
         raise CheckError("release_gate_harness_is_built rejects a fixture with the whole harness")
+    # Each device-side piece missing on its own: no contract test (the driver alone), no baseline
+    # activity (a comment naming it), the baseline not in the manifest, no <profileable>.
+    driver_only = {path: text for path, text in built_instrumented.items() if "Driver" in path}
+    named_only = {f"{SAMPLE_ANDROID_SOURCES}/b/Other.kt": "// launches BareCameraXActivity\nclass Other\n"}
+    unregistered = built_manifest.replace(".BareCameraXActivity", ".AppActivity")
+    unprofiled = built_manifest.replace('        <profileable android:shell="true" />\n', "")
+    misjudged = []
+    for missing, pieces in (
+        ("contract test", (driver_only, built_sample, built_manifest)),
+        ("BareCameraXActivity", (built_instrumented, named_only, built_manifest)),
+        ("BareCameraXActivity", (built_instrumented, built_sample, unregistered)),
+        ("profileable", (built_instrumented, built_sample, unprofiled)),
+        ("profileable", (built_instrumented, built_sample, None)),
+    ):
+        found = release_gate_problems(built_settings, built_build, built_sources, *pieces)
+        if len(found) != 1 or missing not in found[0]:
+            misjudged.append(f"a harness without its {missing}: {found}")
+    if misjudged:
+        raise CheckError("release_gate_harness_is_built misjudges " + "; ".join(misjudged))
     # Each task in the other target's block, one benchmark method missing, :benchmark left out of settings.
     swapped_build = built_build.replace(INSTRUMENTED_COMPILE, "@").replace(":benchmark:assembleBenchmark", INSTRUMENTED_COMPILE)
     swapped_build = swapped_build.replace('"@"', '":benchmark:assembleBenchmark"')
     missing_method = dict(built_sources)
     missing_method[f"{BENCHMARK_SOURCES}/VideoBindBenchmark.kt"] = "class VideoBindBenchmark {\n}\nfun videoBindMainThreadTime() = Unit\n"
-    found = release_gate_problems('include(":cameraK-core")\n', swapped_build, missing_method)
+    found = release_gate_problems('include(":cameraK-core")\n', swapped_build, missing_method, *whole)
     if len(found) != 4:
         raise CheckError(f"release_gate_harness_is_built misjudges its fixture: {found}")
     sources = {
@@ -1384,10 +1427,15 @@ def check_release_gate() -> List[str]:
         for path in tracked("*.kt")
         if path.relative_to(ROOT).as_posix().startswith(BENCHMARK_SOURCES + "/")
     }
+    kotlin = {path.relative_to(ROOT).as_posix(): path for path in tracked("*.kt")}
+    manifest = ROOT / SAMPLE_MANIFEST
     return release_gate_problems(
         (ROOT / "settings.gradle.kts").read_text(),
         (ROOT / "build.gradle.kts").read_text(),
         sources,
+        {path: file.read_text() for path, file in kotlin.items() if path.startswith(INSTRUMENTED_SOURCES + "/")},
+        {path: file.read_text() for path, file in kotlin.items() if path.startswith(SAMPLE_ANDROID_SOURCES + "/")},
+        manifest.read_text() if manifest.is_file() else None,
     )
 
 
