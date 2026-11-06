@@ -214,6 +214,26 @@ class CustomCameraController(
     )
 
     /**
+     * The device to bind for [deviceType] at [position], or null if that position has none.
+     *
+     * [CameraDeviceType.DEFAULT] prefers the ultra-wide on the front. The iPhone 17 family's Center Stage
+     * front camera (a square, portrait-mounted sensor) is exposed as builtInUltraWideCamera, and binding
+     * the front wide-angle device there instead squashes the live preview (#170). Devices without a front
+     * ultra-wide keep the wide-angle camera.
+     */
+    private fun preferredDevice(deviceType: CameraDeviceType, position: AVCaptureDevicePosition): AVCaptureDevice? {
+        val types = if (deviceType == CameraDeviceType.DEFAULT && position == AVCaptureDevicePositionFront) {
+            listOfNotNull(AVCaptureDeviceTypeBuiltInUltraWideCamera, AVCaptureDeviceTypeBuiltInWideAngleCamera)
+        } else {
+            listOfNotNull(deviceType.toAVCaptureDeviceType())
+        }
+        if (types.isEmpty()) return null
+        val devices = discoverDevices(types, position)
+        // The discovery session doesn't promise an order, so apply the preference explicitly.
+        return types.firstNotNullOfOrNull { type -> devices.firstOrNull { it.deviceType == type } }
+    }
+
+    /**
      * Enumerates every built-in lens (wide, telephoto, ultra-wide) on both positions.
      */
     fun getCameraCapabilities(): List<LensInfo> =
@@ -238,10 +258,18 @@ class CustomCameraController(
     private fun setupInputs(cameraDeviceType: CameraDeviceType): Boolean {
         val deviceTypeString = cameraDeviceType.toAVCaptureDeviceType()
 
-        val discovered = discoverDevices(
-            deviceTypeString?.let { listOf(it) } ?: allLensDeviceTypes(),
-            AVCaptureDevicePositionUnspecified,
-        )
+        val discovered = if (cameraDeviceType == CameraDeviceType.DEFAULT) {
+            // DEFAULT resolves per position (see preferredDevice), so front and back can differ in type.
+            listOfNotNull(
+                preferredDevice(cameraDeviceType, AVCaptureDevicePositionBack),
+                preferredDevice(cameraDeviceType, AVCaptureDevicePositionFront),
+            )
+        } else {
+            discoverDevices(
+                deviceTypeString?.let { listOf(it) } ?: allLensDeviceTypes(),
+                AVCaptureDevicePositionUnspecified,
+            )
+        }
         val devices = discovered.ifEmpty {
             listOfNotNull(AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeVideo) as? AVCaptureDevice)
         }
@@ -257,7 +285,8 @@ class CustomCameraController(
             (type == null || cam.deviceType == type) && (position == null || cam.position == position)
         }
 
-        val requestedType = cameraDeviceType.toAVCaptureDeviceType()
+        // DEFAULT's devices were already chosen per position, so match on position alone.
+        val requestedType = if (cameraDeviceType == CameraDeviceType.DEFAULT) null else deviceTypeString
         val desiredPosition = when (initialCameraLens) {
             CameraLens.FRONT -> AVCaptureDevicePositionFront
             CameraLens.BACK -> AVCaptureDevicePositionBack
@@ -578,69 +607,66 @@ class CustomCameraController(
     /**
      * Switches to a specific camera device type (e.g. wide-angle, telephoto, ultra-wide)
      * while keeping the same camera position (front/back).
+     *
+     * The switch is transactional: the replacement input is created before the current one is touched,
+     * and if the session won't accept it the previous input is restored, instead of leaving the session
+     * without a camera (#170). Failures are logged, not sent to [onError]: a capture in flight listens
+     * there and would fail.
+     *
+     * @return true if the requested device type is bound when this returns.
      */
     @OptIn(ExperimentalForeignApi::class)
-    fun switchToDeviceType(deviceType: CameraDeviceType) {
-        val session = captureSession ?: return
-        val targetType = deviceType.toAVCaptureDeviceType() ?: return
+    fun switchToDeviceType(deviceType: CameraDeviceType): Boolean {
+        val session = captureSession ?: return false
+        val position = if (isUsingFrontCamera) AVCaptureDevicePositionFront else AVCaptureDevicePositionBack
 
-        // Determine current position
-        val position = if (isUsingFrontCamera) {
-            AVCaptureDevicePositionFront
-        } else {
-            AVCaptureDevicePositionBack
+        // Stay on the current position. Binding the other position's lens would leave isUsingFrontCamera,
+        // the mirroring and the lens reported to the app describing a camera that isn't bound.
+        val newDevice = preferredDevice(deviceType, position) ?: run {
+            CameraKLogger.w("CameraK", "No $deviceType camera at the current position")
+            return false
         }
+        // Already bound, e.g. DEFAULT requested again after a lens switch: nothing to reconfigure.
+        if (newDevice == currentCamera) return true
 
-        // Discover device matching the requested type and position, falling back to any position
-        val newDevice = discoverDevices(listOf(targetType), position).firstOrNull()
-            ?: discoverDevices(listOf(targetType), AVCaptureDevicePositionUnspecified).firstOrNull()
-            ?: return
-
-        val wasRunning = session.isRunning()
-        if (wasRunning) {
-            session.stopRunning()
+        val newInput = AVCaptureDeviceInput.deviceInputWithDevice(newDevice, null) ?: run {
+            CameraKLogger.w("CameraK", "Failed to create input for $deviceType")
+            return false
         }
+        val oldInput = session.inputs
+            .mapNotNull { it as? AVCaptureDeviceInput }
+            .firstOrNull { it.device.hasMediaType(AVMediaTypeVideo) }
 
+        // Inputs can be swapped on a running session inside one configuration transaction, so the
+        // session is not stopped and restarted on the caller's thread.
         session.beginConfiguration()
-
-        try {
-            // Remove current input
-            session.inputs.firstOrNull()?.let { input ->
-                session.removeInput(input as AVCaptureInput)
-            }
-
-            val newInput = AVCaptureDeviceInput.deviceInputWithDevice(newDevice, null)
-                ?: throw Exception("Failed to create input for device type")
-
-            if (session.canAddInput(newInput)) {
-                session.addInput(newInput)
-                currentCamera = newDevice
-                if (newDevice.position == AVCaptureDevicePositionBack) {
-                    backCamera = newDevice
-                } else {
-                    frontCamera = newDevice
-                }
-            }
-
+        oldInput?.let { session.removeInput(it) }
+        val switched = session.canAddInput(newInput)
+        if (switched) {
+            session.addInput(newInput)
             cameraPreviewLayer?.connection?.let { connection ->
                 if (connection.isVideoMirroringSupported()) {
                     connection.automaticallyAdjustsVideoMirroring = false
                     connection.setVideoMirrored(isUsingFrontCamera)
                 }
             }
+        } else if (oldInput != null && session.canAddInput(oldInput)) {
+            session.addInput(oldInput)
+        }
+        session.commitConfiguration()
 
-            session.commitConfiguration()
-        } catch (_: Exception) {
-            session.commitConfiguration()
+        if (!switched) {
+            CameraKLogger.w("CameraK", "Cannot add input for $deviceType")
+            return false
         }
 
-        if (wasRunning) {
-            dispatch_async(
-                dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH.toLong(), 0u),
-            ) {
-                session.startRunning()
-            }
+        currentCamera = newDevice
+        if (position == AVCaptureDevicePositionBack) {
+            backCamera = newDevice
+        } else {
+            frontCamera = newDevice
         }
+        return true
     }
 
     @OptIn(ExperimentalForeignApi::class)

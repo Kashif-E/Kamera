@@ -455,9 +455,13 @@ actual class CameraController(
     actual fun getPreferredCameraDeviceType(): CameraDeviceType = cameraDeviceType
 
     actual fun setPreferredCameraDeviceType(deviceType: CameraDeviceType) {
-        if (cameraDeviceType == deviceType) return // avoid a redundant AVCaptureSession input swap
-        cameraDeviceType = deviceType
-        customCameraController.switchToDeviceType(deviceType)
+        // No equality guard: the preference is shared by both positions, so after a lens switch it can
+        // name a type the bound camera isn't. switchToDeviceType is a no-op when the device is already
+        // bound. Once a session exists, the preference is only recorded if the switch succeeded, so a
+        // failed switch can be retried (#170).
+        if (customCameraController.captureSession == null || customCameraController.switchToDeviceType(deviceType)) {
+            cameraDeviceType = deviceType
+        }
     }
 
     actual fun getCameraCapabilities(): CameraCapabilities =
