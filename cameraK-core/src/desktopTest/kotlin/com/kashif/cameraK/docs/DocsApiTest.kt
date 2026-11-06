@@ -159,12 +159,17 @@ class DocsApiTest {
      * CameraK's folder out of it: on iOS `NSURLIsExcludedFromBackupKey` on Documents/CameraK and a
      * file protection class, on Android Auto Backup rules for both API ranges excluding
      * files/CameraK. The folder it excludes is the one core writes to, read from core's sources, and
-     * the migration guide's storage section points to it.
+     * the migration guide's storage section points to it. On desktop, where CameraK sets nothing, the
+     * section names each default folder, also read from the sources: captures in ~/Documents/CameraK
+     * and recordings in the user's Movies folder on macOS or Videos folder elsewhere.
      */
     @Test
     fun backupExclusionIsDocumented() {
         val android = folderName("cameraK-core/src/androidMain", Regex("""File\(context\.filesDir, "([^"]+)"\)"""))
         val ios = folderName("cameraK-core/src/appleMain", Regex(""""\$\{documentsDirectory\(\)}/([^"]+)""""))
+        val (stillParent, stillName) = sourceMatch(DESKTOP_MAIN, DESKTOP_STILL_FOLDER)
+        val videoName = folderName(DESKTOP_MAIN, DESKTOP_VIDEO_FOLDER)
+        val (macVideos, otherVideos) = sourceMatch(DESKTOP_MAIN, DESKTOP_VIDEO_PARENTS)
         val guide = DocsSources.section(CONFIGURATION_GUIDE, Regex("^## Backups$"), Regex("^## .*"))
         val findings = buildList {
             listOf(
@@ -176,6 +181,9 @@ class DocsApiTest {
                 "android:dataExtractionRules",
                 "android:fullBackupContent",
                 """<exclude domain="file" path="$android/" />""",
+                "~/$stillParent/$stillName",
+                "~/$macVideos/$videoName",
+                "~/$otherVideos/$videoName",
             ).filterNot { it in guide }.forEach { add("$CONFIGURATION_GUIDE's Backups section does not name $it") }
             val storage = DocsSources.section(MIGRATION_GUIDE, Regex("^## 9\\. Storage.*"), Regex("^## .*"))
             if (BACKUPS_LINK !in storage) add("$MIGRATION_GUIDE's storage section does not link $BACKUPS_LINK")
@@ -184,12 +192,15 @@ class DocsApiTest {
     }
 
     /** The one folder name [pattern] captures in the Kotlin sources under [dir]. */
-    private fun folderName(dir: String, pattern: Regex): String {
-        val names = File(root, dir).walkTopDown().filter { it.isFile && it.extension == "kt" }
-            .flatMap { file -> pattern.findAll(file.readText()).map { it.groupValues[1] } }
+    private fun folderName(dir: String, pattern: Regex): String = sourceMatch(dir, pattern).single()
+
+    /** The groups of the one distinct match of [pattern] in the Kotlin sources under [dir]. */
+    private fun sourceMatch(dir: String, pattern: Regex): List<String> {
+        val matches = File(root, dir).walkTopDown().filter { it.isFile && it.extension == "kt" }
+            .flatMap { file -> pattern.findAll(file.readText()).map { it.groupValues.drop(1) } }
             .toSet()
-        assertEquals(1, names.size, "expected one default capture folder under $dir, found $names")
-        return names.single()
+        assertEquals(1, matches.size, "expected one default capture folder under $dir, found $matches")
+        return matches.single()
     }
 
     /**
@@ -239,6 +250,16 @@ class DocsApiTest {
         const val DEVICE_CHECKLIST = "docs/device-checklist.md"
         const val CONFIGURATION_GUIDE = "docs/getting-started/configuration.md"
         const val BACKUPS_LINK = "../getting-started/configuration.md#backups"
+        const val DESKTOP_MAIN = "cameraK-core/src/desktopMain"
+
+        /** Desktop's default capture folder, `File(File(media.userHome, "<parent>"), "<name>")`. */
+        val DESKTOP_STILL_FOLDER = Regex("""File\(File\(media\.userHome, "([^"]+)"\), "([^"]+)"\)""")
+
+        /** The name of desktop's default recording folder, under the user's video folder. */
+        val DESKTOP_VIDEO_FOLDER = Regex("""File\(File\(media\.userHome, moviesFolderName\(\)\), "([^"]+)"\)""")
+
+        /** The user's video folder on macOS and elsewhere, as `moviesFolderName` picks it. */
+        val DESKTOP_VIDEO_PARENTS = Regex("""fun moviesFolderName\(\): String =\s+if \(.*\) "([^"]+)" else "([^"]+)"""")
 
         /** §10.4's removed API, group by group, as the migration guide names each symbol. */
         val REMOVED_GROUPS: List<Pair<String, List<String>>> = listOf(
