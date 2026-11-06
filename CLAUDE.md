@@ -56,7 +56,7 @@ All library modules target: `androidTarget`, `jvm("desktop")`, `iosX64()`, `iosA
 - Package: `com.kashif.cameraK` (core), `com.kashif.*Plugin` or `com.kashif.*plugin` (plugins)
 - Formatting: Spotless + ktlint 1.5.0 with `.editorconfig`. Composable function naming is exempt from ktlint rules.
 - JVM toolchain: Java 17
-- Android: minSdk 21, compileSdk 36
+- Android: minSdk 23, compileSdk 36
 - iOS: deployment target 13.0, static XCFrameworks
 - Compose stability: `@Stable` and `@Immutable` annotations used for optimization
 - Concurrency: AtomicFU for lock-free operations, coroutines + StateFlow throughout

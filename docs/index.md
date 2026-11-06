@@ -126,7 +126,7 @@ val cameraState by rememberCameraKState(
 
 | Platform | Minimum Version | Backend |
 |----------|-----------------|---------|
-| Android  | API 21 (5.0)    | CameraX |
+| Android  | API 23 (6.0)    | CameraX |
 | iOS      | 13.0            | AVFoundation |
 | Desktop  | JDK 17+         | JavaCV |
 

@@ -86,7 +86,7 @@ android {
     ndkVersion = "26.3.11579264" // NDK r26b+ uses 16KB page size defaults for native binaries
 
     defaultConfig {
-        minSdk = 21
+        minSdk = 23
     }
 
     packaging {
