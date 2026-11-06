@@ -1,9 +1,7 @@
 package com.kashif.cameraK.docs
 
-import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
-import kotlin.test.fail
 
 /**
  * The iOS setup in the README and the installation guide names every Info.plist usage description
@@ -22,25 +20,12 @@ import kotlin.test.fail
  * one: an app that calls RequestStoragePermission still needs NSPhotoLibraryUsageDescription.
  */
 class IosInstallDocsTest {
-    private val repoRoot: File = generateSequence(File("").absoluteFile) { it.parentFile }
-        .firstOrNull { File(it, "settings.gradle.kts").isFile }
-        ?: fail("no settings.gradle.kts above ${File("").absolutePath}")
-
     private val requiredKeys = listOf(
         "NSCameraUsageDescription",
         "NSMicrophoneUsageDescription",
         "NSPhotoLibraryAddUsageDescription",
         "NSPhotoLibraryUsageDescription",
     )
-
-    /** The lines of [doc] from the first line matching [start] up to the next line matching [end]. */
-    private fun section(doc: String, start: Regex, end: Regex): String {
-        val lines = File(repoRoot, doc).readLines()
-        val from = lines.indexOfFirst { start.matches(it) }
-        if (from < 0) fail("$doc has no iOS setup section matching $start")
-        val to = lines.drop(from + 1).indexOfFirst { end.matches(it) }.let { if (it < 0) lines.size else from + 1 + it }
-        return lines.subList(from, to).joinToString("\n")
-    }
 
     private fun assertDeclaresEveryKey(doc: String, section: String) {
         val missing = requiredKeys.filterNot { key ->
@@ -67,10 +52,14 @@ class IosInstallDocsTest {
         }
     }
 
-    private val readme = "README.MD"
-    private val readmeIosSetup get() = section(readme, Regex("\\*\\*iOS\\*\\*.*"), Regex("(#+ |\\*\\*[A-Z]).*"))
-    private val guide = "docs/getting-started/installation.md"
-    private val guideIosSetup get() = section(guide, Regex("### iOS"), Regex("#{1,3} .*"))
+    private val readme = DocsSources.README
+    private val readmeIosSetup get() = DocsSources.section(
+        readme,
+        Regex("\\*\\*iOS\\*\\*.*"),
+        Regex("(#+ |\\*\\*[A-Z]).*"),
+    )
+    private val guide = DocsSources.INSTALLATION_GUIDE
+    private val guideIosSetup get() = DocsSources.section(guide, Regex("### iOS"), Regex("#{1,3} .*"))
 
     @Test
     fun theReadmesIosSetupDeclaresEveryUsageDescription() = assertDeclaresEveryKey(readme, readmeIosSetup)

@@ -131,11 +131,12 @@ dependencies {
 }
 
 tasks.named<Test>("desktopTest") {
-    // IosInstallDocsTest reads these, so a docs-only change must rerun it.
+    // The docs tests (com.kashif.cameraK.docs) read these, so a docs-only change must rerun them.
     inputs
         .files(
             layout.projectDirectory.file("../README.MD"),
-            layout.projectDirectory.file("../docs/getting-started/installation.md"),
-        ).withPropertyName("iosInstallDocs")
+            layout.projectDirectory.dir("../docs"),
+            layout.projectDirectory.file("../mkdocs.yml"),
+        ).withPropertyName("docs")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }
