@@ -73,6 +73,65 @@ Captures and recordings are app-owned files: `outputDirectory` when set, used as
 (recordings: `~/Movies/CameraK` on macOS, `~/Videos/CameraK` elsewhere). Nothing reaches the
 gallery unless you save it with `MediaSaverPlugin` (see [Plugins](../guides/plugins.md#media-saver-plugin)).
 
+## Backups
+
+CameraK leaves the platform's backup on. Captures and recordings in its default folders are
+included in iCloud and device backups on iOS and in Auto Backup on Android. An app that captures
+ID documents, receipts or anything else that should stay on the device excludes the folder itself.
+If you set `outputDirectory`, exclude that folder instead.
+
+**iOS.** Set `NSURLIsExcludedFromBackupKey` on `Documents/CameraK` at every launch, before the first
+capture; it covers the folder and everything in it:
+
+```swift
+var folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    .appendingPathComponent("CameraK", isDirectory: true)
+try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+var values = URLResourceValues()
+values.isExcludedFromBackup = true  // NSURLIsExcludedFromBackupKey
+try folder.setResourceValues(values)
+```
+
+Give the files a file protection class too. CameraK writes them with the app's default class, so
+enable the Data Protection capability, which sets the `com.apple.developer.default-data-protection`
+entitlement, to `NSFileProtectionComplete`. A file in that class cannot be read while the device is
+locked; an app that uploads captures in the background uses
+`NSFileProtectionCompleteUntilFirstUserAuthentication`. `Documents` is also shown in the Files app
+when `UIFileSharingEnabled` or `LSSupportsOpeningDocumentsInPlace` is set; such an app sets
+`outputDirectory` to a folder under Application Support.
+
+**Android.** CameraK writes to `filesDir/CameraK`, which Auto Backup includes. Exclude it with
+`data-extraction-rules` (Android 12 and later) and `full-backup-content` (Android 11 and earlier),
+both referenced from the `<application>` element:
+
+```xml
+<!-- AndroidManifest.xml -->
+<application
+    android:dataExtractionRules="@xml/data_extraction_rules"
+    android:fullBackupContent="@xml/backup_rules"
+    ... >
+
+<!-- res/xml/data_extraction_rules.xml: Android 12 and later -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="CameraK/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="CameraK/" />
+    </device-transfer>
+</data-extraction-rules>
+
+<!-- res/xml/backup_rules.xml: Android 11 and earlier -->
+<full-backup-content>
+    <exclude domain="file" path="CameraK/" />
+</full-backup-content>
+```
+
+An app that already has these files adds the `<exclude>` lines to them. `android:allowBackup="false"`
+turns backup off for the whole app.
+
+**Desktop.** CameraK sets nothing; `~/Documents/CameraK` is in whatever backup the user runs.
+
 ## Video
 
 Recordings take their own `VideoConfiguration`, passed to `startRecording`:
