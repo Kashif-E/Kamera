@@ -1093,6 +1093,30 @@ tasks.register("checkBuildGateRules") {
                             relocationModuleMetadata.get(),
                         )
                 },
+                "sample_target_runs_the_sample_tests" to {
+                    // The Sample's own tests (its commonTest and desktopTest) run under the sample target,
+                    // so they count in verify.sh's summary; compiling the Sample alone tests nothing.
+                    listOfNotNull(
+                        "the sample target does not run :Sample:desktopTest"
+                            .takeIf {
+                                ":Sample:desktopTest" !in
+                                    verifyTaskPaths(
+                                        listOf("sample"),
+                                        libraryModules,
+                                        false,
+                                    )
+                            },
+                        "the sample target runs :Sample:desktopTest for a narrower module set"
+                            .takeIf {
+                                ":Sample:desktopTest" in
+                                    verifyTaskPaths(
+                                        listOf("desktop"),
+                                        libraryModules,
+                                        false,
+                                    )
+                            },
+                    )
+                },
                 "stability_config_lists_every_stripped_type" to {
                     if (!stabilityConfig.isFile) {
                         listOf("${stabilityConfig.relativeTo(rootDir)} does not exist")
