@@ -161,6 +161,54 @@ relocatedArtifacts.forEach { (oldId, module) ->
     }
 }
 
+// The publish step of scripts/verify.sh --full: every published module, the BOM and the relocation
+// projects publish, unsigned, to a scratch repository under build/verify, and verify_report.py checks
+// that every coordinate in publishedCoordinatesFile is there. Compiling the tests never builds what a
+// release uploads (the metadata compilations behind each root artifact), so only publishing shows it.
+val verifyPublishRepository = providers.gradleProperty("camerak.verify.publishRepo").orNull
+// Gradle names the publish task after the repository: publishAllPublicationsToVerifyScratchRepository.
+val verifyPublishRepositoryName = "verifyScratch"
+val publishedCoordinatesFile = layout.buildDirectory.file("verify/published-coordinates.json")
+val publishingProjects =
+    publishedModules.map { ":$it" } + ":$bomModule" + relocatedArtifacts.keys.map { ":relocations:$it" }
+if (verifyPublishRepository != null) {
+    publishingProjects.forEach { path ->
+        project(path).plugins.withId("maven-publish") {
+            project(path).extensions.configure<PublishingExtension> {
+                repositories.maven {
+                    name = verifyPublishRepositoryName
+                    url = uri(verifyPublishRepository)
+                }
+            }
+        }
+    }
+}
+
+// What the publish step must find: each published module's root artifact and one artifact per Kotlin
+// target (its name lowercased, as the Kotlin plugin names the variant's artifact id), the BOM's root,
+// and each relocation POM with the id it relocates to.
+fun expectedPublishedCoordinates(): Map<String, Any> {
+    val modules =
+        publishedModules.associate { module ->
+            val targets =
+                project(":$module")
+                    .extensions
+                    .getByType<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension>()
+                    .targets
+                    .filterNot { it.platformType == org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType.common }
+                    .map { it.name.lowercase() }
+                    .sorted()
+            pomArtifactId(module) to targets
+        }
+    return mapOf(
+        "group" to providers.gradleProperty("GROUP").get(),
+        "version" to providers.gradleProperty("VERSION_NAME").get(),
+        "modules" to modules,
+        "bom" to pomArtifactId(bomModule),
+        "relocations" to relocatedArtifacts.mapValues { (_, module) -> pomArtifactId(module) },
+    )
+}
+
 val allVerifyTargets = listOf("desktop", "android", "ios", "screenshots", "lint", "sample")
 
 fun csvProperty(name: String): List<String>? =
@@ -2016,11 +2064,20 @@ tasks.register("verifyAll") {
     check(paths.isNotEmpty() || lint) { "verifyAll selected nothing for $verifyTargets and $verifyModules" }
     dependsOn(paths)
     if (lint) dependsOn(provider { lintTaskPaths() })
+    if (verifyPublishRepository != null) {
+        dependsOn(publishingProjects.map { "$it:publishAllPublicationsToVerifyScratchRepository" })
+    }
 }
 
 // scripts/verify_report.py requires every lint check to have run. It reads them from this file,
 // written once the task graph is known, so a run whose lint checks fail still says which they were.
 gradle.taskGraph.whenReady {
+    if (verifyPublishRepository != null && hasTask(":verifyAll")) {
+        publishedCoordinatesFile.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(expectedPublishedCoordinates())))
+        }
+    }
     if ("lint" !in verifyTargets || !hasTask(":verifyAll")) return@whenReady
     val checks = lintTaskPaths()
     val left = requiredLintChecks.filterNot(checks::contains)

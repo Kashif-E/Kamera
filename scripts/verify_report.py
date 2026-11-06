@@ -5,8 +5,9 @@ Reads build/verify/run.json, then only the JUnit XML, Paparazzi failure images a
 screenshot diffs written after the run started. Prints a per-module, per-target table and every
 failure, writes build/verify/summary.md and summary.json, and exits 1 (RED) when Gradle failed, a
 test failed or errored, a test let an exception escape on another thread, a requested target ran
-zero tests (skipped tests do not count), a requested target has nothing to check, or the local
-gitleaks scan found or failed. A scan that could not run (no gitleaks on PATH) is shown, not passed.
+zero tests (skipped tests do not count), a requested target has nothing to check, a --full run's
+publish step left a coordinate out of its scratch repository, or the local gitleaks scan found or
+failed. A scan that could not run (no gitleaks on PATH) is shown, not passed.
 
 Standard library only; run with `python3 -I`.
 """
@@ -215,6 +216,47 @@ def lint_check_list(start: float) -> tuple[list[str], str | None]:
     return checks, None
 
 
+PUBLISHED_COORDINATES_FILE = ROOT / "build" / "verify" / "published-coordinates.json"
+
+
+def publish_problems(repo: Path, expected: dict) -> list[str]:
+    """The coordinates the publish step should have written to [repo] and did not: each module's root
+    artifact and one per Kotlin target (.module and .pom), the BOM's root, and each relocation POM,
+    which must relocate to its 2.0 id."""
+    group_dir = repo.joinpath(*expected["group"].split("."))
+    version = expected["version"]
+    problems: list[str] = []
+
+    def require(artifact: str, extensions: tuple[str, ...]) -> None:
+        for extension in extensions:
+            path = group_dir / artifact / version / f"{artifact}-{version}.{extension}"
+            if not path.is_file():
+                problems.append(f"{expected['group']}:{artifact}:{version} has no .{extension}")
+
+    for artifact, targets in sorted(expected["modules"].items()):
+        require(artifact, ("module", "pom"))
+        for target in targets:
+            require(f"{artifact}-{target}", ("module", "pom"))
+    require(expected["bom"], ("module", "pom"))
+    for old_id, new_id in sorted(expected["relocations"].items()):
+        pom = group_dir / old_id / version / f"{old_id}-{version}.pom"
+        if not pom.is_file():
+            problems.append(f"{expected['group']}:{old_id}:{version} has no relocation .pom")
+            continue
+        try:
+            root = ET.parse(pom).getroot()
+        except ET.ParseError as error:
+            problems.append(f"{pom.relative_to(ROOT)} is unreadable: {error}")
+            continue
+        ns = {"m": root.tag[1:].split("}")[0]} if root.tag.startswith("{") else {}
+        prefix = "m:" if ns else ""
+        relocated = root.find(f"{prefix}distributionManagement/{prefix}relocation/{prefix}artifactId", ns)
+        if relocated is None or (relocated.text or "").strip() != new_id:
+            found = "nothing" if relocated is None else (relocated.text or "").strip()
+            problems.append(f"{old_id}'s POM relocates to {found}, not {new_id}")
+    return problems
+
+
 def executed_tasks(log: Path) -> set[str]:
     if not log.is_file():
         return set()
@@ -306,6 +348,28 @@ def main() -> int:
         if missing:
             problems.append(f"{key}: requested but {task_checks[key]}")
 
+    publish_repo = run.get("publish_repo")
+    publish_missing: list[str] = []
+    if publish_repo:
+        try:
+            if PUBLISHED_COORDINATES_FILE.stat().st_mtime < start:
+                raise OSError(0, f"the build did not write {PUBLISHED_COORDINATES_FILE.relative_to(ROOT)} in this run")
+            expected_coordinates = json.loads(PUBLISHED_COORDINATES_FILE.read_text())
+        except (OSError, ValueError) as error:
+            reason = getattr(error, "strerror", None) or str(error)
+            task_checks["publish"] = f"cannot check: {reason}"
+            problems.append(f"publish: {task_checks['publish']}")
+        else:
+            publish_missing = publish_problems(Path(publish_repo), expected_coordinates)
+            count = len(expected_coordinates["modules"]) + 1 + len(expected_coordinates["relocations"])
+            task_checks["publish"] = (
+                f"every coordinate of {count} artifacts published to `{os.path.relpath(publish_repo, ROOT)}`"
+                if not publish_missing
+                else f"{len(publish_missing)} coordinate(s) missing"
+            )
+            if publish_missing:
+                problems.append(f"publish: {task_checks['publish']}")
+
     credential_excerpt = credential_hygiene_excerpt(log) if "lint" in targets else []
     summary_line = next((line for line in credential_excerpt if line.startswith("credential hygiene:")), None)
     if credential_excerpt:
@@ -355,6 +419,8 @@ def main() -> int:
         md += ["## Gradle errors", "", "```", *gradle_excerpt, "```", ""]
     if paparazzi_failures or desktop_diffs:
         md += ["## Screenshot diffs", ""] + [f"- `{p}`" for p in paparazzi_failures + desktop_diffs] + [""]
+    if publish_missing:
+        md += ["## Publish step", ""] + [f"- {p}" for p in publish_missing] + [""]
     if lint_checks:
         md += ["## Lint checks required", ""] + [f"- `{check}`" for check in lint_checks] + [""]
 
@@ -375,6 +441,7 @@ def main() -> int:
         "totals": vars(total),
         "cells": [{"module": m, "target": t, **vars(c)} for (m, t), c in rows],
         "failures": [vars(f) for f in report.failures + report.uncaught],
+        "publish_missing": publish_missing,
         "problems": problems,
         "gradle_errors": gradle_excerpt,
         "screenshot_diffs": paparazzi_failures + desktop_diffs,

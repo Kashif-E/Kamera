@@ -2,7 +2,7 @@
 # CameraK verification harness. Runs the Gradle `verifyAll` task, then scripts/verify_report.py,
 # which reads only the results this run wrote and exits non-zero on any failure or empty target.
 #
-#   scripts/verify.sh                       full run (same as --full)
+#   scripts/verify.sh                       full run (same as --full), which also publishes to build/verify/m2
 #   scripts/verify.sh --quick               desktop JVM tests only
 #   scripts/verify.sh --module qrScannerPlugin
 #   scripts/verify.sh --only android        one of: desktop android ios screenshots lint sample
@@ -116,6 +116,15 @@ fi
 
 csv() { tr ' ' ',' <<<"$1"; }
 
+# The publish step, --full only: every published module, the BOM and the relocation POMs publish,
+# unsigned, to a scratch repository that starts empty, and verify_report.py checks each coordinate.
+# Nothing is published to ~/.m2 or Maven Central.
+publish_repo=""
+if [[ "$mode" == full ]]; then
+    publish_repo="$out_dir/m2"
+    rm -rf "$publish_repo"
+fi
+
 # Results written before this instant are stale and the report ignores them.
 start_epoch="$(python3 -I -c 'import time; print(f"{time.time():.3f}")')"
 
@@ -135,6 +144,7 @@ json.dump({
     "start_epoch": $start_epoch,
     "log": "$log",
     "gradle_exit": None if exit_code == "" else int(exit_code),
+    "publish_repo": "$publish_repo" or None,
     "secret_scan": {"status": scan_status, "detail": scan_detail},
 }, open(path, "w"), indent=2)
 EOF
@@ -149,6 +159,7 @@ gradle_args=(
     "-Pcamerak.verify.modules=$(csv "$modules")"
 )
 $record && gradle_args+=("-Pcamerak.recordScreenshots=true")
+[[ -n "$publish_repo" ]] && gradle_args+=("-Pcamerak.verify.publishRepo=$publish_repo" "-PsignAllPublications=false")
 [[ ${#gradle_extra[@]} -gt 0 ]] && gradle_args+=("${gradle_extra[@]}")
 
 echo "verify.sh: mode=$mode targets=[$targets] modules=[$modules]"
