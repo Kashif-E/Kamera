@@ -52,7 +52,7 @@ internal class RecognizerLease(private val recognizer: LiveTextRecognizer) {
         try {
             recognizer.close()
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "OcrPlugin: releasing the live text recognizer failed", e)
+            CameraKLogger.e(TAG, "releasing the live text recognizer failed", e)
         }
     }
 

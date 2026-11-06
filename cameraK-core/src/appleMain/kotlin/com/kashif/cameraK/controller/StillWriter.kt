@@ -78,7 +78,7 @@ internal fun writeStill(
         // Keep the user's photo rather than lose it: written as the camera delivered it, uncropped.
         CameraKLogger.w(
             "CameraK",
-            "CameraK: ImageIO could not read the photo to crop it to $aspectRatio; keeping it uncropped",
+            "ImageIO could not read the photo to crop it to $aspectRatio; keeping it uncropped",
         )
     }
     return when {

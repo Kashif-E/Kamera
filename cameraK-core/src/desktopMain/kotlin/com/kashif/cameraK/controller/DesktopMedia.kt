@@ -65,7 +65,7 @@ internal fun createOwnerOnlyDirectory(folder: File): Path {
     } catch (e: FileAlreadyExistsException) {
         // Another capture created it first; use it if it is a folder.
         if (!Files.isDirectory(path)) throw e
-        CameraKLogger.w("CameraK", "CameraK: Capture folder created concurrently, using it", e)
+        CameraKLogger.w("CameraK", "Capture folder created concurrently, using it", e)
         path
     }
 }
@@ -88,7 +88,7 @@ internal fun createUniqueFile(folder: File, prefix: String, extension: String): 
             return Files.createFile(dir.resolve("${prefix}_$stamp$suffix.$extension"), *ownerOnly).toFile()
         } catch (e: FileAlreadyExistsException) {
             // Another capture in the same millisecond took this name; try the next suffix.
-            CameraKLogger.w("CameraK", "CameraK: Capture file name taken, trying the next one", e)
+            CameraKLogger.w("CameraK", "Capture file name taken, trying the next one", e)
         }
     }
     throw IOException("No free file name for $prefix in $MAX_NAME_ATTEMPTS attempts")
@@ -101,7 +101,7 @@ internal fun createUniqueFile(folder: File, prefix: String, extension: String): 
  */
 internal fun createFrameRecorder(outputPath: String, configuration: VideoConfiguration): FrameRecorder {
     if (configuration.enableAudio) {
-        CameraKLogger.w("CameraK", "CameraK: Desktop records no audio; the video has no audio track")
+        CameraKLogger.w("CameraK", "Desktop records no audio; the video has no audio track")
     }
     return FFmpegFrameRecorder(outputPath, configuration.quality.width, configuration.quality.height, 0).apply {
         videoCodec = avcodec.AV_CODEC_ID_H264

@@ -224,7 +224,7 @@ internal class AppleCameraEngine(
 
     private val scope = CoroutineScope(
         SupervisorJob(environment.parentJob) + environment.dispatchers.default +
-            CoroutineExceptionHandler { _, e -> CameraKLogger.e(TAG, "CameraK: an iOS engine task failed", e) },
+            CoroutineExceptionHandler { _, e -> CameraKLogger.e(TAG, "an iOS engine task failed", e) },
     )
 
     // Everything below the lock is read and written only while holding it.
@@ -356,7 +356,7 @@ internal class AppleCameraEngine(
         if (config.analysisFormat != FrameFormat.YUV_420) {
             // AVCaptureVideoDataOutput delivers CameraK's frames in 420f only (design §6.1, §8).
             val error = CameraKError.Unsupported(CameraFeature.ANALYSIS_FORMAT)
-            CameraKLogger.e(TAG, "CameraK: iOS analysis frames are YUV_420; ${config.analysisFormat} fails the start")
+            CameraKLogger.e(TAG, "iOS analysis frames are YUV_420; ${config.analysisFormat} fails the start")
             locked { if (!closed) _state.value = EngineState.Failed(error) }
             return failure(error)
         }
@@ -586,7 +586,7 @@ internal class AppleCameraEngine(
     private fun onRuntimeError(generation: Int, error: NSError?) {
         if (!isLiveOrStarting(generation)) return
         if (error == null) {
-            CameraKLogger.e(TAG, "CameraK: the session reported a runtime error without an NSError")
+            CameraKLogger.e(TAG, "the session reported a runtime error without an NSError")
             return fail(generation, CameraKError.Hardware(null))
         }
         val next = sessionErrorState(error)
@@ -629,7 +629,7 @@ internal class AppleCameraEngine(
         try {
             block()
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "CameraK: handling $what failed", e)
+            CameraKLogger.e(TAG, "handling $what failed", e)
         }
     }
 
@@ -661,7 +661,7 @@ internal class AppleCameraEngine(
             _state.value = EngineState.Failed(error)
             pendingStart.also { pendingStart = null }
         }
-        CameraKLogger.e(TAG, "CameraK: the camera session failed", error.cause)
+        CameraKLogger.e(TAG, "the camera session failed", error.cause)
         failedStart?.continuation?.resume(failure(error))
     }
 
@@ -743,7 +743,7 @@ internal class AppleCameraEngine(
             val result = try {
                 switchOnQueue(selection, generation)
             } catch (e: Exception) {
-                CameraKLogger.e(TAG, "CameraK: switching the camera failed", e)
+                CameraKLogger.e(TAG, "switching the camera failed", e)
                 failure(CameraKError.Internal(e))
             }
             // The input whose first sample buffer ends the interval, when a frame output is attached.
@@ -825,7 +825,7 @@ internal class AppleCameraEngine(
                 val outcome = try {
                     stillRefusal() ?: if (custom.capturePhotoOnQueue(request)) null else failure(CameraKError.NotReady)
                 } catch (e: Exception) {
-                    CameraKLogger.e(TAG, "CameraK: issuing a capture failed", e)
+                    CameraKLogger.e(TAG, "issuing a capture failed", e)
                     failure(CameraKError.Internal(e))
                 }
                 outcome?.let(request::settle)
@@ -843,7 +843,7 @@ internal class AppleCameraEngine(
         unusable()?.let { return it }
         if (config.imageFormat != ImageFormat.HEIC || custom.canCaptureHeic) return null
         if (heicRefusalLogged.compareAndSet(expect = false, update = true)) {
-            CameraKLogger.e(TAG, "CameraK: this camera cannot encode HEIC (no HEVC photo codec); captures are refused")
+            CameraKLogger.e(TAG, "this camera cannot encode HEIC (no HEVC photo codec); captures are refused")
         }
         return failure(CameraKError.Unsupported(CameraFeature.IMAGE_FORMAT))
     }
@@ -854,11 +854,11 @@ internal class AppleCameraEngine(
         val path = try {
             "${appOwnedDirectory(config.outputDirectory)}/IMG_${NSUUID().UUIDString}.${format.extension}"
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "CameraK: creating the capture's directory failed", e)
+            CameraKLogger.e(TAG, "creating the capture's directory failed", e)
             return failure(CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = e))
         }
         val written = writeStill(photo, format, config.aspectRatio, path).getOrElse { e ->
-            CameraKLogger.e(TAG, "CameraK: writing the captured photo failed", e)
+            CameraKLogger.e(TAG, "writing the captured photo failed", e)
             removeFileIfPresent(path)
             val onDisk = e.cause is NSErrorException
             return failure(
@@ -885,7 +885,7 @@ internal class AppleCameraEngine(
             if (!settled.compareAndSet(expect = false, update = true)) return
             locked { pendingStills.remove(this) }
             if (detached.value) {
-                CameraKLogger.d(TAG, "CameraK: discarding the photo of a cancelled capture")
+                CameraKLogger.d(TAG, "discarding the photo of a cancelled capture")
                 return
             }
             continuation.resume(result)
@@ -910,7 +910,7 @@ internal class AppleCameraEngine(
     }
 
     private fun photoError(error: NSError): CameraKError {
-        CameraKLogger.e(TAG, "CameraK: the photo capture failed", NSErrorException(error))
+        CameraKLogger.e(TAG, "the photo capture failed", NSErrorException(error))
         return cameraKErrorFor(error)
     }
 
@@ -1026,7 +1026,7 @@ internal class AppleCameraEngine(
                 val result = try {
                     unusable() ?: block()
                 } catch (e: Exception) {
-                    CameraKLogger.e(TAG, "CameraK: $what failed", e)
+                    CameraKLogger.e(TAG, "$what failed", e)
                     failure(CameraKError.Internal(e))
                 }
                 continuation.resume(result)
@@ -1034,7 +1034,7 @@ internal class AppleCameraEngine(
         }
 
     private fun hardwareFailure(what: String, cause: CustomCameraController.CameraException): CameraKResult.Failure {
-        CameraKLogger.e(TAG, "CameraK: $what failed", cause)
+        CameraKLogger.e(TAG, "$what failed", cause)
         return failure(errorFor(cause, null))
     }
 
@@ -1102,7 +1102,7 @@ internal class AppleCameraEngine(
                 made.value?.let { platformCallback("a preview angle report") { onPreviewAngle(it, angle) } }
             }
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "CameraK: making the rotation coordinator failed; rotation follows the device", e)
+            CameraKLogger.e(TAG, "making the rotation coordinator failed; rotation follows the device", e)
             null
         }
         val next = source?.let { Rotation(device, layer, it) }
@@ -1170,7 +1170,7 @@ internal class AppleCameraEngine(
             val lenses = enumerateLenses()
             lenses to lenses.associate { it.id to torchModesOf(it) }
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "CameraK: enumerating the cameras failed; reporting none", e)
+            CameraKLogger.e(TAG, "enumerating the cameras failed; reporting none", e)
             emptyList<LensInfo>() to emptyMap()
         }
         locked {
@@ -1305,7 +1305,7 @@ internal class AppleCameraEngine(
         val factor = desiredZoom.toDouble().coerceIn(min, max)
         if (device.videoZoomFactor == factor) return
         custom.setZoomOnQueue(device, factor)?.let { failure ->
-            CameraKLogger.e(TAG, "CameraK: re-applying the zoom failed", failure)
+            CameraKLogger.e(TAG, "re-applying the zoom failed", failure)
         }
     }
 

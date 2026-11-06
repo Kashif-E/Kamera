@@ -118,7 +118,7 @@ internal class AppleFrameSource(
 
     override fun register(spec: FrameSpec, analyzer: FrameAnalyzer): FrameRegistration {
         if (SESSION_FORMAT !in spec.acceptedFormats) {
-            CameraKLogger.w(TAG, "CameraK: a frame registration cannot read YUV_420, the iOS analysis format; rejected")
+            CameraKLogger.w(TAG, "a frame registration cannot read YUV_420, the iOS analysis format; rejected")
             return RejectedRegistration
         }
         val registration = Registration(spec, analyzer)
@@ -153,7 +153,7 @@ internal class AppleFrameSource(
                 when {
                     !wanted -> ops.removeOutput(output)
                     ops.canAddOutput(output) -> ops.addOutput(output)
-                    else -> CameraKLogger.w(TAG, "CameraK: the session refused the frame output; frames wait for it")
+                    else -> CameraKLogger.w(TAG, "the session refused the frame output; frames wait for it")
                 }
             } finally {
                 if (!inTransaction) ops.commitConfiguration()
@@ -176,7 +176,7 @@ internal class AppleFrameSource(
             if (formatRefusalLogged.compareAndSet(expect = false, update = true)) {
                 CameraKLogger.e(
                     TAG,
-                    "CameraK: the frame output delivered pixel format $format, not 420f; frames are skipped",
+                    "the frame output delivered pixel format $format, not 420f; frames are skipped",
                 )
             }
             return
@@ -202,7 +202,7 @@ internal class AppleFrameSource(
             try {
                 isLocked = locker.lock(data.pixels)
                 if (!isLocked) {
-                    CameraKLogger.w(TAG, "CameraK: Core Video refused to lock a frame; it is skipped")
+                    CameraKLogger.w(TAG, "Core Video refused to lock a frame; it is skipped")
                     data.lease.release()
                 } else if (data.registration.closed.value) {
                     data.lease.release()
@@ -240,7 +240,7 @@ internal class AppleFrameSource(
         if (!holds) return LumaCopyFrame(data, luma(), handle)
         CFRetain(data.buffer)
         if (!locker.lock(data.pixels)) {
-            CameraKLogger.w(TAG, "CameraK: Core Video refused to lock a retained frame; its luma is copied instead")
+            CameraKLogger.w(TAG, "Core Video refused to lock a retained frame; its luma is copied instead")
             releaseHeld(data)
             return LumaCopyFrame(data, luma(), handle)
         }
@@ -263,7 +263,7 @@ internal class AppleFrameSource(
         if (availableVideoCVPixelFormatTypes.contains(format)) {
             videoSettings = mapOf<Any?, Any?>(pixelFormatKey() to format)
         } else {
-            CameraKLogger.w(TAG, "CameraK: the frame output does not list 420f; it keeps its default format")
+            CameraKLogger.w(TAG, "the frame output does not list 420f; it keeps its default format")
         }
         alwaysDiscardsLateVideoFrames = true
         setSampleBufferDelegate(delegate, outputQueue)
@@ -282,7 +282,7 @@ internal class AppleFrameSource(
         try {
             block()
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "CameraK: $what failed", e)
+            CameraKLogger.e(TAG, "$what failed", e)
         }
     }
 
@@ -374,7 +374,7 @@ internal class FrameOutputDelegate(private val source: AppleFrameSource) :
         try {
             source.deliver(sampleBuffer, input)
         } catch (e: Exception) {
-            CameraKLogger.e("CameraK", "CameraK: delivering a frame failed", e)
+            CameraKLogger.e("CameraK", "delivering a frame failed", e)
         }
     }
 

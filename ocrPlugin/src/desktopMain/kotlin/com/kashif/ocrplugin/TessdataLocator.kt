@@ -67,7 +67,7 @@ internal fun openBundledModel(resources: (String) -> InputStream?): InputStream?
     resources(BUNDLED_MODEL_RESOURCE) ?: resources(LEGACY_BUNDLED_MODEL_RESOURCE)?.also {
         CameraKLogger.w(
             TAG,
-            "OcrPlugin: the packaged $MODEL_FILE is in the 1.x resource directory com/kashif/ocrPlugin/tessdata; " +
+            "the packaged $MODEL_FILE is in the 1.x resource directory com/kashif/ocrPlugin/tessdata; " +
                 "move it to com/kashif/ocrplugin/tessdata, which CameraK 2.0 reads first",
         )
     }
@@ -95,7 +95,7 @@ internal fun defaultModelCacheDir(): File {
 internal fun findTessdataDirectory(sources: TessdataSources): String? {
     sources.explicitPath?.let { path ->
         if (hasModel(File(path))) return path
-        CameraKLogger.w(TAG, "OcrPlugin: the configured tessdata directory has no $MODEL_FILE")
+        CameraKLogger.w(TAG, "the configured tessdata directory has no $MODEL_FILE")
         return null
     }
     sources.bundledModel?.let { model ->
@@ -127,7 +127,7 @@ private fun extractVerified(model: BundledModel, cacheDir: File): File? {
                 if (digest.digest().toHex() != model.sha256) {
                     CameraKLogger.e(
                         TAG,
-                        "OcrPlugin: the packaged $MODEL_FILE does not match its pinned SHA-256; not loading it",
+                        "the packaged $MODEL_FILE does not match its pinned SHA-256; not loading it",
                     )
                     return null
                 }
@@ -138,7 +138,7 @@ private fun extractVerified(model: BundledModel, cacheDir: File): File? {
         }
         dir
     } catch (e: IOException) {
-        CameraKLogger.e(TAG, "OcrPlugin: Failed to extract the packaged language model", e)
+        CameraKLogger.e(TAG, "Failed to extract the packaged language model", e)
         null
     }
 }

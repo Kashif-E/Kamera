@@ -316,10 +316,10 @@ internal class CustomCameraController(
                 CameraException.DeviceNotAvailable()
             }
         } catch (e: CameraException) {
-            CameraKLogger.e(TAG, "CameraK: session setup failed", e)
+            CameraKLogger.e(TAG, "session setup failed", e)
             e
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "CameraK: session setup failed", e)
+            CameraKLogger.e(TAG, "session setup failed", e)
             CameraException.ConfigurationError("Session setup failed", e)
         } finally {
             ops.commitConfiguration()
@@ -356,11 +356,11 @@ internal class CustomCameraController(
         val candidates = presetCandidates(aspectRatio, targetResolution)
         val preset = candidates.firstOrNull(ops::canSetSessionPreset)
         if (preset == null) {
-            CameraKLogger.w(TAG, "CameraK: the session can take none of the presets $candidates; keeping its default")
+            CameraKLogger.w(TAG, "the session can take none of the presets $candidates; keeping its default")
             return
         }
         if (preset != candidates.first()) {
-            CameraKLogger.w(TAG, "CameraK: the session cannot take preset ${candidates.first()}; using $preset")
+            CameraKLogger.w(TAG, "the session cannot take preset ${candidates.first()}; using $preset")
         }
         ops.setSessionPreset(preset)
         stillPreset = preset
@@ -519,7 +519,7 @@ internal class CustomCameraController(
             try {
                 change()
             } catch (e: Exception) {
-                CameraKLogger.e(TAG, "CameraK: Error processing configuration change", e)
+                CameraKLogger.e(TAG, "Error processing configuration change", e)
             }
         }
     }
@@ -538,7 +538,7 @@ internal class CustomCameraController(
         if (session.canAddOutput(output)) {
             session.addOutput(output)
         } else {
-            CameraKLogger.w(TAG, "CameraK: the capture session refused an output; it was not added")
+            CameraKLogger.w(TAG, "the capture session refused an output; it was not added")
         }
     }
 
@@ -590,7 +590,7 @@ internal class CustomCameraController(
                     CameraException.ConfigurationError("Could not add $what$reported", cause)
                 },
             ) ?: return@queueConfigurationChange
-            CameraKLogger.e(TAG, "CameraK: adding $what failed", failure)
+            CameraKLogger.e(TAG, "adding $what failed", failure)
             reportError(failure)
         }
     }
@@ -645,7 +645,7 @@ internal class CustomCameraController(
             when {
                 preset == null -> Unit
                 ops.canSetSessionPreset(preset) -> ops.setSessionPreset(preset)
-                else -> CameraKLogger.w(TAG, "CameraK: the session cannot take the recording's preset $preset")
+                else -> CameraKLogger.w(TAG, "the session cannot take the recording's preset $preset")
             }
             return Result.success(audio)
         } finally {
@@ -667,7 +667,7 @@ internal class CustomCameraController(
                 CameraException.ConfigurationError("Could not add the microphone$reported", cause)
             },
         )
-        CameraKLogger.e(TAG, "CameraK: adding the microphone failed", failure)
+        CameraKLogger.e(TAG, "adding the microphone failed", failure)
         reportError(failure)
         return null
     }
@@ -684,7 +684,7 @@ internal class CustomCameraController(
             if (ops.canSetSessionPreset(wanted)) {
                 ops.setSessionPreset(wanted)
             } else {
-                CameraKLogger.w(TAG, "CameraK: the session cannot take preset $wanted")
+                CameraKLogger.w(TAG, "the session cannot take preset $wanted")
             }
         } finally {
             ops.commitConfiguration()
@@ -858,7 +858,7 @@ internal class CustomCameraController(
         val before = supportedFlashMode(flashMode)
         flashMode = mode
         if (photoOutput != null && supportedFlashMode(mode) != mode) {
-            CameraKLogger.w(TAG, "CameraK: flash mode $mode is not supported on this device; captures use OFF")
+            CameraKLogger.w(TAG, "flash mode $mode is not supported on this device; captures use OFF")
         }
         if (supportedFlashMode(mode) != before) dispatch_async(sessionQueue) { preparePhotoOutput() }
     }
@@ -898,7 +898,7 @@ internal class CustomCameraController(
     private fun applyTorchMode(camera: CaptureDeviceOps, mode: AVCaptureTorchMode) {
         if (!camera.hasTorch) return
         if (!camera.isTorchModeSupported(mode)) {
-            CameraKLogger.w(TAG, "CameraK: the camera does not support torch mode $mode; leaving the torch as it is")
+            CameraKLogger.w(TAG, "the camera does not support torch mode $mode; leaving the torch as it is")
             return
         }
         withConfigurationLock(camera, "set the torch") { camera.setTorchMode(mode) }
@@ -916,7 +916,7 @@ internal class CustomCameraController(
     ): CameraException? {
         val refused = camera.lockForConfiguration()
         if (refused != null) {
-            CameraKLogger.e(TAG, "CameraK: could not lock the camera to $operation", refused)
+            CameraKLogger.e(TAG, "could not lock the camera to $operation", refused)
             val failure = CameraException.ConfigurationError("Could not lock the camera to $operation", refused)
             reportError(failure)
             return failure
@@ -1057,7 +1057,7 @@ internal class CustomCameraController(
 
             val failure = swapVideoInput(ops, newDevice)
             if (failure != null) {
-                CameraKLogger.e(TAG, "CameraK: switching camera device type failed", failure)
+                CameraKLogger.e(TAG, "switching camera device type failed", failure)
                 reportError(failure)
                 return@dispatch_async
             }
@@ -1090,7 +1090,7 @@ internal class CustomCameraController(
             val camera = if (toFront) frontCamera else backCamera
             val failure = if (camera == null) CameraException.DeviceNotAvailable() else swapVideoInput(ops, camera)
             if (failure != null) {
-                CameraKLogger.e(TAG, "CameraK: switching camera failed", failure)
+                CameraKLogger.e(TAG, "switching camera failed", failure)
                 reportError(failure)
                 return@dispatch_async
             }
@@ -1105,7 +1105,7 @@ internal class CustomCameraController(
      */
     private fun refusedWhileRecording(operation: String): Boolean {
         if (!recordingInProgress()) return false
-        CameraKLogger.w(TAG, "CameraK: cannot $operation while recording; stop the recording first")
+        CameraKLogger.w(TAG, "cannot $operation while recording; stop the recording first")
         reportError(CameraException.ConfigurationError("Cannot $operation while recording"))
         return true
     }
@@ -1166,7 +1166,7 @@ internal class CustomCameraController(
                     "Preparing the photo output failed: ${error.summary}",
                     NSErrorException(error),
                 )
-                CameraKLogger.e(TAG, "CameraK: preparing the photo output failed", failure)
+                CameraKLogger.e(TAG, "preparing the photo output failed", failure)
                 reportError(failure)
             }
         }

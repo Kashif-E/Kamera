@@ -65,7 +65,7 @@ private val observeValue = staticCFunction {
     try {
         context?.asStableRef<KeyValueTarget>()?.get()?.callback?.value?.invoke()
     } catch (e: Exception) {
-        CameraKLogger.e("CameraK", "CameraK: handling a key-value report failed", e)
+        CameraKLogger.e("CameraK", "handling a key-value report failed", e)
     }
     Unit
 }

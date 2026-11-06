@@ -42,7 +42,7 @@ internal class FrameConverter(
             }
         }
     } catch (e: Exception) {
-        CameraKLogger.e("CameraK", "CameraK: Error converting a camera frame; the frame is skipped", e)
+        CameraKLogger.e("CameraK", "Error converting a camera frame; the frame is skipped", e)
         null
     }
 
@@ -67,7 +67,7 @@ internal class FrameConverter(
         if (slots.size >= limit) {
             if (!exhaustedLogged) {
                 exhaustedLogged = true
-                CameraKLogger.w("CameraK", "CameraK: Every frame slot is leased; frames are skipped until one is free")
+                CameraKLogger.w("CameraK", "Every frame slot is leased; frames are skipped until one is free")
             }
             return null
         }

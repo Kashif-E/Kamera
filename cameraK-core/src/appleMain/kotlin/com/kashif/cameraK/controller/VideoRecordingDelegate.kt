@@ -43,7 +43,7 @@ internal class VideoRecordingDelegate :
         // or size limit, some interruptions) and says so in AVErrorRecordingSuccessfullyFinishedKey.
         if (error != null && !error.recordedPlayably) {
             val failure = Exception("Recording failed: ${error.summary}", NSErrorException(error))
-            CameraKLogger.e("CameraK", "CameraK: the recording failed", failure)
+            CameraKLogger.e("CameraK", "the recording failed", failure)
         }
         onPlatformFinished?.invoke(error)
     }

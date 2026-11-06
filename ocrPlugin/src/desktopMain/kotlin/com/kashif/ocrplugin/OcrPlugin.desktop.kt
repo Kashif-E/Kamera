@@ -81,7 +81,7 @@ public class OCRProcessor internal constructor(
         if (noLegacyEngineLogged.claim()) {
             CameraKLogger.w(
                 TAG,
-                "OcrPlugin: the language data has no legacy Tesseract engine, so FAST runs the default engine, as ACCURATE does",
+                "the language data has no legacy Tesseract engine, so FAST runs the default engine, as ACCURATE does",
             )
         }
         check(api.init(tessdataDir, LANGUAGE, OEM_DEFAULT) == 0) { "Tesseract could not load eng.traineddata" }
@@ -94,7 +94,7 @@ public class OCRProcessor internal constructor(
     public fun scanImage(image: BufferedImage): String? = try {
         scan(image)
     } catch (e: Exception) {
-        CameraKLogger.e(TAG, "OcrPlugin: Text recognition failed for a frame", e)
+        CameraKLogger.e(TAG, "Text recognition failed for a frame", e)
         null
     }
 

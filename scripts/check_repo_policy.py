@@ -1164,6 +1164,7 @@ ARTIFACT_LOG_TAGS = {
     "analyzerPlugin": "Analyzer",
 }
 LOGGER_CALL = re.compile(r"\bCameraKLogger\s*\.\s*[dwe]\s*\(\s*([^,)]*)")
+LOGGER_MESSAGE_LABEL = re.compile(r'\bCameraKLogger\s*\.\s*[dwe]\s*\(\s*[^,)]*,\s*"([A-Za-z][A-Za-z0-9]*)\s*:')
 STRING_CONSTANT = re.compile(r'\bval\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*String\s*)?=\s*"([^"$]*)"')
 
 
@@ -1190,7 +1191,19 @@ def log_tag_problems(sources: Dict[str, str], tags: Dict[str, str] = ARTIFACT_LO
 def log_prefix_problems(sources: Dict[str, str], tags: Dict[str, str] = ARTIFACT_LOG_TAGS) -> List[str]:
     """log_message_repeats_its_tag: no CameraKLogger message in a published module's main sources
     opens with "<tag>:", "CameraK:" or "<Name>Plugin:"; the tag already names the artifact."""
-    return []
+    problems = []
+    for path, text in sorted(sources.items()):
+        module, _, rest = path.partition("/")
+        if module not in tags or not re.match(r"src/[A-Za-z]+Main/", rest):
+            continue
+        for call in LOGGER_MESSAGE_LABEL.finditer(text):
+            label = call.group(1)
+            if label in (tags[module], "CameraK") or label.endswith("Plugin"):
+                line = text.count("\n", 0, call.start()) + 1
+                problems.append(
+                    f'{path}:{line} opens its log message with "{label}:"; the tag "{tags[module]}" already names it'
+                )
+    return problems
 
 
 def check_module_sources() -> List[str]:

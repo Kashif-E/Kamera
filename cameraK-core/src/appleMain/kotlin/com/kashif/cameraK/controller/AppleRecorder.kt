@@ -149,7 +149,7 @@ internal class AppleRecorder(
         val path = try {
             moviePath(config)
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "CameraK: creating the recording's directory failed", e)
+            CameraKLogger.e(TAG, "creating the recording's directory failed", e)
             return failure(CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = e))
         }
         val movie = when (val begun = onQueue("starting a recording") { begin(config, path) }) {
@@ -157,7 +157,7 @@ internal class AppleRecorder(
             is CameraKResult.Success -> begun.value
         }
         return withTimeoutOrNull(startTimeoutMs) { movie.started.await() } ?: run {
-            CameraKLogger.e(TAG, "CameraK: the recording did not start within $startTimeoutMs ms")
+            CameraKLogger.e(TAG, "the recording did not start within $startTimeoutMs ms")
             val reportedStarted = onQueue("ending a recording that did not start in time") {
                 CameraKResult.Success(endLateStart(movie))
             }
@@ -218,7 +218,7 @@ internal class AppleRecorder(
         val result = stop(RecordingEndReason.SHUTDOWN)
         val error = (result as? CameraKResult.Failure)?.error
         if (error != null && error !is CameraKError.InvalidState) {
-            CameraKLogger.w(TAG, "CameraK: the recording ended by the camera's stop failed: ${error::class.simpleName}")
+            CameraKLogger.w(TAG, "the recording ended by the camera's stop failed: ${error::class.simpleName}")
         }
     }
 
@@ -321,16 +321,16 @@ internal class AppleRecorder(
     private fun onFinished(movie: Movie, error: NSError?) {
         if (movie.finalized) {
             if (movie.abandoned && movie.startedAt == null && removeFileIfPresent(movie.path)) {
-                CameraKLogger.w(TAG, "CameraK: deleted the file AVFoundation finished for an abandoned recording start")
+                CameraKLogger.w(TAG, "deleted the file AVFoundation finished for an abandoned recording start")
             } else {
-                CameraKLogger.d(TAG, "CameraK: AVFoundation finished a recording CameraK had already ended")
+                CameraKLogger.d(TAG, "AVFoundation finished a recording CameraK had already ended")
             }
             return
         }
         val end = movieEnd(error, movie.stopReason, movie.path)
         val playable = error == null || error.recordedPlayably
         if (!playable && !removeFileIfPresent(movie.path)) {
-            CameraKLogger.d(TAG, "CameraK: an unplayable recording left no file to delete")
+            CameraKLogger.d(TAG, "an unplayable recording left no file to delete")
         }
         if (movie.startedAt == null) {
             // It ended before it started: the start fails with why. Ended by itself, it started nothing
@@ -353,7 +353,7 @@ internal class AppleRecorder(
         movieRecorder.stop(movie.output)
         custom.onSessionQueueAfter(finishTimeoutMs) {
             if (movie.finalized) return@onSessionQueueAfter
-            CameraKLogger.e(TAG, "CameraK: the recording did not finish within $finishTimeoutMs ms")
+            CameraKLogger.e(TAG, "the recording did not finish within $finishTimeoutMs ms")
             finalize(movie, failure(CameraKError.Timeout(CameraOperation.RECORD_STOP)), RecordingEndReason.ERROR)
         }
     }
@@ -399,7 +399,7 @@ internal class AppleRecorder(
         }
         if (!movie.abandoned) {
             if (!_events.tryEmit(EngineRecordingEvent.Finalized(result, reason))) {
-                CameraKLogger.e(TAG, "CameraK: a recording's Finalized event was dropped: the event buffer is full")
+                CameraKLogger.e(TAG, "a recording's Finalized event was dropped: the event buffer is full")
             }
         }
         movie.finished.complete(result)
@@ -440,7 +440,7 @@ internal class AppleRecorder(
                     "without it iOS ends the app at the first microphone call",
             )
             if (audioRefusalLogged.compareAndSet(expect = false, update = true)) {
-                CameraKLogger.e(TAG, "CameraK: $operation with audio refused", cause)
+                CameraKLogger.e(TAG, "$operation with audio refused", cause)
             }
             return failure(CameraKError.Unsupported(CameraFeature.AUDIO, cause))
         }
@@ -466,7 +466,7 @@ internal class AppleRecorder(
                 val result = try {
                     block()
                 } catch (e: Exception) {
-                    CameraKLogger.e(TAG, "CameraK: $what failed", e)
+                    CameraKLogger.e(TAG, "$what failed", e)
                     failure(CameraKError.Internal(e))
                 }
                 continuation.resume(result)
@@ -477,7 +477,7 @@ internal class AppleRecorder(
         try {
             block()
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "CameraK: handling $what failed", e)
+            CameraKLogger.e(TAG, "handling $what failed", e)
         }
     }
 

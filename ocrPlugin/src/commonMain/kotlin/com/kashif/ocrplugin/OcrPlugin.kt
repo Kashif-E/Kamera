@@ -143,13 +143,13 @@ public class OcrPlugin internal constructor(
                     releaseStill(recognizer)
                 }
             val text = recognizedText(blocks.map { TextBlock(it.text, it.bounds, it.confidence) }, 0L)
-            CameraKLogger.d(TAG, "OcrPlugin: one-shot text recognition finished, length=${text.text.length}")
+            CameraKLogger.d(TAG, "one-shot text recognition finished, length=${text.text.length}")
             CameraKResult.Success(text)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
             if (e.isFatalAnalyzerFailure()) throw e
-            CameraKLogger.e(TAG, "OcrPlugin: one-shot text recognition failed", e)
+            CameraKLogger.e(TAG, "one-shot text recognition failed", e)
             CameraKResult.Failure(CameraKError.Internal(e))
         }
     }
@@ -158,7 +158,7 @@ public class OcrPlugin internal constructor(
         try {
             recognizer.close()
         } catch (e: Exception) {
-            CameraKLogger.e(TAG, "OcrPlugin: releasing the one-shot text recognizer failed", e)
+            CameraKLogger.e(TAG, "releasing the one-shot text recognizer failed", e)
         }
     }
 
@@ -197,7 +197,7 @@ public class OcrPlugin internal constructor(
             if (area == null) {
                 if (!outsideLogged) {
                     outsideLogged = true
-                    CameraKLogger.w(TAG, "OcrPlugin: the region lies outside the frame's crop, so no text is read")
+                    CameraKLogger.w(TAG, "the region lies outside the frame's crop, so no text is read")
                 }
                 return@FrameAnalyzer
             }
@@ -205,14 +205,14 @@ public class OcrPlugin internal constructor(
                 try {
                     lease.use { it.recognize(area.image) } ?: return@FrameAnalyzer
                 } catch (e: Exception) {
-                    CameraKLogger.e(TAG, "OcrPlugin: live text recognition failed for a frame", e)
+                    CameraKLogger.e(TAG, "live text recognition failed for a frame", e)
                     return@FrameAnalyzer
                 }
             val blocks = found.filter { it.text.isNotBlank() }
                 .map { TextBlock(it.text, it.bounds?.let(area::toFrame), it.confidence) }
             if (blocks.isEmpty()) return@FrameAnalyzer
             val text = recognizedText(blocks, frame.timestampNanos)
-            CameraKLogger.d(TAG, "OcrPlugin: text recognised in a frame, length=${text.text.length}")
+            CameraKLogger.d(TAG, "text recognised in a frame, length=${text.text.length}")
             _results.tryEmit(text)
         }
     }

@@ -129,7 +129,7 @@ internal fun decodeStill(path: String): DecodedStill? {
                 else -> 0
             }
         } catch (e: IOException) {
-            CameraKLogger.e(TAG, "OcrPlugin: reading a still's EXIF orientation failed; it is read unrotated", e)
+            CameraKLogger.e(TAG, "reading a still's EXIF orientation failed; it is read unrotated", e)
             0
         }
     return DecodedStill(bitmap, rotation)
