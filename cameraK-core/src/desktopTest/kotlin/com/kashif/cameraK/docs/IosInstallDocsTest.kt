@@ -61,6 +61,19 @@ class IosInstallDocsTest {
     private val guide = DocsSources.INSTALLATION_GUIDE
     private val guideIosSetup get() = DocsSources.section(guide, Regex("### iOS"), Regex("#{1,3} .*"))
 
+    /** Every "iOS N.N+" minimum the README or the installation guide states is 16.0 or later. */
+    @Test
+    fun minimumIsIos16() {
+        listOf(readme, guide).forEach { doc ->
+            val minimums = Regex("""iOS\s+(\d+)(?:\.\d+)?\+""").findAll(DocsSources.lines(doc).joinToString("\n"))
+                .map { it.value to it.groupValues[1].toInt() }
+                .toList()
+            assertTrue(minimums.isNotEmpty(), "$doc states no iOS minimum")
+            val below = minimums.filter { (_, major) -> major < 16 }.map { it.first }
+            assertTrue(below.isEmpty(), "$doc states an iOS minimum below 16: $below")
+        }
+    }
+
     @Test
     fun theReadmesIosSetupDeclaresEveryUsageDescription() = assertDeclaresEveryKey(readme, readmeIosSetup)
 
