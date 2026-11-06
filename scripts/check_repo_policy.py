@@ -1011,12 +1011,31 @@ def check_catalog() -> List[str]:
         "cameraK-testing/build.gradle.kts": library_plugins,
         "Sample/build.gradle.kts": "plugins {\n    alias(libs.plugins.multiplatform)\n}\n",
     }
+    fixture_settings += 'include(":cameraK-extra")\n'
+    fixture_modules["cameraK-extra/build.gradle.kts"] = (
+        'plugins {\n    id("camerak.kmp-library")\n    id("camerak.publish")\n}\n'
+    )
     unlisted = sorted(unlisted_library_modules(fixture_settings, fixture_modules, ["cameraK"]))
-    if unlisted != ["cameraK-core", "cameraK-testing"]:
+    if unlisted != ["cameraK-core", "cameraK-extra", "cameraK-testing"]:
         raise CheckError(
             "catalog_policy_scans_every_library_build_file: the unlisted-module rule finds "
-            f"{unlisted} in a fixture that includes cameraK-core and cameraK-testing unlisted"
+            f"{unlisted} in a fixture that includes cameraK-core, cameraK-extra and cameraK-testing unlisted"
         )
+    # build-logic's precompiled plugins apply catalog plugins by id, which is the only way a precompiled
+    # plugin can: an id is accepted, and counts as applied, when build-logic's build file puts that
+    # [plugins] entry on its classpath. A module applies build-logic's own plugins by id.
+    included_catalog = '[versions]\na = "1"\n[plugins]\np = { id = "g.p", version.ref = "a" }\n'
+    included_scripts = {
+        "build.gradle.kts": "plugins {\n    alias(libs.plugins.p) apply false\n}\n",
+        "build-logic/build.gradle.kts": "dependencies {\n    implementation(plugin(libs.plugins.p))\n}\n",
+        "build-logic/src/main/kotlin/camerak.x.gradle.kts": 'plugins {\n    id("g.p")\n    id("g.r")\n}\n',
+        "lib/build.gradle.kts": 'plugins {\n    id("camerak.x")\n    id("camerak.z")\n}\n',
+    }
+    found = sorted(catalog_problems(included_catalog, included_scripts))
+    if len(found) != 2 or not (
+        "build-logic/src/main/kotlin/camerak.x.gradle.kts" in found[0] and 'id("g.r")' in found[0]
+    ) or not ("lib/build.gradle.kts" in found[1] and 'id("camerak.z")' in found[1]):
+        raise CheckError(f"the catalog rule misjudges build-logic's precompiled plugins: {found}")
     conventional = (
         "plugins {\n    id(\"camerak.kmp-library\")\n    id(\"camerak.publish\")\n}\n\n"
         "kotlin {\n    sourceSets {\n        val jvmMain by getting\n    }\n    applyDefaultHierarchyTemplate {\n"
