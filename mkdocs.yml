@@ -9,7 +9,7 @@ edit_uri: edit/main/docs/
 theme:
   name: material
   logo: assets/cameraklogo.png
-  favicon: assets/favicon.ico
+  favicon: assets/cameraklogo.png
   language: en
   palette:
     - media: "(prefers-color-scheme: light)"
