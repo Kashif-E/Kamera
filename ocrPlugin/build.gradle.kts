@@ -79,7 +79,7 @@ tasks.named<Test>("desktopTest") {
 }
 
 android {
-    namespace = "com.kashif.ocr_plugin"
+    namespace = "com.kashif.ocrplugin"
     compileSdk =
         libs.versions.android.compileSdk
             .get()

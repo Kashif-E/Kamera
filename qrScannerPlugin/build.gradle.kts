@@ -65,7 +65,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.qr_scanner_plugin"
+    namespace = "com.kashif.qrscannerplugin"
     compileSdk =
         libs.versions.android.compileSdk
             .get()

@@ -44,7 +44,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.analyzer_plugin"
+    namespace = "com.kashif.analyzerplugin"
     compileSdk =
         libs.versions.android.compileSdk
             .get()

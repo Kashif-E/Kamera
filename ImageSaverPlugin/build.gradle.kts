@@ -56,7 +56,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.image_saver_plugin"
+    namespace = "com.kashif.mediasaverplugin"
     compileSdk =
         libs.versions.android.compileSdk
             .get()
