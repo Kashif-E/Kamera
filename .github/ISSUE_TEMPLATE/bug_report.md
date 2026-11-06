@@ -76,9 +76,10 @@ Paste logs here
 **Device/Emulator:** (e.g., Pixel 7, iPhone 14 Pro, Android Studio Emulator)
 
 **Plugins Used:**
-- image_saver_plugin: 
-- qr_scanner_plugin: 
-- ocr_plugin: 
+- camerak-media-saver: 
+- camerak-qr-scanner: 
+- camerak-ocr: 
+- camerak-analyzer: 
 
 ## Additional Context
 

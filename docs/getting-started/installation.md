@@ -38,7 +38,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project.dependencies.platform("io.github.kashif-mehmood-km:camerak-bom:2.0"))
             implementation("io.github.kashif-mehmood-km:camerak")
-            implementation("io.github.kashif-mehmood-km:qr_scanner_plugin")
+            implementation("io.github.kashif-mehmood-km:camerak-qr-scanner")
         }
     }
 }
@@ -192,7 +192,7 @@ Run Gradle sync:
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:qr_scanner_plugin:2.0")
+    implementation("io.github.kashif-mehmood-km:camerak-qr-scanner:2.0")
 }
 ```
 
@@ -200,7 +200,7 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:ocr_plugin:2.0")
+    implementation("io.github.kashif-mehmood-km:camerak-ocr:2.0")
 }
 ```
 
@@ -208,7 +208,7 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("io.github.kashif-mehmood-km:image_saver_plugin:2.0")
+    implementation("io.github.kashif-mehmood-km:camerak-media-saver:2.0")
 }
 ```
 

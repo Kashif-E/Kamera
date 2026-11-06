@@ -79,6 +79,19 @@ val relocatedArtifacts =
 
 fun relocationProject(oldId: String) = findProject(":relocations:$oldId")
 
+// The artifact id a module publishes, from its own gradle.properties, where vanniktech reads it.
+fun pomArtifactId(module: String): String =
+    java.util
+        .Properties()
+        .apply {
+            layout.projectDirectory
+                .file("$module/gradle.properties")
+                .asFile
+                .reader()
+                .use(::load)
+        }.getProperty("POM_ARTIFACT_ID")
+        .orEmpty()
+
 // The libraries ship only bytedeco's Java bindings. Whatever runs them here (desktop tests, the
 // Sample) adds the natives for this machine, under JavaCPP's platform name, as
 // compose.desktop.currentOs does for Skiko. Modules read it as rootProject.extra["javacppPlatform"].
@@ -104,7 +117,7 @@ extra["javacppPlatform"] =
 // One version and group for every published module, from gradle.properties (vanniktech reads the
 // same keys for the published coordinates).
 subprojects {
-    if (name in publishedModules || name == bomModule) {
+    if (name in publishedModules || name == bomModule || path in relocatedArtifacts.keys.map { ":relocations:$it" }) {
         group = providers.gradleProperty("GROUP").get()
         version = providers.gradleProperty("VERSION_NAME").get()
     }
@@ -121,6 +134,33 @@ project(":$bomModule") {
         }
     }
 }
+// Each relocation project publishes a POM and nothing else: its <relocation> names the 2.0 coordinate, and
+// no Gradle module metadata is published beside it, because Gradle would read that instead of the POM.
+relocatedArtifacts.forEach { (oldId, module) ->
+    val newId = pomArtifactId(module)
+    relocationProject(oldId)?.run {
+        plugins.withId("maven-publish") {
+            extensions.configure<PublishingExtension> {
+                publications.withType<MavenPublication>().configureEach {
+                    pom {
+                        distributionManagement {
+                            relocation {
+                                groupId.set(providers.gradleProperty("GROUP"))
+                                artifactId.set(newId)
+                                version.set(providers.gradleProperty("VERSION_NAME"))
+                                message.set(
+                                    providers.gradleProperty("GROUP").map { "$oldId is now $it:$newId in CameraK 2.0" },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        tasks.withType<GenerateModuleMetadata>().configureEach { enabled = false }
+    }
+}
+
 val allVerifyTargets = listOf("desktop", "android", "ios", "screenshots", "lint", "sample")
 
 fun csvProperty(name: String): List<String>? =
@@ -577,7 +617,40 @@ fun relocationPomProblems(
     version: String,
     poms: Map<String, String?>,
     moduleMetadata: Set<String>,
-): List<String> = TODO("C1'b: relocationPomProblems")
+): List<String> =
+    expected.flatMap { (oldId, newId) ->
+        val text = poms[oldId] ?: return@flatMap listOf("$oldId publishes no relocation POM")
+        val pom =
+            javax.xml.parsers.DocumentBuilderFactory
+                .newInstance()
+                .newDocumentBuilder()
+                .parse(org.xml.sax.InputSource(java.io.StringReader(text)))
+                .documentElement
+        val relocation =
+            pom
+                .getElementsByTagName("distributionManagement")
+                .let { if (it.length == 0) null else it.item(0) as org.w3c.dom.Element }
+                ?.let { pomField(it, "relocation") }
+                ?.takeUnless { it == "<missing>" }
+        val target = "{groupId=$group, artifactId=$newId, version=$version}"
+        listOfNotNull(
+            "$oldId relocates to itself; its successor must have a new id".takeIf { newId == oldId },
+            "$oldId: POM packaging is ${pomField(pom, "packaging")}, not pom"
+                .takeIf { pomField(pom, "packaging") != "pom" },
+            "$oldId: POM has no <relocation>".takeIf { relocation == null },
+            "$oldId: POM relocates to $relocation, not $target".takeIf {
+                relocation != null &&
+                    relocation.removeSurrounding("{", "}").split(", ").let { fields ->
+                        "groupId=$group" !in fields || "artifactId=$newId" !in fields || "version=$version" !in fields
+                    }
+            },
+            "$oldId: Gradle module metadata is published beside the relocation POM, so Gradle never reads it"
+                .takeIf { oldId in moduleMetadata },
+        ) +
+            listOf("name", "description", "url", "licenses", "developers", "scm")
+                .filter { pomField(pom, it) == "<missing>" || pomField(pom, it).isBlank() }
+                .map { "$oldId: POM has no <$it>, which Maven Central requires" }
+    }
 
 // The class, interface, object and typealias declarations in one Kotlin [source], by fully qualified
 // name (a nested declaration under its enclosing one, by indentation), with their @Deprecated level.
@@ -667,19 +740,7 @@ tasks.register("checkBuildGateRules") {
     relocatedArtifacts.keys.mapNotNull(::relocationProject).forEach {
         dependsOn("${it.path}:generatePomFileForMavenPublication")
     }
-    val relocationTargets =
-        relocatedArtifacts.mapValues { (_, module) ->
-            java.util
-                .Properties()
-                .apply {
-                    layout.projectDirectory
-                        .file("$module/gradle.properties")
-                        .asFile
-                        .reader()
-                        .use(::load)
-                }.getProperty("POM_ARTIFACT_ID")
-                .orEmpty()
-        }
+    val relocationTargets = relocatedArtifacts.mapValues { (_, module) -> pomArtifactId(module) }
     val relocationPoms =
         provider {
             relocatedArtifacts.keys.associateWith { oldId ->
@@ -1666,10 +1727,15 @@ tasks.register("checkLicenseMetadata") {
     description = "Fails if a published POM declares a licence other than the one LICENSE grants"
     dependsOn(publishedModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
     dependsOn(":$bomModule:generatePomFileForMavenPublication")
+    val relocationProjects = relocatedArtifacts.keys.associateWith { project(":relocations:$it") }
+    relocationProjects.values.forEach { dependsOn("${it.path}:generatePomFileForMavenPublication") }
     val pomFiles =
         publishedModules.associateWith {
             project(":$it").layout.buildDirectory.file("publications/kotlinMultiplatform/pom-default.xml")
-        } + (bomModule to project(":$bomModule").layout.buildDirectory.file("publications/maven/pom-default.xml"))
+        } + (bomModule to project(":$bomModule").layout.buildDirectory.file("publications/maven/pom-default.xml")) +
+            relocationProjects.mapValues { (_, relocation) ->
+                relocation.layout.buildDirectory.file("publications/maven/pom-default.xml")
+            }
     val licenseFile = layout.projectDirectory.file("LICENSE").asFile
     doLast {
         val expected =
