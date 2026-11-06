@@ -1,5 +1,3 @@
-@file:Suppress("DEPRECATION")
-
 package com.kashif.imagesaverplugin
 
 import android.content.ContentProvider
@@ -10,6 +8,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
+import com.kashif.cameraK.result.CameraKResult
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,7 +22,6 @@ import java.util.function.Supplier
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlin.test.assertSame
 
 /**
@@ -47,24 +45,13 @@ class AndroidImageSaverPluginFailureTest {
     )
 
     @Test
-    fun saveImage_whenTheWriteIsRefused_returnsNullAndLeavesNoPendingRow() = runTest {
-        val refusal = SecurityException("no write access")
-        writesTo(firstRow) { throw refusal }
-
-        val location = plugin.saveImage(byteArrayOf(1, 2, 3), "refused")
-
-        assertNull(location)
-        assertEquals(emptyMap(), mediaStore.rows, "the IS_PENDING row was left in MediaStore")
-    }
-
-    @Test
     fun save_whenTheWriteIsRefused_reportsFailedWithTheCause() = runTest {
         val refusal = SecurityException("no write access")
         writesTo(firstRow) { throw refusal }
 
-        val result = plugin.save(byteArrayOf(1, 2, 3), "refused")
+        val result = plugin.save(captured(byteArrayOf(1, 2, 3)), "refused")
 
-        assertSame(refusal, assertIs<ImageSaveResult.Failed>(result).error)
+        assertSame(refusal, assertIs<CameraKResult.Failure>(result).error.cause)
         assertEquals(emptyMap(), mediaStore.rows, "the IS_PENDING row was left in MediaStore")
     }
 
@@ -73,9 +60,9 @@ class AndroidImageSaverPluginFailureTest {
         val rejection = IllegalArgumentException("unknown collection")
         mediaStore.insertFailure = rejection
 
-        val result = plugin.save(byteArrayOf(1, 2, 3), "rejected")
+        val result = plugin.save(captured(byteArrayOf(1, 2, 3)), "rejected")
 
-        assertSame(rejection, assertIs<ImageSaveResult.Failed>(result).error)
+        assertSame(rejection, assertIs<CameraKResult.Failure>(result).error.cause)
     }
 
     @Test
@@ -84,9 +71,9 @@ class AndroidImageSaverPluginFailureTest {
         writesTo(firstRow) { written }
         val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 42)
 
-        val result = plugin.save(bytes, "ok")
+        val result = plugin.save(captured(bytes), "ok")
 
-        assertEquals(ImageSaveResult.Saved(firstRow.toString()), result)
+        assertEquals(firstRow, savedUri(result))
         assertContentEquals(bytes, written.toByteArray())
         assertEquals(0, mediaStore.rows.getValue(firstRow).getAsInteger(MediaStore.MediaColumns.IS_PENDING))
     }

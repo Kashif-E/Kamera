@@ -1,5 +1,3 @@
-@file:Suppress("DEPRECATION")
-
 package com.kashif.imagesaverplugin
 
 import android.content.ContentUris
@@ -8,6 +6,8 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
+import com.kashif.cameraK.capture.uri
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
@@ -35,7 +35,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * Where a deprecated byte save lands for each [GalleryDestination]; GallerySaveTest covers `save(image)`.
+ * Where a saved capture lands for each [GalleryDestination], down to minSdk; GallerySaveTest covers the rest
+ * of `save(image)`.
  *
  * From API 29 MediaStore checks RELATIVE_PATH against the collection: `MediaStore.Images` accepts
  * only `DCIM/` and `Pictures/` and throws IllegalArgumentException for anything else, while
@@ -71,9 +72,9 @@ class AndroidImageSaverPluginDirectoryTest {
         val written = writesTo(row)
         val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1)
 
-        val result = plugin.save(bytes, "doc")
+        val result = plugin.save(captured(bytes), "doc")
 
-        assertEquals(ImageSaveResult.Saved(row.toString()), result)
+        assertEquals(row, savedUri(result))
         assertContentEquals(bytes, written.toByteArray())
         val values = mediaStore.rows.getValue(row)
         assertEquals("Documents/Scans", values.getAsString(MediaStore.MediaColumns.RELATIVE_PATH))
@@ -87,9 +88,9 @@ class AndroidImageSaverPluginDirectoryTest {
         val row = firstRowOf(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY))
         writesTo(row)
 
-        val result = plugin.save(byteArrayOf(1), "shot")
+        val result = plugin.save(captured(byteArrayOf(1)), "shot")
 
-        assertEquals(ImageSaveResult.Saved(row.toString()), result)
+        assertEquals(row, savedUri(result))
         assertEquals("DCIM/CameraK", mediaStore.rows.getValue(row).getAsString(MediaStore.MediaColumns.RELATIVE_PATH))
     }
 
@@ -100,9 +101,9 @@ class AndroidImageSaverPluginDirectoryTest {
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         writesTo(row)
 
-        val result = plugin.save(byteArrayOf(1), "doc")
+        val result = plugin.save(captured(byteArrayOf(1)), "doc")
 
-        assertEquals(ImageSaveResult.Saved(row.toString()), result)
+        assertEquals(row, savedUri(result))
         val expected = File(publicDirectory(Environment.DIRECTORY_DOCUMENTS), "Scans/doc.jpg")
         assertEquals(expected.absolutePath, mediaStore.rows.getValue(row).getAsString(MediaStore.MediaColumns.DATA))
     }
@@ -114,7 +115,7 @@ class AndroidImageSaverPluginDirectoryTest {
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         writesTo(row)
 
-        plugin.save(byteArrayOf(1), "shot")
+        plugin.save(captured(byteArrayOf(1)), "shot")
 
         val expected = File(publicDirectory(Environment.DIRECTORY_PICTURES), "CameraK/shot.jpg")
         assertEquals(expected.absolutePath, mediaStore.rows.getValue(row).getAsString(MediaStore.MediaColumns.DATA))
@@ -131,7 +132,7 @@ class AndroidImageSaverPluginDirectoryTest {
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         writesTo(row)
 
-        plugin.save(byteArrayOf(1), "shot")
+        plugin.save(captured(byteArrayOf(1)), "shot")
 
         val expected = File(existing.parentFile, "shot_1.jpg")
         assertEquals(expected.absolutePath, mediaStore.rows.getValue(row).getAsString(MediaStore.MediaColumns.DATA))
@@ -146,7 +147,7 @@ class AndroidImageSaverPluginDirectoryTest {
         writesToItsFile(row)
         val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 7)
 
-        plugin.save(bytes, "shot")
+        plugin.save(captured(bytes), "shot")
 
         val file = File(publicDirectory(Environment.DIRECTORY_DCIM), "Trip/shot.jpg")
         assertContentEquals(bytes, file.readBytes())
@@ -185,31 +186,16 @@ class AndroidImageSaverPluginDirectoryTest {
         listOf(1L, 2L).forEach { writesToItsFile(ContentUris.withAppendedId(collection, it)) }
 
         val outcomes = listOf(byteArrayOf(1, 1), byteArrayOf(2, 2))
-            .map { bytes -> async { bytes to plugin.save(bytes, "shot") } }
+            .map { bytes -> async { bytes to plugin.save(captured(bytes), "shot") } }
             .awaitAll()
 
         return outcomes.map { (bytes, result) ->
             val saved =
-                assertIs<ImageSaveResult.Saved>(result, "a save failed: ${(result as? ImageSaveResult.Failed)?.error}")
-            val path = mediaStore.rows.getValue(Uri.parse(saved.location)).getAsString(MediaStore.MediaColumns.DATA)
+                assertIs<CameraKResult.Success<SavedImage>>(result, "a save failed: $result").value
+            val path = mediaStore.rows.getValue(saved.asset.uri).getAsString(MediaStore.MediaColumns.DATA)
             assertContentEquals(bytes, File(path).readBytes(), "the other save overwrote $path")
             path
         }
-    }
-
-    @Test
-    @Config(sdk = [Config.OLDEST_SDK, 28])
-    fun save_belowApi29_nameWithPathSeparators_staysInTheConfiguredFolder() = runTest {
-        val plugin = pluginFor(GalleryDestination.PICTURES, customFolderName = "Inside")
-        val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
-        writesToItsFile(row)
-
-        val result = plugin.save(byteArrayOf(1), "../../escape")
-
-        assertEquals(ImageSaveResult.Saved(row.toString()), result)
-        val saved = File(mediaStore.rows.getValue(row).getAsString(MediaStore.MediaColumns.DATA))
-        val folder = File(publicDirectory(Environment.DIRECTORY_PICTURES), "Inside")
-        assertEquals(folder.canonicalFile, saved.canonicalFile.parentFile)
     }
 
     @Test
@@ -222,11 +208,14 @@ class AndroidImageSaverPluginDirectoryTest {
         }
         val logged = loggedErrors()
 
-        val result = pluginFor(GalleryDestination.PICTURES, customFolderName = "Blocked").save(byteArrayOf(1), "shot")
+        val result = pluginFor(
+            GalleryDestination.PICTURES,
+            customFolderName = "Blocked",
+        ).save(captured(byteArrayOf(1)), "shot")
 
-        val failure = assertIs<ImageSaveResult.Failed>(result)
+        val failure = assertIs<CameraKResult.Failure>(result)
         assertEquals(emptyMap(), mediaStore.rows)
-        assertTrue(logged.any { it === failure.error }, "the failure was not logged")
+        assertTrue(logged.any { it === failure.error.cause }, "the failure was not logged")
     }
 
     @Test
@@ -234,9 +223,12 @@ class AndroidImageSaverPluginDirectoryTest {
     fun save_belowApi29_whenTheInsertIsRejected_leavesNoFileBehind() = runTest {
         mediaStore.insertFailure = IllegalArgumentException("rejected")
 
-        val result = pluginFor(GalleryDestination.PICTURES, customFolderName = "Rejected").save(byteArrayOf(1), "shot")
+        val result = pluginFor(
+            GalleryDestination.PICTURES,
+            customFolderName = "Rejected",
+        ).save(captured(byteArrayOf(1)), "shot")
 
-        assertIs<ImageSaveResult.Failed>(result)
+        assertIs<CameraKResult.Failure>(result)
         val folder = File(publicDirectory(Environment.DIRECTORY_PICTURES), "Rejected")
         assertEquals(emptyList(), folder.list().orEmpty().toList())
     }
@@ -247,9 +239,12 @@ class AndroidImageSaverPluginDirectoryTest {
         val row = firstRowOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
         writesTo(row) { throw IOException("disk full") }
 
-        val result = pluginFor(GalleryDestination.PICTURES, customFolderName = "Unwritten").save(byteArrayOf(1), "shot")
+        val result = pluginFor(
+            GalleryDestination.PICTURES,
+            customFolderName = "Unwritten",
+        ).save(captured(byteArrayOf(1)), "shot")
 
-        assertIs<ImageSaveResult.Failed>(result)
+        assertIs<CameraKResult.Failure>(result)
         assertEquals(emptyMap(), mediaStore.rows)
         val folder = File(publicDirectory(Environment.DIRECTORY_PICTURES), "Unwritten")
         assertEquals(emptyList(), folder.list().orEmpty().toList())

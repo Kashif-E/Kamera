@@ -10,7 +10,6 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.testing.FakeCaptures
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.CameraKPlatformApi
-import com.kashif.cameraK.utils.toNSData
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.update
 import kotlinx.coroutines.CoroutineScope
@@ -240,31 +239,5 @@ class PhotosSaveTest {
         val cause = assertNotNull(failure.error.cause)
         assertEquals(1, errors.value.size, "error log lines for one failed auto-save: ${errors.value}")
         assertSame(cause, errors.value.single(), "the failed auto-save was not logged with its cause")
-    }
-
-    /** PR #183: the deprecated read takes a capture's plain path as well as a `ph://` location. */
-    @Test
-    fun theDeprecatedReadReadsAPlainFilePath() {
-        val path = file()
-
-        val read = background.completesWithin(BOUND) {
-            @Suppress("DEPRECATION")
-            saver(FakePhotoLibrary()).readBytes(path)
-        }
-
-        assertContentEquals(photoBytes, assertNotNull(read, "readBytes did not return within $BOUND").value)
-    }
-
-    /** PR #183: the deprecated blocking read takes a plain path too, and reads the file, not Photos. */
-    @Test
-    fun theDeprecatedBlockingReadReadsAPlainFilePath() {
-        val path = file()
-        val photos = FakePhotoLibrary(imageData = byteArrayOf(1, 2, 3).toNSData())
-
-        @Suppress("DEPRECATION")
-        val bytes = saver(photos).getByteArrayFrom(path)
-
-        assertContentEquals(photoBytes, bytes)
-        assertEquals(null, photos.requestedIdentifier.value, "a plain path was looked up in Photos")
     }
 }

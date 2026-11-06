@@ -1,5 +1,3 @@
-@file:Suppress("DEPRECATION")
-
 package com.kashif.imagesaverplugin
 
 import android.content.ContentUris
@@ -36,7 +34,7 @@ class AndroidImageSaverPluginNameTest {
         }
         val plugin = androidSaver(context)
 
-        repeat(2) { plugin.save(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1)) }
+        repeat(2) { plugin.save(captured(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1))) }
 
         val names = rows.map { mediaStore.rows.getValue(it).getAsString(MediaStore.MediaColumns.DISPLAY_NAME) }
         assertEquals(2, names.toSet().size, "both saves were named $names")

@@ -1,19 +1,16 @@
-@file:Suppress("DEPRECATION")
-
 package com.kashif.imagesaverplugin
 
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.result.CameraKResult
 import kotlinx.coroutines.test.runTest
 import java.io.File
-import java.io.IOException
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 
 class JVMImageSaverPluginTest {
     private val home: File = Files.createTempDirectory("camerak-saver-base").toFile()
@@ -23,66 +20,25 @@ class JVMImageSaverPluginTest {
         home.deleteRecursively()
     }
 
-    // Ported from the 1.x failure callback, which is gone: the failure's own message says the same.
-    @Test
-    fun saveImage_undecodableBytes_returnsNullAndReportsTheFailure() = runTest {
-        val plugin = plugin()
-
-        val path = plugin.saveImage(byteArrayOf(1, 2, 3), imageName = "not-an-image")
-        val result = plugin.save(byteArrayOf(1, 2, 3), imageName = "not-an-image")
-
-        assertNull(path)
-        assertEquals("Could not decode image bytes", assertIs<ImageSaveResult.Failed>(result).error.message)
-        assertEquals(emptyList(), home.walkTopDown().filter { it.isFile }.toList(), "files written for a failed save")
-    }
-
-    @Test
-    fun getByteArrayFrom_readsTheFile() {
-        val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 42)
-        val file = File(home, "Pictures/CameraK/camerak.jpg").apply { parentFile.mkdirs() }
-        file.writeBytes(bytes)
-
-        assertContentEquals(bytes, plugin().getByteArrayFrom(file.absolutePath))
-    }
-
-    @Test
-    fun getByteArrayFrom_missingFile_throwsIOExceptionWithoutThePath() {
-        val missing = File(home, "Pictures/CameraK/camerak-missing.jpg").apply { parentFile.mkdirs() }
-
-        val error = assertFailsWith<IOException> { plugin().getByteArrayFrom(missing.absolutePath) }
-
-        assertFalse(home.name in error.message.orEmpty(), "the error message contains the path: ${error.message}")
-    }
-
     @Test
     fun readBytes_readsTheFile() = runTest {
         val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 43)
-        val file = File(home, "Pictures/CameraK/camerak-read.jpg").apply { parentFile.mkdirs() }
-        file.writeBytes(bytes)
+        val plugin = desktopSaver(home)
+        val saved = assertIs<CameraKResult.Success<SavedImage>>(plugin.save(capturedImage(bytes), "camerak-read")).value
 
-        assertContentEquals(bytes, plugin().readBytes(file.absolutePath))
+        assertContentEquals(bytes, assertIs<CameraKResult.Success<ByteArray>>(plugin.readBytes(saved)).value)
     }
 
     @Test
-    fun readBytes_missingFile_throwsIOExceptionWithoutThePath() = runTest {
-        val missing = File(home, "Pictures/CameraK/camerak-missing-${System.nanoTime()}.jpg").apply {
-            parentFile.mkdirs()
-        }
+    fun readBytes_missingFile_failsWithoutThePath() = runTest {
+        val plugin = desktopSaver(home)
+        val saved = assertIs<CameraKResult.Success<SavedImage>>(
+            plugin.save(capturedImage(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 44)), "camerak-missing"),
+        ).value
+        home.walkTopDown().filter { it.isFile }.forEach { it.delete() }
 
-        val error = assertFailsWith<IOException> { plugin().readBytes(missing.absolutePath) }
-
-        assertFalse(home.name in error.message.orEmpty(), "the error message contains the path: ${error.message}")
+        val error = assertIs<CameraKError.Storage>(assertIs<CameraKResult.Failure>(plugin.readBytes(saved)).error)
+        val cause = assertNotNull(error.cause, "the platform's exception is the cause")
+        assertFalse(home.name in cause.message.orEmpty(), "the failure's message contains the path: ${cause.message}")
     }
-
-    @Test
-    fun readBytes_outsideTheOutputFolders_throwsIOExceptionWithoutThePath() = runTest {
-        val outside = File(home, "elsewhere/camerak.jpg").apply { parentFile.mkdirs() }
-        outside.writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 44))
-
-        val error = assertFailsWith<IOException> { plugin().readBytes(outside.absolutePath) }
-
-        assertFalse(home.name in error.message.orEmpty(), "the error message contains the path: ${error.message}")
-    }
-
-    private fun plugin() = legacySaver(ImageSaverConfig(), home)
 }

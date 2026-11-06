@@ -1,7 +1,6 @@
-@file:Suppress("DEPRECATION")
-
 package com.kashif.imagesaverplugin
 
+import com.kashif.cameraK.capture.path
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.result.CameraKResult
@@ -45,18 +44,20 @@ class JVMImageSaverPluginCallbackTest {
     // Replaces aThrowingOnImageSaved_stillReportsTheSaveAndNoFailure: there is no onImageSaved.
     @Test
     fun aSavedImageIsReportedAsSavedOnly() = runTest {
-        val result = legacySaver(ImageSaverConfig(), home).save(jpeg(), "shot")
+        val result = desktopSaver(home).save(capturedImage(jpeg()), "shot")
 
-        val saved = assertIs<ImageSaveResult.Saved>(result, "save result")
-        assertTrue(File(saved.location).isFile, "the saved file is missing")
+        val saved = assertIs<CameraKResult.Success<SavedImage>>(result, "save result").value
+        assertTrue(File(saved.asset.path).isFile, "the saved file is missing")
     }
 
     // Replaces aThrowingOnImageSavedFailed_stillReturnsTheFailure: there is no onImageSavedFailed.
     @Test
     fun aFailedSaveReturnsTheFailure() = runTest {
-        val result = legacySaver(ImageSaverConfig(), home).save(byteArrayOf(1, 2, 3), "not-an-image")
+        val gone = FakeCaptures.image(path = File(home, "no-such-capture.jpg").path)
 
-        assertIs<ImageSaveResult.Failed>(result, "save result for bytes that are not an image")
+        val result = desktopSaver(home).save(gone, "not-an-image")
+
+        assertIs<CameraKResult.Failure>(result, "save result for a capture whose file is gone")
     }
 
     // The 1.x case read the failure callback's text; in 2.0 the text a failure reaches anyone through

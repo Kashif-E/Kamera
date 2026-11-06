@@ -10,6 +10,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
 import com.kashif.cameraK.capture.CapturedImage
+import com.kashif.cameraK.capture.GalleryAsset
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.capture.uri
 import com.kashif.cameraK.enums.ImageFormat
@@ -25,6 +26,7 @@ import com.kashif.cameraK.testing.cameraKTestEnvironment
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.utils.CameraKPlatformApi
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
@@ -288,17 +290,16 @@ class GallerySaveTest {
         val missingUri = "content://media/external_primary/images/media/404"
 
         val saveResult = plugin.save(CapturedImage(missingFile, ImageFormat.JPEG, 4, 3), "shot")
-        val legacyRead = runCatching {
-            @Suppress("DEPRECATION")
-            plugin.readBytes(missingUri)
-        }.exceptionOrNull()
-        val legacyFileRead = runCatching {
-            @Suppress("DEPRECATION")
-            plugin.getByteArrayFrom(missingFile)
-        }.exceptionOrNull()
+
+        @OptIn(InternalCameraKApi::class)
+        val missing = SavedImage("IMG_missing.jpg", GalleryAsset("IMG_missing.jpg", Uri.parse(missingUri)))
+        val readResult = plugin.readBytes(missing)
 
         assertIs<CameraKResult.Failure>(saveResult)
-        texts += listOfNotNull(legacyRead?.message, legacyFileRead?.message)
+        val readFailure = assertIs<CameraKResult.Failure>(readResult)
+        // The platform's cause keeps its own message, which nothing shown is built from; CameraK's text
+        // for the failure is the error itself.
+        texts += readFailure.error.toString()
         assertTrue(texts.isNotEmpty(), "the failures were not logged")
         val leaking = texts.filter { missingFile in it || missingUri in it || "IMG_missing" in it || "/404" in it }
         assertEquals(emptyList(), leaking, "log or exception text holds a path or URI")

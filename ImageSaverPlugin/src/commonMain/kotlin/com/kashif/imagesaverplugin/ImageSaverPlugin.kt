@@ -119,7 +119,7 @@ public class ImageSaverPlugin internal constructor(
     public suspend fun save(image: CapturedImage, name: String? = null): CameraKResult<SavedImage> {
         name?.let { requireSafeFileName(it, "name") }
         return gated("Saving an image to the gallery") {
-            store.addImage(MediaSource.File(image.path), image.format, name)
+            store.addImage(image.path, image.format, name)
         }.map { SavedImage(it.displayName, it) }
     }
 
@@ -172,52 +172,15 @@ public class ImageSaverPlugin internal constructor(
         return CameraKResult.Failure(CameraKError.Permission(CameraKPermission.GALLERY_ADD, status))
     }
 
-    /** Saves encoded image bytes. Use [save] with the capture instead. */
+    /** Removed in 2.0. */
     @Deprecated(
-        "Save the CapturedImage with save(image), which copies its file and returns a typed result.",
-        level = DeprecationLevel.WARNING,
+        "Removed in CameraK 2.0: read a SavedImage with the suspending readBytes(saved).",
+        ReplaceWith("readBytes(saved)"),
+        level = DeprecationLevel.ERROR,
     )
-    public suspend fun saveImage(byteArray: ByteArray, imageName: String? = null): String? {
-        @Suppress("DEPRECATION")
-        return (save(byteArray, imageName) as? ImageSaveResult.Saved)?.location
-    }
-
-    /**
-     * Saves encoded image bytes in [MediaSaverConfig.imageFormat]'s way: Android labels them by what
-     * they hold, desktop converts them to the configured format, iOS stores them as they are.
-     */
-    @Suppress("DEPRECATION")
-    @Deprecated(
-        "Save the CapturedImage with save(image), which copies its file and returns a typed result.",
-        level = DeprecationLevel.WARNING,
-    )
-    public suspend fun save(byteArray: ByteArray, imageName: String? = null): ImageSaveResult = when (
-        val result = gated("Saving image bytes to the gallery") {
-            store.addImage(MediaSource.Bytes(byteArray), config.imageFormat, imageName)
-        }
-    ) {
-        is CameraKResult.Success -> ImageSaveResult.Saved(store.legacyLocation(result.value))
-        is CameraKResult.Failure -> ImageSaveResult.Failed(result.error.asThrowable())
-    }
-
-    /** Reads the image at [path], blocking the calling thread. */
-    @Deprecated(
-        "Blocks the calling thread while it reads. Use readBytes(saved), which suspends.",
-        level = DeprecationLevel.WARNING,
-    )
-    public fun getByteArrayFrom(path: String): ByteArray = store.readLegacyBlocking(path)
-
-    /**
-     * Reads the image at [path]: a file path, a `content://` URI on Android, or a `ph://` location
-     * on iOS, which also reads plain file paths. Suspends while the platform reads.
-     *
-     * @throws kotlinx.io.IOException when the image cannot be read; the message holds no path.
-     */
-    @Deprecated(
-        "Read a SavedImage with readBytes(saved), which returns a typed result.",
-        level = DeprecationLevel.WARNING,
-    )
-    public suspend fun readBytes(path: String): ByteArray = store.readLegacy(path)
+    @Suppress("UNUSED_PARAMETER")
+    public fun getByteArrayFrom(path: String): ByteArray =
+        throw UnsupportedOperationException("Removed in CameraK 2.0; see the migration guide")
 
     private companion object {
         const val TAG = "ImageSaverPlugin"
@@ -227,10 +190,6 @@ public class ImageSaverPlugin internal constructor(
 
 /** The name an auto-save gives a capture taken at [epochMillis]: [prefix], `_`, then the milliseconds. */
 internal fun autoSaveImageName(prefix: String, epochMillis: Long): String = "${prefix}_$epochMillis"
-
-// What the deprecated byte API reports for an error: the platform's throwable, or one that names the kind.
-private fun CameraKError.asThrowable(): Throwable =
-    cause ?: IllegalStateException("Image could not be saved (${this::class.simpleName})")
 
 /** The same configuration's saver across recompositions, over [platformContext]'s gallery. */
 @Composable

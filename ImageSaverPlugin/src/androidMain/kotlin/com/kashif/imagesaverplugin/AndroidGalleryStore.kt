@@ -27,7 +27,6 @@ import java.io.FileInputStream
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * MediaStore. From API 29 a row is inserted with `IS_PENDING = 1` and a `RELATIVE_PATH` in the
@@ -49,49 +48,25 @@ internal class AndroidGalleryStore(
     private val app: Context = context.applicationContext
     private val resolver: ContentResolver get() = app.contentResolver
 
-    // Android captures are JPEG unless the engine transcoded them, so a deprecated byte save's mismatch
-    // with the configured format repeats on every save; it is logged once.
-    private val formatMismatchWarned = AtomicBoolean(false)
-
     override val galleryPermission: CameraKPermission?
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) null else CameraKPermission.GALLERY_ADD
 
-    override suspend fun addImage(
-        source: MediaSource,
-        format: ImageFormat,
-        name: String?,
-    ): CameraKResult<GalleryAsset> {
-        val actual = when (source) {
-            is MediaSource.File -> format
-            is MediaSource.Bytes -> bytesFormat(source.bytes)
-        }
+    override suspend fun addImage(path: String, format: ImageFormat, name: String?): CameraKResult<GalleryAsset> {
         val fileName = "${name ?: captureFileName(
             "IMG",
-            actual.extension,
-        ).substringBeforeLast('.')}.${actual.extension}"
-        return insert(source, MediaKind.IMAGE, fileName, actual.mimeType)
+            format.extension,
+        ).substringBeforeLast('.')}.${format.extension}"
+        return insert(path, MediaKind.IMAGE, fileName, format.mimeType)
     }
 
     override suspend fun addVideo(path: String, name: String?): CameraKResult<GalleryAsset> {
         val extension = path.substringAfterLast('/').substringAfterLast('.', "mp4").lowercase()
         val fileName = "${name ?: captureFileName("VID", extension).substringBeforeLast('.')}.$extension"
-        return insert(MediaSource.File(path), MediaKind.VIDEO, fileName, videoMimeType(extension))
-    }
-
-    private fun bytesFormat(bytes: ByteArray): ImageFormat {
-        val format = encodedFormatOf(bytes) ?: config.imageFormat
-        if (format != config.imageFormat && formatMismatchWarned.compareAndSet(false, true)) {
-            CameraKLogger.w(
-                TAG,
-                "Image bytes are $format, not the configured ${config.imageFormat}; saving as $format " +
-                    "(logged once per plugin)",
-            )
-        }
-        return format
+        return insert(path, MediaKind.VIDEO, fileName, videoMimeType(extension))
     }
 
     private suspend fun insert(
-        source: MediaSource,
+        path: String,
         kind: MediaKind,
         fileName: String,
         mimeType: String,
@@ -123,10 +98,7 @@ internal class AndroidGalleryStore(
             insertedUri = uri
             resolver.openOutputStream(uri).use { output ->
                 if (output == null) throw IOException("MediaStore opened no output stream")
-                when (source) {
-                    is MediaSource.Bytes -> output.write(source.bytes)
-                    is MediaSource.File -> FileInputStream(source.path).use { it.copyTo(output) }
-                }
+                FileInputStream(path).use { it.copyTo(output) }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
@@ -196,25 +168,6 @@ internal class AndroidGalleryStore(
             CameraKLogger.e(TAG, "Reading a gallery image failed", e)
             CameraKResult.Failure(storageError(e))
         }
-    }
-
-    override fun legacyLocation(asset: GalleryAsset): String = asset.uri.toString()
-
-    override fun readLegacyBlocking(location: String): ByteArray {
-        try {
-            // A capture is a plain file path; a saved image is a content:// URI. Read either.
-            val file = File(location)
-            if (file.exists()) return file.readBytes()
-            return resolver.openInputStream(Uri.parse(location))?.use(InputStream::readBytes)
-                ?: throw IOException("MediaStore opened no input stream")
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Reading an image failed", e)
-            throw IOException("Failed to read the image", e)
-        }
-    }
-
-    override suspend fun readLegacy(location: String): ByteArray = withContext(io) {
-        readLegacyBlocking(location)
     }
 }
 

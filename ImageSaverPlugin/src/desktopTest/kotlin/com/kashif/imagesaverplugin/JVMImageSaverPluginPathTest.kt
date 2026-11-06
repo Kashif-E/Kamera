@@ -1,7 +1,8 @@
-@file:Suppress("DEPRECATION")
-
 package com.kashif.imagesaverplugin
 
+import com.kashif.cameraK.capture.path
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.result.CameraKResult
 import kotlinx.coroutines.test.runTest
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
@@ -15,14 +16,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 
 /**
  * Names a consumer passes to the desktop saver (customFolderName, imageName, and the prefix the
  * auto-save names are built from) cannot put a file outside the configured folder: a name with a
  * separator, a `..` segment or a control character is rejected with an [IllegalArgumentException],
- * a customFolderName that is a symbolic link out of the folder fails with an [IOException], and
- * nothing is written anywhere. An auto-save prefix that cannot make a valid name is rejected when
+ * a folder name that is a symbolic link out of the folder fails with a Storage failure whose cause is
+ * an [IOException], and nothing is written anywhere. An auto-save prefix that cannot make a valid name is rejected when
  * the plugin is made.
  */
 class JVMImageSaverPluginPathTest {
@@ -37,17 +37,29 @@ class JVMImageSaverPluginPathTest {
     }
 
     private fun plugin(customFolderName: String? = null) =
-        legacySaver(ImageSaverConfig(customFolderName = customFolderName), home)
+        desktopSaver(home, MediaSaverConfig { folderName = customFolderName })
 
     private fun filesUnder(folder: File): List<String> =
         folder.walkTopDown().filter { it.isFile }.map { it.relativeTo(sandbox).path }.toList()
 
+    // The capture's own file is outside the sandbox, so every file under it is one the saver wrote.
     private suspend fun assertRejected(sut: ImageSaverPlugin, imageName: String?) {
-        val result = sut.save(jpeg(), imageName)
-
-        val failed = assertIs<ImageSaveResult.Failed>(result, "save result for a name that leaves the folder")
-        assertIs<IllegalArgumentException>(failed.error, "the error for a rejected name")
+        assertFailsWith<IllegalArgumentException>("the error for a rejected name") {
+            sut.save(capturedImage(jpeg()), imageName)
+        }
         assertEquals(emptyList(), filesUnder(sandbox), "files written for a rejected name")
+    }
+
+    private suspend fun ImageSaverPlugin.savedFile(imageName: String?): File {
+        val result = save(capturedImage(jpeg()), imageName)
+        return File(assertIs<CameraKResult.Success<SavedImage>>(result, "save result: $result").value.asset.path)
+    }
+
+    private suspend fun ImageSaverPlugin.assertRefusedAsStorage(imageName: String?, what: String) {
+        val result = save(capturedImage(jpeg()), imageName)
+        val error =
+            assertIs<CameraKError.Storage>(assertIs<CameraKResult.Failure>(result, "save result for $what").error)
+        assertIs<IOException>(error.cause, "the cause for $what")
     }
 
     @Test
@@ -92,24 +104,21 @@ class JVMImageSaverPluginPathTest {
         assertEquals(emptyList(), filesUnder(sandbox), "files written for a rejected folder name")
     }
 
-    // Ported from the 1.x failure callback, which is gone: the failure's own message carries the reason.
+    // Ported from the 1.x failure callback, which is gone: the rejection's own message carries the reason.
     @Test
-    fun aRejectedName_isReportedThroughTheFailureCallbackAndSaveImageReturnsNull() = runTest {
-        val sut = plugin()
+    fun aRejectedName_failsWithAReasonThatDoesNotRepeatTheName() = runTest {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            plugin().save(capturedImage(jpeg()), "../escaped")
+        }.message
 
-        val path = sut.saveImage(jpeg(), "../escaped")
-        val failure = assertIs<ImageSaveResult.Failed>(sut.save(jpeg(), "../escaped")).error.message
-
-        assertNull(path)
         assertFalse(failure.isNullOrEmpty(), "the failure has no reason")
         assertFalse("escaped" in failure.orEmpty(), "the failure message repeats the caller's name")
     }
 
     @Test
     fun plainNames_saveInsideTheConfiguredFolder() = runTest {
-        val result = plugin(customFolderName = "My_Album-2").save(jpeg(), "MyApp_1700000000000.v2")
+        val saved = plugin(customFolderName = "My_Album-2").savedFile("MyApp_1700000000000.v2")
 
-        val saved = File(assertIs<ImageSaveResult.Saved>(result, "save result: $result").location)
         assertEquals(File(home, "Pictures/My_Album-2").canonicalFile, saved.canonicalFile.parentFile)
         assertEquals("MyApp_1700000000000.v2.jpg", saved.name)
     }
@@ -118,9 +127,8 @@ class JVMImageSaverPluginPathTest {
     // folder rather than loose among the user's own files.
     @Test
     fun withNoCustomFolder_imagesSaveInACameraKFolder() = runTest {
-        val result = plugin().save(jpeg(), "shot")
+        val saved = plugin().savedFile("shot")
 
-        val saved = File(assertIs<ImageSaveResult.Saved>(result, "save result: $result").location)
         assertEquals(File(home, "Pictures/CameraK").canonicalFile, saved.canonicalFile.parentFile)
     }
 
@@ -130,10 +138,7 @@ class JVMImageSaverPluginPathTest {
         val pictures = File(home, "Pictures").apply { mkdirs() }
         Files.createSymbolicLink(File(pictures, "CameraK").toPath(), outside.toPath())
 
-        val result = plugin().save(jpeg(), "shot")
-
-        val failed = assertIs<ImageSaveResult.Failed>(result, "save result for a folder that links outside")
-        assertIs<IOException>(failed.error, "the error for a folder that links outside")
+        plugin().assertRefusedAsStorage("shot", "a folder that links outside")
         assertEquals(emptyList(), outside.list()?.toList(), "files written through the link")
     }
 
@@ -145,10 +150,7 @@ class JVMImageSaverPluginPathTest {
         val family = File(pictures, "Family").apply { mkdirs() }
         Files.createSymbolicLink(File(pictures, "CameraK").toPath(), family.toPath())
 
-        val result = plugin().save(jpeg(), "shot")
-
-        val failed = assertIs<ImageSaveResult.Failed>(result, "save result for a folder that links to a sibling")
-        assertIs<IOException>(failed.error, "the error for a folder that links to a sibling")
+        plugin().assertRefusedAsStorage("shot", "a folder that links to a sibling")
         assertEquals(emptyList(), family.list()?.toList(), "files written through the link")
     }
 
@@ -158,10 +160,7 @@ class JVMImageSaverPluginPathTest {
         val pictures = File(home, "Pictures").apply { mkdirs() }
         Files.createSymbolicLink(File(pictures, "linked").toPath(), outside.toPath())
 
-        val result = plugin(customFolderName = "linked").save(jpeg(), "shot")
-
-        val failed = assertIs<ImageSaveResult.Failed>(result, "save result for a folder that links outside")
-        assertIs<IOException>(failed.error, "the error for a folder that links outside")
+        plugin(customFolderName = "linked").assertRefusedAsStorage("shot", "a folder that links outside")
         assertEquals(emptyList(), outside.list()?.toList(), "files written through the link")
     }
 
@@ -169,9 +168,8 @@ class JVMImageSaverPluginPathTest {
     fun anAutoSavePrefixOf50Characters_saves() = runTest {
         val name = autoSaveImageName("p".repeat(50), AUTO_SAVE_MILLIS)
 
-        val result = plugin().save(jpeg(), name)
+        val saved = plugin().savedFile(name)
 
-        val saved = File(assertIs<ImageSaveResult.Saved>(result, "save result: $result").location)
         assertEquals("$name.jpg", saved.name)
     }
 
@@ -202,8 +200,13 @@ class JVMImageSaverPluginPathTest {
         pluginWithPrefix("MyApp.v2-photo_")
     }
 
-    private fun pluginWithPrefix(prefix: String) =
-        legacySaver(ImageSaverConfig(isAutoSave = true, prefix = prefix), home)
+    private fun pluginWithPrefix(prefix: String) = desktopSaver(
+        home,
+        MediaSaverConfig {
+            autoSave = true
+            this.prefix = prefix
+        },
+    )
 
     private fun jpeg(): ByteArray {
         val image = BufferedImage(8, 8, BufferedImage.TYPE_3BYTE_BGR)

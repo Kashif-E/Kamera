@@ -42,12 +42,8 @@ internal class FakeGalleryStore(
         CameraKResult.Success(fakeGalleryAsset("${add.name ?: "IMG"}.${add.format?.extension ?: "mp4"}"))
     }
 
-    override suspend fun addImage(
-        source: MediaSource,
-        format: ImageFormat,
-        name: String?,
-    ): CameraKResult<GalleryAsset> {
-        val add = StoreAdd((source as? MediaSource.File)?.path, MediaKind.IMAGE, format, name)
+    override suspend fun addImage(path: String, format: ImageFormat, name: String?): CameraKResult<GalleryAsset> {
+        val add = StoreAdd(path, MediaKind.IMAGE, format, name)
         adds += add
         return answer(add)
     }
@@ -59,12 +55,6 @@ internal class FakeGalleryStore(
     }
 
     override suspend fun read(asset: GalleryAsset): CameraKResult<ByteArray> = CameraKResult.Success(ByteArray(0))
-
-    override fun legacyLocation(asset: GalleryAsset): String = asset.displayName
-
-    override fun readLegacyBlocking(location: String): ByteArray = ByteArray(0)
-
-    override suspend fun readLegacy(location: String): ByteArray = ByteArray(0)
 }
 
 /** A permission read that answers each status in [statuses] in turn, then the last one, and counts its reads. */

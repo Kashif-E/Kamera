@@ -13,9 +13,6 @@ import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.awt.image.BufferedImage
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.nio.file.FileAlreadyExistsException
@@ -25,16 +22,12 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import javax.imageio.IIOImage
-import javax.imageio.ImageIO
-import javax.imageio.ImageWriteParam
 
 /**
  * Desktop has no gallery: saves go to a folder under the user's home, `~/Pictures/<folder>` for
  * PICTURES and DCIM and `~/Documents/<folder>` for DOCUMENTS, where `<folder>` is the configured
  * folder name or `CameraK`. Each save creates a new file and never overwrites one: a taken name gets
- * a numeric suffix. A file is copied as it is; a deprecated byte save already in the configured
- * format is written as it is, and other bytes are decoded and encoded once into that format.
+ * a numeric suffix. A file is copied as it is.
  *
  * Names and the folder name are each 1 to 64 characters from `A-Z a-z 0-9 . _ -` and not `.` or
  * `..`, so a forwarded name can never place a file outside the folder. A folder that is itself a
@@ -51,25 +44,8 @@ internal class DesktopGalleryStore(
     // Desktop folders need no permission.
     override val galleryPermission: CameraKPermission? get() = null
 
-    override suspend fun addImage(
-        source: MediaSource,
-        format: ImageFormat,
-        name: String?,
-    ): CameraKResult<GalleryAsset> = write(name, format.extension) { file ->
-        when (source) {
-            is MediaSource.File -> Files.copy(Path.of(source.path), file, StandardCopyOption.REPLACE_EXISTING)
-            is MediaSource.Bytes -> {
-                val bytes = if (sniffFormat(source.bytes) ==
-                    format
-                ) {
-                    source.bytes
-                } else {
-                    transcode(source.bytes, format)
-                }
-                Files.write(file, bytes)
-            }
-        }
-    }
+    override suspend fun addImage(path: String, format: ImageFormat, name: String?): CameraKResult<GalleryAsset> =
+        write(name, format.extension) { file -> Files.copy(Path.of(path), file, StandardCopyOption.REPLACE_EXISTING) }
 
     override suspend fun addVideo(path: String, name: String?): CameraKResult<GalleryAsset> {
         val extension = path.substringAfterLast(File.separatorChar).substringAfterLast('.', "mp4")
@@ -147,12 +123,6 @@ internal class DesktopGalleryStore(
         }
     }
 
-    override fun legacyLocation(asset: GalleryAsset): String = asset.path
-
-    override fun readLegacyBlocking(location: String): ByteArray = readOwn(location)
-
-    override suspend fun readLegacy(location: String): ByteArray = withContext(Dispatchers.IO) { readOwn(location) }
-
     /**
      * Reads an image this store or a CameraK capture wrote. [path] must resolve, after `..` and
      * symbolic links, to a file in one of [readRoots]; any other path, or a file that cannot be read,
@@ -182,60 +152,6 @@ private fun isOwnFolder(folder: File, base: File): Boolean =
 
 // A failure the store describes itself, in a message with no path or user data.
 internal class SaveFailure(message: String) : IOException(message)
-
-/** The format [bytes] are encoded in, from their magic bytes, or null if neither JPEG nor PNG. */
-private fun sniffFormat(bytes: ByteArray): ImageFormat? = when {
-    bytes.startsWith(JPEG_MAGIC) -> ImageFormat.JPEG
-    bytes.startsWith(PNG_MAGIC) -> ImageFormat.PNG
-    else -> null
-}
-
-private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
-    size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
-
-/** Decodes [bytes] and encodes them once as [format], at an explicit quality for JPEG. */
-private fun transcode(bytes: ByteArray, format: ImageFormat): ByteArray {
-    val decoded = ImageIO.read(ByteArrayInputStream(bytes)) ?: throw SaveFailure("Could not decode image bytes")
-    val out = ByteArrayOutputStream()
-    when (format) {
-        ImageFormat.PNG -> if (!ImageIO.write(decoded, "png", out)) {
-            throw SaveFailure("No PNG writer accepts this image")
-        }
-        ImageFormat.JPEG -> writeJpeg(withoutAlpha(decoded), out)
-        ImageFormat.HEIC -> throw SaveFailure("HEIC is not supported on desktop")
-    }
-    return out.toByteArray()
-}
-
-// JPEG has no alpha channel, and ImageIO's JPEG writer rejects images that have one.
-private fun withoutAlpha(image: BufferedImage): BufferedImage {
-    if (!image.colorModel.hasAlpha()) return image
-    val opaque = BufferedImage(image.width, image.height, BufferedImage.TYPE_3BYTE_BGR)
-    val graphics = opaque.createGraphics()
-    try {
-        graphics.drawImage(image, 0, 0, java.awt.Color.WHITE, null)
-    } finally {
-        graphics.dispose()
-    }
-    return opaque
-}
-
-private fun writeJpeg(image: BufferedImage, out: ByteArrayOutputStream) {
-    val writer = ImageIO.getImageWritersByFormatName("jpeg").asSequence().firstOrNull()
-        ?: throw SaveFailure("No JPEG writer is installed")
-    try {
-        val params = writer.defaultWriteParam.apply {
-            compressionMode = ImageWriteParam.MODE_EXPLICIT
-            compressionQuality = JPEG_QUALITY
-        }
-        ImageIO.createImageOutputStream(out).use { stream ->
-            writer.output = stream
-            writer.write(null, IIOImage(image, null, null), params)
-        }
-    } finally {
-        writer.dispose()
-    }
-}
 
 /**
  * Creates a new, empty file `<name>.<extension>` in [folder] (creating the folder too), or
@@ -270,11 +186,6 @@ private fun defaultImageName(): String =
 // user.home can be null in sandboxed runtimes; fall back to the working dir.
 private fun defaultUserHome(): File = File(System.getProperty("user.home") ?: System.getProperty("user.dir") ?: ".")
 
-private val JPEG_MAGIC = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
-private val PNG_MAGIC = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
-
-// The quality CameraK's own captures use, so a converted image matches a direct capture.
-private const val JPEG_QUALITY = 0.95f
 private const val MAX_NAME_ATTEMPTS = 100
 private const val TAG = "ImageSaverPlugin"
 
