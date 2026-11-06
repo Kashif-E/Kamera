@@ -56,6 +56,10 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      instrumented sources declare the contract test, and the Sample declares and
                      registers BareCameraXActivity and is profileable from the shell. Nothing in it
                      runs on a device; the maintainer runs it at release.
+  sample-app         The Sample asks only for what it uses, with the words a user sees: its Android
+                     manifest caps WRITE_EXTERNAL_STORAGE at API 28, the last level that needs it to
+                     add to the gallery, and every privacy usage description in the iOS app's build
+                     configurations has text, the microphone's in each one that has the camera's.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -1502,6 +1506,94 @@ def check_release_gate() -> List[str]:
     )
 
 
+# ─── sample-app ─────────────────────────────────────────────────────────────────────────────────
+
+SAMPLE_XCODE_PROJECT = "iosApp/iosApp.xcodeproj/project.pbxproj"
+# Android 10 (API 29) adds to the gallery through MediaStore without any storage permission.
+LAST_STORAGE_PERMISSION_SDK = 28
+USES_PERMISSION = re.compile(r"<uses-permission\b[^>]*>", re.DOTALL)
+MAX_SDK_VERSION = re.compile(r'android:maxSdkVersion\s*=\s*"(\d+)"')
+BUILD_CONFIGURATION = re.compile(r"(\w+) /\* ([^*]+) \*/ = \{\s*isa = XCBuildConfiguration;(.*?)\n\t\t\};", re.DOTALL)
+USAGE_DESCRIPTION = re.compile(r'\bINFOPLIST_KEY_(NS\w+UsageDescription)\s*=\s*("(?:[^"\\]|\\.)*"|[^;]*);')
+
+
+def sample_manifest_problems(manifest: str) -> List[str]:
+    """sample_manifest_caps_storage_permission: WRITE_EXTERNAL_STORAGE carries an android:maxSdkVersion
+    of at most LAST_STORAGE_PERMISSION_SDK, so the Sample does not ask for storage where it needs none."""
+    problems = []
+    for permission in USES_PERMISSION.findall(manifest):
+        if '"android.permission.WRITE_EXTERNAL_STORAGE"' not in permission:
+            continue
+        cap = MAX_SDK_VERSION.search(permission)
+        if cap is None or int(cap.group(1)) > LAST_STORAGE_PERMISSION_SDK:
+            problems.append(
+                f"{SAMPLE_MANIFEST} asks for WRITE_EXTERNAL_STORAGE "
+                f"{'on every API level' if cap is None else 'up to API ' + cap.group(1)}; "
+                f'set android:maxSdkVersion="{LAST_STORAGE_PERMISSION_SDK}"'
+            )
+    return problems
+
+
+def sample_usage_description_problems(project: str) -> List[str]:
+    """ios_sample_usage_descriptions_are_written: every INFOPLIST_KEY_NS*UsageDescription in a build
+    configuration has text, and a configuration with the camera's description has the microphone's, since
+    the Sample records video with audio. An empty description shows a blank prompt and fails App Review."""
+    problems = []
+    for identifier, name, settings in BUILD_CONFIGURATION.findall(project):
+        keys = {key: value.strip().strip('"').strip() for key, value in USAGE_DESCRIPTION.findall(settings)}
+        where = f"{SAMPLE_XCODE_PROJECT}: build configuration {identifier} ({name})"
+        for key, text in sorted(keys.items()):
+            if not text:
+                problems.append(f"{where} has an empty {key}")
+        if "NSCameraUsageDescription" in keys and "NSMicrophoneUsageDescription" not in keys:
+            problems.append(f"{where} has no NSMicrophoneUsageDescription")
+    return problems
+
+
+def check_sample_app() -> List[str]:
+    storage = '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"{} />'
+    capped_storage = storage.format(' android:maxSdkVersion="28"')
+    capped = f'<manifest>\n    <uses-permission android:name="android.permission.CAMERA" />\n    {capped_storage}\n</manifest>\n'
+    misjudged = []
+    if sample_manifest_problems(capped):
+        misjudged.append("rejects a cap at 28")
+    for name, manifest in (
+        ("no cap", storage.format("")),
+        ("a cap at 32", storage.format(' android:maxSdkVersion="32"')),
+        ("a cap on another line", storage.format('\n        android:maxSdkVersion="29"')),
+    ):
+        if len(sample_manifest_problems(manifest)) != 1:
+            misjudged.append(f"accepts {name}")
+    if misjudged:
+        raise CheckError("sample_manifest_caps_storage_permission misjudges its fixture: " + "; ".join(misjudged))
+
+    def configuration(keys: str) -> str:
+        return (
+            "\t\tA1 /* Debug */ = {\n\t\t\tisa = XCBuildConfiguration;\n"
+            f"\t\t\tbuildSettings = {{\n{keys}\t\t\t}};\n\t\t\tname = Debug;\n\t\t}};\n"
+        )
+
+    camera = '\t\t\t\tINFOPLIST_KEY_NSCameraUsageDescription = "Shows the camera.";\n'
+    microphone = '\t\t\t\tINFOPLIST_KEY_NSMicrophoneUsageDescription = {};\n'
+    written = configuration(camera + microphone.format('"Records audio with video."'))
+    if sample_usage_description_problems(written + written):
+        raise CheckError("ios_sample_usage_descriptions_are_written rejects two written configurations")
+    for name, project in (
+        ("an empty microphone description", written + configuration(camera + microphone.format('""'))),
+        ("a blank microphone description", configuration(camera + microphone.format('" "')) + written),
+        ("no microphone description", written + configuration(camera)),
+    ):
+        found = sample_usage_description_problems(project)
+        if len(found) != 1 or "NSMicrophoneUsageDescription" not in found[0]:
+            raise CheckError(f"ios_sample_usage_descriptions_are_written misjudges {name}: {found}")
+
+    manifest = ROOT / SAMPLE_MANIFEST
+    project = ROOT / SAMPLE_XCODE_PROJECT
+    if not manifest.is_file() or not project.is_file():
+        raise CheckError(f"{SAMPLE_MANIFEST} or {SAMPLE_XCODE_PROJECT} is missing")
+    return sample_manifest_problems(manifest.read_text()) + sample_usage_description_problems(project.read_text())
+
+
 POLICIES: Dict[str, Callable[[], List[str]]] = {
     "agent-permissions": check_agent_permissions,
     "security-policy": check_security_policy,
@@ -1512,6 +1604,7 @@ POLICIES: Dict[str, Callable[[], List[str]]] = {
     "repository-links": check_repository_links,
     "module-sources": check_module_sources,
     "release-gate": check_release_gate,
+    "sample-app": check_sample_app,
 }
 
 

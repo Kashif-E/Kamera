@@ -38,6 +38,7 @@ checks=(
     :checkReleaseMetadata
     :checkReleaseWorkflow
     :checkRepositoryLinks
+    :checkSampleApp
     :checkSecurityPolicy
     :checkVerifyCoverage
     :checkVerifyReportRules

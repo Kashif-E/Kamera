@@ -1883,6 +1883,11 @@ registerRepoPolicyCheck(
     "Fails unless the release gate's Macrobenchmark module, device contract subset, bare-CameraX baseline and " +
         "profileable benchmark build are in the repository and compiled by verify.sh",
 )
+registerRepoPolicyCheck(
+    "checkSampleApp",
+    "sample-app",
+    "Fails if the Sample asks for storage on Android 10 and later, or an iOS usage description is empty or missing",
+)
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
@@ -1964,6 +1969,8 @@ data class AndroidSettings(
     val minSdk: Int?,
     val compileSdk: Int?,
     val includesAndroidResourcesInUnitTests: Boolean,
+    // An app's; a library has none.
+    val targetSdk: Int? = null,
 )
 
 fun androidSettings(module: Project): AndroidSettings =
@@ -1979,6 +1986,7 @@ fun androidSettings(module: Project): AndroidSettings =
                 android.defaultConfig.minSdk,
                 android.compileSdk,
                 android.testOptions.unitTests.isIncludeAndroidResources,
+                android.defaultConfig.targetSdk,
             )
         else -> throw GradleException("${module.path}: unexpected android extension ${android::class.java.name}")
     }
@@ -2095,7 +2103,8 @@ subprojects {
 }
 
 // Every library declares the same floor and the docs state it. Each library's unit tests merge their
-// manifest at that floor; the Sample may sit higher only for a Sample-only dependency (kflite needs 24).
+// manifest at that floor; the Sample may sit higher only for a Sample-only dependency, and its own
+// floor check rejects a minSdk above what its classpath needs.
 val documentedMinSdk =
     listOf(
         Regex("""\|\s*Android\s*\|\s*API (\d+)"""),
@@ -2104,6 +2113,20 @@ val documentedMinSdk =
         Regex("""Ensure you're using API (\d+)"""),
         Regex("""minSdk(?: is|\s*=)\s*(\d+)"""),
     )
+
+// sample_target_sdk_is_compile_sdk: the Sample targets the compileSdk every module builds against.
+// Below it, the app opts out of the platform behaviour the libraries are compiled for, and Play
+// refuses a target that has fallen behind.
+fun targetSdkProblems(
+    targetSdk: Int?,
+    compileSdk: Int?,
+): List<String> =
+    if (targetSdk == null || targetSdk != compileSdk) {
+        listOf("the Sample's targetSdk is ${targetSdk ?: "unset"}, not its compileSdk $compileSdk")
+    } else {
+        emptyList()
+    }
+
 // The floor rule run against hand-made AARs. A declared minSdk is wrong if any dependency needs more,
 // and also if it is above the highest minSdk the module ships with: the floor is what the graph
 // needs, not a number that merely clears it.
@@ -2168,16 +2191,27 @@ tasks.register("checkAndroidSdkFloorRules") {
                     else -> null
                 }
             }
-        check(wrong.isEmpty()) { "The minSdk floor rule is wrong:\n" + wrong.joinToString("\n") }
+        val targetCases = listOf(Triple(34, 36, false), Triple(null, 36, false), Triple(36, 36, true))
+        val wrongTargets =
+            targetCases.mapNotNull { (target, compile, accepted) ->
+                val problems = targetSdkProblems(target, compile)
+                if (accepted == problems.isEmpty()) null else "targetSdk $target with compileSdk $compile: $problems"
+            }
+        check(wrong.isEmpty() && wrongTargets.isEmpty()) {
+            "The minSdk floor rule is wrong:\n" + (wrong + wrongTargets).joinToString("\n")
+        }
     }
 }
 
 tasks.register("checkAndroidSdkFloor") {
     group = lintGroup
-    description = "Fails if the libraries' minSdk values disagree, or the Sample or the docs use another one"
+    description =
+        "Fails if the libraries' minSdk values disagree, the Sample or the docs use another one, " +
+        "or the Sample's targetSdk is not its compileSdk"
     dependsOn("checkAndroidSdkFloorRules")
     dependsOn(androidModules.map { ":$it:checkAndroidSdkFloor" })
     val declared = provider { androidModules.associateWith { androidSettings(project(":$it")).minSdk } }
+    val sample = provider { androidSettings(project(":Sample")) }
     val root = layout.projectDirectory.asFile
     doLast {
         val levels = declared.get()
@@ -2186,6 +2220,8 @@ tasks.register("checkAndroidSdkFloor") {
         check(floor != null && (levels["Sample"] ?: 0) >= floor) {
             "Every library must declare one minSdk and the Sample no lower; found $levels"
         }
+        val target = targetSdkProblems(sample.get().targetSdk, sample.get().compileSdk)
+        check(target.isEmpty()) { target.joinToString("\n") }
         val docs =
             trackedTextFiles(root).filter { file ->
                 val path = file.relativeTo(root).invariantSeparatorsPath
@@ -2700,6 +2736,7 @@ val requiredLintChecks =
         ":checkReleaseMetadata",
         ":checkReleaseWorkflow",
         ":checkRepositoryLinks",
+        ":checkSampleApp",
         ":checkSecurityPolicy",
         ":checkVerifyCoverage",
         ":checkVerifyReportRules",
