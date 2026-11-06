@@ -9,6 +9,9 @@ zero tests (skipped tests do not count), a requested target has nothing to check
 publish step left a coordinate out of its scratch repository, or the local gitleaks scan found or
 failed. A scan that could not run (no gitleaks on PATH) is shown, not passed.
 
+With --self-test it instead runs its publish check against fixture repositories and exits 1 if the
+check misjudges one; the lint target runs that as :checkVerifyReportRules.
+
 Standard library only; run with `python3 -I`.
 """
 
@@ -19,6 +22,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -261,6 +265,63 @@ def publish_problems(repo: Path, expected: dict) -> list[str]:
     return problems
 
 
+def write_publication(repo: Path, group: str, artifact: str, version: str, extensions: tuple[str, ...]) -> None:
+    directory = repo.joinpath(*group.split("."), artifact, version)
+    directory.mkdir(parents=True, exist_ok=True)
+    for extension in extensions:
+        (directory / f"{artifact}-{version}.{extension}").write_text("{}\n" if extension == "module" else "<project/>\n")
+
+
+def relocation_pom(group: str, artifact: str, version: str) -> str:
+    return (
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"><distributionManagement><relocation>'
+        f"<groupId>{group}</groupId><artifactId>{artifact}</artifactId><version>{version}</version>"
+        "</relocation></distributionManagement></project>\n"
+    )
+
+
+def publish_check_self_test() -> list[str]:
+    """What publish_problems misjudges among its fixtures: a complete repository, a module whose build
+    dropped its iOS targets (so the build's own model expects none), and relocation POMs that name the
+    wrong group or version."""
+    group, version = "io.example", "2.0"
+    every_target = ["android", "desktop", "iosarm64", "iossimulatorarm64"]
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as scratch:
+        def repository(name: str, targets: list[str], relocated: tuple[str, str, str]) -> Path:
+            repo = Path(scratch) / name
+            for artifact in ("lib", "bom"):
+                write_publication(repo, group, artifact, version, ("module", "pom"))
+            for target in targets:
+                write_publication(repo, group, f"lib-{target}", version, ("module", "pom"))
+            pom = repo.joinpath(*group.split("."), "old-lib", version, f"old-lib-{version}.pom")
+            pom.parent.mkdir(parents=True)
+            pom.write_text(relocation_pom(*relocated))
+            return repo
+
+        def expected(targets: list[str]) -> dict:
+            return {
+                "group": group,
+                "version": version,
+                "modules": {"lib": targets},
+                "bom": "bom",
+                "relocations": {"old-lib": "lib"},
+            }
+
+        found = publish_problems(repository("complete", every_target, (group, "lib", version)), expected(every_target))
+        if found:
+            problems.append(f"a complete repository is rejected: {found}")
+        no_ios = ["android", "desktop"]
+        found = publish_problems(repository("no-ios", no_ios, (group, "lib", version)), expected(no_ios))
+        if not any("lib-iosarm64" in p for p in found) or not any("lib-iossimulatorarm64" in p for p in found):
+            problems.append(f"a module that dropped its iOS targets is accepted: {found}")
+        for name, relocated in (("group", ("io.other", "lib", version)), ("version", (group, "lib", "1.9"))):
+            found = publish_problems(repository(f"wrong-{name}", every_target, relocated), expected(every_target))
+            if len(found) != 1 or "old-lib" not in found[0]:
+                problems.append(f"a relocation POM naming the wrong {name} is misjudged: {found}")
+    return problems
+
+
 def executed_tasks(log: Path) -> set[str]:
     if not log.is_file():
         return set()
@@ -271,7 +332,15 @@ def executed_tasks(log: Path) -> set[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--run", default=str(ROOT / "build" / "verify" / "run.json"))
+    parser.add_argument("--self-test", action="store_true", help="check the publish check against fixtures")
     args = parser.parse_args()
+    if args.self_test:
+        misjudged = publish_check_self_test()
+        for problem in misjudged:
+            print(f"verify_report self-test: {problem}")
+        if not misjudged:
+            print("verify_report self-test: OK")
+        return 1 if misjudged else 0
 
     run = json.loads(Path(args.run).read_text())
     start = float(run["start_epoch"])

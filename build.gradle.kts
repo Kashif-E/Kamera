@@ -1759,6 +1759,26 @@ tasks.register("checkPluginSources") {
     }
 }
 
+// verify.sh --full's publish step is only as good as verify_report.py's coordinate check, which it
+// cannot see fail: this runs that check against fixture repositories it must reject.
+tasks.register("checkVerifyReportRules") {
+    group = lintGroup
+    description = "Fails if verify_report.py's publish check accepts a dropped target or a wrong relocation"
+    val script = layout.projectDirectory.file("scripts/verify_report.py").asFile
+    val root = layout.projectDirectory.asFile
+    doLast {
+        val process =
+            ProcessBuilder("python3", "-I", script.path, "--self-test")
+                .directory(root)
+                .redirectErrorStream(true)
+                .start()
+        val output = process.inputStream.bufferedReader().readText()
+        val exit = process.waitFor()
+        if (exit != 0) throw GradleException("verify_report.py's publish check is wrong (exit $exit):\n$output")
+        logger.lifecycle(output.trimEnd())
+    }
+}
+
 // A Maven Central upload is irreversible. This fails unless the publish workflow runs only for a v*
 // tag matching VERSION_NAME, after the full harness, from the protected maven-central environment.
 tasks.register("checkReleaseWorkflow") {
@@ -2670,6 +2690,7 @@ val requiredLintChecks =
         ":checkRepositoryLinks",
         ":checkSecurityPolicy",
         ":checkVerifyCoverage",
+        ":checkVerifyReportRules",
         ":ocrPlugin:checkKotlinAbi",
         ":qrScannerPlugin:checkKotlinAbi",
         ":spotlessCheck",

@@ -40,6 +40,7 @@ checks=(
     :checkRepositoryLinks
     :checkSecurityPolicy
     :checkVerifyCoverage
+    :checkVerifyReportRules
     :ocrPlugin:checkKotlinAbi
     :qrScannerPlugin:checkKotlinAbi
     :spotlessCheck
