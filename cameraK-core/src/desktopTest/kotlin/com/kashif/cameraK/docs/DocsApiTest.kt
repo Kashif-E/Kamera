@@ -155,6 +155,44 @@ class DocsApiTest {
     }
 
     /**
+     * Backup is left on (github-triage #173), so the configuration guide says how an app keeps
+     * CameraK's folder out of it: on iOS `NSURLIsExcludedFromBackupKey` on Documents/CameraK and a
+     * file protection class, on Android Auto Backup rules for both API ranges excluding
+     * files/CameraK. The folder it excludes is the one core writes to, read from core's sources, and
+     * the migration guide's storage section points to it.
+     */
+    @Test
+    fun backupExclusionIsDocumented() {
+        val android = folderName("cameraK-core/src/androidMain", Regex("""File\(context\.filesDir, "([^"]+)"\)"""))
+        val ios = folderName("cameraK-core/src/appleMain", Regex(""""\$\{documentsDirectory\(\)}/([^"]+)""""))
+        val guide = DocsSources.section(CONFIGURATION_GUIDE, Regex("^## Backups$"), Regex("^## .*"))
+        val findings = buildList {
+            listOf(
+                "NSURLIsExcludedFromBackupKey",
+                "Documents/$ios",
+                "NSFileProtection",
+                "data-extraction-rules",
+                "full-backup-content",
+                "android:dataExtractionRules",
+                "android:fullBackupContent",
+                """<exclude domain="file" path="$android/" />""",
+            ).filterNot { it in guide }.forEach { add("$CONFIGURATION_GUIDE's Backups section does not name $it") }
+            val storage = DocsSources.section(MIGRATION_GUIDE, Regex("^## 9\\. Storage.*"), Regex("^## .*"))
+            if (BACKUPS_LINK !in storage) add("$MIGRATION_GUIDE's storage section does not link $BACKUPS_LINK")
+        }
+        assertTrue(findings.isEmpty(), "the backup exclusion is not documented:\n${findings.joinToString("\n")}")
+    }
+
+    /** The one folder name [pattern] captures in the Kotlin sources under [dir]. */
+    private fun folderName(dir: String, pattern: Regex): String {
+        val names = File(root, dir).walkTopDown().filter { it.isFile && it.extension == "kt" }
+            .flatMap { file -> pattern.findAll(file.readText()).map { it.groupValues[1] } }
+            .toSet()
+        assertEquals(1, names.size, "expected one default capture folder under $dir, found $names")
+        return names.single()
+    }
+
+    /**
      * The device checklist runs each release gate that verify.sh only compiles: the five
      * Macrobenchmarks and the engine contract's Android device subset, each by a name its sources
      * declare, and no `<B1p command>` placeholder is left. The iPhone contract subset has no Gradle
@@ -199,6 +237,8 @@ class DocsApiTest {
 
         const val MIGRATION_GUIDE = "docs/migration/2.0.md"
         const val DEVICE_CHECKLIST = "docs/device-checklist.md"
+        const val CONFIGURATION_GUIDE = "docs/getting-started/configuration.md"
+        const val BACKUPS_LINK = "../getting-started/configuration.md#backups"
 
         /** §10.4's removed API, group by group, as the migration guide names each symbol. */
         val REMOVED_GROUPS: List<Pair<String, List<String>>> = listOf(
