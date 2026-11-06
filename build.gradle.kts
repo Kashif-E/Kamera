@@ -1723,7 +1723,8 @@ registerRepoPolicyCheck(
     "checkModuleSources",
     "module-sources",
     "Fails if a tracked Kotlin source file lies outside every module settings.gradle.kts includes, " +
-        "the iOS engine's internals are public, or an Android namespace is not one of its module's packages",
+        "the iOS engine's internals are public, an Android namespace is not one of its module's packages, " +
+        "or a log call passes a tag other than its artifact's",
 )
 registerRepoPolicyCheck(
     "checkReleaseGateHarness",

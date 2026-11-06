@@ -46,7 +46,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      letter case, which a case-insensitive disk would merge into one directory.
                      Each published module's Android namespace is one of its main sources'
                      packages or a parent of one, and no main source imports the JDK's or the
-                     standard library's atomics: atomics are AtomicFU's.
+                     standard library's atomics: atomics are AtomicFU's. Every CameraKLogger call
+                     in a published module's main sources passes that artifact's one tag.
   release-gate       The release gate's device harness is built (design §12.4 B1): settings include
                      :benchmark, verify.sh's android target compiles cameraK-core's instrumented
                      sources, its sample target builds :benchmark against the Sample app, and the
@@ -1140,6 +1141,41 @@ def android_namespace_problems(scripts: Dict[str, str], packages: Dict[str, List
     return problems
 
 
+# The one tag each published artifact logs under (design §12.4 BLD; w10b): the core and the Compose
+# layer share CameraK, as does camerak-testing's fake engine, which stands in for the core's.
+ARTIFACT_LOG_TAGS = {
+    "cameraK-core": "CameraK",
+    "cameraK": "CameraK",
+    "cameraK-testing": "CameraK",
+    "ImageSaverPlugin": "MediaSaver",
+    "qrScannerPlugin": "QRScanner",
+    "ocrPlugin": "TextRecognition",
+    "analyzerPlugin": "Analyzer",
+}
+LOGGER_CALL = re.compile(r"\bCameraKLogger\s*\.\s*[dwe]\s*\(\s*([^,)]*)")
+STRING_CONSTANT = re.compile(r'\bval\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*String\s*)?=\s*"([^"$]*)"')
+
+
+def log_tag_problems(sources: Dict[str, str], tags: Dict[str, str] = ARTIFACT_LOG_TAGS) -> List[str]:
+    """log_tags_one_per_artifact: every CameraKLogger.d/w/e call in a published module's main sources
+    passes that artifact's tag, as a literal or as a string constant declared in the same file."""
+    problems = []
+    for path, text in sorted(sources.items()):
+        module, _, rest = path.partition("/")
+        if module not in tags or not re.match(r"src/[A-Za-z]+Main/", rest):
+            continue
+        constants = dict(STRING_CONSTANT.findall(text))
+        for call in LOGGER_CALL.finditer(text):
+            argument = call.group(1).strip()
+            literal = re.fullmatch(r'"([^"$]*)"', argument)
+            tag = literal.group(1) if literal else constants.get(argument)
+            if tag != tags[module]:
+                line = text.count("\n", 0, call.start()) + 1
+                found = f'"{tag}"' if tag is not None else f"{argument or 'nothing'}, which is no string constant of the file"
+                problems.append(f"{path}:{line} logs under {found}; {module} logs under \"{tags[module]}\"")
+    return problems
+
+
 def check_module_sources() -> List[str]:
     fixture_settings = 'include(":cameraK")\ninclude("ocrPlugin")\n'
     fixture_files = [
@@ -1196,6 +1232,22 @@ def check_module_sources() -> List[str]:
     found = android_namespace_problems(planted_scripts, planted_packages)
     if len(found) != 1 or not found[0].startswith("ocrPlugin:"):
         raise CheckError(f"android_namespace_matches_package misjudges its fixture: {found}")
+    planted_logs = {
+        "ocrPlugin/src/commonMain/kotlin/A.kt": 'CameraKLogger.e(TAG, "a failed", e)\nprivate const val TAG = "CameraK"\n',
+        "ocrPlugin/src/desktopMain/kotlin/B.kt": 'CameraKLogger.w(\n    "OcrPlugin",\n    "b",\n)\n',
+        "ocrPlugin/src/androidMain/kotlin/C.kt": 'CameraKLogger.d(tag, "c")\n',
+        "ocrPlugin/src/commonMain/kotlin/D.kt": 'CameraKLogger.d(TAG, "d")\nconst val TAG = "TextRecognition"\n',
+        "ocrPlugin/src/commonTest/kotlin/E.kt": 'CameraKLogger.d("Test", "e")\n',
+        "analyzerPlugin/src/appleMain/kotlin/F.kt": 'CameraKLogger.e("Analyzer", "f", e)\n',
+        "Sample/src/commonMain/kotlin/G.kt": 'CameraKLogger.d("Sample", "g")\n',
+    }
+    found = log_tag_problems(planted_logs)
+    if [problem.split(" ", 1)[0] for problem in found] != [
+        "ocrPlugin/src/androidMain/kotlin/C.kt:1",
+        "ocrPlugin/src/commonMain/kotlin/A.kt:1",
+        "ocrPlugin/src/desktopMain/kotlin/B.kt:1",
+    ]:
+        raise CheckError(f"log_tags_one_per_artifact misjudges its fixture: {found}")
     files = [path.relative_to(ROOT).as_posix() for path in tracked("*.kt")]
     sources = {path: (ROOT / path).read_text() for path in APPLE_ENGINE_INTERNALS if (ROOT / path).is_file()}
     kotlin = {path: (ROOT / path).read_text() for path in files}
@@ -1217,6 +1269,7 @@ def check_module_sources() -> List[str]:
         + case_only_package_clashes(kotlin, resources)
         + android_namespace_problems(module_scripts, module_packages)
         + stdlib_atomics_problems(kotlin, LIBRARY_MODULES)
+        + log_tag_problems(kotlin)
     )
 
 
