@@ -746,6 +746,227 @@ fun kotlinTypeDeclarations(source: String): Map<String, DeprecationLevel?> {
     return declared
 }
 
+// ─── Published API rules (design §4, §10.3, §12.4 Z1) ───────────────────────────────────────────
+
+// One declaration a published module's main source makes public. Explicit API mode makes every public
+// declaration say `public`, so a declaration counts when it carries that modifier and nothing around it
+// is private or internal. [header] is its text up to its body or initializer, parameters included;
+// [kdoc] the KDoc above it; [deprecation] the strongest @Deprecated level on it or on what encloses it.
+data class PublicDeclaration(
+    val location: String,
+    val header: String,
+    val kdoc: String,
+    val deprecation: DeprecationLevel?,
+)
+
+val declarationStart =
+    Regex(
+        """^((?:(?:public|internal|private|protected|expect|actual|data|sealed|enum|annotation|value|inline|""" +
+            """abstract|open|final|override|inner|const|lateinit|suspend|operator|infix|tailrec|external|""" +
+            """companion|fun(?=\s+interface))\s+)*)(class|interface|object|typealias|fun|val|var|constructor)\b""",
+    )
+
+fun parenBalance(text: String): Int = text.count { it == '(' } - text.count { it == ')' }
+
+fun deprecationIn(text: String): DeprecationLevel? =
+    when {
+        "@Deprecated" !in text -> null
+        "DeprecationLevel.HIDDEN" in text -> DeprecationLevel.HIDDEN
+        "DeprecationLevel.ERROR" in text -> DeprecationLevel.ERROR
+        else -> DeprecationLevel.WARNING
+    }
+
+// [line] without its leading annotations, and the annotations' text; null when an annotation's
+// arguments run on past the line.
+fun splitAnnotations(line: String): Pair<String, String>? {
+    var at = line.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)
+    while (at < line.length && line[at] == '@') {
+        at++
+        while (at < line.length && (line[at].isLetterOrDigit() || line[at] in "_.:")) at++
+        if (at < line.length && line[at] == '(') {
+            var depth = 0
+            while (at < line.length) {
+                if (line[at] == '(') depth++
+                if (line[at] == ')') depth--
+                at++
+                if (depth == 0) break
+            }
+            if (depth != 0) return null
+        }
+        while (at < line.length && line[at].isWhitespace()) at++
+    }
+    return line.substring(0, at) to line.substring(at)
+}
+
+// The declaration's text from [start] to its body ('{') or initializer ('='), whichever comes first
+// outside parentheses; a typealias keeps what it aliases.
+fun declarationHeader(
+    lines: List<String>,
+    start: Int,
+    first: String,
+    keepInitializer: Boolean,
+): String {
+    val text = StringBuilder(first)
+    var depth = parenBalance(first)
+    var next = start + 1
+    while (depth > 0 && next < lines.size) {
+        text.append('\n').append(lines[next])
+        depth += parenBalance(lines[next])
+        next++
+    }
+    var level = 0
+    text.forEachIndexed { index, char ->
+        when (char) {
+            '(' -> level++
+            ')' -> level--
+            '{' -> if (level == 0) return text.substring(0, index)
+            '=' ->
+                if (level == 0 &&
+                    !keepInitializer &&
+                    text.getOrNull(index + 1) != '=' &&
+                    text.getOrNull(index - 1) !in listOf('=', '!', '<', '>')
+                ) {
+                    return text.substring(0, index)
+                }
+        }
+    }
+    return text.toString()
+}
+
+fun publicDeclarations(
+    path: String,
+    source: String,
+): List<PublicDeclaration> {
+    val lines = source.lines()
+    val found = mutableListOf<PublicDeclaration>()
+    // indent, private or internal, deprecation
+    val enclosing = ArrayDeque<Triple<Int, Boolean, DeprecationLevel?>>()
+    val kdoc = StringBuilder()
+    var inKdoc = false
+    val annotations = StringBuilder()
+    var annotationParens = 0
+    lines.forEachIndexed { index, line ->
+        val trimmed = line.trim()
+        when {
+            inKdoc -> {
+                kdoc.append(line).append('\n')
+                if ("*/" in trimmed) inKdoc = false
+            }
+            trimmed.startsWith("/**") -> {
+                kdoc.clear().append(line).append('\n')
+                inKdoc = "*/" !in trimmed.removePrefix("/**")
+                annotations.clear()
+            }
+            trimmed.isEmpty() || trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*") -> Unit
+            annotationParens > 0 -> {
+                annotations.append(line).append('\n')
+                annotationParens += parenBalance(line)
+            }
+            else -> {
+                val split = splitAnnotations(line)
+                val match = split?.let { declarationStart.find(it.second) }
+                when {
+                    split == null || (match == null && split.second.isBlank()) -> {
+                        annotations.append(line).append('\n')
+                        annotationParens += parenBalance(line).coerceAtLeast(0)
+                    }
+                    match == null -> {
+                        annotations.clear()
+                        kdoc.clear()
+                    }
+                    else -> {
+                        val indent = line.indexOfFirst { !it.isWhitespace() }
+                        while (enclosing.isNotEmpty() && enclosing.last().first >= indent) enclosing.removeLast()
+                        val modifiers = match.groupValues[1].trim().split(Regex("""\s+"""))
+                        val keyword = match.groupValues[2]
+                        val deprecation =
+                            (enclosing.map { it.third } + deprecationIn(annotations.toString() + split.first))
+                                .filterNotNull()
+                                .maxByOrNull { it.ordinal }
+                        val hidden =
+                            modifiers.any { it == "private" || it == "internal" } || enclosing.any { it.second }
+                        if (!hidden && "public" in modifiers) {
+                            val header = declarationHeader(lines, index, split.second, keyword == "typealias")
+                            found +=
+                                PublicDeclaration("$path:${index + 1}", header.trim(), kdoc.toString(), deprecation)
+                        }
+                        if (keyword in setOf("class", "interface", "object")) {
+                            enclosing.addLast(Triple(indent, hidden, deprecation))
+                        }
+                        annotations.clear()
+                        kdoc.clear()
+                    }
+                }
+            }
+        }
+    }
+    return found
+}
+
+fun PublicDeclaration.isLive(): Boolean =
+    deprecation != DeprecationLevel.ERROR && deprecation != DeprecationLevel.HIDDEN
+
+fun PublicDeclaration.describe(): String = "$location: ${header.lines().first().trim()}"
+
+// public_data_class_fails_lint: a public data class cannot grow without breaking binaries (CC-28).
+fun publicDataClassProblems(declarations: List<PublicDeclaration>): List<String> = emptyList()
+
+// public_channel_fails_lint: a Channel in a public signature hands callers the library's own queue.
+fun publicChannelProblems(declarations: List<PublicDeclaration>): List<String> = emptyList()
+
+// public_mutable_flow_fails_lint: a Mutable*Flow in a public signature lets callers write library state.
+fun publicMutableFlowProblems(declarations: List<PublicDeclaration>): List<String> = emptyList()
+
+// public_sealed_or_enum_without_classification_fails_lint: every public sealed type and enum states in its
+// KDoc's first words whether it is closed or open (Decision 8, design §4).
+fun unclassifiedHierarchyProblems(declarations: List<PublicDeclaration>): List<String> = emptyList()
+
+// unreviewed_abi_change_fails: every published module validates its ABI against committed dumps, and its
+// check task is in the lint group, so verify.sh fails on any ABI change the dumps do not record.
+// [enabled] maps a module to whether ABI validation is on; [checkTaskGroups] to its check task's group,
+// null when it has no check task.
+fun abiValidationProblems(
+    modules: List<String>,
+    enabled: Map<String, Boolean>,
+    checkTaskGroups: Map<String, String?>,
+): List<String> = emptyList()
+
+// The public declarations of every published module's main sources (src/*Main).
+fun publishedApiDeclarations(moduleDirs: List<File>): List<PublicDeclaration> =
+    moduleDirs
+        .flatMap { module ->
+            module
+                .resolve("src")
+                .listFiles()
+                .orEmpty()
+                .filter { it.name.endsWith("Main") }
+        }.flatMap { sourceSet -> sourceSet.walkTopDown().filter { it.isFile && it.extension == "kt" } }
+        .flatMap { publicDeclarations(it.relativeTo(rootDir).invariantSeparatorsPath, it.readText()) }
+
+// One API rule's case: it rejects the [planted] source, accepts the [kept] one, and finds nothing in [sources].
+fun apiRuleCase(
+    rule: (List<PublicDeclaration>) -> List<String>,
+    planted: String,
+    kept: String,
+    sources: List<PublicDeclaration>,
+): List<String> {
+    val accepted = rule(publicDeclarations("Kept.kt", "package fixture\n\n$kept\n"))
+    val hint =
+        "package fixture\n\n@Deprecated(\"Removed\", level = DeprecationLevel.ERROR)\n" +
+            planted.replace("Planted", "Hint") + "\n"
+    return listOfNotNull(
+        "the planted source is accepted:\n$planted"
+            .takeIf { rule(publicDeclarations("Planted.kt", "package fixture\n\n$planted\n")).isEmpty() },
+        "the kept source is rejected: $accepted".takeIf { accepted.isNotEmpty() },
+        "an ERROR-level hint is rejected".takeIf { rule(publicDeclarations("Hint.kt", hint)).isNotEmpty() },
+        "the published sources declare nothing public".takeIf { sources.isEmpty() },
+    ) + rule(sources)
+}
+
+// The Kotlin plugin's ABI check task, which compares each target's ABI with the dumps under api/. The
+// plugin creates it only in a module that calls abiValidation(), so it existing means validation is on.
+val abiCheckTask = "checkKotlinAbi"
+
 // The gate rules run against fixtures, and the gates checked to cover the modules the 2.0 split adds.
 tasks.register("checkBuildGateRules") {
     group = lintGroup
@@ -780,6 +1001,12 @@ tasks.register("checkBuildGateRules") {
                 ?.get()
                 ?.map { it.asFile.canonicalFile }
                 .orEmpty()
+        }
+    val apiSourceDirs = publishedModules.map { layout.projectDirectory.dir(it).asFile }
+    val abiValidation =
+        provider {
+            publishedModules.associateWith { abiCheckTask in project(":$it").tasks.names } to
+                publishedModules.associateWith { project(":$it").tasks.findByName(abiCheckTask)?.group }
         }
     val stabilityConfig = layout.projectDirectory.file("cameraK/compose-stability.conf").asFile
     val sampleXcodeProject = layout.projectDirectory.file("iosApp/iosApp.xcodeproj/project.pbxproj").asFile
@@ -1092,6 +1319,66 @@ tasks.register("checkBuildGateRules") {
                             relocationPoms.get(),
                             relocationModuleMetadata.get(),
                         )
+                },
+                "public_data_class_fails_lint" to {
+                    apiRuleCase(
+                        ::publicDataClassProblems,
+                        planted = "public data class Planted(public val a: Int)",
+                        kept = "public class Kept(public val a: Int)",
+                        sources = publishedApiDeclarations(apiSourceDirs),
+                    )
+                },
+                "public_channel_fails_lint" to {
+                    apiRuleCase(
+                        ::publicChannelProblems,
+                        planted =
+                            "public class Planted {\n    public fun events(\n        a: Int,\n" +
+                                "    ): ReceiveChannel<Int> = TODO()\n}",
+                        kept = "public class Kept {\n    private val events = Channel<Int>()\n}",
+                        sources = publishedApiDeclarations(apiSourceDirs),
+                    )
+                },
+                "public_mutable_flow_fails_lint" to {
+                    apiRuleCase(
+                        ::publicMutableFlowProblems,
+                        planted = "public class Planted(public val state: MutableStateFlow<Int>)",
+                        kept =
+                            "public class Kept {\n" +
+                                "    internal val state: MutableStateFlow<Int> = MutableStateFlow(0)\n}",
+                        sources = publishedApiDeclarations(apiSourceDirs),
+                    )
+                },
+                "public_sealed_or_enum_without_classification_fails_lint" to {
+                    apiRuleCase(
+                        ::unclassifiedHierarchyProblems,
+                        planted = "/** The planted modes. */\npublic enum class Planted { A, B }",
+                        kept =
+                            "/** Closed: the kept modes. A new one waits for a major release. */\n" +
+                                "public enum class Kept { A, B }",
+                        sources = publishedApiDeclarations(apiSourceDirs),
+                    )
+                },
+                "unreviewed_abi_change_fails" to {
+                    val everyModule = publishedModules.associateWith { true }
+                    val inLint = publishedModules.associateWith { lintGroup }
+                    val correct = abiValidationProblems(publishedModules, everyModule, inLint)
+                    val (enabled, groups) = abiValidation.get()
+                    listOfNotNull(
+                        "every module validating its ABI in the lint group is rejected: $correct"
+                            .takeIf { correct.isNotEmpty() },
+                        "a module left out of ABI validation is accepted".takeIf {
+                            abiValidationProblems(publishedModules, everyModule + ("cameraK-testing" to false), inLint)
+                                .isEmpty()
+                        },
+                        "a module whose ABI check is outside the lint group is accepted".takeIf {
+                            abiValidationProblems(publishedModules, everyModule, inLint + ("cameraK" to "verification"))
+                                .isEmpty()
+                        },
+                        "a module with no ABI check task is accepted".takeIf {
+                            abiValidationProblems(publishedModules, everyModule, inLint + ("ocrPlugin" to null))
+                                .isEmpty()
+                        },
+                    ) + abiValidationProblems(publishedModules, enabled, groups)
                 },
                 "sample_target_runs_the_sample_tests" to {
                     // The Sample's own tests (its commonTest and desktopTest) run under the sample target,
