@@ -268,11 +268,7 @@ private fun CameraScreen(
             onFlashToggle = { scope.launch { holder.cycleFlashMode() } },
             onTorchToggle = { scope.launch { holder.toggleTorch() } },
             onAspectRatioCycle = {
-                if (!isRecording) {
-                    val entries = AspectRatio.entries
-                    val next = entries[(entries.indexOf(aspectRatio) + 1) % entries.size]
-                    onAspectRatioChange(next)
-                }
+                if (!isRecording) onAspectRatioChange(aspectRatio.nextInSample())
             },
         )
 
@@ -503,8 +499,12 @@ internal fun rememberCameraScreenChoices(): MutableState<CameraScreenChoices> =
 internal fun CameraScreenChoices.shownMode(recordingLive: Boolean): CameraMode =
     if (recordingLive) CameraMode.Video else mode
 
+// RATIO_9_16 is deprecated as the same as RATIO_16_9, so the Sample does not offer it.
+private val sampleAspectRatios = listOf(AspectRatio.RATIO_4_3, AspectRatio.RATIO_16_9, AspectRatio.RATIO_1_1)
+
 /** The ratio the aspect-ratio button selects after this one. */
-internal fun AspectRatio.nextInSample(): AspectRatio = TODO("w11 integration red stub")
+internal fun AspectRatio.nextInSample(): AspectRatio =
+    sampleAspectRatios.firstOrNull { it.ordinal > ordinal } ?: sampleAspectRatios.first()
 
 /** The holder's capture, as the Sample's photo button uses it. */
 internal interface SampleCapturer {
