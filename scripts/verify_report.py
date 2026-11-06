@@ -225,12 +225,17 @@ def lint_check_list(start: float) -> tuple[list[str], str | None]:
 
 
 PUBLISHED_COORDINATES_FILE = ROOT / "build" / "verify" / "published-coordinates.json"
+# Every published library ships these variants beside its root artifact, each as <artifact>-<target>.
+# The list is fixed here rather than read from the build, so a module that drops a target fails the
+# publish step instead of quietly expecting less.
+PUBLISHED_TARGETS = ("android", "desktop", "iosarm64", "iossimulatorarm64")
 
 
 def publish_problems(repo: Path, expected: dict) -> list[str]:
     """The coordinates the publish step should have written to [repo] and did not: each module's root
-    artifact and one per Kotlin target (.module and .pom), the BOM's root, and each relocation POM,
-    which must relocate to its 2.0 id."""
+    artifact and one per PUBLISHED_TARGETS entry (.module and .pom), the BOM's root, and each relocation
+    POM, which must relocate to the 2.0 coordinate (group, artifact id and version). A module whose
+    targets in the build's model differ from PUBLISHED_TARGETS is reported too."""
     group_dir = repo.joinpath(*expected["group"].split("."))
     version = expected["version"]
     problems: list[str] = []
@@ -242,8 +247,10 @@ def publish_problems(repo: Path, expected: dict) -> list[str]:
                 problems.append(f"{expected['group']}:{artifact}:{version} has no .{extension}")
 
     for artifact, targets in sorted(expected["modules"].items()):
+        if sorted(targets) != sorted(PUBLISHED_TARGETS):
+            problems.append(f"{artifact} builds the targets {sorted(targets)}, not {list(PUBLISHED_TARGETS)}")
         require(artifact, ("module", "pom"))
-        for target in targets:
+        for target in PUBLISHED_TARGETS:
             require(f"{artifact}-{target}", ("module", "pom"))
     require(expected["bom"], ("module", "pom"))
     for old_id, new_id in sorted(expected["relocations"].items()):
@@ -258,10 +265,16 @@ def publish_problems(repo: Path, expected: dict) -> list[str]:
             continue
         ns = {"m": root.tag[1:].split("}")[0]} if root.tag.startswith("{") else {}
         prefix = "m:" if ns else ""
-        relocated = root.find(f"{prefix}distributionManagement/{prefix}relocation/{prefix}artifactId", ns)
-        if relocated is None or (relocated.text or "").strip() != new_id:
-            found = "nothing" if relocated is None else (relocated.text or "").strip()
-            problems.append(f"{old_id}'s POM relocates to {found}, not {new_id}")
+        relocation = root.find(f"{prefix}distributionManagement/{prefix}relocation", ns)
+
+        def relocated(field: str) -> str:
+            element = None if relocation is None else relocation.find(f"{prefix}{field}", ns)
+            return "" if element is None else (element.text or "").strip()
+
+        found = ":".join(relocated(field) for field in ("groupId", "artifactId", "version"))
+        wanted = f"{expected['group']}:{new_id}:{version}"
+        if found != wanted:
+            problems.append(f"{old_id}'s POM relocates to {found if relocation is not None else 'nothing'}, not {wanted}")
     return problems
 
 

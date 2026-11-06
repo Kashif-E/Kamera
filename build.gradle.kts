@@ -212,9 +212,10 @@ if (verifyPublishRepository != null) {
     }
 }
 
-// What the publish step must find: each published module's root artifact and one artifact per Kotlin
-// target (its name lowercased, as the Kotlin plugin names the variant's artifact id), the BOM's root,
-// and each relocation POM with the id it relocates to.
+// What the publish step must find: each published module's root artifact, the BOM's root, and each
+// relocation POM with the coordinate it relocates to. Each module's Kotlin targets (lowercased, as the
+// Kotlin plugin names the variant's artifact id) are listed so verify_report.py can compare them with its
+// own fixed list of variants, which is what it requires.
 fun expectedPublishedCoordinates(): Map<String, Any> {
     val modules =
         publishedModules.associate { module ->
