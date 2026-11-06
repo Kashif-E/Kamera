@@ -40,6 +40,13 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
         }
 
+        val desktopTest by getting {
+            dependencies {
+                // Skiko natives for the host: SaverDeprecationHintTest composes the 1.x remember hint.
+                implementation(compose.desktop.currentOs)
+            }
+        }
+
         androidUnitTest.dependencies {
             implementation(libs.junit)
             implementation(libs.robolectric)
