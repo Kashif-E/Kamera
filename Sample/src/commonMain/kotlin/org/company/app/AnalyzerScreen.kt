@@ -8,11 +8,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.kashif.analyzerplugin.AnalyzerConfig
 import com.kashif.analyzerplugin.AnalyzerPlugin
+import com.kashif.analyzerplugin.EncodedFrame
 import com.kashif.analyzerplugin.rememberAnalyzerPlugin
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 
 /** The Sample's frame analyzer, feeding the TFLite object detector where the platform has one. */
-internal class AnalyzerFeature(val plugin: AnalyzerPlugin)
+internal class AnalyzerFeature(val plugin: AnalyzerPlugin, private val frames: Flow<EncodedFrame> = plugin.results) {
+    val summary: StateFlow<AnalyzedFrameSummary?> get() = TODO("x-sample red stub")
+
+    suspend fun summarize(): Unit = TODO("x-sample red stub")
+}
+
+internal data class AnalyzedFrameSummary(val frames: Int, val width: Int, val height: Int, val jpegBytes: Int)
 
 // Object detection wants a steadier stream than the analyzer's default of one frame a second.
 private val SampleAnalyzerConfig = AnalyzerConfig { maxFps = 5f }

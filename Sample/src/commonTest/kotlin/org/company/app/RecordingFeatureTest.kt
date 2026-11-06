@@ -11,6 +11,7 @@ import com.kashif.cameraK.recording.RecordingState
 import com.kashif.cameraK.recording.elapsed
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -177,6 +178,36 @@ class RecordingFeatureTest {
             "a finished recording's last tick stayed on screen",
         )
         assertEquals(0L, RecordingState.Idle.shownDurationMs(lastTick))
+    }
+
+    // The Sample logs through CameraKLogger, as an app would, and a log line never names the file.
+    @Test
+    fun aRecordingsStartAndSaveAreLoggedWithoutItsPath() = runTest {
+        val logged = mutableListOf<Triple<CameraKLogger.Level, String, String>>()
+        val wasEnabled = CameraKLogger.enabled
+        val oldSink = CameraKLogger.sink
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { level, tag, message, _ -> logged += Triple(level, tag, message) }
+        try {
+            val recorder = FakeRecorder(this)
+            val (recording, _) = started(recorder)
+
+            recording.toggleRecording()
+            recording.toggleRecording()
+            runCurrent()
+        } finally {
+            CameraKLogger.enabled = wasEnabled
+            CameraKLogger.sink = oldSink
+        }
+
+        assertEquals(
+            listOf(
+                Triple(CameraKLogger.Level.DEBUG, "Sample", "Recording started"),
+                Triple(CameraKLogger.Level.DEBUG, "Sample", "Recording saved"),
+            ),
+            logged,
+        )
+        assertTrue(logged.none { "/fake/" in it.third }, "a log line names the recording's file: $logged")
     }
 
     @Test

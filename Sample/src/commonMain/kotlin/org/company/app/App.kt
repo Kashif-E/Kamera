@@ -52,3 +52,7 @@ fun App() = AppTheme {
         }
     }
 }
+
+internal fun samplePermissions(autoSave: Boolean): List<CameraKPermission> = TODO("x-sample red stub")
+
+internal fun permissionNotice(results: Map<CameraKPermission, PermissionStatus>): String? = TODO("x-sample red stub")
