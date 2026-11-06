@@ -1,4 +1,4 @@
-package com.kashif.analyzerPlugin
+package com.kashif.analyzerplugin
 
 /**
  * How the analyzer encodes frames, built with [AnalyzerConfig]. Compares by value.

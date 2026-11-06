@@ -1,4 +1,4 @@
-package com.kashif.analyzerPlugin
+package com.kashif.analyzerplugin
 
 import android.graphics.BitmapFactory
 import android.graphics.Color

@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalForeignApi::class, ExperimentalCoroutinesApi::class)
 
-package com.kashif.analyzerPlugin
+package com.kashif.analyzerplugin
 
 import com.kashif.cameraK.frames.pixelBuffer
 import com.kashif.cameraK.state.CameraKState

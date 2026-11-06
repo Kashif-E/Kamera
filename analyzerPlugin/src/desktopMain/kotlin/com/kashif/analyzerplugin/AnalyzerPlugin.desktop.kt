@@ -1,4 +1,4 @@
-package com.kashif.analyzerPlugin
+package com.kashif.analyzerplugin
 
 import com.kashif.cameraK.frames.CameraFrame
 import java.awt.RenderingHints

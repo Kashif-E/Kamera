@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalCoroutinesApi::class)
 
-package com.kashif.analyzerPlugin
+package com.kashif.analyzerplugin
 
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError

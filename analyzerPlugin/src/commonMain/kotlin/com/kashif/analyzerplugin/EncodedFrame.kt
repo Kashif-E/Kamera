@@ -1,4 +1,4 @@
-package com.kashif.analyzerPlugin
+package com.kashif.analyzerplugin
 
 import dev.drewhamilton.poko.Poko
 

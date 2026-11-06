@@ -1,4 +1,4 @@
-package com.kashif.analyzerPlugin
+package com.kashif.analyzerplugin
 
 import com.kashif.cameraK.testing.TestFrame
 import java.awt.image.BufferedImage

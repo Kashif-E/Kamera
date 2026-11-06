@@ -6,9 +6,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.kashif.analyzerPlugin.AnalyzerConfig
-import com.kashif.analyzerPlugin.AnalyzerPlugin
-import com.kashif.analyzerPlugin.rememberAnalyzerPlugin
+import com.kashif.analyzerplugin.AnalyzerConfig
+import com.kashif.analyzerplugin.AnalyzerPlugin
+import com.kashif.analyzerplugin.rememberAnalyzerPlugin
 import kotlinx.coroutines.CoroutineScope
 
 /** The Sample's frame analyzer, feeding the TFLite object detector where the platform has one. */

@@ -1,4 +1,4 @@
-package com.kashif.analyzerPlugin
+package com.kashif.analyzerplugin
 
 import java.io.File
 import java.lang.reflect.Modifier
@@ -14,10 +14,10 @@ import kotlin.test.assertTrue
 class LegacyPluginSurfaceGoneTest {
     @Test
     fun removedSymbolsAreAbsent() {
-        val classes = classesIn("com.kashif.analyzerPlugin")
+        val classes = classesIn("com.kashif.analyzerplugin")
         assertTrue(
             classes.any {
-                it.name == "com.kashif.analyzerPlugin.AnalyzerPlugin"
+                it.name == "com.kashif.analyzerplugin.AnalyzerPlugin"
             },
             "no plugin class found in $classes",
         )

@@ -1,4 +1,4 @@
-package com.kashif.analyzerPlugin
+package com.kashif.analyzerplugin
 
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -70,7 +70,7 @@ class AnalyzerFrameTest {
         }
         val encoder = CoreImageFrameEncoder(AnalyzerConfig(), renderer)
         // The frame source calls analyze on its own serial worker; this queue stands in for it.
-        val worker = dispatch_queue_create("com.kashif.analyzerPlugin.test.worker", null)
+        val worker = dispatch_queue_create("com.kashif.analyzerplugin.test.worker", null)
         val encoded = atomic<Result<EncodedFrame?>?>(null)
 
         val done = dispatch_semaphore_create(0)

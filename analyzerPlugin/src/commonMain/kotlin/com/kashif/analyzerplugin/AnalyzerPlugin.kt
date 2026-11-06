@@ -1,4 +1,4 @@
-package com.kashif.analyzerPlugin
+package com.kashif.analyzerplugin
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
