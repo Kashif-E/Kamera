@@ -47,6 +47,11 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      Each published module's Android namespace is one of its main sources'
                      packages or a parent of one, and no main source imports the JDK's or the
                      standard library's atomics: atomics are AtomicFU's.
+  release-gate       The release gate's device harness is built (design §12.4 B1): settings include
+                     :benchmark, verify.sh's android target compiles cameraK-core's instrumented
+                     sources, its sample target builds :benchmark against the Sample app, and the
+                     benchmark sources declare every RELEASE_GATE_BENCHMARKS method. Nothing in it
+                     runs on a device; the maintainer runs it at release.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -1215,6 +1220,110 @@ def check_module_sources() -> List[str]:
     )
 
 
+# ─── release-gate ───────────────────────────────────────────────────────────────────────────────
+
+# The release gate's benchmarks (design §12.4 B1), each Class.method in BENCHMARK_SOURCES. The device
+# checklist names the same five.
+RELEASE_GATE_BENCHMARKS = [
+    "BindCountBenchmark.exactlyOneBindToFirstFrame",
+    "BindCountBenchmark.zeroRebindsOnAnalyzerRegisterAndUnregister",
+    "TimeToFirstFrameBenchmark.againstBareCameraX",
+    "SquareCaptureBenchmark.shutterToFileWithAndWithoutTheSquareViewPort",
+    "VideoBindBenchmark.videoBindMainThreadTime",
+]
+BENCHMARK_SOURCES = "benchmark/src/main/kotlin/com/kashif/cameraK/benchmark"
+INSTRUMENTED_COMPILE = ":cameraK-core:compileDebugAndroidTestKotlinAndroid"
+BENCHMARK_BUILD = re.compile(r'":benchmark:(?:compile|assemble)[A-Za-z]*"')
+
+
+def braced_body(text: str, start: int) -> str:
+    """The text between the first `{` at or after [start] and its matching `}`; empty if unbalanced."""
+    opening = text.find("{", start)
+    if opening < 0:
+        return ""
+    depth = 0
+    for index in range(opening, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[opening + 1:index]
+    return ""
+
+
+def verify_target_blocks(build_text: str, target: str) -> List[str]:
+    """The bodies of every `if ("<target>" in targets)` block inside the root build's verifyTaskPaths."""
+    function = re.search(r"\bfun verifyTaskPaths\(", build_text)
+    if function is None:
+        return []
+    body = braced_body(build_text, build_text.find(")", function.end()))
+    return [braced_body(body, match.end()) for match in re.finditer(rf'\bif \("{target}" in targets\)', body)]
+
+
+def release_gate_problems(settings_text: str, build_text: str, sources: Dict[str, str]) -> List[str]:
+    """release_gate_harness_is_built: the release gate's device harness is in the build and compiled by
+    verify.sh, though only the maintainer runs it on a device (design §12.4 B1). [sources] maps each Kotlin
+    file under BENCHMARK_SOURCES to its text."""
+    problems = []
+    if ":benchmark" not in {":" + include.lstrip(":") for include in SETTINGS_INCLUDE.findall(settings_text)}:
+        problems.append("settings.gradle.kts does not include :benchmark, the release gate's Macrobenchmark module")
+    if not any(f'"{INSTRUMENTED_COMPILE}"' in block for block in verify_target_blocks(build_text, "android")):
+        problems.append(
+            f"verifyTaskPaths' android target does not compile {INSTRUMENTED_COMPILE}, the device contract subset"
+        )
+    if not any(BENCHMARK_BUILD.search(block) for block in verify_target_blocks(build_text, "sample")):
+        problems.append("verifyTaskPaths' sample target does not compile :benchmark against the Sample app")
+    for benchmark in RELEASE_GATE_BENCHMARKS:
+        name, method = benchmark.split(".")
+        declared = False
+        for text in sources.values():
+            declaration = re.search(rf"\bclass\s+{name}\b", text)
+            if declaration and re.search(rf"\bfun\s+{method}\s*\(", braced_body(text, declaration.end())):
+                declared = True
+        if not declared:
+            problems.append(f"no source under {BENCHMARK_SOURCES} declares {benchmark}")
+    return problems
+
+
+def check_release_gate() -> List[str]:
+    built_settings = 'include(":cameraK-core")\ninclude(":benchmark")\n'
+    built_build = (
+        "fun verifyTaskPaths(\n    targets: List<String>,\n): List<String> {\n"
+        '    modules.forEach { module ->\n        if ("android" in targets) {\n'
+        f'            if (module == "cameraK-core") paths += "{INSTRUMENTED_COMPILE}"\n'
+        "        }\n    }\n"
+        '    if ("sample" in targets) {\n        paths += listOf(":Sample:assembleDebug", ":benchmark:assembleBenchmark")\n'
+        "    }\n    return paths\n}\n"
+    )
+    built_sources = {
+        f"{BENCHMARK_SOURCES}/{name}.kt": f"class {name} {{\n"
+        + "".join(f"    @Test\n    fun {b.split('.')[1]}() = Unit\n" for b in RELEASE_GATE_BENCHMARKS if b.startswith(name + "."))
+        + "}\n"
+        for name in {b.split(".")[0] for b in RELEASE_GATE_BENCHMARKS}
+    }
+    if release_gate_problems(built_settings, built_build, built_sources):
+        raise CheckError("release_gate_harness_is_built rejects a fixture with the whole harness")
+    # Each task in the other target's block, one benchmark method missing, :benchmark left out of settings.
+    swapped_build = built_build.replace(INSTRUMENTED_COMPILE, "@").replace(":benchmark:assembleBenchmark", INSTRUMENTED_COMPILE)
+    swapped_build = swapped_build.replace('"@"', '":benchmark:assembleBenchmark"')
+    missing_method = dict(built_sources)
+    missing_method[f"{BENCHMARK_SOURCES}/VideoBindBenchmark.kt"] = "class VideoBindBenchmark {\n}\nfun videoBindMainThreadTime() = Unit\n"
+    found = release_gate_problems('include(":cameraK-core")\n', swapped_build, missing_method)
+    if len(found) != 4:
+        raise CheckError(f"release_gate_harness_is_built misjudges its fixture: {found}")
+    sources = {
+        path.relative_to(ROOT).as_posix(): path.read_text()
+        for path in tracked("*.kt")
+        if path.relative_to(ROOT).as_posix().startswith(BENCHMARK_SOURCES + "/")
+    }
+    return release_gate_problems(
+        (ROOT / "settings.gradle.kts").read_text(),
+        (ROOT / "build.gradle.kts").read_text(),
+        sources,
+    )
+
+
 POLICIES: Dict[str, Callable[[], List[str]]] = {
     "agent-permissions": check_agent_permissions,
     "security-policy": check_security_policy,
@@ -1224,6 +1333,7 @@ POLICIES: Dict[str, Callable[[], List[str]]] = {
     "native-settings": check_native_settings,
     "repository-links": check_repository_links,
     "module-sources": check_module_sources,
+    "release-gate": check_release_gate,
 }
 
 

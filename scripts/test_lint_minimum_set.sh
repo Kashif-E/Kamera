@@ -34,6 +34,7 @@ checks=(
     :checkNoLibraryFrameworks
     :checkPluginSources
     :checkPublishedVariants
+    :checkReleaseGateHarness
     :checkReleaseMetadata
     :checkReleaseWorkflow
     :checkRepositoryLinks

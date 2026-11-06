@@ -1724,6 +1724,12 @@ registerRepoPolicyCheck(
     "Fails if a tracked Kotlin source file lies outside every module settings.gradle.kts includes, " +
         "the iOS engine's internals are public, or an Android namespace is not one of its module's packages",
 )
+registerRepoPolicyCheck(
+    "checkReleaseGateHarness",
+    "release-gate",
+    "Fails unless the release gate's Macrobenchmark module and device contract subset are built and compiled " +
+        "by verify.sh",
+)
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
@@ -2530,6 +2536,7 @@ val requiredLintChecks =
         ":checkNoLibraryFrameworks",
         ":checkPluginSources",
         ":checkPublishedVariants",
+        ":checkReleaseGateHarness",
         ":checkReleaseMetadata",
         ":checkReleaseWorkflow",
         ":checkRepositoryLinks",
