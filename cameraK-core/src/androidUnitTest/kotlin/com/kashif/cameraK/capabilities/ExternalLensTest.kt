@@ -3,7 +3,13 @@ package com.kashif.cameraK.capabilities
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import androidx.camera.camera2.internal.Camera2CameraInfoImpl
+import androidx.camera.camera2.internal.compat.CameraManagerCompat
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.core.CameraInfo
 import androidx.test.core.app.ApplicationProvider
+import com.kashif.cameraK.controller.CameraSelectorResolver
+import com.kashif.cameraK.controller.toCameraSelector
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import org.junit.Before
@@ -14,6 +20,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowCameraCharacteristics
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 /**
@@ -60,6 +67,20 @@ class ExternalLensTest {
         val target = snapshot.deviceTypeTarget(CameraLens.BACK, CameraDeviceType.MACRO)
 
         assertNull(target?.info?.id, "a back MACRO switch targeted the external camera")
+    }
+
+    @Test
+    fun selectingTheExternalCameraById_selectsItAndNoBuiltInCamera() {
+        val resolver = CameraSelectorResolver { LensEnumerator.snapshot(context) }
+        val selector = assertNotNull(resolver.resolveId("5"), "the external camera's id did not resolve")
+            .toCameraSelector()
+        // The cameras as CameraX offers them, each read from the same Camera2 characteristics.
+        val cameraManager = CameraManagerCompat.from(context)
+        val offered: List<CameraInfo> = listOf("0", "1", "5").map { Camera2CameraInfoImpl(it, cameraManager) }
+
+        val selected = selector.filter(offered).map { Camera2CameraInfo.from(it).cameraId }
+
+        assertEquals(listOf("5"), selected, "selecting the external camera by id selected another camera")
     }
 
     private fun characteristics(
