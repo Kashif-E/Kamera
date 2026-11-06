@@ -127,14 +127,13 @@ Set the app's deployment target to iOS 16.0 or later. On an older system the cam
 
 ### Desktop (JVM)
 
-CameraK depends only on bytedeco's Java bindings (`javacv`, `javacpp`, `ffmpeg`, `videoinput`; the OCR plugin adds `tesseract` and `leptonica`), so your app chooses which operating systems' natives it ships. Either declare the classifier jars for each platform you ship:
+CameraK depends only on bytedeco's Java bindings (`javacv`, `javacpp`, `ffmpeg`, `videoinput`; the OCR plugin adds `tesseract` and `leptonica`), so your app chooses which operating systems' natives it ships. Windows captures through FFmpeg's dshow input, so it needs the `javacpp` and `ffmpeg` natives like the other platforms and no `videoinput` natives: CameraK does not load them. Either declare the classifier jars for each platform you ship:
 
 ```kotlin
 // desktopMain, one line per library and per platform (macosx-arm64, macosx-x86_64, linux-x86_64,
 // linux-arm64, windows-x86_64)
 runtimeOnly("org.bytedeco:javacpp:1.5.12:macosx-arm64")
 runtimeOnly("org.bytedeco:ffmpeg:7.1.1-1.5.12:macosx-arm64")
-runtimeOnly("org.bytedeco:videoinput:0.200-1.5.9:windows-x86_64")   // Windows camera capture
 runtimeOnly("org.bytedeco:tesseract:5.5.1-1.5.12:macosx-arm64")     // camerak-ocr only
 runtimeOnly("org.bytedeco:leptonica:1.85.0-1.5.12:macosx-arm64")    // camerak-ocr only
 ```
