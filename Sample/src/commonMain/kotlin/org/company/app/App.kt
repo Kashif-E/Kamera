@@ -63,14 +63,18 @@ fun App() = AppTheme {
 internal fun samplePermissions(autoSave: Boolean): List<CameraKPermission> =
     if (autoSave) listOf(CameraKPermission.CAMERA, CameraKPermission.GALLERY_ADD) else listOf(CameraKPermission.CAMERA)
 
-/** Whether the Sample shows the camera for this camera permission status. */
-internal fun cameraGranted(status: PermissionStatus?): Boolean = status == PermissionStatus.Granted
+/** Whether the Sample shows the camera for this camera permission status; Limited counts as granted. */
+internal fun cameraGranted(status: PermissionStatus?): Boolean =
+    status == PermissionStatus.Granted || status == PermissionStatus.Limited
 
-/** The line the screen shows when the camera was refused; a refused gallery only stops the saving. */
+/**
+ * The line the screen shows when the camera was refused; a refused gallery only stops the saving, and a
+ * camera not asked yet is no refusal.
+ */
 internal fun permissionNotice(results: Map<CameraKPermission, PermissionStatus>): String? =
     when (results[CameraKPermission.CAMERA]) {
-        null, PermissionStatus.Granted -> null
+        null, PermissionStatus.Granted, PermissionStatus.Limited, PermissionStatus.NotDetermined -> null
         PermissionStatus.PermanentlyDenied -> "Allow camera access in Settings"
         PermissionStatus.Restricted -> "Camera access is restricted on this device"
-        else -> "Camera access was denied"
+        is PermissionStatus.Denied -> "Camera access was denied"
     }
