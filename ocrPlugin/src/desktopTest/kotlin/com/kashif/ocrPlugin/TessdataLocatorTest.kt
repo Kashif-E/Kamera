@@ -1,5 +1,6 @@
 package com.kashif.ocrPlugin
 
+import com.kashif.cameraK.utils.CameraKLogger
 import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
@@ -16,6 +17,11 @@ import kotlin.test.assertNull
  * model verified against its pinned SHA-256 and extracted to a per-user directory, then
  * TESSDATA_PREFIX. It never reads this repository's source tree or the process working directory,
  * where anyone who can write a file would choose the model native Tesseract parses.
+ *
+ * The packaged model lives under the 2.0 package's lowercase directory. An app that packages it at
+ * the 1.x directory, `com/kashif/ocrPlugin/tessdata`, keeps working and is told once to move it. A
+ * map stands in for the classpath: a jar's entries are case-sensitive, while this machine's disk,
+ * where a directory classpath would live, is not.
  */
 class TessdataLocatorTest {
     private val root = Files.createTempDirectory("tessdata-locator").toFile()
@@ -111,6 +117,50 @@ class TessdataLocatorTest {
     }
 
     @Test
+    fun aModelPackagedAtThe2_0Path_isUsedWithoutAWarning() {
+        val warnings = capturingWarnings {
+            val found = findTessdataDirectory(sources(bundledModel = packagedAt(LOWERCASE_RESOURCE)))
+
+            assertNotNull(found, "a model packaged at $LOWERCASE_RESOURCE was not used")
+            assertContentEquals(MODEL, File(found, "eng.traineddata").readBytes())
+        }
+
+        assertEquals(emptyList(), warnings, "a model at the 2.0 path needs no warning")
+    }
+
+    @Test
+    fun aModelPackagedOnlyAtThe1xPath_isStillUsedAndWarnsOnce() {
+        val warnings = capturingWarnings {
+            val found = findTessdataDirectory(sources(bundledModel = packagedAt(LEGACY_RESOURCE)))
+
+            assertNotNull(found, "a model packaged at the 1.x path $LEGACY_RESOURCE was not used")
+            assertContentEquals(MODEL, File(found, "eng.traineddata").readBytes())
+        }
+
+        assertEquals(1, warnings.size, "one warning to move the model, got $warnings")
+    }
+
+    @Test
+    fun aModelPackagedAtBothPaths_isReadFromThe2_0Path() {
+        val opened = mutableListOf<String>()
+        val resources = mapOf(LOWERCASE_RESOURCE to MODEL, LEGACY_RESOURCE to PLANTED_MODEL)
+
+        val warnings = capturingWarnings {
+            val found = findTessdataDirectory(
+                sources(
+                    bundledModel = BundledModel(sha256(MODEL)) {
+                        openBundledModel { path -> resources[path]?.also { opened += path }?.inputStream() }
+                    },
+                ),
+            )
+            assertNotNull(found, "the model at the 2.0 path was not used")
+        }
+
+        assertEquals(listOf(LOWERCASE_RESOURCE), opened)
+        assertEquals(emptyList(), warnings)
+    }
+
+    @Test
     fun noSource_findsNothing() {
         assertNull(findTessdataDirectory(sources()))
     }
@@ -120,6 +170,23 @@ class TessdataLocatorTest {
         bundledModel: BundledModel? = null,
         environment: Map<String, String> = emptyMap(),
     ) = TessdataSources(explicitPath, bundledModel, cacheDir, environment::get)
+
+    private fun packagedAt(resource: String) =
+        BundledModel(sha256(MODEL)) { openBundledModel { path -> if (path == resource) MODEL.inputStream() else null } }
+
+    // The warnings logged while [block] runs.
+    private fun capturingWarnings(block: () -> Unit): List<String> {
+        val warnings = mutableListOf<String>()
+        CameraKLogger.enabled = true
+        CameraKLogger.sink = { level, _, message, _ -> if (level == CameraKLogger.Level.WARN) warnings += message }
+        try {
+            block()
+        } finally {
+            CameraKLogger.sink = null
+            CameraKLogger.enabled = false
+        }
+        return warnings
+    }
 
     private fun bundled(bytes: ByteArray) = BundledModel(sha256 = sha256(bytes), open = { bytes.inputStream() })
 
@@ -136,6 +203,8 @@ class TessdataLocatorTest {
     private companion object {
         val MODEL = ByteArray(4096) { (it * 31 % 251).toByte() }
         val PLANTED_MODEL = "planted".encodeToByteArray()
+        const val LOWERCASE_RESOURCE = "/com/kashif/ocrplugin/tessdata/eng.traineddata"
+        const val LEGACY_RESOURCE = "/com/kashif/ocrPlugin/tessdata/eng.traineddata"
 
         fun sha256(bytes: ByteArray): String =
             MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
