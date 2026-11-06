@@ -88,8 +88,10 @@ class CustomCameraController(
                 captureSession = AVCaptureSession()
                 captureSession?.beginConfiguration()
 
+                val resolutionPreset = targetResolutionPreset()
+
                 // Start with a fast preset; prefer target resolution if provided
-                val initialPreset = targetResolution?.toPreset() ?: AVCaptureSessionPresetHigh
+                val initialPreset = resolutionPreset ?: AVCaptureSessionPresetHigh
                 captureSession?.sessionPreset = initialPreset
 
                 if (!setupInputs(cameraDeviceType)) {
@@ -106,7 +108,7 @@ class CustomCameraController(
                 // Switch to target resolution/aspect ratio preset on main queue once initial setup completes
                 dispatch_async(dispatch_get_main_queue()) {
                     captureSession?.beginConfiguration()
-                    val finalPreset = targetResolution?.toPreset() ?: aspectRatio.toSessionPreset()
+                    val finalPreset = resolutionPreset ?: aspectRatio.toSessionPreset()
                     captureSession?.sessionPreset = finalPreset
                     captureSession?.commitConfiguration()
                     captureSession?.commitConfiguration()
@@ -119,12 +121,35 @@ class CustomCameraController(
         }
     }
 
+    /**
+     * The session preset for [targetResolution], or null to use [aspectRatio]'s own preset.
+     *
+     * The aspect ratio is the primary constraint, as on Android (#136). Every size-specific preset
+     * AVFoundation offers is 16:9, so a target resolution can only choose among them when a 16:9 or
+     * 9:16 ratio is configured. For 4:3 and 1:1 it is ignored with a warning, instead of silently
+     * replacing the requested field of view with a narrower 16:9 one (#161).
+     */
+    private fun targetResolutionPreset(): String? {
+        val target = targetResolution ?: return null
+        if (aspectRatio != AspectRatio.RATIO_16_9 && aspectRatio != AspectRatio.RATIO_9_16) {
+            CameraKLogger.w(
+                "CameraK",
+                "targetResolution ${target.first}x${target.second} ignored on iOS: its session presets are " +
+                    "all 16:9, which would override aspectRatio $aspectRatio",
+            )
+            return null
+        }
+        return target.toPreset()
+    }
+
     private fun Pair<Int, Int>.toPreset(): String? {
-        val (w, h) = this
+        // Compare long and short edges, so a portrait target (e.g. 1080x1920 for RATIO_9_16) matches too.
+        val long = maxOf(first, second)
+        val short = minOf(first, second)
         return when {
-            w >= 3840 && h >= 2160 -> AVCaptureSessionPreset3840x2160
-            w >= 1920 && h >= 1080 -> AVCaptureSessionPreset1920x1080
-            w >= 1280 && h >= 720 -> AVCaptureSessionPreset1280x720
+            long >= 3840 && short >= 2160 -> AVCaptureSessionPreset3840x2160
+            long >= 1920 && short >= 1080 -> AVCaptureSessionPreset1920x1080
+            long >= 1280 && short >= 720 -> AVCaptureSessionPreset1280x720
             else -> null
         }
     }

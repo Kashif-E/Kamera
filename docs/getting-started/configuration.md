@@ -98,6 +98,8 @@ config = CameraConfiguration(
 
 **Note:** If device doesn't support exact resolution, closest match is used.
 
+**iOS:** the aspect ratio always wins. AVFoundation's size presets are all 16:9, so `targetResolution` only applies with `RATIO_16_9` or `RATIO_9_16`; with `RATIO_4_3` or `RATIO_1_1` it is ignored (a warning is logged) and the ratio's own preset is used.
+
 ## Flash Mode
 
 Control flash behavior:
