@@ -130,7 +130,8 @@ both referenced from the `<application>` element:
 An app that already has these files adds the `<exclude>` lines to them. `android:allowBackup="false"`
 turns backup off for the whole app.
 
-**Desktop.** CameraK sets nothing; `~/Documents/CameraK` is in whatever backup the user runs.
+**Desktop.** CameraK sets nothing. Captures in `~/Documents/CameraK` and recordings in `~/Movies/CameraK` on
+macOS or `~/Videos/CameraK` elsewhere are in whatever backup the user runs.
 
 ## Video
 
