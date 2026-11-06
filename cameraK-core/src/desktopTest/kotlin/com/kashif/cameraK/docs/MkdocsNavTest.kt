@@ -8,8 +8,9 @@ import kotlin.test.assertTrue
 /**
  * mkdocs.yml's `nav` and the pages under docs/ agree: every page the nav names exists, which
  * `mkdocs build --strict` in CI's docs workflow needs, and every page is in the nav or listed in
- * `not_in_nav`, so no page is published unreachable by accident. docs/superpowers/ (design notes)
- * is not a site page and is not read.
+ * `not_in_nav`, so no page is published unreachable by accident. The theme's logo and favicon,
+ * which `--strict` does not check, are files under docs/. docs/superpowers/ (design notes) is not a
+ * site page and is not read.
  */
 class MkdocsNavTest {
     @Test
@@ -57,7 +58,39 @@ class MkdocsNavTest {
         )
     }
 
+    @Test
+    fun theThemeLogoAndFaviconAreFilesUnderDocs() {
+        val root = DocsSources.repoRoot
+        val assets = MkdocsNav.themeAssets(File(root, "mkdocs.yml").readText())
+        assertTrue(assets.isNotEmpty(), "read no logo or favicon from mkdocs.yml's theme")
+        val missing = assets.filterNot { (_, path) -> File(root, "docs/$path").isFile }
+            .map { (key, path) -> "theme.$key names docs/$path, which does not exist" }
+        assertTrue(missing.isEmpty(), "mkdocs.yml's theme names missing files:\n${missing.joinToString("\n")}")
+    }
+
+    @Test
+    fun themeAssetsReadsTheThemesOwnLogoAndFaviconOnly() {
+        assertEquals(
+            listOf("logo" to "assets/logo.png", "favicon" to "assets/favicon.ico"),
+            MkdocsNav.themeAssets(THEME_FIXTURE),
+        )
+    }
+
     private companion object {
+        val THEME_FIXTURE = """
+            site_name: Fixture
+            theme:
+              name: material
+              logo: assets/logo.png
+              favicon: "assets/favicon.ico"
+              icon:
+                logo: material/camera
+              palette:
+                - scheme: default
+            extra:
+              logo: assets/other.png
+        """.trimIndent()
+
         val FIXTURE = """
             site_name: Fixture
             not_in_nav: |
@@ -96,6 +129,19 @@ internal object MkdocsNav {
             .filterNot { page -> page in nav || excluded.any { matches(it, page) } }
             .map { "docs/$it is in neither mkdocs.yml's nav nor its not_in_nav" }
         return missing + unlisted
+    }
+
+    /**
+     * The theme's `logo` and `favicon` file paths, by path from docs/, as (key, path). The keys of
+     * the theme's own level only: `icon.logo` names an icon, not a file.
+     */
+    fun themeAssets(mkdocs: String): List<Pair<String, String>> {
+        val theme = block(mkdocs, "theme").filter(String::isNotBlank)
+        val indent = theme.firstOrNull()?.takeWhile(Char::isWhitespace) ?: return emptyList()
+        return theme.mapNotNull { line ->
+            Regex("""^${Regex.escape(indent)}(logo|favicon):\s*(\S+)\s*$""").matchEntire(line)
+                ?.let { it.groupValues[1] to it.groupValues[2].trim('"', '\'') }
+        }
     }
 
     /** The indented lines under the top-level [key], up to the next top-level key. */
