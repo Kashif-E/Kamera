@@ -122,6 +122,11 @@ before committing. CI runs on Apple silicon macOS, which is what the file covers
 desktop tests' bytedeco natives and the Kotlin/Native toolchain differ, so run the first command there
 and do not commit the result.
 
+The release entries come from a `--dry-run`, which resolves what signing needs but runs no task, so
+nothing has yet checked them against a real upload. The maintainer's first signed
+`UploadLibToCentral` run is that check: if it fails dependency verification, regenerate the file from
+that run's task set and commit it before tagging again.
+
 ## Releasing
 
 A release is a pushed tag named `v` plus the `VERSION_NAME` in `gradle.properties` (for 2.0, `v2.0`).
