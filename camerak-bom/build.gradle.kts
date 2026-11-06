@@ -2,5 +2,5 @@
 // for each published module, so the list lives in one place (publishedModules in the root build).
 plugins {
     `java-platform`
-    alias(libs.plugins.vanniktech.publish)
+    id("camerak.publish")
 }

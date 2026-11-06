@@ -1,23 +1,12 @@
 plugins {
-    alias(libs.plugins.multiplatform)
-    alias(libs.plugins.android.library)
+    id("camerak.kmp-library")
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.vanniktech.publish)
-    alias(libs.plugins.dokka)
+    id("camerak.publish")
     alias(libs.plugins.poko)
 }
 
 kotlin {
-    jvmToolchain(17)
-    androidTarget {
-        publishLibraryVariants("release")
-    }
-
-    jvm("desktop")
-    iosArm64()
-    iosSimulatorArm64()
-
     sourceSets {
         val desktopMain by getting {
             dependencies {
@@ -80,28 +69,6 @@ tasks.named<Test>("desktopTest") {
 
 android {
     namespace = "com.kashif.ocrplugin"
-    compileSdk =
-        libs.versions.android.compileSdk
-            .get()
-            .toInt()
-
-    defaultConfig {
-        minSdk =
-            libs.versions.android.minSdk
-                .get()
-                .toInt()
-    }
-
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
-
-    publishing {
-        singleVariant("release") {
-            withJavadocJar()
-            withSourcesJar()
-        }
-    }
 }
 
 // The @sample functions the KDoc names. Only commonMain gets them: Dokka refuses two source sets that

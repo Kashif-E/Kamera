@@ -1,22 +1,11 @@
 plugins {
-    alias(libs.plugins.multiplatform)
-    alias(libs.plugins.android.library)
+    id("camerak.kmp-library")
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.vanniktech.publish)
-    alias(libs.plugins.dokka)
+    id("camerak.publish")
 }
 
 kotlin {
-    jvmToolchain(17)
-    androidTarget {
-        publishLibraryVariants("release")
-    }
-    jvm("desktop")
-
-    iosArm64()
-    iosSimulatorArm64()
-
     sourceSets {
         commonMain.dependencies {
             // Coroutines, CameraX and the JavaCV bindings come through camerak-core.
@@ -77,28 +66,6 @@ android {
     // Not com.kashif.cameraK: that is camerak-core's, and two libraries in one app may not share a
     // namespace. It names only the generated R class; no Kotlin package changes.
     namespace = "com.kashif.cameraK.compose"
-    compileSdk =
-        libs.versions.android.compileSdk
-            .get()
-            .toInt()
-
-    defaultConfig {
-        minSdk =
-            libs.versions.android.minSdk
-                .get()
-                .toInt()
-    }
-
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
-
-    publishing {
-        singleVariant("release") {
-            withJavadocJar()
-            withSourcesJar()
-        }
-    }
 }
 
 // The Compose compiler's stability reports, which checkComposableStability reads. The compiler writes

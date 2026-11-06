@@ -90,6 +90,15 @@ scripts/verify.sh --record-screenshots
 When a comparison fails, the actual render and a diff are written to
 `cameraK/build/reports/screenshots-desktop/` and `cameraKScreenshotTests/build/paparazzi/failures/`.
 
+**Module build files.** The setup every published module shares lives once, in the convention
+plugins of the `build-logic/` included build: `camerak.kmp-library` (the four targets, Java 17,
+explicit API mode, ABI validation, `compileSdk`/`minSdk` from the catalog, Dokka),
+`camerak.publish` (vanniktech maven-publish, which reads the POM and signing settings from
+`gradle.properties`) and `camerak.relocation` (the POM-only 1.x artifact ids). A module's own build
+file keeps its dependencies and its Android namespace. The lint target rejects a published build file
+that sets `jvmToolchain`, `compileSdk`, `minSdk` or a Kotlin target, or applies the publish plugin
+itself (`checkCatalogHygiene`).
+
 **Public API and ABI dumps.** Every published module is compiled in explicit API mode, so each
 declaration states its visibility, and checks its ABI against the dumps committed under its `api/`
 directory (`api/android/*.api`, `api/desktop/*.api`, `api/*.klib.api`). Each `checkKotlinAbi` runs in

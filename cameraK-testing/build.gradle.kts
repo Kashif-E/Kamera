@@ -1,22 +1,11 @@
 // camerak-testing: fakes and coroutine test helpers for apps' tests. Published, and meant for test
 // source sets only: FakeCameraEngine, FakeFrameSource, FakePermissionChecker and the TestScope helpers.
 plugins {
-    alias(libs.plugins.multiplatform)
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.vanniktech.publish)
-    alias(libs.plugins.dokka)
+    id("camerak.kmp-library")
+    id("camerak.publish")
 }
 
 kotlin {
-    jvmToolchain(17)
-    androidTarget {
-        publishLibraryVariants("release")
-    }
-    jvm("desktop")
-
-    iosArm64()
-    iosSimulatorArm64()
-
     sourceSets {
         commonMain.dependencies {
             api(project(":cameraK-core"))
@@ -42,28 +31,6 @@ kotlin {
 
 android {
     namespace = "com.kashif.cameraK.testing"
-    compileSdk =
-        libs.versions.android.compileSdk
-            .get()
-            .toInt()
-
-    defaultConfig {
-        minSdk =
-            libs.versions.android.minSdk
-                .get()
-                .toInt()
-    }
-
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
-
-    publishing {
-        singleVariant("release") {
-            withJavadocJar()
-            withSourcesJar()
-        }
-    }
 }
 
 // The @sample functions the KDoc names live in the desktop tests (com.kashif.cameraK.samples). Only

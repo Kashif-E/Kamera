@@ -1,22 +1,11 @@
 plugins {
-    alias(libs.plugins.multiplatform)
-    alias(libs.plugins.android.library)
+    id("camerak.kmp-library")
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.vanniktech.publish)
-    alias(libs.plugins.dokka)
+    id("camerak.publish")
 }
 
 kotlin {
-    jvmToolchain(17)
-    androidTarget {
-        publishLibraryVariants("release")
-    }
-
-    jvm("desktop")
-    iosArm64()
-    iosSimulatorArm64()
-
     // Android and desktop share one ZXing decoder: jvmMain sits between commonMain and the two JVM targets.
     @OptIn(org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi::class)
     applyDefaultHierarchyTemplate {
@@ -66,28 +55,6 @@ kotlin {
 
 android {
     namespace = "com.kashif.qrscannerplugin"
-    compileSdk =
-        libs.versions.android.compileSdk
-            .get()
-            .toInt()
-
-    defaultConfig {
-        minSdk =
-            libs.versions.android.minSdk
-                .get()
-                .toInt()
-    }
-
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
-
-    publishing {
-        singleVariant("release") {
-            withJavadocJar()
-            withSourcesJar()
-        }
-    }
 }
 
 // The @sample functions the KDoc names. Only commonMain gets them: Dokka refuses two source sets that

@@ -1,24 +1,16 @@
 // camerak-core: the camera without Compose. State holder, platform controllers, state and
 // configuration types, and the plugin interface. Compose UI is in camerak (:cameraK).
 plugins {
-    alias(libs.plugins.multiplatform)
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.vanniktech.publish)
-    alias(libs.plugins.dokka)
+    id("camerak.kmp-library")
+    id("camerak.publish")
     alias(libs.plugins.poko)
 }
 
 kotlin {
-    jvmToolchain(17)
-    androidTarget {
-        publishLibraryVariants("release")
-    }
-    jvm("desktop")
-
     // The os_signpost shim behind the iOS engine's Tracer: the signpost calls are C macros, so Kotlin
     // reaches them through the static wrappers in the .def.
-    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
-        target.compilations.getByName("main").cinterops.create("signpost") {
+    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
+        compilations.getByName("main").cinterops.create("signpost") {
             definitionFile.set(project.file("src/nativeInterop/cinterop/signpost.def"))
         }
     }
@@ -112,28 +104,9 @@ kotlin {
 
 android {
     namespace = "com.kashif.cameraK"
-    compileSdk =
-        libs.versions.android.compileSdk
-            .get()
-            .toInt()
 
     defaultConfig {
-        minSdk =
-            libs.versions.android.minSdk
-                .get()
-                .toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
-
-    publishing {
-        singleVariant("release") {
-            withJavadocJar()
-            withSourcesJar()
-        }
     }
 }
 

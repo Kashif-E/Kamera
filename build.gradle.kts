@@ -67,32 +67,9 @@ tasks.named("spotlessCheck") { group = lintGroup }
 
 val bomModule = "camerak-bom"
 
-// Every published module states the visibility of each declaration (explicit API mode), and checks its
-// public ABI against the dumps committed under its api/ directory: a JVM dump per JVM target and one klib
-// dump for the native targets. checkKotlinAbi runs in the lint target; after a reviewed change,
-// ./gradlew updateKotlinAbi rewrites the dumps (CONTRIBUTING.md).
-subprojects {
-    if (name !in publishedModules) return@subprojects
-    plugins.withId("org.jetbrains.kotlin.multiplatform") {
-        extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension> {
-            explicitApi()
-            @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
-            abiValidation()
-        }
-        tasks.matching { it.name == "checkKotlinAbi" }.configureEach { group = lintGroup }
-    }
-}
-
-// Every published module's API docs (the javadoc jar verify.sh --full publishes, and the site) fail on
-// Dokka's warnings, so an unresolved @sample or link stops the build instead of scrolling past (CC-33).
-subprojects {
-    if (name !in publishedModules) return@subprojects
-    plugins.withId("org.jetbrains.dokka") {
-        extensions.configure<org.jetbrains.dokka.gradle.DokkaExtension> {
-            dokkaPublications.configureEach { failOnWarning.set(true) }
-        }
-    }
-}
+// The published modules' shared setup (targets, Java 17, explicit API mode, the ABI check, the SDK levels,
+// Dokka, publishing) is build-logic's convention plugins: camerak.kmp-library, camerak.publish and
+// camerak.relocation (scripts/check_repo_policy.py module_build_files_use_convention_plugins).
 
 // The 1.x artifact ids 2.0 renamed (design §9.4), each to the module whose POM_ARTIFACT_ID is its 2.0
 // id. Each old id is a POM-only project under relocations/ whose POM relocates it there, so a build
@@ -162,8 +139,8 @@ project(":$bomModule") {
         }
     }
 }
-// Each relocation project publishes a POM and nothing else: its <relocation> names the 2.0 coordinate, and
-// no Gradle module metadata is published beside it, because Gradle would read that instead of the POM.
+// Each relocation project publishes a POM and nothing else: its <relocation> names the 2.0 coordinate.
+// camerak.relocation publishes no Gradle module metadata beside it, because Gradle would read that instead.
 relocatedArtifacts.forEach { (oldId, module) ->
     val newId = pomArtifactId(module)
     relocationProject(oldId)?.run {
@@ -185,7 +162,6 @@ relocatedArtifacts.forEach { (oldId, module) ->
                 }
             }
         }
-        tasks.withType<GenerateModuleMetadata>().configureEach { enabled = false }
     }
 }
 
@@ -1241,8 +1217,18 @@ tasks.register("checkBuildGateRules") {
                 }
             }
         }
+    // The convention plugins configure Dokka for every published module, so their scripts are read too.
     val buildScriptTexts =
-        publishedModules.map { "$it/build.gradle.kts" }.associateWith { layout.projectDirectory.file(it).asFile }
+        (
+            publishedModules.map { "$it/build.gradle.kts" } +
+                layout.projectDirectory
+                    .dir("build-logic/src/main/kotlin")
+                    .asFile
+                    .listFiles { file -> file.name.endsWith(".gradle.kts") }
+                    .orEmpty()
+                    .map { "build-logic/src/main/kotlin/${it.name}" }
+                    .sorted()
+        ).associateWith { layout.projectDirectory.file(it).asFile }
     doLast {
         fun graphs(vararg entries: Pair<String, List<String>>) =
             publishedGraphs.associateWith { emptyList<String>() } + entries

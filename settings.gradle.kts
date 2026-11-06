@@ -2,6 +2,9 @@
 rootProject.name = "CameraCompose"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 pluginManagement {
+    // The convention plugins every published module applies (camerak.kmp-library, camerak.publish,
+    // camerak.relocation).
+    includeBuild("build-logic")
     repositories {
         google {
             content {
