@@ -285,8 +285,8 @@ public class CameraGrabber internal constructor(private val nanoClock: () -> Lon
     private fun missingNatives(e: LinkageError): Throwable = IllegalStateException(
         "CameraK could not load the bytedeco natives for ${System.getProperty("os.name")} " +
             "${System.getProperty("os.arch")}. Desktop apps supply them: add the javacpp and ffmpeg " +
-            "classifier jars (and videoinput on Windows) for each platform you ship, or the -platform " +
-            "artifacts. See docs/getting-started/installation.md.",
+            "classifier jars for each platform you ship, or the -platform artifacts. " +
+            "See docs/getting-started/installation.md.",
         e,
     )
 }
