@@ -81,11 +81,13 @@ kotlin {
 
         androidMain.dependencies {
             api(libs.kotlinx.coroutines.android)
+            // CameraFrame.imageProxy names camera-core's ImageProxy; the dump names no other CameraX
+            // artifact, so the rest are implementation (camerax_api_scope_matches_abi_dump). No main
+            // source uses camera-view.
             api(libs.camera.core)
-            api(libs.camera.camera2)
-            api(libs.androidx.camera.view)
-            api(libs.camera.lifecycle)
-            api(libs.camera.video)
+            implementation(libs.camera.camera2)
+            implementation(libs.camera.lifecycle)
+            implementation(libs.camera.video)
             // The Android engine is its own LifecycleOwner over a LifecycleRegistry. No public
             // signature names a registry, so it is not api.
             implementation(libs.androidx.lifecycle.runtime)

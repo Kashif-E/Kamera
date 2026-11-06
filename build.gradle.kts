@@ -1061,7 +1061,19 @@ fun atomicfuDumpProblems(dumps: Map<String, String>): List<String> =
 fun cameraxApiScopeProblems(
     apiArtifacts: List<String>,
     dump: String,
-): List<String> = emptyList()
+): List<String> {
+    val named = Regex("""androidx[/.]camera[/.]([a-z0-9]+)[/.]""").findAll(dump).map { it.groupValues[1] }.toSet()
+    val api =
+        apiArtifacts
+            .filter { it.startsWith("androidx.camera:") }
+            .associateBy { it.substringAfter(':').removePrefix("camera-") }
+    return api
+        .filterKeys { it !in named }
+        .map { (_, artifact) ->
+            "$artifact is api, but no public signature names its types; declare it implementation"
+        } +
+        (named - api.keys).map { "the ABI dump names androidx.camera.$it, but androidx.camera:camera-$it is not api" }
+}
 
 // The gate rules run against fixtures, and the gates checked to cover the modules the 2.0 split adds.
 tasks.register("checkBuildGateRules") {

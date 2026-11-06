@@ -60,6 +60,8 @@ kotlin {
             implementation(libs.androidx.compose.ui.test.manifest)
             // RetainedHolderTest recreates an Activity around the default Compose path over FakeCameraEngine.
             implementation(project(":cameraK-testing"))
+            // CameraPreviewPathTest checks no PreviewView is created; core no longer brings camera-view.
+            implementation(libs.androidx.camera.view)
         }
 
         androidMain.dependencies {
