@@ -1076,6 +1076,56 @@ fun cameraxApiScopeProblems(
         (named - api.keys).map { "the ABI dump names androidx.camera.$it, but androidx.camera:camera-$it is not api" }
 }
 
+// What one published module's Dokka configuration says: each source set's sample roots, relative to the
+// module directory; the module version; whether any source set reports undocumented declarations; and
+// whether every publication fails on a warning. Null when the module applies no Dokka.
+data class DokkaFacts(
+    val sampleRoots: Map<String, List<String>>,
+    val moduleVersion: String?,
+    val reportsUndocumented: Boolean,
+    val failsOnWarning: Boolean,
+)
+
+// The modules whose KDoc @sample tags name functions in their desktop tests (design §12.4 Z2), and that
+// sample root. Dokka refuses two source sets that share a sample root, so only commonMain names it.
+val dokkaSampleRoots =
+    mapOf(
+        "cameraK-core" to "src/desktopTest/kotlin",
+        "cameraK" to "src/desktopTest/kotlin",
+        "cameraK-testing" to "src/desktopTest/kotlin",
+    )
+
+// dokka_samples_and_version_are_configured (CC-33): every published module's Dokka states [version], the
+// modules of [sampleRoots] hand their commonMain that sample root (and no other source set), and a module
+// that reports undocumented declarations fails on Dokka's warnings, an unresolved @sample's included, so
+// the report is not a line in a log. [buildScripts] are the build files' texts: Dokka 2's plugin mode
+// never creates the V1 DokkaTask, so a block configuring one is silently dropped.
+fun dokkaConfigProblems(
+    facts: Map<String, DokkaFacts?>,
+    version: String,
+    sampleRoots: Map<String, String>,
+    buildScripts: Map<String, String>,
+): List<String> =
+    facts.flatMap { (module, dokka) ->
+        if (dokka == null) return@flatMap listOf("$module applies no Dokka")
+        val root = sampleRoots[module]
+        listOfNotNull(
+            "$module's Dokka moduleVersion is ${dokka.moduleVersion}, not VERSION_NAME $version"
+                .takeIf { dokka.moduleVersion != version },
+            "$module reports undocumented declarations but does not fail on Dokka's warnings"
+                .takeIf { dokka.reportsUndocumented && !dokka.failsOnWarning },
+            "$module's commonMain does not take its @sample functions from $root"
+                .takeIf { root != null && root !in dokka.sampleRoots["commonMain"].orEmpty() },
+        ) +
+            dokka.sampleRoots
+                .filter { (sourceSet, roots) -> sourceSet != "commonMain" && root != null && root in roots }
+                .map { (sourceSet, _) -> "$module's $sourceSet shares commonMain's sample root $root" }
+    } +
+        buildScripts
+            .filterValues { Regex("""\bDokkaTask\b""").containsMatchIn(it) }
+            .keys
+            .map { "$it configures the V1 DokkaTask, which Dokka's V2 plugin mode never creates" }
+
 // The gate rules run against fixtures, and the gates checked to cover the modules the 2.0 split adds.
 tasks.register("checkBuildGateRules") {
     group = lintGroup
@@ -1157,6 +1207,30 @@ tasks.register("checkBuildGateRules") {
         }
     val releaseGroup = providers.gradleProperty("GROUP")
     val releaseVersion = providers.gradleProperty("VERSION_NAME")
+    val dokkaFacts =
+        provider {
+            publishedModules.associateWith { module ->
+                val moduleProject = project(":$module")
+                moduleProject.extensions.findByType<org.jetbrains.dokka.gradle.DokkaExtension>()?.let { dokka ->
+                    DokkaFacts(
+                        sampleRoots =
+                            dokka.dokkaSourceSets.associate { sourceSet ->
+                                sourceSet.name to
+                                    sourceSet.samples.files.map {
+                                        it.relativeTo(moduleProject.projectDir).invariantSeparatorsPath
+                                    }
+                            },
+                        moduleVersion = dokka.moduleVersion.orNull,
+                        reportsUndocumented = dokka.dokkaSourceSets.any { it.reportUndocumented.getOrElse(false) },
+                        failsOnWarning =
+                            dokka.dokkaPublications.isNotEmpty() &&
+                                dokka.dokkaPublications.toList().all { it.failOnWarning.getOrElse(false) },
+                    )
+                }
+            }
+        }
+    val buildScriptTexts =
+        publishedModules.map { "$it/build.gradle.kts" }.associateWith { layout.projectDirectory.file(it).asFile }
     doLast {
         fun graphs(vararg entries: Pair<String, List<String>>) =
             publishedGraphs.associateWith { emptyList<String>() } + entries
@@ -1544,6 +1618,51 @@ tasks.register("checkBuildGateRules") {
                         "a dump naming camera-core with no CameraX api is accepted"
                             .takeIf { cameraxApiScopeProblems(emptyList(), dump).isEmpty() },
                     ) + cameraxApiScopeProblems(coreAndroidApi.get(), coreAndroidDump.readText())
+                },
+                "dokka_samples_and_version_are_configured" to {
+                    val sampled = DokkaFacts(mapOf("commonMain" to listOf("src/desktopTest/kotlin")), "2.0", true, true)
+                    val plain = DokkaFacts(emptyMap(), "2.0", false, false)
+                    val correct =
+                        dokkaConfigProblems(
+                            mapOf("a" to sampled, "b" to plain),
+                            "2.0",
+                            mapOf("a" to "src/desktopTest/kotlin"),
+                            mapOf("a/build.gradle.kts" to "dokka {\n    moduleVersion.set(version)\n}\n"),
+                        )
+                    val wrong =
+                        dokkaConfigProblems(
+                            mapOf(
+                                "a" to
+                                    sampled.copy(
+                                        sampleRoots =
+                                            mapOf(
+                                                "commonMain" to emptyList(),
+                                                "androidMain" to listOf("src/desktopTest/kotlin"),
+                                            ),
+                                    ),
+                                "b" to plain.copy(moduleVersion = "1.0", reportsUndocumented = true),
+                                "c" to null,
+                            ),
+                            "2.0",
+                            mapOf("a" to "src/desktopTest/kotlin"),
+                            mapOf("b/build.gradle.kts" to "tasks.withType<org.jetbrains.dokka.gradle.DokkaTask>()\n"),
+                        )
+                    val strays =
+                        trackedTextFiles(rootDir)
+                            .map { it.relativeTo(rootDir).invariantSeparatorsPath }
+                            .filter { "property 'buildDir'" in it }
+                    listOfNotNull(
+                        "a module configured as asked is rejected: $correct".takeIf { correct.isNotEmpty() },
+                        "the planted configuration finds ${wrong.size} of 6 problems: $wrong"
+                            .takeIf { wrong.size != 6 },
+                    ) +
+                        strays.map { "$it is Dokka output a V1 block wrote into the source tree; delete it" } +
+                        dokkaConfigProblems(
+                            dokkaFacts.get(),
+                            releaseVersion.get(),
+                            dokkaSampleRoots,
+                            buildScriptTexts.mapValues { (_, file) -> file.readText() },
+                        )
                 },
                 "sample_target_runs_the_sample_tests" to {
                     // The Sample's own tests (its commonTest and desktopTest) run under the sample target,
