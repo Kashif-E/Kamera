@@ -8,6 +8,8 @@
 A modern camera library for Compose Multiplatform supporting Android, iOS, and Desktop with a unified API.
 </p>
 
+<p align="center">Built by <a href="https://kashifmehmood.dev">Kashif Mehmood</a></p>
+
 <p align="center">
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.kashif-mehmood-km/camerak?label=Maven%20Central&color=blue)](https://search.maven.org/search?q=g:io.github.kashif-mehmood-km)
