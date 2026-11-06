@@ -1246,7 +1246,7 @@ registerRepoPolicyCheck(
     "checkModuleSources",
     "module-sources",
     "Fails if a tracked Kotlin source file lies outside every module settings.gradle.kts includes, " +
-        "or the iOS engine's internals are public",
+        "the iOS engine's internals are public, or an Android namespace is not one of its module's packages",
 )
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────

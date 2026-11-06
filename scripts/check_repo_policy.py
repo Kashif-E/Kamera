@@ -42,6 +42,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      reads visibility, so the declarations a test cannot check are checked here.
                      No two packages, and no resource directory and a package, differ only in
                      letter case, which a case-insensitive disk would merge into one directory.
+                     Each published module's Android namespace is one of its main sources'
+                     packages or a parent of one.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -1033,6 +1035,28 @@ def case_only_package_clashes(sources: Dict[str, str], resources: List[str]) -> 
     return problems
 
 
+ANDROID_NAMESPACE = re.compile(r'^\s*namespace\s*=\s*"([^"]+)"', re.MULTILINE)
+
+
+def android_namespace_problems(scripts: Dict[str, str], packages: Dict[str, List[str]]) -> List[str]:
+    """android_namespace_matches_package: each module's Android namespace, which names its generated R
+    class and its manifest's package, is one of the packages its main sources declare or a parent of one.
+    [scripts] maps a module to its build script, [packages] to the packages of its main sources."""
+    problems = []
+    for module, script in sorted(scripts.items()):
+        declared = ANDROID_NAMESPACE.findall(script)
+        if len(declared) != 1:
+            problems.append(f"{module}/build.gradle.kts sets {len(declared)} Android namespaces, not one")
+            continue
+        namespace = declared[0]
+        if not any(package == namespace or package.startswith(namespace + ".") for package in packages.get(module, [])):
+            problems.append(
+                f"{module}: the Android namespace {namespace} is none of its packages or their parents "
+                f"({', '.join(sorted(set(packages.get(module, [])))) or 'none'})"
+            )
+    return problems
+
+
 def check_module_sources() -> List[str]:
     fixture_settings = 'include(":cameraK")\ninclude("ocrPlugin")\n'
     fixture_files = [
@@ -1063,9 +1087,29 @@ def check_module_sources() -> List[str]:
         or len(case_only_package_clashes(distinct, [model.format("ocrPlugin")])) != 1
     ):
         raise CheckError("no_two_packages_differ_only_in_case misjudges its fixture")
+    planted_scripts = {
+        "ocrPlugin": 'android {\n    namespace = "com.kashif.ocr_plugin"\n}\n',
+        "cameraK-core": 'android {\n    namespace = "com.kashif.cameraK"\n}\n',
+        "qrScannerPlugin": 'android {\n    namespace = "com.kashif.qrscannerplugin"\n}\n',
+    }
+    planted_packages = {
+        "ocrPlugin": ["com.kashif.ocrplugin"],
+        "cameraK-core": ["com.kashif.cameraK.state", "com.kashif.cameraK.engine"],
+        "qrScannerPlugin": ["com.kashif.qrscannerplugin"],
+    }
+    found = android_namespace_problems(planted_scripts, planted_packages)
+    if len(found) != 1 or not found[0].startswith("ocrPlugin:"):
+        raise CheckError(f"android_namespace_matches_package misjudges its fixture: {found}")
     files = [path.relative_to(ROOT).as_posix() for path in tracked("*.kt")]
     sources = {path: (ROOT / path).read_text() for path in APPLE_ENGINE_INTERNALS if (ROOT / path).is_file()}
     kotlin = {path: (ROOT / path).read_text() for path in files}
+    module_scripts = {module: (ROOT / module / "build.gradle.kts").read_text() for module in LIBRARY_MODULES}
+    module_packages: Dict[str, List[str]] = {}
+    for path, text in kotlin.items():
+        module, _, rest = path.partition("/")
+        match = KOTLIN_PACKAGE.search(text)
+        if module in module_scripts and re.match(r"src/[A-Za-z]+Main/", rest) and match:
+            module_packages.setdefault(module, []).append(match.group(1))
     resources = [
         path.relative_to(ROOT).as_posix()
         for path in tracked("*")
@@ -1075,6 +1119,7 @@ def check_module_sources() -> List[str]:
         sources_outside_modules((ROOT / "settings.gradle.kts").read_text(), files)
         + apple_internal_problems(sources)
         + case_only_package_clashes(kotlin, resources)
+        + android_namespace_problems(module_scripts, module_packages)
     )
 
 
