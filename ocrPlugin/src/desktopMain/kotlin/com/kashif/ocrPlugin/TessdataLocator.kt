@@ -50,11 +50,14 @@ private const val TAG = "CameraK"
 internal fun processTessdataSources(config: OcrConfig): TessdataSources = TessdataSources(
     explicitPath = config.tessdataPath,
     bundledModel = BundledModel(BUNDLED_MODEL_SHA256) {
-        OCRProcessor::class.java.getResourceAsStream(BUNDLED_MODEL_RESOURCE)
+        openBundledModel(OCRProcessor::class.java::getResourceAsStream)
     },
     modelCacheDir = defaultModelCacheDir(),
     environment = System::getenv,
 )
+
+/** Opens the packaged model through [resources], which reads one absolute classpath resource, or returns null. */
+internal fun openBundledModel(resources: (String) -> InputStream?): InputStream? = resources(BUNDLED_MODEL_RESOURCE)
 
 /** A per-user application data directory for CameraK's extracted models. */
 internal fun defaultModelCacheDir(): File {
