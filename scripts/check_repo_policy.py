@@ -47,7 +47,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      Each published module's Android namespace is its own and one of its main
                      sources' packages or a parent of one, and no main source imports the JDK's or the
                      standard library's atomics: atomics are AtomicFU's. Every CameraKLogger call
-                     in a published module's main sources passes that artifact's one tag.
+                     in a published module's main sources passes that artifact's one tag, and its
+                     message does not open by naming the tag, CameraK or a plugin again.
   release-gate       The release gate's device harness is built (design §12.4 B1): settings include
                      :benchmark, verify.sh's android target compiles cameraK-core's instrumented
                      sources, its sample target builds :benchmark against the Sample app, and the
@@ -1186,6 +1187,12 @@ def log_tag_problems(sources: Dict[str, str], tags: Dict[str, str] = ARTIFACT_LO
     return problems
 
 
+def log_prefix_problems(sources: Dict[str, str], tags: Dict[str, str] = ARTIFACT_LOG_TAGS) -> List[str]:
+    """log_message_repeats_its_tag: no CameraKLogger message in a published module's main sources
+    opens with "<tag>:", "CameraK:" or "<Name>Plugin:"; the tag already names the artifact."""
+    return []
+
+
 def check_module_sources() -> List[str]:
     fixture_settings = 'include(":cameraK")\ninclude("ocrPlugin")\n'
     fixture_files = [
@@ -1272,6 +1279,22 @@ def check_module_sources() -> List[str]:
         "ocrPlugin/src/desktopMain/kotlin/B.kt:1",
     ]:
         raise CheckError(f"log_tags_one_per_artifact misjudges its fixture: {found}")
+    planted_prefixes = {
+        "cameraK-core/src/appleMain/kotlin/A.kt": 'CameraKLogger.e(TAG, "CameraK: session setup failed", e)\n',
+        "ocrPlugin/src/commonMain/kotlin/B.kt": 'CameraKLogger.w(\n    TAG,\n    "OcrPlugin: the region lies outside",\n)\n',
+        "ocrPlugin/src/desktopMain/kotlin/C.kt": 'CameraKLogger.d(TAG, "TextRecognition: model loaded")\n',
+        "cameraK-core/src/desktopMain/kotlin/D.kt": 'CameraKLogger.d("CameraK", "$name begins")\n',
+        "cameraK-core/src/androidMain/kotlin/E.kt": 'CameraKLogger.w(TAG, "Lens enumeration failed: camera list", e)\n',
+        "cameraK-core/src/commonTest/kotlin/F.kt": 'CameraKLogger.d(TAG, "CameraK: in a test")\n',
+        "Sample/src/commonMain/kotlin/G.kt": 'CameraKLogger.d("Sample", "CameraK: in the Sample")\n',
+    }
+    found = log_prefix_problems(planted_prefixes)
+    if [problem.split(" ", 1)[0] for problem in found] != [
+        "cameraK-core/src/appleMain/kotlin/A.kt:1",
+        "ocrPlugin/src/commonMain/kotlin/B.kt:1",
+        "ocrPlugin/src/desktopMain/kotlin/C.kt:1",
+    ]:
+        raise CheckError(f"log_message_repeats_its_tag misjudges its fixture: {found}")
     files = [path.relative_to(ROOT).as_posix() for path in tracked("*.kt")]
     sources = {path: (ROOT / path).read_text() for path in APPLE_ENGINE_INTERNALS if (ROOT / path).is_file()}
     kotlin = {path: (ROOT / path).read_text() for path in files}
@@ -1294,6 +1317,7 @@ def check_module_sources() -> List[str]:
         + android_namespace_problems(module_scripts, module_packages)
         + stdlib_atomics_problems(kotlin, LIBRARY_MODULES)
         + log_tag_problems(kotlin)
+        + log_prefix_problems(kotlin)
     )
 
 
