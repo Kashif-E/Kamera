@@ -38,6 +38,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      included build stays deleted.
   module-sources     Every tracked Kotlin source file lives in a module settings.gradle.kts includes;
                      a .kt file no build compiles is dead code that still reads as part of the library.
+                     The iOS engine's internals stay internal: Kotlin/Native has no reflection that
+                     reads visibility, so the declarations a test cannot check are checked here.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -974,6 +976,29 @@ def sources_outside_modules(settings_text: str, files: List[str]) -> List[str]:
     ]
 
 
+# The appleMain declarations 2.0 makes internal (design §10.4): the AVFoundation session the engine
+# drives was the 1.x controller's public base class.
+APPLE_ENGINE_INTERNALS = {
+    "cameraK-core/src/appleMain/kotlin/com/kashif/cameraK/controller/CustomCameraController.kt": "CustomCameraController",
+}
+
+
+def apple_internal_problems(files: Dict[str, str], internals: Dict[str, str] = APPLE_ENGINE_INTERNALS) -> List[str]:
+    """apple_engine_internals_are_internal: each listed class is declared, and its declaration starts with `internal`."""
+    problems = []
+    for path, name in internals.items():
+        text = files.get(path)
+        if text is None:
+            problems.append(f"{path} does not exist, so {name} cannot be checked")
+            continue
+        declaration = re.search(rf"^(?P<modifiers>(?:[a-z]+\s+)*)class\s+{name}\b", text, re.MULTILINE)
+        if declaration is None:
+            problems.append(f"{path} declares no class {name}")
+        elif "internal" not in declaration.group("modifiers").split():
+            problems.append(f"{path}: {name} is not internal; it is the engine's, not API")
+    return problems
+
+
 def check_module_sources() -> List[str]:
     fixture_settings = 'include(":cameraK")\ninclude("ocrPlugin")\n'
     fixture_files = [
@@ -989,8 +1014,15 @@ def check_module_sources() -> List[str]:
         "cameraKExtras/src/C.kt",
     ]:
         raise CheckError(f"no_kotlin_source_outside_a_module misjudges its fixture: {found}")
+    fixture_path = "cameraK-core/src/appleMain/kotlin/X.kt"
+    fixture_internals = {fixture_path: "CustomCameraController"}
+    planted = {fixture_path: "package x\n\nclass CustomCameraController(\n    a: Int,\n)\n"}
+    kept = {fixture_path: "package x\n\n@Suppress(\"x\")\ninternal class CustomCameraController(\n    a: Int,\n)\n"}
+    if not apple_internal_problems(planted, fixture_internals) or apple_internal_problems(kept, fixture_internals):
+        raise CheckError("apple_engine_internals_are_internal misjudges its fixture")
     files = [path.relative_to(ROOT).as_posix() for path in tracked("*.kt")]
-    return sources_outside_modules((ROOT / "settings.gradle.kts").read_text(), files)
+    sources = {path: (ROOT / path).read_text() for path in APPLE_ENGINE_INTERNALS if (ROOT / path).is_file()}
+    return sources_outside_modules((ROOT / "settings.gradle.kts").read_text(), files) + apple_internal_problems(sources)
 
 
 POLICIES: Dict[str, Callable[[], List[str]]] = {
