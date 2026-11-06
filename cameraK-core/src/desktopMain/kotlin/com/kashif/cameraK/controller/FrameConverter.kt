@@ -133,11 +133,12 @@ internal class FrameBlit(val aspectRatio: AspectRatio?, val mirrored: Boolean) {
      * The centred region of a [width] x [height] frame with [aspectRatio]: the side that is too long
      * is cut, to an even length, so a recording's encoder takes it. The whole frame without a ratio.
      */
+    @Suppress("DEPRECATION")
     fun crop(width: Int, height: Int): Crop {
+        // RATIO_9_16 is RATIO_16_9, as on Android and iOS.
         val (ratioWidth, ratioHeight) = when (aspectRatio ?: return Crop(0, 0, width, height)) {
             AspectRatio.RATIO_4_3 -> 4 to 3
-            AspectRatio.RATIO_16_9 -> 16 to 9
-            AspectRatio.RATIO_9_16 -> 9 to 16
+            AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> 16 to 9
             AspectRatio.RATIO_1_1 -> 1 to 1
         }
         val wide = width.toLong() * ratioHeight

@@ -164,6 +164,7 @@ internal class UseCaseBinder(
         val portrait = displayIsPortrait()
         lastViewPortPortrait = portrait
         lastViewPortQuarterTurned = rotation.isQuarterTurn()
+        @Suppress("DEPRECATION")
         val rational = when (aspectRatio) {
             AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 ->
                 if (portrait) Rational(9, 16) else Rational(16, 9)
@@ -237,6 +238,7 @@ private val ANALYSIS_DEFAULT_SIZE = Size(640, 480)
 
 private fun Int.isQuarterTurn(): Boolean = this == Surface.ROTATION_90 || this == Surface.ROTATION_270
 
+@Suppress("DEPRECATION")
 private fun AspectRatio.toCameraXAspectRatioStrategy(): AspectRatioStrategy = when (this) {
     AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
     AspectRatio.RATIO_4_3 -> AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY

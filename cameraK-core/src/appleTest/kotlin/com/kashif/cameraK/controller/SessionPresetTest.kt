@@ -104,6 +104,7 @@ class SessionPresetTest {
         )
     }
 
+    @Suppress("DEPRECATION")
     @Test
     fun sixteenNineWithoutATargetRunsThePhotoPreset() {
         for (ratio in listOf(AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16)) {

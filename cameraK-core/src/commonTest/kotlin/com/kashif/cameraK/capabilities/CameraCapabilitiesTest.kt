@@ -57,6 +57,7 @@ class CameraCapabilitiesTest {
         assertTrue(CameraCapabilities.EMPTY.lenses(CameraLens.BACK).isEmpty())
     }
 
+    @Suppress("DEPRECATION")
     @Test
     fun capabilitiesOfClaimsNothingItWasNotGiven() {
         val given = capabilitiesOf(listOf(lens("0", CameraDeviceType.WIDE_ANGLE, CameraLens.BACK)))

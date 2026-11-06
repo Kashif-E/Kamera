@@ -105,6 +105,8 @@ internal fun cropRect(width: Int, height: Int, aspectRatio: AspectRatio): CropRe
     val landscape = width >= height
     val long = maxOf(width, height)
     val short = minOf(width, height)
+
+    @Suppress("DEPRECATION")
     val ratio = when (aspectRatio) {
         AspectRatio.RATIO_4_3 -> if (long * 9 == short * 16) FOUR_THREE else return null
         AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> SIXTEEN_NINE

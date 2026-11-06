@@ -71,6 +71,7 @@ class AndroidCapabilitiesTest {
         engine.closeAndJoin()
     }
 
+    @Suppress("DEPRECATION")
     @Test
     fun videoQualitiesFromTheRecorderImageFormatsJpegAndPng() = runTest {
         platform.backend.supportedQualities = setOf(VideoQuality.HD, VideoQuality.FHD)

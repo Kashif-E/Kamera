@@ -11,6 +11,7 @@ private const val EPSILON = 0.0001f
 
 class AspectRatioTest {
 
+    @Suppress("DEPRECATION")
     @Test
     fun portrait_ratiosAreHeightDominant() {
         // In portrait the long edge is vertical, so width:height < 1 for non-square ratios.

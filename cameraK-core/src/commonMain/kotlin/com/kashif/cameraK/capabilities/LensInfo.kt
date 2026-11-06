@@ -149,6 +149,7 @@ public class CameraCapabilities @CameraKEngineApi constructor(
  * engine overrides what its platform offers beyond that.
  */
 @OptIn(CameraKEngineApi::class)
+@Suppress("DEPRECATION")
 internal fun capabilitiesOf(allLenses: List<LensInfo>): CameraCapabilities = CameraCapabilities(
     allLenses = allLenses,
     flashModes = allLenses.associate {

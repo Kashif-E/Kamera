@@ -73,6 +73,7 @@ class AspectRatioTest {
         assertEquals(64 to 36, image.width to image.height, "the 16:9 capture's reported size")
     }
 
+    @Suppress("DEPRECATION")
     @Test
     fun aPortraitPhotoIsCroppedAlongItsSensorsLongSideAndKeepsItsOrientation() = driver.runCase {
         val image = capture(AspectRatio.RATIO_9_16, orientedJpeg(width = 64, height = 48, orientation = RIGHT_TOP))
@@ -111,6 +112,7 @@ class AspectRatioTest {
      * so the preview shows what a capture keeps. The box is upright under a portrait interface, wide
      * under a landscape one, and follows the host's shape before the host has a window scene.
      */
+    @Suppress("DEPRECATION")
     @Test
     fun thePreviewFillsACentredBoxOfTheRequestedAspectRatio() = driver.runCase {
         val portrait = CGRectMake(0.0, 0.0, 360.0, 800.0)

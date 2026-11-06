@@ -20,6 +20,7 @@ import platform.UIKit.UIInterfaceOrientationPortraitUpsideDown
  * capture keeps.
  */
 @OptIn(ExperimentalForeignApi::class)
+@Suppress("DEPRECATION")
 internal fun previewFrame(
     bounds: CValue<CGRect>,
     aspectRatio: AspectRatio,

@@ -33,6 +33,7 @@ private val sixteenNine = listOf(
  * square. 16:9 falls back to its own presets when the session cannot take Photo.
  */
 internal fun presetCandidates(aspectRatio: AspectRatio, target: Pair<Int, Int>?): List<String> {
+    @Suppress("DEPRECATION")
     val ladder = when (aspectRatio) {
         AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> sixteenNine
         AspectRatio.RATIO_4_3, AspectRatio.RATIO_1_1 -> fourThree
