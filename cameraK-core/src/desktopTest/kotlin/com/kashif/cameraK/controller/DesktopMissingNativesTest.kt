@@ -1,48 +1,48 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.engine.newDedicatedWorker
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.job
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber
-import java.awt.image.BufferedImage
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
  * CameraK ships no bytedeco natives on desktop; the app supplies them. When it has not, JavaCV's
  * first native call throws NoClassDefFoundError ("Could not initialize class
  * org.bytedeco.ffmpeg.global.avutil", caused by the UnsatisfiedLinkError for jniavutil). That is an
- * Error, not an Exception, so it must still reach the error handler instead of escaping the grab
- * loop's thread.
+ * Error, not an Exception, so it must still reach the run's listener, as a failure before the
+ * grabber opened, instead of escaping the grab loop's thread.
  */
 class DesktopMissingNativesTest {
 
     @Test
-    fun start_withoutBytedecoNatives_reportsTheMissingNativesThroughTheErrorHandler() = runBlocking {
-        val reported = CopyOnWriteArrayList<Throwable>()
+    fun start_withoutBytedecoNatives_reportsTheMissingNativesThroughTheListener() = runBlocking {
+        val listener = RecordingGrabLoopListener()
         val escaped = CopyOnWriteArrayList<Throwable>()
         val scope = CoroutineScope(SupervisorJob() + CoroutineExceptionHandler { _, e -> escaped += e })
-        val frames = MutableSharedFlow<BufferedImage>(
-            extraBufferCapacity = 1,
-            onBufferOverflow = BufferOverflow.DROP_OLDEST,
-        )
-        val sut = CameraGrabber(frames, { reported += it })
+        val sut = CameraGrabber()
         try {
-            sut.start(scope, GrabberWithoutNatives())
-            withTimeout(10_000) { scope.coroutineContext.job.children.toList().joinAll() }
+            val run = sut.startRun(
+                scope,
+                CustomGrabberSource(GrabberWithoutNatives()),
+                desktopLensInfo(),
+                ::newDedicatedWorker,
+                listener,
+            )
+            withTimeout(10_000) { run.join() }
 
-            assertTrue(escaped.isEmpty(), "escaped the grab loop instead of reaching the error handler: $escaped")
-            val report = reported.firstOrNull()
-            assertTrue(report != null, "the error handler was never called")
+            assertTrue(escaped.isEmpty(), "escaped the grab loop instead of reaching the listener: $escaped")
+            val (report, opened) = listener.failures.firstOrNull() ?: (null to null)
+            assertTrue(report != null, "the listener's onFailure was never called")
+            assertEquals(false, opened, "the failure says the grabber opened")
             assertTrue(
                 report.causes().any { it is NoClassDefFoundError },
                 "the report does not carry the linkage error: $report",

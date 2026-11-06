@@ -16,36 +16,17 @@ import java.util.concurrent.atomic.AtomicLong
  * ([framePoolSize]); past that, a frame is skipped. When the capacity falls, free slots beyond it
  * are dropped.
  *
- * [convert] is the 1.x call: the image it returns is not written again until two further frames
- * have been converted.
  *
  * Not thread-safe: the producer thread that grabs the frames is its only caller. Leases are given
  * back from any thread.
  */
-class FrameConverter internal constructor(
-    private val yuvConversions: AtomicLong,
+internal class FrameConverter(
+    private val yuvConversions: AtomicLong = AtomicLong(),
     private val capacity: () -> Int = { framePoolSize(retainLimits = 0, analyzers = 0) },
 ) {
-    constructor() : this(AtomicLong())
-
     private val converter = Java2DFrameConverter()
     private val slots = ArrayList<LeasedFrame>()
-    private val legacyHeld = ArrayDeque<LeasedFrame>()
     private var exhaustedLogged = false
-
-    private var horizontalFlip = false
-
-    fun setHorizontalFlip(flip: Boolean) {
-        this.horizontalFlip = flip
-    }
-
-    /** Returns the frame as a pool-owned image, or null if it has no picture or cannot be converted. */
-    fun convert(frame: Frame): BufferedImage? {
-        val leased = convertLeased(frame, FrameBlit(null, horizontalFlip), captureNanos = 0L) ?: return null
-        legacyHeld.addLast(leased)
-        if (legacyHeld.size > LEGACY_HELD) legacyHeld.removeFirst().release()
-        return leased.image
-    }
 
     /**
      * The frame, cropped and mirrored by [blit], in a free slot of the pool, with one lease, the
@@ -121,14 +102,8 @@ class FrameConverter internal constructor(
 
     fun release() {
         converter.close()
-        legacyHeld.clear()
         slots.forEach { it.dispose() }
         slots.clear()
-    }
-
-    private companion object {
-        // The frame being collected and the one buffered behind it, for a 1.x caller of convert().
-        const val LEGACY_HELD = 2
     }
 }
 

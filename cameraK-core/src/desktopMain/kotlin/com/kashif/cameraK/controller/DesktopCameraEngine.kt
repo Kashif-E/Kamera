@@ -132,7 +132,7 @@ internal class DesktopCameraEngine(
     private val io = environment.dispatchers.io
 
     /** The producer every capture, recording, preview frame and analysis frame reads from. */
-    internal val grabber: CameraGrabber = CameraGrabber(MutableSharedFlow(), { }, null, nanoClock)
+    internal val grabber: CameraGrabber = CameraGrabber(nanoClock)
 
     /** The desired hardware the current session started with; null without one. */
     internal val startedWith: DesiredHardware? get() = synchronized(lock) { session?.desired }

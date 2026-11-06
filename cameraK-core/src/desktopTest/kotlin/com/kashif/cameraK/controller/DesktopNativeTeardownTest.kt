@@ -7,6 +7,7 @@ import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.newDedicatedWorker
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
@@ -23,15 +24,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.bytedeco.javacv.FrameRecorder
-import java.awt.image.BufferedImage
 import java.io.File
 import java.nio.file.Files
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -77,15 +74,11 @@ class DesktopNativeTeardownTest {
     @Test
     fun stop_whileGrabIsInFlight_releasesTheGrabberOnlyAfterGrabReturns() {
         val fake = FakeFrameGrabber()
-        val errors = CopyOnWriteArrayList<Throwable>()
-        val frames = MutableSharedFlow<BufferedImage>(
-            extraBufferCapacity = 1,
-            onBufferOverflow = BufferOverflow.DROP_OLDEST,
-        )
+        val listener = RecordingGrabLoopListener()
         val scope = CoroutineScope(SupervisorJob())
-        val sut = CameraGrabber(frames, { errors += it })
+        val sut = CameraGrabber()
         try {
-            sut.start(scope, fake)
+            sut.startRun(scope, CustomGrabberSource(fake), desktopLensInfo(), ::newDedicatedWorker, listener)
             assertTrue(fake.firstGrabEntered.await(5, TimeUnit.SECONDS), "the grab loop never called grab()")
 
             // The loop is now blocked inside grab(), as it is between two camera frames.
@@ -95,7 +88,8 @@ class DesktopNativeTeardownTest {
             assertTrue(fake.releasedLatch.await(5, TimeUnit.SECONDS), "the grabber was never released")
             assertEquals(emptyList(), fake.violations.toList())
             assertEquals(1, fake.releaseCount.get())
-            assertEquals(emptyList(), errors.toList())
+            assertEquals(emptyList(), listener.failures.toList())
+            assertEquals(emptyList(), listener.releaseFailures.toList())
         } finally {
             fake.openGate()
             scope.cancel()

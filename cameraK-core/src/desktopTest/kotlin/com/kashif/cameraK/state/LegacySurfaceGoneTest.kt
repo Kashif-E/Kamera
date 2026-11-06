@@ -70,7 +70,10 @@ class LegacySurfaceGoneTest {
         val converter = Class.forName("com.kashif.cameraK.controller.FrameConverter")
         if (converter.kotlin.visibility == KVisibility.PUBLIC) present += "FrameConverter is public"
         converter.declaredMethods
-            .filter { method -> method.name == "convert" && method.parameterTypes.any { it.name == "org.bytedeco.javacv.Frame" } }
+            .filter { method ->
+                method.name == "convert" &&
+                    method.parameterTypes.any { it.name == "org.bytedeco.javacv.Frame" }
+            }
             .forEach { present += "FrameConverter.convert(Frame)" }
         converter.declaredFields
             .filter { it.name == "legacyHeld" }

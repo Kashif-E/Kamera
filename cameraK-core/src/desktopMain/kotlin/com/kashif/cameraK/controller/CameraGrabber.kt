@@ -2,7 +2,6 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.engine.WorkerDispatcher
-import com.kashif.cameraK.engine.newDedicatedWorker
 import com.kashif.cameraK.state.removedIn2
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
@@ -11,14 +10,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
-import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
-import org.bytedeco.javacv.VideoInputFrameGrabber
 import java.awt.image.BufferedImage
 import java.io.File
 import java.util.WeakHashMap
@@ -27,31 +23,19 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * The single producer of desktop camera frames. One grab loop, on its own thread, is the only code
  * that calls `grab()` or the frame converter. It converts each frame into a leased slot of the
- * converter's pool (§8 desktop) and holds the two latest for the preview; preview frames go to
- * `frameFlow` (or the engine's listener, which also hands them to analysis), the recording reads
- * the same leased frames through [openFeed], and a capture copies one through [awaitSnapshot], so
- * none of them grabs from the camera or steals frames from the preview.
+ * converter's pool (§8 desktop) and holds the two latest for the preview; preview frames go to the
+ * engine's listener, which also hands them to analysis, the recording reads the same leased frames
+ * through [openFeed], and a capture copies one through [awaitSnapshot], so none of them grabs from
+ * the camera or steals frames from the preview.
+ *
+ * Public only so a 1.x call of [grabCurrentFrame] still resolves to its hint; the desktop engine
+ * builds and runs it. [nanoClock] reads the capture time of each frame, which the recording
+ * timestamps frames with.
  */
-class CameraGrabber(
-    private val frameFlow: MutableSharedFlow<BufferedImage>,
-    private val errorHandler: (Throwable) -> Unit,
-    private val targetResolution: Pair<Int, Int>? = null,
-) {
-    // Reads the capture time of each frame; the recording timestamps frames with it.
-    private var nanoClock: () -> Long = System::nanoTime
-
-    internal constructor(
-        frameFlow: MutableSharedFlow<BufferedImage>,
-        errorHandler: (Throwable) -> Unit,
-        targetResolution: Pair<Int, Int>?,
-        nanoClock: () -> Long,
-    ) : this(frameFlow, errorHandler, targetResolution) {
-        this.nanoClock = nanoClock
-    }
-
+class CameraGrabber internal constructor(private val nanoClock: () -> Long = System::nanoTime) {
     private val job = atomic<Job?>(null)
 
-    // Serialises start() and stop(), so two starts racing from different threads launch one loop.
+    // Serialises startRun() and stop(), so a run and the stop of the run before it never interleave.
     private val startLock = Any()
 
     @Volatile private var isHorizontallyFlipped = false
@@ -74,7 +58,7 @@ class CameraGrabber(
     private var feedOwner: Any? = null
     private val feeds = mutableListOf<FrameFeed>()
 
-    fun setHorizontalFlip(flip: Boolean) {
+    internal fun setHorizontalFlip(flip: Boolean) {
         this.isHorizontallyFlipped = flip
     }
 
@@ -115,24 +99,12 @@ class CameraGrabber(
     }
 
     /**
-     * Starts the grab loop in [coroutineScope], on a dedicated thread. The loop owns the grabber and
-     * the converter for its whole life: it opens the grabber, grabs and converts, and stops and
-     * releases both in its own `finally`, so the native handle is never freed while a `grab()` or a
-     * conversion of the grabber's frame is still running. A start that follows [stop] waits for the
-     * previous loop to release its grabber first, and a loop of any grabber waits for every other
-     * loop on the same camera to release it. A start while a loop runs does nothing.
-     */
-    fun start(coroutineScope: CoroutineScope, customGrabber: FrameGrabber? = null): Unit = synchronized(startLock) {
-        if (job.value?.isActive == true) return
-        val source = customGrabber?.let(::CustomGrabberSource) ?: DefaultDeviceSource(targetResolution)
-        launchRun(coroutineScope, source, desktopLensInfo(), ::newDedicatedWorker, legacyListener, FrameBlit.NONE) {
-            framePoolSize(retainLimits = 0, analyzers = 0)
-        }
-    }
-
-    /**
-     * Starts one run of the grab loop for the desktop engine, after the previous run has released
-     * the camera: the engine cancels a run it replaces before it starts the next. The run reports
+     * Starts one run of the grab loop for the desktop engine, on a dedicated thread, after the
+     * previous run has released the camera: the engine cancels a run it replaces before it starts
+     * the next. The loop owns the grabber and the converter for its whole life: it opens the grabber,
+     * grabs and converts, and stops and releases both in its own `finally`, so the native handle is
+     * never freed while a `grab()` or a conversion of the grabber's frame is still running. A loop of
+     * any grabber waits for every other loop on the same camera to release it. The run reports
      * to [listener] on [newWorker]'s thread, one worker per run (§2.4 desktop). Each frame is
      * blitted with [blit]'s crop and mirror, and mirrored as well while [setHorizontalFlip] is on.
      * The run's frame pool holds at most [poolSize] slots, read again at each frame.
@@ -262,26 +234,15 @@ class CameraGrabber(
         }
     }
 
-    // The 1.x callers' listener: frames to frameFlow, every failure to errorHandler.
-    private val legacyListener = object : GrabLoopListener {
-        override fun onFrame(frame: LeasedFrame) {
-            frameFlow.tryEmit(frame.image)
-        }
-
-        override fun onFailure(failure: Throwable, opened: Boolean) = errorHandler(failure)
-
-        override fun onReleaseFailure(failure: Throwable) = errorHandler(failure)
-    }
-
     /**
      * Stops the grab loop. Non-blocking and idempotent: the loop releases the grabber and converter
      * once it leaves the native call it is in, however many times this is called.
      */
-    fun stop() {
+    internal fun stop() {
         synchronized(startLock) { job.value }?.cancel()
     }
 
-    // A listener is the engine's or a 1.x caller's code: what it throws is logged and that event dropped.
+    // A listener is the engine's code: what it throws is logged and that event dropped.
     private inline fun guarded(listener: GrabLoopListener, event: String, report: () -> Unit) {
         try {
             report()
@@ -329,28 +290,6 @@ class CameraGrabber(
         e,
     )
 }
-
-/**
- * The system's default camera as a new grabber: device "0" through AVFoundation on macOS, device 0
- * through videoInput on Windows, the best V4L2 node on Linux. [size] asks for that size at
- * CameraK's frame rate; null leaves the camera at its own mode.
- */
-internal fun createDefaultGrabber(os: OperatingSystem, size: Pair<Int, Int>?): FrameGrabber = when (os) {
-    OperatingSystem.MAC -> {
-        // On macOS, use AVFoundation with device index as string
-        FFmpegFrameGrabber("0")
-    }
-    OperatingSystem.WINDOWS -> {
-        VideoInputFrameGrabber(0)
-    }
-    OperatingSystem.LINUX -> {
-        // The lowest-numbered node that captures video (#52, #53)
-        val videoDevice =
-            findBestVideoDevice(File("/dev"), File("/sys/class/video4linux"), File("/run/udev/data"))
-        CameraKLogger.d("CameraK", "Using video device: $videoDevice")
-        FFmpegFrameGrabber(videoDevice)
-    }
-}.askFor(size)
 
 /** Asks this grabber for [size] at CameraK's frame rate; null leaves the camera at its own mode. */
 internal fun FrameGrabber.askFor(size: Pair<Int, Int>?): FrameGrabber = apply {
@@ -471,7 +410,7 @@ private const val SNAPSHOT_TIMEOUT_MS = 5_000L
 // a few at a time. This many in a row means the camera has stopped producing pictures.
 private const val MAX_FRAMES_WITHOUT_IMAGE = 300
 
-enum class OperatingSystem {
+internal enum class OperatingSystem {
     WINDOWS,
     MAC,
     LINUX,

@@ -1,12 +1,9 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.engine.newDedicatedWorker
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.launch
 import java.awt.image.BufferedImage
 import java.nio.ByteBuffer
 import java.util.concurrent.CopyOnWriteArrayList
@@ -18,9 +15,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Every frame the producer publishes on `frameFlow` is its own image, and the producer does not
- * write it again while the next two frames are published, so a collector that is one frame behind
- * never reads a frame that is being overwritten.
+ * Every frame the producer publishes to its listener is its own image, and the producer does not
+ * write it again while the next two frames are published ([GrabLoopListener.onFrame]'s contract), so
+ * a consumer that is one frame behind never reads a frame that is being overwritten.
  */
 class DesktopFrameAliasingTest {
 
@@ -34,41 +31,35 @@ class DesktopFrameAliasingTest {
 
     private fun assertPublishedFramesStayIntact(horizontalFlip: Boolean) {
         val fake = numberedFrames().apply { openGate() }
-        val frames = MutableSharedFlow<BufferedImage>(
-            extraBufferCapacity = 1,
-            onBufferOverflow = BufferOverflow.DROP_OLDEST,
-        )
         val scope = CoroutineScope(SupervisorJob())
         val received = CopyOnWriteArrayList<Pair<BufferedImage, Int>>()
         val problems = CopyOnWriteArrayList<String>()
-        val errors = CopyOnWriteArrayList<Throwable>()
         val enough = CountDownLatch(FRAMES)
-        // Unconfined runs the collector inside the producer's tryEmit, so each check below runs
-        // after frame n is published and before frame n + 1 is converted.
-        scope.launch(Dispatchers.Unconfined) {
-            frames.collect { image ->
-                val number = received.size
-                received.takeLast(2).forEachIndexed { i, (earlier, valueWhenPublished) ->
-                    val earlierNumber = number - received.takeLast(2).size + i
-                    when {
-                        earlier === image -> problems += "frame $number reuses the image of frame $earlierNumber"
-                        earlier.firstSample() != valueWhenPublished ->
-                            problems += "frame $earlierNumber changed when frame $number was published"
-                    }
+        // onFrame runs on the producer thread, so each check below runs after frame n is published
+        // and before frame n + 1 is converted.
+        val listener = RecordingGrabLoopListener { image ->
+            val number = received.size
+            received.takeLast(2).forEachIndexed { i, (earlier, valueWhenPublished) ->
+                val earlierNumber = number - received.takeLast(2).size + i
+                when {
+                    earlier === image -> problems += "frame $number reuses the image of frame $earlierNumber"
+                    earlier.firstSample() != valueWhenPublished ->
+                        problems += "frame $earlierNumber changed when frame $number was published"
                 }
-                received += image to image.firstSample()
-                enough.countDown()
             }
+            received += image to image.firstSample()
+            enough.countDown()
         }
-        val sut = CameraGrabber(frames, { errors += it }).apply { setHorizontalFlip(horizontalFlip) }
+        val sut = CameraGrabber().apply { setHorizontalFlip(horizontalFlip) }
         try {
-            sut.start(scope, fake)
+            sut.startRun(scope, CustomGrabberSource(fake), desktopLensInfo(), ::newDedicatedWorker, listener)
 
             assertTrue(enough.await(5, TimeUnit.SECONDS), "only ${received.size} frames were published")
             sut.stop()
             assertTrue(fake.releasedLatch.await(5, TimeUnit.SECONDS), "the grabber was never released")
             assertEquals(emptyList(), problems.toList())
-            assertEquals(emptyList(), errors.toList())
+            assertEquals(emptyList(), listener.failures.toList())
+            assertEquals(emptyList(), listener.releaseFailures.toList())
         } finally {
             sut.stop()
             scope.cancel()

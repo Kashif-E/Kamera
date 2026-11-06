@@ -4,7 +4,6 @@ import com.kashif.cameraK.engine.newDedicatedWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.bytedeco.javacv.Frame
@@ -34,7 +33,7 @@ class GrabThreadInterruptTest {
         }
         val scope = CoroutineScope(SupervisorJob())
         try {
-            val run = CameraGrabber(MutableSharedFlow(), { })
+            val run = CameraGrabber()
                 .startRun(scope, CustomGrabberSource(camera), desktopLensInfo(), ::newDedicatedWorker, listener)
 
             withTimeout(TIMEOUT_MS) { run.join() }

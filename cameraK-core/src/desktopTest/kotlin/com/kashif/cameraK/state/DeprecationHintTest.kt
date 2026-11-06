@@ -2,12 +2,11 @@
 
 package com.kashif.cameraK.state
 
+import com.kashif.cameraK.controller.CameraGrabber
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.testing.cameraKTestEnvironment
 import com.kashif.cameraK.utils.CameraKEngineApi
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.runTest
-import java.awt.image.BufferedImage
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import kotlin.reflect.jvm.kotlinFunction
@@ -110,11 +109,9 @@ class DeprecationHintTest {
             }
         }
 
-        val grabber = Class.forName("com.kashif.cameraK.controller.CameraGrabber")
-        val grabFrame = grabber.methods.single { it.name == "grabCurrentFrame" }
+        val anyGrabber = CameraGrabber()
+        val grabFrame = CameraGrabber::class.java.methods.single { it.name == "grabCurrentFrame" }
         checkAnnotation("CameraGrabber.grabCurrentFrame", grabFrame.getAnnotation(Deprecated::class.java))
-        val anyGrabber = grabber.getConstructor(MutableSharedFlow::class.java, Function1::class.java, Pair::class.java)
-            .newInstance(MutableSharedFlow<BufferedImage>(), { _: Throwable -> }, null)
         checkThrows("CameraGrabber.grabCurrentFrame") { grabFrame.invoke(anyGrabber) }
 
         mapOf(

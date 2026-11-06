@@ -108,23 +108,6 @@ internal class CustomGrabberSource(private val grabber: FrameGrabber) : GrabberS
 }
 
 /**
- * The system's default camera, opened as the 1.x controller opened it: at [targetResolution] (720p
- * when null) and CameraK's frame rate, or at the camera's own mode on the retry. Its lock is keyed
- * on the default entry's id. `CameraGrabber.start` uses it; the bridge's engine selects among enumerated devices ([EnumeratedDeviceSource]). Tests replace it through
- * [defaultCameraOverride].
- */
-internal class DefaultDeviceSource(private val targetResolution: Pair<Int, Int>?) : GrabberSource {
-    override fun deviceKey(device: LensInfo): Any = device.id
-    override val canRelax: Boolean get() = true
-
-    override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = defaultCameraOverride?.invoke()
-        ?: createDefaultGrabber(
-            currentOperatingSystem(),
-            if (constrained) targetResolution ?: DEFAULT_CAMERA_RESOLUTION else null,
-        )
-}
-
-/**
  * The enumerated cameras of [devices], each opened by its `LensInfo.id` at [targetResolution] (720p
  * when null) and CameraK's frame rate, or at the camera's own mode on the retry. The lock is keyed
  * on the id (§2.4 desktop). Tests that reach a real camera get [defaultCameraOverride] instead.
