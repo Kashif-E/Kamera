@@ -44,9 +44,13 @@ internal fun List<AndroidLensDescriptor>.deviceTypeTarget(
 internal object LensEnumerator {
 
     fun snapshot(context: Context): List<AndroidLensDescriptor> {
-        val manager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return emptyList()
+        return snapshot(CameraManagerReader(manager))
+    }
+
+    fun snapshot(reader: Camera2Reader): List<AndroidLensDescriptor> {
         val cameraIds = try {
-            manager?.cameraIdList.orEmpty()
+            reader.cameraIds()
         } catch (e: Exception) {
             CameraKLogger.w("CameraK", "Lens enumeration failed to list cameras: ${e.message}")
             emptyArray()
@@ -55,11 +59,11 @@ internal object LensEnumerator {
         // External cameras are classified apart from built-in ones: they share no hardware with them.
         val rawByFacing = mutableMapOf<Facing, MutableList<RawCamera>>()
         for (id in cameraIds) {
-            val raw = describe(manager, id, isPhysicalChild = false, parentLogicalId = null) ?: continue
+            val raw = describe(reader, id, isPhysicalChild = false, parentLogicalId = null) ?: continue
             rawByFacing.getOrPut(raw.facing) { mutableListOf() }.add(raw)
             if (raw.isLogical) {
                 for (physicalId in raw.physicalCameraIds) {
-                    val child = describe(manager, physicalId, isPhysicalChild = true, parentLogicalId = id)
+                    val child = describe(reader, physicalId, isPhysicalChild = true, parentLogicalId = id)
                         ?: continue
                     rawByFacing.getOrPut(child.facing) { mutableListOf() }.add(child)
                 }
@@ -148,13 +152,13 @@ internal object LensEnumerator {
     )
 
     private fun describe(
-        manager: CameraManager?,
+        reader: Camera2Reader,
         id: String,
         isPhysicalChild: Boolean,
         parentLogicalId: String?,
     ): RawCamera? {
         val characteristics = try {
-            manager?.getCameraCharacteristics(id)
+            reader.characteristics(id)
         } catch (e: Exception) {
             CameraKLogger.w("CameraK", "Lens enumeration failed on camera $id: ${e.message}")
             null
@@ -176,14 +180,9 @@ internal object LensEnumerator {
             1.0f to maxDigital
         }
 
-        // physicalCameraIds is API 28+ — same NoSuchMethodError trap, same guard.
-        val physicalIds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            try {
-                characteristics.physicalCameraIds
-            } catch (e: Exception) {
-                emptySet()
-            }
-        } else {
+        val physicalIds = try {
+            reader.physicalCameraIds(characteristics)
+        } catch (e: Exception) {
             emptySet()
         }
 
@@ -204,4 +203,25 @@ internal object LensEnumerator {
             minFocusDistance = characteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE) ?: 0f,
         )
     }
+}
+
+/** The Camera2 reads [LensEnumerator] makes. */
+internal interface Camera2Reader {
+    fun cameraIds(): Array<String>
+
+    fun characteristics(id: String): CameraCharacteristics
+
+    /** The physical lenses of a logical multi-camera; none below API 28. */
+    fun physicalCameraIds(characteristics: CameraCharacteristics): Set<String>
+}
+
+private class CameraManagerReader(private val manager: CameraManager) : Camera2Reader {
+    override fun cameraIds(): Array<String> = manager.cameraIdList
+
+    override fun characteristics(id: String): CameraCharacteristics = manager.getCameraCharacteristics(id)
+
+    // physicalCameraIds is API 28+: referencing it below throws NoSuchMethodError, which no catch of
+    // Exception stops.
+    override fun physicalCameraIds(characteristics: CameraCharacteristics): Set<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) characteristics.physicalCameraIds else emptySet()
 }
