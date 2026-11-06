@@ -503,6 +503,9 @@ internal fun rememberCameraScreenChoices(): MutableState<CameraScreenChoices> =
 internal fun CameraScreenChoices.shownMode(recordingLive: Boolean): CameraMode =
     if (recordingLive) CameraMode.Video else mode
 
+/** The ratio the aspect-ratio button selects after this one. */
+internal fun AspectRatio.nextInSample(): AspectRatio = TODO("w11 integration red stub")
+
 /** The holder's capture, as the Sample's photo button uses it. */
 internal interface SampleCapturer {
     suspend fun capture(): CameraKResult<CapturedImage>
