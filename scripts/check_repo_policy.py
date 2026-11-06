@@ -40,6 +40,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      a .kt file no build compiles is dead code that still reads as part of the library.
                      The iOS engine's internals stay internal: Kotlin/Native has no reflection that
                      reads visibility, so the declarations a test cannot check are checked here.
+                     No two packages, and no resource directory and a package, differ only in
+                     letter case, which a case-insensitive disk would merge into one directory.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -999,6 +1001,38 @@ def apple_internal_problems(files: Dict[str, str], internals: Dict[str, str] = A
     return problems
 
 
+KOTLIN_PACKAGE = re.compile(r"^package\s+([A-Za-z0-9_.]+)", re.MULTILINE)
+
+
+def case_only_package_clashes(sources: Dict[str, str], resources: List[str]) -> List[str]:
+    """no_two_packages_differ_only_in_case: no two Kotlin packages, and no resource directory and a package,
+    are equal when case is folded and differ otherwise. On a case-insensitive disk, every Mac's default and
+    the one every iOS build runs on, their class or resource directories are one directory, and a jar built
+    there records both under whichever spelling was created first (design §9.4)."""
+    spellings: Dict[str, Dict[str, str]] = {}
+    for path, text in sorted(sources.items()):
+        match = KOTLIN_PACKAGE.search(text)
+        if match:
+            spellings.setdefault(match.group(1).lower(), {}).setdefault(match.group(1), path)
+    problems = [
+        f"packages {' and '.join(sorted(found))} differ only in letter case "
+        f"({', '.join(found[name] for name in sorted(found))})"
+        for found in spellings.values()
+        if len(found) > 1
+    ]
+    packages = {next(iter(found)).replace(".", "/") for found in spellings.values() if len(found) == 1}
+    for resource in resources:
+        directory = "/" + resource.rsplit("/", 1)[0] + "/"
+        for package in sorted(packages):
+            at = directory.lower().find("/" + package.lower() + "/")
+            if at >= 0 and directory[at + 1:at + 1 + len(package)] != package:
+                problems.append(
+                    f"{resource} is under {directory[at + 1:at + 1 + len(package)]}, which differs only in letter case "
+                    f"from the package directory {package}"
+                )
+    return problems
+
+
 def check_module_sources() -> List[str]:
     fixture_settings = 'include(":cameraK")\ninclude("ocrPlugin")\n'
     fixture_files = [
@@ -1020,9 +1054,28 @@ def check_module_sources() -> List[str]:
     kept = {fixture_path: "package x\n\n@Suppress(\"x\")\ninternal class CustomCameraController(\n    a: Int,\n)\n"}
     if not apple_internal_problems(planted, fixture_internals) or apple_internal_problems(kept, fixture_internals):
         raise CheckError("apple_engine_internals_are_internal misjudges its fixture")
+    clashing = {"a/X.kt": "package com.kashif.ocrPlugin\n", "b/Y.kt": "// x\npackage com.kashif.ocrplugin\n"}
+    distinct = {"a/X.kt": "package com.kashif.ocrplugin\n", "b/Y.kt": "package com.kashif.qrscannerplugin\n"}
+    model = "ocrPlugin/model/com/kashif/{}/tessdata/eng.traineddata"
+    if (
+        len(case_only_package_clashes(clashing, [])) != 1
+        or case_only_package_clashes(distinct, [model.format("ocrplugin")])
+        or len(case_only_package_clashes(distinct, [model.format("ocrPlugin")])) != 1
+    ):
+        raise CheckError("no_two_packages_differ_only_in_case misjudges its fixture")
     files = [path.relative_to(ROOT).as_posix() for path in tracked("*.kt")]
     sources = {path: (ROOT / path).read_text() for path in APPLE_ENGINE_INTERNALS if (ROOT / path).is_file()}
-    return sources_outside_modules((ROOT / "settings.gradle.kts").read_text(), files) + apple_internal_problems(sources)
+    kotlin = {path: (ROOT / path).read_text() for path in files}
+    resources = [
+        path.relative_to(ROOT).as_posix()
+        for path in tracked("*")
+        if path.suffix not in (".kt", ".kts") and "/" in path.relative_to(ROOT).as_posix()
+    ]
+    return (
+        sources_outside_modules((ROOT / "settings.gradle.kts").read_text(), files)
+        + apple_internal_problems(sources)
+        + case_only_package_clashes(kotlin, resources)
+    )
 
 
 POLICIES: Dict[str, Callable[[], List[str]]] = {
