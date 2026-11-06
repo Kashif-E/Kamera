@@ -3,17 +3,21 @@
 package com.kashif.cameraK.engine.contract
 
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.EngineRecordingEvent
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
+import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.ZoomState
@@ -21,9 +25,13 @@ import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.testing.FakeCapabilities
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -130,10 +138,83 @@ class ContractKitMutationTest {
         assertContains(failure.message.orEmpty(), "hardware is the platform's flash read-back")
     }
 
+    // The four "did not move" assertions of the read-back flash step: a flash command that also moves the
+    // torch, the camera, the target orientation or the zoom fails it, each by its own assertion.
+    @Test
+    fun readBackFlashCommandThatMovesTheTorchFailsTheFlashStep() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            readBackCases(Moved.TORCH).commandsLeaveHardwareUntilThePlatformReports()
+        }
+        assertContains(failure.message.orEmpty(), "moved the torch")
+    }
+
+    @Test
+    fun readBackFlashCommandThatMovesTheCameraFailsTheFlashStep() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            readBackCases(Moved.CAMERA).commandsLeaveHardwareUntilThePlatformReports()
+        }
+        assertContains(failure.message.orEmpty(), "moved the camera")
+    }
+
+    @Test
+    fun readBackFlashCommandThatMovesTheTargetOrientationFailsTheFlashStep() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            readBackCases(Moved.ORIENTATION).commandsLeaveHardwareUntilThePlatformReports()
+        }
+        assertContains(failure.message.orEmpty(), "moved the target orientation")
+    }
+
+    @Test
+    fun readBackFlashCommandThatMovesTheZoomFailsTheFlashStep() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            readBackCases(Moved.ZOOM).commandsLeaveHardwareUntilThePlatformReports()
+        }
+        assertContains(failure.message.orEmpty(), "changed zoom")
+    }
+
+    @Test
+    fun aSecondFinalizedForOneRecordingFailsTheStoppedRecordingCase() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(::FinalizesTwice).stoppedRecordingYieldsExactlyOneFinalized(this)
+        }
+        assertContains(failure.message.orEmpty(), "Finalized events for one started recording")
+    }
+
+    @Test
+    fun aFinalizedAfterAnInvalidStateStopFailsTheInvalidStopCase() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(::FinalizesAfterAnInvalidStop).invalidStateStopIsFollowedByNoFinalized(this)
+        }
+        assertContains(failure.message.orEmpty(), "Finalized after a stop of nothing")
+    }
+
+    private fun readBackCases(moved: Moved) = ContractCases(
+        ReadBackBrokenDriver { MovesOnFlash(it, moved) },
+        requires = emptySet(),
+        skips = ContractSkips(),
+    )
+
     private fun cases(breakIt: (FakeCameraEngine) -> BrokenEngine) =
         ContractCases(BrokenDriver(breakIt), requires = emptySet(), skips = ContractSkips())
 
     private class BrokenDriver(private val breakIt: (FakeCameraEngine) -> BrokenEngine) : FakeEngineDriver() {
+        private lateinit var engine: BrokenEngine
+
+        override fun createEngine(config: CameraConfiguration): CameraEngine =
+            breakIt(super.createEngine(config) as FakeCameraEngine).also { engine = it }
+
+        override fun releaseCount(): Int = engine.releaseCount
+
+        override suspend fun settle() {
+            super.settle()
+            engine.sync()
+        }
+    }
+
+    // A read-back flash engine (Android, iOS) with one rule broken.
+    private class ReadBackBrokenDriver(private val breakIt: (FakeCameraEngine) -> BrokenEngine) :
+        FakeEngineDriver(),
+        ReadBackFlashDriver {
         private lateinit var engine: BrokenEngine
 
         override fun createEngine(config: CameraConfiguration): CameraEngine =
@@ -195,6 +276,76 @@ class ContractKitMutationTest {
             val result = fake.setZoom(ratio)
             if (mirrored == Mirrored.ZOOM && result is CameraKResult.Success) this.ratio = result.value
             sync()
+            return result
+        }
+    }
+
+    private enum class Moved { TORCH, CAMERA, ORIENTATION, ZOOM }
+
+    // Rule 5 broken on a read-back engine: setFlashMode publishes the platform's flash read-back, and moves [moved] too.
+    private class MovesOnFlash(fake: FakeCameraEngine, private val moved: Moved) : BrokenEngine(fake) {
+        private val _hardware = MutableStateFlow(fake.hardware.value)
+        override val hardware: StateFlow<HardwareState> = _hardware.asStateFlow()
+        private val _zoom = MutableStateFlow(fake.zoom.value)
+        override val zoom: StateFlow<ZoomState> = _zoom.asStateFlow()
+        private var movedHardware: ((HardwareState) -> HardwareState)? = null
+        private var movedZoom: ZoomState? = null
+
+        override fun sync() {
+            val reported = fake.hardware.value
+            _hardware.value = movedHardware?.invoke(reported) ?: reported
+            _zoom.value = movedZoom ?: fake.zoom.value
+        }
+
+        override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> = fake.start(desired).also { sync() }
+
+        override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> {
+            val result = fake.setFlashMode(mode)
+            if (result is CameraKResult.Success) {
+                fake.reportFlash(fake.appliedFlashMode)
+                val now = fake.hardware.value
+                when (moved) {
+                    Moved.TORCH -> {
+                        val other = TorchMode.entries.first { it != now.torchMode }
+                        movedHardware = { HardwareState(it.flashMode, other, it.camera, it.targetOrientation) }
+                    }
+                    Moved.CAMERA -> {
+                        val other = fake.capabilities.value.allLenses.first { it != now.camera }
+                        movedHardware = { HardwareState(it.flashMode, it.torchMode, other, it.targetOrientation) }
+                    }
+                    Moved.ORIENTATION -> {
+                        val other = DeviceOrientation.entries.first { it != now.targetOrientation }
+                        movedHardware = { HardwareState(it.flashMode, it.torchMode, it.camera, other) }
+                    }
+                    Moved.ZOOM -> {
+                        val zoom = fake.zoom.value
+                        movedZoom = ZoomState(zoom.ratio + 0.5f, zoom.minRatio, zoom.maxRatio + 1f)
+                    }
+                }
+            }
+            sync()
+            return result
+        }
+    }
+
+    // Finalized broken: every Finalized the platform reports reaches the flow twice.
+    private class FinalizesTwice(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        override val recordingEvents: Flow<EngineRecordingEvent> = fake.recordingEvents.transform { event ->
+            emit(event)
+            if (event is EngineRecordingEvent.Finalized) emit(event)
+        }
+    }
+
+    // Finalized broken: a stop with nothing recording still reports a Finalized of its own.
+    private class FinalizesAfterAnInvalidStop(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        private val ownEvents = MutableSharedFlow<EngineRecordingEvent>(extraBufferCapacity = 1)
+        override val recordingEvents: Flow<EngineRecordingEvent> = merge(fake.recordingEvents, ownEvents)
+
+        override suspend fun stopRecording(): CameraKResult<RecordedVideo> {
+            val result = fake.stopRecording()
+            if (result is CameraKResult.Failure) {
+                ownEvents.tryEmit(EngineRecordingEvent.Finalized(result, RecordingEndReason.USER))
+            }
             return result
         }
     }

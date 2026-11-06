@@ -104,6 +104,14 @@ internal abstract class CameraEngineContractTest(
         driver.runCase { cases.stopDuringRecordingFinalizesWithShutdownSuccess(this) }
 
     @Test
+    fun stoppedRecordingYieldsExactlyOneFinalized(): TestResult =
+        driver.runCase { cases.stoppedRecordingYieldsExactlyOneFinalized(this) }
+
+    @Test
+    fun invalidStateStopIsFollowedByNoFinalized(): TestResult =
+        driver.runCase { cases.invalidStateStopIsFollowedByNoFinalized(this) }
+
+    @Test
     fun closeCompletesAPendingCaptureWithClosed(): TestResult =
         driver.runCase { cases.closeCompletesAPendingCaptureWithClosed(this) }
 

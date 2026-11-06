@@ -85,6 +85,14 @@ internal fun RecordingState.shownDurationMs(holderElapsed: Duration): Long =
     if (isLive()) holderElapsed.inWholeMilliseconds else 0L
 
 /**
+ * The recorded time the top bar shows for [holder]'s recording in [recordingState]: the holder's
+ * elapsed time from `rememberRecordingElapsed`, through [shownDurationMs].
+ */
+@Composable
+internal fun rememberShownRecordingDurationMs(holder: CameraKStateHolder, recordingState: RecordingState): Long =
+    TODO("C1'a moves CameraScreen's wiring here")
+
+/**
  * The Sample's video recording on the holder: Full HD with audio, up to five minutes.
  *
  * The platform ends a recording at [VideoConfiguration.maxDuration], and the holder's

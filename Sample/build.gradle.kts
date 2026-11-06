@@ -74,6 +74,8 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
+            // The fake holder, for the tests of the Sample's wiring to the 2.0 API.
+            implementation(projects.cameraKTesting)
             @OptIn(ExperimentalComposeLibrary::class)
             implementation(compose.uiTest)
         }

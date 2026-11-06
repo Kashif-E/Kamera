@@ -14,6 +14,7 @@ import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
@@ -575,6 +576,52 @@ internal class ContractCases(
 
             assertFinalizedWithShutdown(events, path)
             assertEquals(EngineState.Closed, engine.state.value)
+        }
+    }
+
+    // Every recording the engine started yields exactly one Finalized, a stop the app asked for included.
+    suspend fun stoppedRecordingYieldsExactlyOneFinalized(scope: TestScope) {
+        val recording = driver as? RecordingDriver
+            ?: return skipCase("stoppedRecordingYieldsExactlyOneFinalized", "RecordingDriver")
+        withEngine { engine ->
+            val events = recordInto(scope, engine)
+            val path = startRecording(scope, engine, recording)
+
+            val stop = scope.async { engine.stopRecording() }
+            driver.settle()
+            recording.deliverRecordingFinalized()
+            driver.settle()
+            val stopped = assertIs<CameraKResult.Success<RecordedVideo>>(stop.await(), "stopRecording").value
+            engine.stop()
+            driver.settle()
+
+            val finalized = events.filterIsInstance<EngineRecordingEvent.Finalized>()
+            assertEquals(1, finalized.size, "Finalized events for one started recording: $events")
+            assertEquals(RecordingEndReason.USER, finalized.single().reason)
+            assertEquals(path, stopped.path, "the stopped file is the one that started")
+        }
+    }
+
+    // A stop with nothing recording is InvalidState(RECORD_STOP): nothing reached the platform, and no Finalized follows.
+    suspend fun invalidStateStopIsFollowedByNoFinalized(scope: TestScope) {
+        if (driver !is RecordingDriver) return skipCase("invalidStateStopIsFollowedByNoFinalized", "RecordingDriver")
+        withEngine { engine ->
+            val events = recordInto(scope, engine)
+            open(engine)
+
+            val stopped = engine.stopRecording()
+            driver.settle()
+            engine.stop()
+            driver.settle()
+
+            val refusal =
+                assertIs<CameraKError.InvalidState>(assertIs<CameraKResult.Failure>(stopped, "stopRecording").error)
+            assertEquals(CameraOperation.RECORD_STOP, refusal.operation)
+            assertEquals(
+                emptyList(),
+                events.filterIsInstance<EngineRecordingEvent.Finalized>(),
+                "Finalized after a stop of nothing",
+            )
         }
     }
 
