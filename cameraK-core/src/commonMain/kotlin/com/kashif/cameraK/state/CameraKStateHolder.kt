@@ -508,7 +508,8 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
 
     /**
      * Where the recording is: Idle, then Starting, Recording, Paused and Stopping, and Finished after
-     * any end, with the outcome. The holder owns it; [RecordingState.elapsed] reads the recorded time.
+     * any end, with the outcome. The holder owns it;
+     * [RecordingState.elapsed][com.kashif.cameraK.recording.elapsed] reads the recorded time.
      */
     public val recordingState: StateFlow<RecordingState>
         get() = recording.state

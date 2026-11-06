@@ -65,3 +65,11 @@ android {
         }
     }
 }
+
+// The @sample functions the KDoc names live in the desktop tests (com.kashif.cameraK.samples). Only
+// commonMain gets them: Dokka refuses two source sets that share a sample root.
+dokka {
+    dokkaSourceSets.named("commonMain") {
+        samples.from("src/desktopTest/kotlin")
+    }
+}

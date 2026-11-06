@@ -71,11 +71,6 @@ kotlin {
             implementation(libs.camera.compose)
         }
     }
-
-    // https://kotlinlang.org/docs/native_objc_interop.html#export_of_kdoc_comments_to_generated_objective_c_headers
-//    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget> {
-//        compilations["main"].compilerOptions.options.freeCompilerArgs.add("_Xexport_kdoc")
-//    }
 }
 
 android {
@@ -274,71 +269,24 @@ tasks.named<Jar>("allMetadataJar") {
 }
 val repositoryUrl = providers.gradleProperty("POM_URL").get()
 
-tasks.withType<org.jetbrains.dokka.gradle.DokkaTask>().configureEach {
+// The API site's look and source links. The @sample functions the KDoc names live in the desktop tests
+// (com.kashif.cameraK.samples); only commonMain gets them, since Dokka refuses two source sets that
+// share a sample root.
+dokka {
     moduleName.set("CameraK")
-    moduleVersion.set(project.version.toString())
-    outputDirectory.set(file("${layout.buildDirectory}/dokka/html"))
-
-    pluginsMapConfiguration.set(
-        mapOf(
-            "org.jetbrains.dokka.base.DokkaBase" to """{
-            "customStyleSheets": ["styles/custom.css"],
-            "customAssets": [],
-            "homepageLink": "$repositoryUrl",
-            "footerMessage": "© 2024 CameraK - Multiplatform Camera SDK",
-            "separateInheritedMembers": false,
-            "mergeImplicitExpectActualDeclarations": true,
-            "sourceSetDependencies": {},
-            "hideSourceSets": false
-        }""",
-        ),
-    )
-
-    dokkaSourceSets {
-        configureEach {
-            includes.from("README.md")
-            skipDeprecated.set(false)
-            reportUndocumented.set(true)
-            noStdlibLink.set(false)
-            noJdkLink.set(false)
-
-            sourceLink {
-                localDirectory.set(file("src"))
-                remoteUrl.set(uri("$repositoryUrl/tree/main/cameraK/src").toURL())
-                remoteLineSuffix.set("#L")
-            }
+    dokkaSourceSets.configureEach {
+        sourceLink {
+            localDirectory.set(file("src"))
+            remoteUrl("$repositoryUrl/tree/main/cameraK/src")
+            remoteLineSuffix.set("#L")
         }
     }
-}
-
-// Create task to copy and inject custom CSS after Dokka generation
-tasks.register("injectCustomCSS") {
-    dependsOn("dokkaGeneratePublicationHtml")
-    doLast {
-        val customCssSource = file("src/dokka/assets/styles/custom.css")
-        val customCssDest = file("${layout.buildDirectory}/dokka/html/styles/custom.css")
-
-        // Copy custom CSS
-        if (customCssSource.exists()) {
-            customCssDest.parentFile.mkdirs()
-            customCssSource.copyTo(customCssDest, overwrite = true)
-            println("✓ Custom CSS copied to build output")
-        }
-
-        // Inject custom CSS link into HTML files
-        fileTree("${layout.buildDirectory}/dokka/html") {
-            include("**/*.html")
-        }.forEach { htmlFile ->
-            val content = htmlFile.readText()
-            if (!content.contains("custom.css")) {
-                val updated =
-                    content.replace(
-                        "styles/font-jb-sans-auto.css\" rel=\"Stylesheet\">",
-                        "styles/font-jb-sans-auto.css\" rel=\"Stylesheet\">\n        <link href=\"styles/custom.css\" rel=\"Stylesheet\">",
-                    )
-                htmlFile.writeText(updated)
-            }
-        }
-        println("✓ Custom CSS injected into HTML files")
+    dokkaSourceSets.named("commonMain") {
+        samples.from("src/desktopTest/kotlin")
+    }
+    pluginsConfiguration.html {
+        customStyleSheets.from("src/dokka/assets/styles/custom.css")
+        homepageLink.set(repositoryUrl)
+        footerMessage.set("© 2024 CameraK - Multiplatform Camera SDK")
     }
 }

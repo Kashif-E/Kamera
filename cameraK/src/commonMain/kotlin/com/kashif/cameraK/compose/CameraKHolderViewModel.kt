@@ -11,7 +11,7 @@ import kotlinx.coroutines.Job
 
 /**
  * Builds a holder for a configuration and the plugins present at creation, starting once the holder
- * it replaces has closed ([startAfter]).
+ * it replaces has closed (`startAfter`).
  */
 internal fun interface HolderFactory {
     fun create(config: CameraConfiguration, plugins: List<CameraKPlugin>, startAfter: Job?): CameraKStateHolder

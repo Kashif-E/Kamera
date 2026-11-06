@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.coroutines.EmptyCoroutineContext
 
-/** How a leased frame becomes the analysis planes of [format] at [size]; [LeasedFrame.analysisPlanes] unless a test fails it. */
+/** How a leased frame becomes the analysis planes of `format` at `size`; [LeasedFrame.analysisPlanes] unless a test fails it. */
 internal fun interface AnalysisConversion {
     fun planes(frame: LeasedFrame, format: FrameFormat, size: Resolution?): List<FramePlane>
 }

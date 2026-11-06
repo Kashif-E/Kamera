@@ -83,6 +83,17 @@ subprojects {
     }
 }
 
+// Every published module's API docs (the javadoc jar verify.sh --full publishes, and the site) fail on
+// Dokka's warnings, so an unresolved @sample or link stops the build instead of scrolling past (CC-33).
+subprojects {
+    if (name !in publishedModules) return@subprojects
+    plugins.withId("org.jetbrains.dokka") {
+        extensions.configure<org.jetbrains.dokka.gradle.DokkaExtension> {
+            dokkaPublications.configureEach { failOnWarning.set(true) }
+        }
+    }
+}
+
 // The 1.x artifact ids 2.0 renamed (design §9.4), each to the module whose POM_ARTIFACT_ID is its 2.0
 // id. Each old id is a POM-only project under relocations/ whose POM relocates it there, so a build
 // that still names the old id resolves the new one. video_recorder_plugin has no 2.0 successor.

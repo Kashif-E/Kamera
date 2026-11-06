@@ -138,7 +138,7 @@ internal class AppleCameraEngine(
     private val readDeviceOrientation: () -> UIDeviceOrientation = { UIDevice.currentDevice.orientation },
     /** Begins (true) or ends (false) UIDevice's orientation notifications; tests count the calls. */
     private val generateOrientationNotifications: (Boolean) -> Unit = ::generateDeviceOrientationNotifications,
-    /** Whether the app's Info.plist has [key]: a test bundle's cannot change per test. */
+    /** Whether the app's Info.plist has a key: a test bundle's cannot change per test. */
     private val hasUsageDescription: (key: String) -> Boolean = ::hasInfoPlistKey,
     /** The rotation coordinators of iOS 17 and later; tests answer for the simulator, which has no camera. */
     private val rotationSources: RotationSourceFactory = CoordinatorRotationSources,
@@ -1417,7 +1417,7 @@ internal fun TorchMode.toAVCaptureTorchMode(): AVCaptureTorchMode = when (this) 
     TorchMode.AUTO -> AVCaptureTorchModeAuto
 }
 
-/** Whether the main bundle's Info.plist has [key]. */
+/** Whether the main bundle's Info.plist has `key`. */
 private fun hasInfoPlistKey(key: String): Boolean = NSBundle.mainBundle.objectForInfoDictionaryKey(key) != null
 
 /** UIDevice's orientation notifications, begun or ended on main, where UIKit wants them. */

@@ -14,7 +14,7 @@ internal class MappedFinalize(val result: CameraKResult<RecordedVideo>, val reas
 /**
  * Maps CameraX's Finalize to the engine's outcome, as design §4.1's Android table does, under §5's
  * partial-file rule: a recording that ends on a platform error is a Success when its file is
- * [playable] and the row's Failure when it is not; a full disk is `Storage(FULL)` with the kept file;
+ * playable and the row's Failure when it is not; a full disk is `Storage(FULL)` with the kept file;
  * codes that by definition leave no file are always a Failure. The Finalize cause is every Failure's
  * cause. A code newer than this table (CameraX added one) maps as ERROR_UNKNOWN does.
  */

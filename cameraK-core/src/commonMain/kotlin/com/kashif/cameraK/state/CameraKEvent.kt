@@ -39,7 +39,7 @@ public abstract class CameraKEvent internal constructor() {
      * thrown exception arrives as [CameraKError.Internal] with the throwable as its cause, whose
      * message may contain paths or URIs.
      *
-     * @property pluginId Which plugin failed: its [com.kashif.cameraK.plugin.CameraKPlugin.id], by
+     * @property pluginId Which plugin failed: its [CameraKPlugin.id], by
      *   default the plugin class's simple name.
      * @property error What failed.
      */
