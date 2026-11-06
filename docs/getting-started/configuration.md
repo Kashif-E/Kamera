@@ -139,6 +139,8 @@ config = CameraConfiguration(
 | `JPEG` | Lossy | Smaller | Web, sharing (default) |
 | `PNG` | Lossless | Larger | Transparency, archival |
 
+**Android:** `PNG` is not supported by `takePictureToFile()`. CameraX encodes stills as JPEG, so the file gets a `.png` name but contains JPEG data. Use `JPEG` on Android and convert in app code if you need PNG. iOS and Desktop write real PNG files.
+
 **Example:**
 
 ```kotlin

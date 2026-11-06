@@ -131,6 +131,18 @@ actual class CameraController(
     // configureCaptureUseCase and rebuildMultiplexedAnalyzer.
     private var pinnedPhysicalId: String? = null
 
+    init {
+        if (imageFormat == ImageFormat.PNG) {
+            // CameraX's OutputFileOptions always encodes stills as JPEG, and re-encoding to PNG would
+            // cost the full-bitmap decode takePictureToFile() exists to avoid (#159).
+            CameraKLogger.w(
+                "CameraK",
+                "ImageFormat.PNG is not supported by takePictureToFile() on Android: the file gets a .png " +
+                    "name but contains JPEG data. Use ImageFormat.JPEG and convert in app code if PNG is needed.",
+            )
+        }
+    }
+
     internal fun lensSnapshot(): List<AndroidLensDescriptor> =
         cachedLensSnapshot ?: LensEnumerator.snapshot(context).also {
             // Don't cache an empty result: a transient camera-service failure on the first call
