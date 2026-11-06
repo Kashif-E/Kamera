@@ -76,6 +76,7 @@ nav:
     - CameraKScreen: api/camera-k-screen.md
   - Examples:
     - Android: examples/android.md
+  - Migrating to 2.0: migration/2.0.md
   - Troubleshooting: troubleshooting.md
   - Contributing: contributing.md
   - License: license.md
