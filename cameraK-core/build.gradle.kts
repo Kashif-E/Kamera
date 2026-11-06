@@ -163,4 +163,12 @@ tasks.named<Test>("desktopTest") {
             },
         ).withPropertyName("kdocSources")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+    // DocsApiTest.deviceChecklistNamesEachReleaseGate checks the checklist's names against these.
+    inputs
+        .files(
+            fileTree(rootDir) {
+                include("benchmark/src/main/**/*.kt", "cameraK-core/src/engineContract/**/*.kt")
+            },
+        ).withPropertyName("releaseGateSources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
