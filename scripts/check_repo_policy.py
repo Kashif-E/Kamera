@@ -43,7 +43,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      No two packages, and no resource directory and a package, differ only in
                      letter case, which a case-insensitive disk would merge into one directory.
                      Each published module's Android namespace is one of its main sources'
-                     packages or a parent of one.
+                     packages or a parent of one, and no main source imports the JDK's or the
+                     standard library's atomics: atomics are AtomicFU's.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -1035,6 +1036,21 @@ def case_only_package_clashes(sources: Dict[str, str], resources: List[str]) -> 
     return problems
 
 
+STDLIB_ATOMICS = re.compile(r"^import\s+((?:java\.util\.concurrent\.atomic|kotlin\.concurrent\.atomics)\.\S+)", re.MULTILINE)
+
+
+def stdlib_atomics_problems(sources: Dict[str, str], modules: List[str]) -> List[str]:
+    """main_sources_use_atomicfu_atomics: no main source set of a published module imports
+    java.util.concurrent.atomic or kotlin.concurrent.atomics; ENGINEERING-BAR.md:15 has atomics use AtomicFU."""
+    problems = []
+    for path, text in sorted(sources.items()):
+        module, _, rest = path.partition("/")
+        if module in modules and re.match(r"src/[A-Za-z]+Main/", rest):
+            for match in STDLIB_ATOMICS.finditer(text):
+                problems.append(f"{path} imports {match.group(1)}; atomics are kotlinx.atomicfu's atomic()")
+    return problems
+
+
 ANDROID_NAMESPACE = re.compile(r'^\s*namespace\s*=\s*"([^"]+)"', re.MULTILINE)
 
 
@@ -1097,6 +1113,19 @@ def check_module_sources() -> List[str]:
         "cameraK-core": ["com.kashif.cameraK.state", "com.kashif.cameraK.engine"],
         "qrScannerPlugin": ["com.kashif.qrscannerplugin"],
     }
+    planted_atomics = {
+        "cameraK-core/src/desktopMain/kotlin/X.kt": "package x\n\nimport java.util.concurrent.atomic.AtomicLong\n",
+        "ocrPlugin/src/androidMain/kotlin/Y.kt": "package y\n\nimport kotlin.concurrent.atomics.AtomicInt\n",
+        "cameraK-core/src/desktopTest/kotlin/Z.kt": "package z\n\nimport java.util.concurrent.atomic.AtomicLong\n",
+        "Sample/src/commonMain/kotlin/W.kt": "package w\n\nimport java.util.concurrent.atomic.AtomicLong\n",
+        "cameraK-core/src/commonMain/kotlin/V.kt": "package v\n\nimport kotlinx.atomicfu.atomic\n",
+    }
+    found = stdlib_atomics_problems(planted_atomics, ["cameraK-core", "ocrPlugin"])
+    if [problem.split(" ", 1)[0] for problem in found] != [
+        "cameraK-core/src/desktopMain/kotlin/X.kt",
+        "ocrPlugin/src/androidMain/kotlin/Y.kt",
+    ]:
+        raise CheckError(f"main_sources_use_atomicfu_atomics misjudges its fixture: {found}")
     found = android_namespace_problems(planted_scripts, planted_packages)
     if len(found) != 1 or not found[0].startswith("ocrPlugin:"):
         raise CheckError(f"android_namespace_matches_package misjudges its fixture: {found}")
@@ -1120,6 +1149,7 @@ def check_module_sources() -> List[str]:
         + apple_internal_problems(sources)
         + case_only_package_clashes(kotlin, resources)
         + android_namespace_problems(module_scripts, module_packages)
+        + stdlib_atomics_problems(kotlin, LIBRARY_MODULES)
     )
 
 

@@ -1045,6 +1045,11 @@ fun apiRuleCase(
 // plugin creates it only in a module that calls abiValidation(), so it existing means validation is on.
 val abiCheckTask = "checkKotlinAbi"
 
+// abi_dump_names_no_atomicfu_type: no committed ABI dump (JVM .api or klib .klib.api; dump path to its
+// text) names an atomicfu type. atomicfu is an implementation detail with no compiler plugin applied, so
+// one of its types in a public signature would tie consumers to the library (§14 row 2).
+fun atomicfuDumpProblems(dumps: Map<String, String>): List<String> = emptyList()
+
 // The gate rules run against fixtures, and the gates checked to cover the modules the 2.0 split adds.
 tasks.register("checkBuildGateRules") {
     group = lintGroup
@@ -1081,6 +1086,7 @@ tasks.register("checkBuildGateRules") {
                 .orEmpty()
         }
     val apiSourceDirs = publishedModules.map { layout.projectDirectory.dir(it).asFile }
+    val abiDumpDirs = publishedModules.associateWith { layout.projectDirectory.dir("$it/api").asFile }
     val abiValidation =
         provider {
             publishedModules.associateWith { abiCheckTask in project(":$it").tasks.names } to
@@ -1457,6 +1463,36 @@ tasks.register("checkBuildGateRules") {
                                 .isEmpty()
                         },
                     ) + abiValidationProblems(publishedModules, enabled, groups)
+                },
+                "abi_dump_names_no_atomicfu_type" to {
+                    val planted =
+                        mapOf(
+                            "a/api/desktop/a.api" to
+                                "public final class a/A {\n\tpublic final fun getCount ()Lkotlinx/atomicfu/AtomicInt;\n}\n",
+                            "a/api/a.klib.api" to "final val a/count // a/count|{}count[0]\n" +
+                                "    final fun <get-count>(): kotlinx.atomicfu/AtomicInt\n",
+                        )
+                    val kept =
+                        mapOf(
+                            "a/api/desktop/a.api" to "public final class a/A {\n\tpublic final fun count ()I\n}\n",
+                        )
+                    val dumps =
+                        abiDumpDirs.flatMap { (module, dir) ->
+                            dir
+                                .walkTopDown()
+                                .filter { it.isFile && it.name.endsWith(".api") }
+                                .map { it.relativeTo(rootDir).invariantSeparatorsPath to it.readText() }
+                                .toList()
+                                .ifEmpty { listOf("$module/api" to "") }
+                        }
+                    listOfNotNull(
+                        "a planted dump line naming atomicfu is accepted"
+                            .takeIf { atomicfuDumpProblems(planted).size < 2 },
+                        "a dump without atomicfu is rejected: ${atomicfuDumpProblems(kept)}"
+                            .takeIf { atomicfuDumpProblems(kept).isNotEmpty() },
+                    ) +
+                        dumps.filter { (_, text) -> text.isEmpty() }.map { (path, _) -> "$path holds no ABI dump" } +
+                        atomicfuDumpProblems(dumps.toMap())
                 },
                 "sample_target_runs_the_sample_tests" to {
                     // The Sample's own tests (its commonTest and desktopTest) run under the sample target,
