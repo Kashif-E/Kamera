@@ -40,12 +40,14 @@ class BlitTest {
     private val back = webcam("usb-back", CameraLens.BACK)
     private val front = webcam("usb-front", CameraLens.FRONT)
 
+    @Suppress("DEPRECATION")
     @Test
     fun aspectRatioCropAppliedToPreviewStillsRecordingsAndAnalysis() = runTest {
-        // 64 x 48 is 4:3; each ratio is the centred crop with even sides.
+        // 64 x 48 is 4:3; each ratio is the centred crop with even sides. RATIO_9_16 is the 16:9 crop,
+        // as on Android and iOS (W11).
         val expected = mapOf(
             AspectRatio.RATIO_16_9 to Seen(64, 36, rgb(0, 6)),
-            AspectRatio.RATIO_9_16 to Seen(26, 48, rgb(19, 0)),
+            AspectRatio.RATIO_9_16 to Seen(64, 36, rgb(0, 6)),
             AspectRatio.RATIO_1_1 to Seen(48, 48, rgb(8, 0)),
             AspectRatio.RATIO_4_3 to Seen(64, 48, rgb(0, 0)),
         )
@@ -53,6 +55,16 @@ class BlitTest {
             val consumers = consumersOf(CameraConfiguration { aspectRatio = ratio }, back)
             assertEquals(Consumers(frame, frame, frame, frame), consumers, "$ratio")
         }
+    }
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun ratio9By16GivesTheSameGeometryAs16By9() = runTest {
+        // One meaning on every platform: the 16:9 sensor ratio, with orientation deciding portrait or
+        // landscape. A landscape webcam frame is cropped to 16:9, never to a 9:16 strip.
+        val nineBySixteen = consumersOf(CameraConfiguration { aspectRatio = AspectRatio.RATIO_9_16 }, back)
+
+        assertEquals(consumersOf(CameraConfiguration { aspectRatio = AspectRatio.RATIO_16_9 }, back), nineBySixteen)
     }
 
     @Test
