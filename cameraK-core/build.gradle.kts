@@ -139,4 +139,12 @@ tasks.named<Test>("desktopTest") {
             layout.projectDirectory.file("../mkdocs.yml"),
         ).withPropertyName("docs")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+    // DocsApiTest.kdocSamplesCompile reads every module's KDoc and samples.
+    inputs
+        .files(
+            fileTree(rootDir) {
+                include("*/src/*Main/**/*.kt", "*/src/*Test/**/*.kt")
+            },
+        ).withPropertyName("kdocSources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
