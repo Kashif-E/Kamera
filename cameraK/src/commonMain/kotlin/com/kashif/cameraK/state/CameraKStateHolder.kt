@@ -4,6 +4,7 @@ import androidx.compose.runtime.Stable
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.SynchronizedObject
@@ -200,6 +201,12 @@ class CameraKStateHolder(
                 )
         } catch (e: Exception) {
             synchronized(pluginLock) { isInitialized = false }
+            // shutdown() skips an uninitialized holder, so release a controller created before the failure.
+            controller?.let { failed ->
+                runCatching { failed.stopSession() }
+                runCatching { failed.cleanup() }
+            }
+            controller = null
             _cameraState.value =
                 CameraKState.Error(
                     exception = e,
@@ -362,7 +369,16 @@ class CameraKStateHolder(
 
                 val result = currentController.takePictureToFile()
 
-                _events.emit(CameraKEvent.ImageCaptured(result))
+                // Platforms report capture failures as a result, not an exception
+                if (result is ImageCaptureResult.Error) {
+                    _events.emit(CameraKEvent.CaptureFailed(result.exception))
+                    _uiState.value =
+                        _uiState.value.copy(
+                            lastError = "Capture failed: ${result.exception.message}",
+                        )
+                } else {
+                    _events.emit(CameraKEvent.ImageCaptured(result))
+                }
             } catch (e: Exception) {
                 _events.emit(CameraKEvent.CaptureFailed(e))
                 _uiState.value =

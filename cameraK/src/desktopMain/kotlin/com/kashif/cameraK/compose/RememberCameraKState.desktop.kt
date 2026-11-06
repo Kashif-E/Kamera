@@ -11,6 +11,7 @@ import com.kashif.cameraK.controller.DesktopCameraControllerBuilder
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
+import kotlinx.coroutines.CancellationException
 
 /**
  * Desktop implementation of [rememberCameraKState].
@@ -45,7 +46,13 @@ actual fun rememberCameraKState(
     // Initialize controller and plugins
     LaunchedEffect(stateHolder) {
         setupPlugins(stateHolder)
-        stateHolder.initialize()
+        try {
+            stateHolder.initialize()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Already published as CameraKState.Error; don't crash the host app.
+        }
     }
 
     // Cleanup on disposal
