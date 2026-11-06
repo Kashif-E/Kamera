@@ -1,7 +1,6 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.enums.DeviceOrientation
-import com.kashif.cameraK.utils.InternalCameraKApi
 import platform.AVFoundation.AVCaptureVideoOrientationLandscapeLeft
 import platform.AVFoundation.AVCaptureVideoOrientationLandscapeRight
 import platform.AVFoundation.AVCaptureVideoOrientationPortrait
@@ -16,12 +15,10 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
- * Photos take their orientation from setTargetOrientation when it is set, as the API documents. The
- * preview shows what the interface shows, so it follows the interface orientation: a portrait-locked
- * app keeps a portrait preview whichever way the device turns, and a locked target does not rotate it.
+ * Photos take their orientation from setTargetOrientation when it is set, as the API documents. (The
+ * preview follows the interface orientation: RotationTest.previewTakesTheCoordinatorPreviewAngle.)
  */
 class OrientationTest {
     private val rig = CaptureRig()
@@ -33,7 +30,7 @@ class OrientationTest {
     fun aTargetOrientationDecidesThePhotosOrientation() {
         rig.start()
 
-        rig.controller.setTargetOrientation(DeviceOrientation.LANDSCAPE_LEFT)
+        rig.launch { setTargetOrientation(DeviceOrientation.LANDSCAPE_LEFT) }
         val (_, landscape) = rig.capture()
         assertEquals(
             AVCaptureVideoOrientationLandscapeRight,
@@ -41,31 +38,12 @@ class OrientationTest {
             "a LANDSCAPE_LEFT target did not reach the photo",
         )
 
-        rig.controller.setTargetOrientation(DeviceOrientation.PORTRAIT_UPSIDE_DOWN)
+        rig.launch { setTargetOrientation(DeviceOrientation.PORTRAIT_UPSIDE_DOWN) }
         val (_, upsideDown) = rig.capture()
         assertEquals(
             AVCaptureVideoOrientationPortraitUpsideDown,
             upsideDown.orientation,
             "a PORTRAIT_UPSIDE_DOWN target did not reach the photo",
-        )
-    }
-
-    @Test
-    @OptIn(InternalCameraKApi::class)
-    fun thePreviewFollowsTheInterfaceOrientationNotTheTarget() {
-        rig.controller.interfaceOrientation = { AVCaptureVideoOrientationLandscapeLeft }
-        rig.start()
-
-        rig.controller.setTargetOrientation(DeviceOrientation.PORTRAIT)
-        // The host view laid out again, before it has a window scene: the seam answers for the interface.
-        rig.controller.previewLayoutChanged(null)
-        drainSessionThenMain(rig.custom)
-
-        assertTrue(rig.previewOrientations.isNotEmpty(), "the preview was never oriented to the interface")
-        assertEquals(
-            setOf(AVCaptureVideoOrientationLandscapeLeft),
-            rig.previewOrientations.toSet(),
-            "the preview was turned away from the interface's orientation",
         )
     }
 

@@ -1,6 +1,7 @@
 package com.kashif.cameraK.controller
 
-import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.capture.CapturedImage
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.toNSData
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_HIGH
 import platform.darwin.dispatch_apply
@@ -33,13 +34,13 @@ class ConcurrentCaptureFilesTest {
                 request.callbacks.captureFinished(null)
             }
             captures.forEachIndexed { i, (capture, _) ->
-                val result = assertIs<ImageCaptureResult.SuccessWithFile>(capture.awaitResult())
+                val result = assertIs<CameraKResult.Success<CapturedImage>>(capture.awaitResult()).value
                 assertContentEquals(
                     photo(round, i),
-                    fileBytes(result.filePath),
+                    fileBytes(result.path),
                     "round $round: capture $i lost its photo",
                 )
-                paths += result.filePath
+                paths += result.path
             }
         }
         assertEquals(

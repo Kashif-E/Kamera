@@ -2,7 +2,6 @@
 
 package com.kashif.cameraK.engine
 
-import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.controller.DesktopCameraEngine
 import com.kashif.cameraK.controller.DesktopDevices
 import com.kashif.cameraK.controller.DeviceEnumerator
@@ -17,13 +16,8 @@ import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKPlatformApi
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.withContext
 
-/**
- * The desktop engine over the enumerated cameras, with the 1.x facade over itself for
- * `Ready.controller` (§2.4 desktop).
- */
+/** The desktop engine over the enumerated cameras (§2.4 desktop). */
 internal actual fun createPlatformEngine(
     config: CameraConfiguration,
     context: CameraKPlatformContext,
@@ -59,18 +53,4 @@ internal fun desktopEngine(
             desktopCapabilities(if (lenses.isEmpty() && factory != null) listOf(desktopLensInfo()) else lenses)
         },
     )
-}
-
-// The bridge no longer uses it; LegacyControllerEngineTest does, until C1' removes both (w3 decisions §4).
-
-/** Every call on [io]; close waits until the grab loop has released the camera. */
-internal class DesktopLegacySession(private val controller: CameraController, private val io: CoroutineDispatcher) :
-    LegacySession {
-    override suspend fun start() = withContext(io) { controller.startSession() }
-
-    override suspend fun stop() = withContext(io) { controller.stopSession() }
-
-    override suspend fun close() = withContext(io) { controller.closeAndJoin() }
-
-    override suspend fun <T> onSessionThread(block: () -> T): T = withContext(io) { block() }
 }

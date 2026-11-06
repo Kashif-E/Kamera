@@ -29,39 +29,21 @@ internal interface FrameConsumer {
  *
  * 1. to each synchronous registration [frameConsumers] returns, in turn, with the proxy itself;
  * 2. when an asynchronous registration takes the frame, the planes are copied once into a slot from
- *    [pool], and the slot goes to each one that took it, on its own worker;
- * 3. to each 1.x consumer [consumers] returns, in turn, with its own [LegacyImageProxy] share.
+ *    [pool], and the slot goes to each one that took it, on its own worker.
  *
- * The multiplexer holds a share of its own and closes it before [analyze] returns, so the proxy
- * closes then unless a 1.x consumer still holds its share; it closes at the last share's close.
+ * The proxy closes before [analyze] returns, whatever any registration holds.
  */
 internal class MultiplexingAnalyzer(
-    private val consumers: () -> List<ImageAnalysis.Analyzer>,
-    private val frameConsumers: () -> List<FrameConsumer> = { emptyList() },
+    private val frameConsumers: () -> List<FrameConsumer>,
     private val sessionFormat: FrameFormat = FrameFormat.YUV_420,
     private val pool: FramePool = FramePool(),
 ) : ImageAnalysis.Analyzer {
-    constructor(analyzers: List<ImageAnalysis.Analyzer>) : this({ analyzers })
-
     override fun analyze(imageProxy: ImageProxy) {
-        val legacy = consumers()
-        val registered = frameConsumers()
-        val shares = AtomicInteger(1 + legacy.size)
         try {
+            val registered = frameConsumers()
             if (registered.isNotEmpty()) deliver(imageProxy, registered)
-            for (analyzer in legacy) {
-                val frame = LegacyImageProxy(imageProxy, shares)
-                // Runs on the analyzer executor, where an escaped exception kills the host process. A
-                // failing consumer gives up its share of the frame so the others, and the stream, go on.
-                try {
-                    analyzer.analyze(frame)
-                } catch (e: Exception) {
-                    CameraKLogger.e(TAG, "Image analyzer failed", e)
-                    frame.close()
-                }
-            }
         } finally {
-            if (shares.decrementAndGet() == 0) imageProxy.close()
+            imageProxy.close()
         }
     }
 

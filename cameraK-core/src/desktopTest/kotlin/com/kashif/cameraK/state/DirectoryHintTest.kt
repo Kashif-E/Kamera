@@ -29,7 +29,8 @@ class DirectoryHintTest {
                 emptyList()
             }
             executables
-                .filter { executable -> directory in executable.parameterTypes }
+                // A function's synthetic `$default` stub is that function.
+                .filter { executable -> !executable.isSynthetic && directory in executable.parameterTypes }
                 .map { "${type.name}.${it.name}" }
         }.distinct()
         assertEquals(emptyList(), unreadable, "classes whose signatures could not be read")

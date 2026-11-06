@@ -1,5 +1,10 @@
+@file:OptIn(com.kashif.cameraK.utils.CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.enums.CameraDeviceType
+import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.QualityPrioritization
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AVFoundation.AVCapturePhotoQualityPrioritizationQuality
@@ -58,7 +63,7 @@ class PreparedPhotoSettingsTest {
         drainSessionThenMain(rig.custom)
         val before = preparedNonEmpty()
 
-        rig.controller.toggleCameraLens()
+        rig.launch { selectCamera(CameraSelection.ByLens(CameraLens.FRONT, CameraDeviceType.DEFAULT)) }
         drainSessionThenMain(rig.custom)
 
         assertTrue(preparedNonEmpty() > before, "the photo output was not prepared again for the new camera")

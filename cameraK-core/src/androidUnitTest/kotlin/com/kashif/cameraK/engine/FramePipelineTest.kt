@@ -44,8 +44,7 @@ import kotlin.test.assertTrue
 /**
  * The Android FrameSource (§8, §12.4 A4'): one ImageAnalysis bound per Decision 14, a multiplexer
  * that hands the ImageProxy to synchronous registrations, copies it once into a pooled slot for the
- * asynchronous ones, and closes it before analyze returns unless a 1.x consumer of the facade still
- * holds its share. Frames carry the size, rotation and crop rect the frame's metadata states (#168).
+ * asynchronous ones, and closes it before analyze returns. Frames carry the size, rotation and crop rect the frame's metadata states (#168).
  *
  * Every asynchronous registration's worker is a dispatcher on the test scheduler, so a frame reaches
  * it on the next settle.
@@ -287,9 +286,8 @@ class FramePipelineTest {
             rotations += "pooled ${frame.rotationDegrees}"
             frame.retain().use { rotations += "retained ${it.rotationDegrees}" }
         }
-        engine.legacyController.registerImageAnalyzer { proxy ->
-            rotations += "legacy ${proxy.imageInfo.rotationDegrees}"
-            proxy.close()
+        engine.frames.register(FrameSpec(synchronous = true)) {
+            rotations += "second proxy ${it.imageProxy?.imageInfo?.rotationDegrees}"
         }
         platform.settle(testScheduler)
 
@@ -297,7 +295,7 @@ class FramePipelineTest {
         platform.settle(testScheduler)
 
         assertEquals(
-            listOf("synchronous 90", "proxy 90", "legacy 90", "pooled 90", "retained 90"),
+            listOf("synchronous 90", "proxy 90", "second proxy 90", "pooled 90", "retained 90"),
             rotations,
             "a consumer lost the portrait frame's rotation",
         )
@@ -346,51 +344,6 @@ class FramePipelineTest {
     fun imageProxyNullOnATestFrame() {
         assertNull(TestFrame.luma(2, 2, ByteArray(4)).imageProxy, "a TestFrame has no ImageProxy")
         assertNull(TestFrame.luma(2, 2, ByteArray(4)).retain().imageProxy, "nor does its retained frame")
-    }
-
-    @Test
-    fun legacyConsumerClosingAfterAnalyzeReturnsReadsAnOpenImage() = runTest {
-        val engine = openEngine()
-        val kept = mutableListOf<ImageProxy>()
-        // As the 1.x live OCR analyzer does: it hands the image on and closes the proxy later.
-        engine.legacyController.registerImageAnalyzer { kept += it }
-        platform.settle(testScheduler)
-        val frame = FakeImageProxy.yuv()
-
-        deliver(frame)
-
-        val share = kept.single()
-        assertEquals(0, frame.closes, "the real proxy closed while a 1.x consumer still holds it")
-        val buffer = share.planes[0].buffer
-        assertContentEquals(frame.firstPlane, ByteArray(buffer.remaining()).also(buffer::get), "the held share's luma")
-        share.close()
-        assertEquals(1, frame.closes, "the 1.x consumer's close did not close the real proxy")
-        share.close()
-        assertEquals(1, frame.closes, "a second close of the share closed the real proxy again")
-        engine.closeAndJoin()
-    }
-
-    @Test
-    fun legacyAndFrameSourceConsumersShareOneFrame() = runTest {
-        val engine = openEngine()
-        val shares = mutableListOf<ImageProxy>()
-        val copied = mutableListOf<ByteArray>()
-        engine.legacyController.registerImageAnalyzer { shares += it }
-        engine.frames.register { copied += it.firstPlaneBytes() }
-        platform.settle(testScheduler)
-        val frame = FakeImageProxy.yuv()
-
-        deliver(frame)
-        platform.settle(testScheduler)
-
-        assertContentEquals(frame.firstPlane, copied.single(), "the FrameSource registration's copy")
-        val share = shares.single()
-        val buffer = share.planes[0].buffer
-        assertContentEquals(frame.firstPlane, ByteArray(buffer.remaining()).also(buffer::get), "the 1.x share")
-        assertEquals(0, frame.closes, "the proxy closed under the 1.x consumer")
-        share.close()
-        assertEquals(1, frame.closes, "one ImageProxy, closed once after its last share")
-        engine.closeAndJoin()
     }
 
     @Test

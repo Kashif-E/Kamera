@@ -7,10 +7,7 @@ import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 
-/**
- * The Android engine over CameraX, on the application context. Its 1.x facade is the engine's own
- * [LegacyControllerAccess.legacyController].
- */
+/** The Android engine over CameraX, on the application context. */
 internal actual fun createPlatformEngine(
     config: CameraConfiguration,
     context: CameraKPlatformContext,

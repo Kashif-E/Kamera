@@ -17,7 +17,6 @@ import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CommandRunner
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
@@ -27,7 +26,6 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,9 +36,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.ComparableTimeMark
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
@@ -65,9 +61,6 @@ internal val SHUTDOWN_STOP_TIMEOUT: Duration = 5.seconds
  */
 internal val CONFIG_CHANGE_GRACE: Duration = 2.seconds
 
-/** How often `uiState.recordingDurationMs` moves while recording: the 1.x ticker's rate. */
-internal val RECORDING_TICK: Duration = 250.milliseconds
-
 /**
  * The holder's one recording: the owner of [state] and the only path to the engine's recording
  * calls, and, for a host stop, to `engine.stop()`. Transitions that wait on the platform hold one
@@ -84,12 +77,6 @@ internal val RECORDING_TICK: Duration = 250.milliseconds
  * `Finalized` arrived owes one, and the next `Finalized` pays the oldest debt: it is drained, so a
  * late end never reaches the recording after it.
  *
- * Until C1' removes them, the deprecated 1.x events are emitted beside the 2.0 ones, so a 1.x
- * listener keeps hearing about recordings: [CameraKEvent.RecordingStarted] when a start becomes
- * Recording (not on resume), [CameraKEvent.RecordingStopped] for every end with a file,
- * [CameraKEvent.RecordingFailed] for every end with a failure, and
- * [CameraKEvent.RecordingMaxDurationReached] first when the duration limit ended it.
- *
  * @param commands Runs each platform call as a command job in the holder's scope, on its default
  *   dispatcher, so a caller that is cancelled never cancels a finalization.
  * @param emit Delivers an event to the holder's events.
@@ -104,15 +91,9 @@ internal class RecordingController(
 ) {
     private val lock = SynchronizedObject()
     private val transitions = Mutex()
-    private val origin: ComparableTimeMark = timeSource.markNow()
 
     private val _state = MutableStateFlow<RecordingState>(RecordingState.Idle)
     val state: StateFlow<RecordingState> = _state.asStateFlow()
-
-    private val _durationMs = MutableStateFlow(0L)
-
-    /** The recorded time from [RecordingClock], published every [RECORDING_TICK] and at each pause and resume. */
-    val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
 
     // Guarded by lock.
     private var lastId = 0L
@@ -121,8 +102,6 @@ internal class RecordingController(
     private var startJob: Job? = null
     private var stopJob: Deferred<CameraKResult<RecordedVideo>>? = null
     private var hasAudio = false
-    private var clock: RecordingClock? = null
-    private var ticker: Job? = null
 
     // Guarded by lock: the Finalized events still owed by recordings already ended, and whether the
     // current recording's own has arrived.
@@ -414,15 +393,9 @@ internal class RecordingController(
     private fun onEngineEvent(event: EngineRecordingEvent) {
         when (event) {
             // A Started is always the current start's: only Finalized events can arrive late.
-            is EngineRecordingEvent.Started -> {
-                val recording = synchronized(lock) {
-                    if (_state.value !is RecordingState.Starting || startAbandoned) return
-                    becomeRecording(startingId, event.path, event.hasAudio).also {
-                        startSignal.value = StartSignal.Started(it)
-                    }
-                }
-                @Suppress("DEPRECATION")
-                emit(CameraKEvent.RecordingStarted(recording.filePath))
+            is EngineRecordingEvent.Started -> synchronized(lock) {
+                if (_state.value !is RecordingState.Starting || startAbandoned) return
+                startSignal.value = StartSignal.Started(becomeRecording(startingId, event.path, event.hasAudio))
             }
             is EngineRecordingEvent.Finalized -> onFinalized(event)
             // The pause and resume commands move the state when the engine returns.
@@ -434,23 +407,12 @@ internal class RecordingController(
         synchronized(lock) {
             val recording = RecordingState.Recording(id, path, timeSource.markNow(), Duration.ZERO, withAudio)
             hasAudio = withAudio
-            clock = RecordingClock(nowNanos())
-            _durationMs.value = 0L
             _state.value = recording
-            ticker?.cancel()
-            ticker = scope.launch {
-                while (true) {
-                    delay(RECORDING_TICK)
-                    publishDuration()
-                }
-            }
             recording
         }
 
     private fun paused(recording: RecordingState.Recording) = synchronized(lock) {
         if (_state.value !== recording) return
-        clock?.pause(nowNanos())
-        publishDuration()
         _state.value = RecordingState.Paused(
             recording.recordingId,
             recording.filePath,
@@ -460,8 +422,6 @@ internal class RecordingController(
 
     private fun resumed(paused: RecordingState.Paused) = synchronized(lock) {
         if (_state.value !== paused) return
-        clock?.resume(nowNanos())
-        publishDuration()
         _state.value = RecordingState.Recording(
             paused.recordingId,
             paused.filePath,
@@ -508,42 +468,16 @@ internal class RecordingController(
     }
 
     // Any end, under lock: Finished for display. The caller announces it once the lock is released.
-    private fun finishLocked(id: Long, result: CameraKResult<RecordedVideo>, reason: RecordingEndReason): Ended {
-        val filePath = when (val current = _state.value) {
-            is RecordingState.Recording -> current.filePath
-            is RecordingState.Paused -> current.filePath
-            is RecordingState.Stopping -> current.filePath
-            else -> null
-        }
-        val recordedMs = clock?.recordedMillis(nowNanos()) ?: 0L
-        stopTicking()
-        val finished = RecordingState.Finished(id, result, reason).also { _state.value = it }
-        return Ended(finished, filePath, recordedMs)
-    }
+    private fun finishLocked(
+        id: Long,
+        result: CameraKResult<RecordedVideo>,
+        reason: RecordingEndReason,
+    ): RecordingState.Finished = RecordingState.Finished(id, result, reason).also { _state.value = it }
 
-    // RecordingEnded unless the caller asked for the end, then the deprecated 1.x events.
-    private fun announce(end: Ended) {
-        val finished = end.finished
+    // RecordingEnded unless the caller asked for the end.
+    private fun announce(finished: RecordingState.Finished) {
         if (finished.reason != RecordingEndReason.USER) {
             emit(CameraKEvent.RecordingEnded(finished.recordingId, finished.result, finished.reason))
-        }
-        announceLegacy(end)
-    }
-
-    @Suppress("DEPRECATION")
-    private fun announceLegacy(end: Ended) {
-        val limit = end.finished.reason == RecordingEndReason.MAX_DURATION
-        when (val result = end.finished.result) {
-            is CameraKResult.Success -> {
-                val video = result.value
-                val durationMs = video.duration.inWholeMilliseconds
-                if (limit) emit(CameraKEvent.RecordingMaxDurationReached(video.path, durationMs))
-                emit(CameraKEvent.RecordingStopped(VideoCaptureResult.Success(video.path, durationMs)))
-            }
-            is CameraKResult.Failure -> {
-                if (limit) end.filePath?.let { emit(CameraKEvent.RecordingMaxDurationReached(it, end.recordedMs)) }
-                emit(CameraKEvent.RecordingFailed(RecordingFailedException.of(result.error)))
-            }
         }
     }
 
@@ -558,25 +492,8 @@ internal class RecordingController(
             CameraKLogger.w(TAG, "A recording start ended after its state had moved on; the state stays")
             return@synchronized
         }
-        stopTicking()
         _state.value = RecordingState.Idle
     }
-
-    private fun stopTicking() {
-        ticker?.cancel()
-        ticker = null
-        clock = null
-        _durationMs.value = 0L
-    }
-
-    private fun publishDuration() = synchronized(lock) {
-        clock?.let { _durationMs.value = it.recordedMillis(nowNanos()) }
-    }
-
-    private fun nowNanos(): Long = origin.elapsedNow().inWholeNanoseconds
-
-    // A Finished, with what the 1.x events need of the recording it ended.
-    private class Ended(val finished: RecordingState.Finished, val filePath: String?, val recordedMs: Long)
 
     private sealed interface StartSignal {
         class Started(val recording: RecordingState.Recording) : StartSignal
@@ -592,18 +509,6 @@ internal class RecordingController(
 private fun RecordingState.isLive(): Boolean = when (this) {
     RecordingState.Idle, is RecordingState.Finished -> false
     else -> true
-}
-
-/**
- * The exception a deprecated [CameraKEvent.RecordingFailed] carries for an error with no exception of
- * its own; it names the error's kind, never a path.
- */
-internal class RecordingFailedException(error: CameraKError) :
-    IllegalStateException("The recording failed: ${error::class.simpleName}", error.cause) {
-    companion object {
-        /** The platform's own exception when there is one, as 1.x passed it on. */
-        fun of(error: CameraKError): Exception = error.cause as? Exception ?: RecordingFailedException(error)
-    }
 }
 
 /** The recording did not finalize within [SHUTDOWN_STOP_TIMEOUT]; logged, never thrown. */

@@ -1,9 +1,18 @@
+// The hint names itself in its subclasses.
+@file:Suppress("DEPRECATION_ERROR")
+
 package com.kashif.cameraK.video
 
 /**
- * Sealed class representing the result of a completed video recording.
- * Mirrors [com.kashif.cameraK.result.ImageCaptureResult] in structure.
+ * The 1.x outcome of a recording. Nothing in 2.0 produces it: `stopRecording()` returns a
+ * `CameraKResult<RecordedVideo>`. Kept, with its 1.x shape, only so the IDE can point 1.x code at the
+ * replacement; removed in 2.1.
  */
+@Deprecated(
+    "Removed in CameraK 2.0: stopRecording() returns a CameraKResult<RecordedVideo>.",
+    ReplaceWith("CameraKResult<RecordedVideo>", "com.kashif.cameraK.capture.RecordedVideo"),
+    level = DeprecationLevel.ERROR,
+)
 sealed class VideoCaptureResult {
 
     /**

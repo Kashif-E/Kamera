@@ -25,6 +25,8 @@ class ReportFailureTest {
     }
 
     private class NamedByItsClass : CameraKPlugin {
+        override fun onAttach(context: CameraKPluginContext) = Unit
+
         override fun onDetach() = Unit
     }
 

@@ -1,18 +1,26 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
-import android.content.Context
-import android.os.Looper
-import androidx.camera.view.PreviewView
-import androidx.test.core.app.ApplicationProvider
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.FakeAndroidPlatform
+import com.kashif.cameraK.engine.open
+import com.kashif.cameraK.enums.CameraDeviceType
+import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraFeature
+import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import kotlin.test.assertIs
 
 /**
  * Every bind gives CameraX a camera with the torch off and no zoom. Torch and zoom are what the user
@@ -21,9 +29,6 @@ import kotlin.test.assertTrue
  */
 @RunWith(RobolectricTestRunner::class)
 class HardwareStateAfterBindTest {
-    private val context: Context = ApplicationProvider.getApplicationContext()
-    private val backend = FakeCameraXBackend()
-    private val previewView = PreviewView(context)
     private val problems = mutableListOf<String>()
 
     @After
@@ -33,88 +38,60 @@ class HardwareStateAfterBindTest {
     }
 
     @Test
-    fun torchOnInTheConfiguration_isTurnedOnWhenTheCameraIsBound() {
-        val controller = testController(context, backend, torchMode = TorchMode.ON)
+    fun torchAndZoomSetByTheUser_areAppliedAgainAfterARebind() = runTest {
+        val platform = FakeAndroidPlatform(FakeAndroidPlatform.CONTRACT_CAMERAS)
+        val engine = platform.engine(testScheduler)
+        open(platform, engine)
+        assertEquals(CameraKResult.Success(TorchMode.ON), engine.setTorchMode(TorchMode.ON))
+        assertIs<CameraKResult.Success<*>>(engine.setZoom(2.5f))
+        platform.settle(testScheduler)
 
-        controller.bindCamera(previewView)
-        idleMainLooper()
+        val switch = async { engine.selectCamera(CameraSelection.ByLens(CameraLens.FRONT, CameraDeviceType.DEFAULT)) }
+        platform.settle(testScheduler)
+        assertIs<CameraKResult.Success<*>>(switch.await(), "the lens switch")
 
-        assertEquals(
-            listOf(true),
-            backend.binding.cameras.single().torchRequests,
-            "the configured torch was never applied",
-        )
-    }
-
-    @Test
-    fun torchAndZoomSetByTheUser_areAppliedAgainAfterARebind() {
-        val controller = testController(context, backend)
-        controller.bindCamera(previewView)
-        idleMainLooper()
-        controller.setTorchMode(TorchMode.ON)
-        controller.setZoom(2.5f)
-
-        controller.toggleCameraLens()
-        idleMainLooper()
-
-        val rebound = backend.binding.cameras.last()
-        assertEquals(2, backend.binding.cameras.size, "setup: the lens switch should rebind")
+        val rebound = platform.backend.binding.cameras.last()
+        assertEquals(2, platform.backend.binding.cameras.size, "setup: the lens switch should rebind")
         assertEquals(listOf(true), rebound.torchRequests, "the torch went dark after the rebind")
         assertEquals(listOf(2.5f), rebound.zoomRequests, "the zoom fell back to 1x after the rebind")
+        engine.closeAndJoin()
     }
 
     @Test
-    fun torchOnACameraWithoutAFlashUnit_isNotRequestedAndIsReported() {
-        backend.binding.newCamera = { FakeCamera(hasFlashUnit = false) }
-        val controller = testController(context, backend)
-        controller.bindCamera(previewView)
-        idleMainLooper()
-        recordProblems()
+    fun torchOnACameraWithoutAFlashUnit_isNotRequestedAndIsReported() = runTest {
+        val platform = FakeAndroidPlatform(FakeAndroidPlatform.CONTRACT_CAMERAS, flashUnitOf = { false })
+        val engine = platform.engine(testScheduler)
+        open(platform, engine)
 
-        controller.setTorchMode(TorchMode.ON)
-        controller.toggleTorchMode()
-        idleMainLooper()
+        val result = engine.setTorchMode(TorchMode.ON)
+        platform.settle(testScheduler)
 
         assertEquals(
             emptyList(),
-            backend.binding.cameras.single().torchRequests,
+            platform.backend.binding.cameras.single().torchRequests,
             "the torch was requested from a camera with no flash unit",
         )
-        assertTrue(problems.any { "flash unit" in it }, "no report that the camera has no flash unit: $problems")
+        val refused = assertIs<CameraKError.Unsupported>(assertIs<CameraKResult.Failure>(result).error)
+        assertEquals(CameraFeature.TORCH, refused.feature, "the report that the camera has no flash unit")
+        engine.closeAndJoin()
     }
 
     @Test
-    fun torchRequestThatCameraXFails_isReported() {
-        backend.binding.newCamera = { FakeCamera(torchFailure = IllegalStateException("Camera is closed")) }
-        val controller = testController(context, backend)
-        controller.bindCamera(previewView)
-        idleMainLooper()
+    fun torchRequestThatCameraXFails_isReported() = runTest {
+        val platform = FakeAndroidPlatform(FakeAndroidPlatform.CONTRACT_CAMERAS)
+        platform.backend.binding.cameraFor = { FakeCamera(torchFailure = IllegalStateException("Camera is closed")) }
+        val engine = platform.engine(testScheduler)
+        open(platform, engine)
         recordProblems()
 
-        controller.setTorchMode(TorchMode.ON)
-        idleMainLooper()
-        controller.toggleTorchMode()
-        idleMainLooper()
+        engine.setTorchMode(TorchMode.ON)
+        platform.settle(testScheduler)
+        engine.setTorchMode(TorchMode.OFF)
+        platform.settle(testScheduler)
 
         val failures = problems.filter { "torch" in it.lowercase() && "failed" in it }
         assertEquals(2, failures.size, "a failed torch request was dropped: $problems")
-    }
-
-    @Test
-    fun zoomBelowOneX_reachesACameraThatGoesThatWide() {
-        backend.binding.newCamera = { FakeCamera(minZoom = 0.6f) }
-        val controller = testController(context, backend)
-        controller.bindCamera(previewView)
-        idleMainLooper()
-
-        controller.setZoom(0.6f)
-        controller.setZoom(0.2f)
-
-        assertEquals(
-            listOf(0.6f, 0.6f),
-            backend.binding.cameras.single().zoomRequests,
-            "the zoom was clamped to 1x on a camera that zooms out to 0.6x",
-        )
+        engine.closeAndJoin()
     }
 
     private fun recordProblems() {
@@ -122,5 +99,3 @@ class HardwareStateAfterBindTest {
         CameraKLogger.sink = { level, _, message, _ -> if (level != CameraKLogger.Level.DEBUG) problems += message }
     }
 }
-
-private fun idleMainLooper() = shadowOf(Looper.getMainLooper()).idle()

@@ -78,12 +78,11 @@ class SelectCameraTest {
     fun selectDuringRecordingIsBusyAndNothingRebinds() = runTest {
         val platform = FakeAndroidPlatform(listOf(BACK, FRONT))
         val engine = platform.engine(testScheduler)
-        val facade = (engine as LegacyControllerAccess).legacyController
         assertEquals(CameraKResult.Success(Unit), engine.start(desired))
         platform.settle(testScheduler)
-        val recording = async { facade.startRecording(VideoConfiguration { enableAudio = false }) }
+        val recording = async { engine.startRecording(VideoConfiguration { enableAudio = false }) }
         platform.settle(testScheduler)
-        recording.await()
+        assertIs<CameraKResult.Success<String>>(recording.await(), "setup: the recording")
         val binds = platform.backend.binding.bindCalls
 
         val busy = assertIs<CameraKResult.Failure>(engine.selectCamera(CameraSelection.ById(FRONT.id)))

@@ -3,16 +3,15 @@ package com.kashif.cameraK.controller
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.engine.WorkerDispatcher
 import com.kashif.cameraK.engine.newDedicatedWorker
+import com.kashif.cameraK.state.removedIn2
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.future.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -23,7 +22,6 @@ import org.bytedeco.javacv.VideoInputFrameGrabber
 import java.awt.image.BufferedImage
 import java.io.File
 import java.util.WeakHashMap
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -52,7 +50,6 @@ class CameraGrabber(
     }
 
     private val job = atomic<Job?>(null)
-    private val ownerScope = atomic<CoroutineScope?>(null)
 
     // Serialises start() and stop(), so two starts racing from different threads launch one loop.
     private val startLock = Any()
@@ -81,30 +78,14 @@ class CameraGrabber(
         this.isHorizontallyFlipped = flip
     }
 
-    /**
-     * Returns a copy of the grab loop's next frame, waiting up to [SNAPSHOT_TIMEOUT_MS], or null if
-     * the loop is not running. This blocks the calling thread.
-     */
+    /** Removed in 2.0. */
     @Deprecated(
-        "This used to call grab() on the caller's thread, racing the grab loop for the same native " +
-            "handle. It now blocks until the grab loop's next frame. Use CameraController.takePictureToFile(); " +
-            "this method becomes internal in CameraK 2.0.",
+        "Removed in CameraK 2.0: capture a still with the holder's suspending capture(), which writes " +
+            "the next frame to a file.",
+        ReplaceWith("holder.capture()"),
+        level = DeprecationLevel.ERROR,
     )
-    fun grabCurrentFrame(): BufferedImage? {
-        val scope = ownerScope.value ?: return null
-        return try {
-            scope
-                .future(Dispatchers.Default) { awaitSnapshot() }
-                .get(SNAPSHOT_TIMEOUT_MS + FUTURE_GRACE_MS, TimeUnit.MILLISECONDS)
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            CameraKLogger.e(TAG, "Interrupted while waiting for a camera frame", e)
-            null
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Waiting for a camera frame failed", e)
-            null
-        }
-    }
+    fun grabCurrentFrame(): BufferedImage? = throw removedIn2()
 
     /** Whether a grab loop is running. */
     internal val isRunning: Boolean get() = job.value?.isActive == true
@@ -185,7 +166,6 @@ class CameraGrabber(
         }
         loop.invokeOnCompletion { producer.close() }
         job.value = loop
-        ownerScope.value = scope
         return loop
     }
 
@@ -486,7 +466,6 @@ private const val PREVIEW_HELD = 2
 
 // Long enough for a slow webcam's first frame; capture and recording fail rather than wait forever.
 private const val SNAPSHOT_TIMEOUT_MS = 5_000L
-private const val FUTURE_GRACE_MS = 1_000L
 
 // Frames without an image (audio, or a stream the demuxer is draining) are interleaved with video,
 // a few at a time. This many in a row means the camera has stopped producing pictures.

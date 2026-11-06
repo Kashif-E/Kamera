@@ -2,8 +2,8 @@
 
 package com.kashif.cameraK.controller
 
-import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capabilities.capabilitiesOf
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineState
@@ -48,7 +48,7 @@ class SelectCameraByIdTest {
     @Test
     fun opensTheGrabberForThatId() = runTest {
         val rig = DesktopEngineRig(testScheduler)
-        val sut = rig.engine(enumerate = { CameraCapabilities(listOf(first, second)) })
+        val sut = rig.engine(enumerate = { capabilitiesOf(listOf(first, second)) })
         try {
             open(rig, sut, CameraSelection.ById(first.id))
             assertEquals(first.id, rig.openedDeviceId)
@@ -70,7 +70,7 @@ class SelectCameraByIdTest {
     @Test
     fun unknownIdIsNoCamera() = runTest {
         val rig = DesktopEngineRig(testScheduler)
-        val sut = rig.engine(enumerate = { CameraCapabilities(listOf(first, second)) })
+        val sut = rig.engine(enumerate = { capabilitiesOf(listOf(first, second)) })
         try {
             open(rig, sut, CameraSelection.ById(first.id))
 
@@ -104,7 +104,7 @@ class SelectCameraByIdTest {
             rig.environment(),
             source,
             authorization = { PermissionStatus.Granted },
-            enumerate = { CameraCapabilities(listOf(first, second)) },
+            enumerate = { capabilitiesOf(listOf(first, second)) },
         )
         try {
             open(rig, sut, CameraSelection.ById(first.id))
@@ -155,7 +155,7 @@ class SelectCameraByIdTest {
             rig.environment(),
             source,
             authorization = { PermissionStatus.Granted },
-            enumerate = { CameraCapabilities(listOf(first, second)) },
+            enumerate = { capabilitiesOf(listOf(first, second)) },
         )
         try {
             open(rig, sut, CameraSelection.ById(first.id))
@@ -193,7 +193,7 @@ class SelectCameraByIdTest {
             rig.environment(),
             source,
             authorization = { PermissionStatus.Granted },
-            enumerate = { CameraCapabilities(listOf(first, silent)) },
+            enumerate = { capabilitiesOf(listOf(first, silent)) },
         )
         try {
             open(rig, sut, CameraSelection.ById(first.id))

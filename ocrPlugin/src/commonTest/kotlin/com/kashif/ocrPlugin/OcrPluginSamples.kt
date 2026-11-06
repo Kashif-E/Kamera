@@ -2,12 +2,13 @@ package com.kashif.ocrPlugin
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.kashif.cameraK.capture.CapturedImage
-import com.kashif.cameraK.compose.rememberCameraKState
+import com.kashif.cameraK.compose.rememberCameraKStateHolder
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraKState
 
@@ -17,9 +18,8 @@ import com.kashif.cameraK.state.CameraKState
 internal fun RecognizeLiveTextSample(onText: (String) -> Unit) {
     val ocrPlugin = rememberOcrPlugin(OcrConfig { maxFps = 2f })
     var recognizedText by remember { mutableStateOf<String?>(null) }
-    val cameraState by rememberCameraKState { stateHolder ->
-        stateHolder.attachPlugin(ocrPlugin)
-    }
+    val holder = rememberCameraKStateHolder(plugins = listOf(ocrPlugin))
+    val cameraState by holder.cameraState.collectAsState()
 
     LaunchedEffect(ocrPlugin) {
         ocrPlugin.results.collect { recognized ->

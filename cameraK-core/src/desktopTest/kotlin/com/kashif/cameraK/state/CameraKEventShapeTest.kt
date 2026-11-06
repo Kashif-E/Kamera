@@ -1,9 +1,9 @@
 @file:OptIn(CameraKEngineApi::class, ExperimentalCoroutinesApi::class)
-@file:Suppress("DEPRECATION")
 
 package com.kashif.cameraK.state
 
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.plugin.CameraKPluginContext
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.testing.cameraKTestEnvironment
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
  */
 class CameraKEventShapeTest {
     private class ThrowingOnAttach(private val failure: Throwable) : CameraKPlugin {
-        override fun onAttach(stateHolder: CameraKStateHolder): Unit = throw failure
+        override fun onAttach(context: CameraKPluginContext): Unit = throw failure
 
         override fun onDetach() = Unit
     }
@@ -76,20 +76,6 @@ class CameraKEventShapeTest {
 
         val reported = failures.single()
         assertEquals("ThrowingOnAttach", reported.pluginId)
-        assertSame(failure, assertIs<CameraKError.Internal>(reported.error).cause)
-    }
-
-    @Test
-    fun pluginScopeThrowIsInternalWithTheThrowableAsCause() = runTest {
-        val holder = holderWith()
-        val failures = pluginFailures(holder)
-        val failure = IllegalStateException("plugin coroutine failed")
-
-        holder.pluginScope.launch { throw failure }
-        runCurrent()
-
-        val reported = failures.single()
-        assertEquals("pluginScope", reported.pluginId)
         assertSame(failure, assertIs<CameraKError.Internal>(reported.error).cause)
     }
 }

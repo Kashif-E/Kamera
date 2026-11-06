@@ -72,12 +72,8 @@ internal interface VideoSessionHost {
     suspend fun videoQualities(): Set<VideoQuality>
 }
 
-/** How one recording ended, with what the 1.x facade also reports. */
-internal class RecordingOutcome(
-    val result: CameraKResult<RecordedVideo>,
-    val reason: RecordingEndReason,
-    val durationMs: Long,
-)
+/** How one recording ended. */
+internal class RecordingOutcome(val result: CameraKResult<RecordedVideo>, val reason: RecordingEndReason)
 
 /**
  * Video recording (design §5, §2.4): one CameraX recording per start, observed from its Start to its
@@ -90,9 +86,6 @@ internal class RecordingOutcome(
  * Every recording the engine started yields exactly one `Finalized`, in start order, whoever ended
  * it. A start that returns Failure started none. A start whose caller gave up after it reached
  * CameraX stays the active recording, so the next stop ends it and it still yields its `Finalized`.
- *
- * The 1.x facade records here too ([start] with `legacy`): a recording it started whose outcome no
- * facade stop claimed is kept for the next facade stop, as 1.x reported it.
  */
 internal class VideoRecorder(
     private val context: Context,
@@ -126,9 +119,6 @@ internal class VideoRecorder(
     // The recording CameraX is running, from its start until a stop or its Finalize.
     private var active: Run? = null
 
-    // A recording the 1.x facade started, ended, and whose outcome no facade stop has claimed yet.
-    private var unclaimed: Run? = null
-
     private val _events = MutableSharedFlow<EngineRecordingEvent>(extraBufferCapacity = EVENT_BUFFER)
     val events: SharedFlow<EngineRecordingEvent> = _events.asSharedFlow()
 
@@ -157,17 +147,10 @@ internal class VideoRecorder(
         return CameraKResult.Success(Unit)
     }
 
-    /**
-     * Starts a recording and returns its file's path once CameraX reports the start. Main thread.
-     * [legacy] marks a 1.x facade recording, whose unclaimed outcome is kept for the next facade stop.
-     */
-    suspend fun start(config: VideoConfiguration, legacy: Boolean): CameraKResult<String> {
+    /** Starts a recording and returns its file's path once CameraX reports the start. Main thread. */
+    suspend fun start(config: VideoConfiguration): CameraKResult<String> {
         if (active != null) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_START))
         val fallback = qualityFallback(config) ?: return unsupportedQuality()
-        if (legacy && unclaimed != null) {
-            CameraKLogger.w(TAG, "The last recording's outcome was never claimed by stopRecording(); discarding it")
-            unclaimed = null
-        }
         val lazyBind = videoCapture == null || videoQuality != config.quality
         var started = false
         try {
@@ -176,7 +159,7 @@ internal class VideoRecorder(
                 is CameraKResult.Failure -> return claimed
                 is CameraKResult.Success -> claimed.value
             }
-            val run = Run(file, config, withAudio = config.enableAudio && hasAudioPermission(), legacy)
+            val run = Run(file, config, withAudio = config.enableAudio && hasAudioPermission())
             active = run
             try {
                 run.session = backend.startRecording(
@@ -215,12 +198,8 @@ internal class VideoRecorder(
             }
         } catch (e: CancellationException) {
             // The caller gave up after CameraX was asked: the next stop ends this recording, which then
-            // yields its Finalized. A 1.x caller never stops what it gave up on, so it is stopped now.
+            // yields its Finalized.
             run.awaitingStart = false
-            if (run.legacy) {
-                if (active === run) active = null
-                stopSession(run, RecordingEndReason.USER)
-            }
             throw e
         }
         run.awaitingStart = false
@@ -249,24 +228,6 @@ internal class VideoRecorder(
     }
 
     /**
-     * The 1.x facade's stop: the active recording's outcome, or the last one it started that ended
-     * unclaimed, or null when there is neither. A cancelled caller leaves the outcome for the next stop.
-     */
-    suspend fun stopForFacade(): RecordingOutcome? {
-        unclaimed?.let { run ->
-            if (active == null) {
-                unclaimed = null
-                return run.finalized.await()
-            }
-        }
-        val run = active ?: return null
-        val outcome = stopRun(run, RecordingEndReason.USER, rebind = true)
-        run.claimed = true
-        if (unclaimed === run) unclaimed = null
-        return outcome
-    }
-
-    /**
      * Finalizes the active recording before the camera stops or closes (§2.3 rule 7): it ends with
      * SHUTDOWN, and the VideoCapture it used goes with the session. Main thread.
      */
@@ -289,7 +250,6 @@ internal class VideoRecorder(
             return outcome ?: RecordingOutcome(
                 CameraKResult.Failure(CameraKError.Timeout(CameraOperation.RECORD_STOP)),
                 RecordingEndReason.ERROR,
-                durationMs = 0,
             )
         } finally {
             // Back to the full-FOV photo session before returning, also for a cancelled caller, so an
@@ -311,7 +271,7 @@ internal class VideoRecorder(
         } catch (e: Exception) {
             val operation = if (reason == RecordingEndReason.SHUTDOWN) "on release" else "on request"
             CameraKLogger.e(TAG, "Stopping the recording $operation failed", e)
-            finish(run, RecordingOutcome(CameraKResult.Failure(CameraKError.Internal(e)), reason, durationMs = 0))
+            finish(run, RecordingOutcome(CameraKResult.Failure(CameraKError.Internal(e)), reason))
         }
     }
 
@@ -413,7 +373,7 @@ internal class VideoRecorder(
             ((mapped.result as CameraKResult.Failure).error as? CameraKError.Storage)?.keptFilePath != null
         if (!keptFile || run.startFailed) run.file.delete()
         val endedByCameraX = stopReason == null
-        finish(run, RecordingOutcome(mapped.result, mapped.reason, event.recordedDurationNanos / 1_000_000))
+        finish(run, RecordingOutcome(mapped.result, mapped.reason))
         if (endedByCameraX && active == null && !prepared && videoCapture != null && !host.isReleased) {
             // Drop VideoCapture so stills are full-FOV again (#136).
             videoCapture = null
@@ -428,7 +388,6 @@ internal class VideoRecorder(
         if (run.done) return
         run.done = true
         if (active === run) active = null
-        if (run.legacy && !run.claimed && !run.startFailed) unclaimed = run
         if (!run.startFailed) emit(EngineRecordingEvent.Finalized(outcome.result, outcome.reason))
         run.pendingToggle?.complete(Unit)
         run.finalized.complete(outcome)
@@ -523,7 +482,7 @@ internal class VideoRecorder(
             PackageManager.PERMISSION_GRANTED
 
     /** One recording CameraX is running or ran. Main thread. */
-    private class Run(val file: File, val config: VideoConfiguration, val withAudio: Boolean, val legacy: Boolean) {
+    private class Run(val file: File, val config: VideoConfiguration, val withAudio: Boolean) {
         var session: RecordingSession? = null
         val started = CompletableDeferred<Unit>()
         val finalized = CompletableDeferred<RecordingOutcome>()
@@ -533,7 +492,6 @@ internal class VideoRecorder(
         var stopReason: RecordingEndReason? = null
         var paused = false
         var pendingToggle: CompletableDeferred<Unit>? = null
-        var claimed = false
         var finalizing = false
         var done = false
     }

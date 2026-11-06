@@ -22,6 +22,7 @@ import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.StorageFailure
+import com.kashif.cameraK.plugin.CameraKPluginContext
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.testing.FakeCapabilities
@@ -161,7 +162,7 @@ class CameraKStateHolderCommandTest {
     }
 
     private class DetachRecorder(private val order: MutableList<String>) : CameraKPlugin {
-        override fun onAttach(stateHolder: CameraKStateHolder) = Unit
+        override fun onAttach(context: CameraKPluginContext) = Unit
 
         override fun onDetach() {
             order += "plugin detach"

@@ -1,26 +1,21 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
-import android.content.Context
-import android.os.Looper
 import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import androidx.camera.view.PreviewView
-import androidx.test.core.app.ApplicationProvider
+import com.kashif.cameraK.engine.FakeAndroidPlatform
+import com.kashif.cameraK.engine.FakeImageProxy
+import com.kashif.cameraK.engine.open
+import com.kashif.cameraK.engine.startRecording
+import com.kashif.cameraK.frames.FrameSpec
+import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
-import org.junit.After
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
-import java.lang.reflect.Proxy
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * Plugins come and go (a QR scanner pauses, OCR starts) while the camera runs. Changing who receives
@@ -29,113 +24,56 @@ import kotlin.test.assertTrue
  */
 @RunWith(RobolectricTestRunner::class)
 class AnalyzerRegistrationTest {
-    private val context: Context = ApplicationProvider.getApplicationContext()
-    private val backend = FakeCameraXBackend()
-    private val controller = testController(context, backend)
-    private val hostScope = CoroutineScope(Job() + Dispatchers.Unconfined)
-    private val first = RecordingAnalyzer()
-    private val second = RecordingAnalyzer()
-
-    @After
-    fun tearDown() {
-        hostScope.cancel()
-    }
+    private val platform = FakeAndroidPlatform()
+    private val backend = platform.backend
+    private var firstFrames = 0
+    private var secondFrames = 0
 
     @Test
-    fun changingConsumersOnARunningCamera_doesNotRebind() {
-        controller.registerImageAnalyzer(first)
-        controller.bindCamera(PreviewView(context))
-        idleMainLooper()
+    fun changingConsumersOnARunningCamera_doesNotRebind() = runTest {
+        val engine = platform.engine(testScheduler, CameraConfiguration { frameAnalysis = true })
+        open(platform, engine)
+        val first = engine.frames.register(FrameSpec(synchronous = true)) { firstFrames++ }
+        platform.settle(testScheduler)
         val bindsBefore = backend.binding.bindCalls
 
-        controller.registerImageAnalyzer(second)
-        idleMainLooper()
-        controller.unregisterImageAnalyzer(first)
-        idleMainLooper()
+        val second = engine.frames.register(FrameSpec(synchronous = true)) { secondFrames++ }
+        platform.settle(testScheduler)
+        first.close()
+        platform.settle(testScheduler)
 
         assertEquals(bindsBefore, backend.binding.bindCalls, "changing frame consumers rebound the camera")
         deliverFrameToBoundAnalysis()
-        assertEquals(0, first.frames, "an unregistered analyzer still receives frames")
-        assertEquals(1, second.frames, "a registered analyzer does not receive frames")
+        assertEquals(0, firstFrames, "an unregistered analyzer still receives frames")
+        assertEquals(1, secondFrames, "a registered analyzer does not receive frames")
+        second.close()
+        engine.closeAndJoin()
     }
 
     @Test
-    fun changingConsumersWhileRecording_keepsOneImageAnalysisFeedingExactlyTheRegisteredOnes() {
-        controller.registerImageAnalyzer(first)
-        controller.bindCamera(PreviewView(context))
-        idleMainLooper()
-        val start = hostScope.async(start = CoroutineStart.UNDISPATCHED) {
-            controller.startRecording(VideoConfiguration { enableAudio = false })
-        }
-        idleMainLooper()
-        assertTrue(start.isCompleted, "setup: the recording did not start")
+    fun changingConsumersWhileRecording_keepsOneImageAnalysisFeedingExactlyTheRegisteredOnes() = runTest {
+        val engine = platform.engine(testScheduler, CameraConfiguration { frameAnalysis = true })
+        open(platform, engine)
+        val first = engine.frames.register(FrameSpec(synchronous = true)) { firstFrames++ }
+        platform.settle(testScheduler)
+        startRecording(platform, engine, VideoConfiguration { enableAudio = false })
 
-        controller.registerImageAnalyzer(second)
-        idleMainLooper()
-        controller.unregisterImageAnalyzer(first)
-        idleMainLooper()
+        val second = engine.frames.register(FrameSpec(synchronous = true)) { secondFrames++ }
+        platform.settle(testScheduler)
+        first.close()
+        platform.settle(testScheduler)
 
         deliverFrameToBoundAnalysis()
-        assertEquals(0, first.frames, "an unregistered analyzer still receives frames during a recording")
-        assertEquals(1, second.frames, "a registered analyzer does not receive frames during a recording")
-    }
-
-    @Suppress("DEPRECATION")
-    @Test
-    fun updateImageAnalyzerOnARunningCamera_doesNotRebind() {
-        controller.registerImageAnalyzer(first)
-        controller.bindCamera(PreviewView(context))
-        idleMainLooper()
-        val bindsBefore = backend.binding.bindCalls
-
-        controller.updateImageAnalyzer()
-        idleMainLooper()
-
-        assertEquals(bindsBefore, backend.binding.bindCalls, "updateImageAnalyzer rebound the camera")
-        deliverFrameToBoundAnalysis()
-        assertEquals(1, first.frames, "a registered analyzer does not receive frames")
-    }
-
-    @Suppress("DEPRECATION")
-    @Test
-    fun updateImageAnalyzerBeforeTheCameraIsBound_isHarmless() {
-        controller.updateImageAnalyzer()
-        controller.registerImageAnalyzer(first)
-        controller.bindCamera(PreviewView(context))
-        idleMainLooper()
-
-        deliverFrameToBoundAnalysis()
-        assertEquals(1, first.frames, "a registered analyzer does not receive frames")
+        assertEquals(0, firstFrames, "an unregistered analyzer still receives frames during a recording")
+        assertEquals(1, secondFrames, "a registered analyzer does not receive frames during a recording")
+        second.close()
+        engine.close()
     }
 
     /** One frame from the camera, through every ImageAnalysis that is bound; there must be exactly one. */
     private fun deliverFrameToBoundAnalysis() {
         val bound = backend.binding.bound.filterIsInstance<ImageAnalysis>()
         assertEquals(1, bound.size, "expected exactly one bound ImageAnalysis, found ${bound.size}")
-        val consumer = backend.analyzers[bound.single()]
-        consumer?.analyze(frame())
-    }
-
-    private class RecordingAnalyzer : ImageAnalysis.Analyzer {
-        var frames = 0
-            private set
-
-        override fun analyze(image: ImageProxy) {
-            frames++
-            image.close()
-        }
+        backend.analyzers[bound.single()]?.analyze(FakeImageProxy.yuv().proxy)
     }
 }
-
-private fun frame(): ImageProxy =
-    Proxy.newProxyInstance(ImageProxy::class.java.classLoader, arrayOf(ImageProxy::class.java)) { self, method, args ->
-        when (method.name) {
-            "getWidth", "getHeight", "getFormat" -> 0
-            "hashCode" -> System.identityHashCode(self)
-            "equals" -> self === args?.firstOrNull()
-            "toString" -> "frame"
-            else -> null
-        }
-    } as ImageProxy
-
-private fun idleMainLooper() = shadowOf(Looper.getMainLooper()).idle()

@@ -15,7 +15,6 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.kashif.cameraK.compose.CameraKScreen
 import com.kashif.cameraK.compose.CameraPreviewScope
-import com.kashif.cameraK.compose.DefaultErrorScreen
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.state.CameraKState
@@ -30,8 +29,6 @@ import org.junit.Test
 /**
  * Snapshots of the camera-free states of [CameraKScreen].
  *
- * The 1.x CameraKScreen(cameraState)'s Ready state is not covered: it renders CameraPreviewView,
- * which needs a CameraX PreviewView bound to a live camera, and layoutlib has no camera.
  * CameraKScreen(holder) runs over camerak-testing's fake engine. layoutlib cannot attach a CameraX
  * PreviewView to a window, so Ready and Interrupted render in inspection mode, as an Android Studio
  * preview does: the preview draws no PreviewView and the content shows over the empty preview box.
@@ -48,24 +45,18 @@ class CameraKScreenPaparazziTest {
             snapshotHandler = PixelExactSnapshotVerifier.forCurrentMode(),
         )
 
+    /** Starting shows the loading slot, here a green square, over the caller's background. */
     @Test
-    fun initializing_showsDefaultLoadingScreen() {
+    fun holder_starting_showsTheLoadingSlot() = runTest {
+        val fake = FakeCameraEngine().apply { autoOpen = false }
+        val holder = fakeCameraKStateHolder(fake = fake)
+        holder.start()
+        runCurrent()
+        assertTrue("state is ${holder.cameraState.value}", holder.cameraState.value == CameraKState.Starting)
         paparazzi.snapshot {
-            CameraKScreen(cameraState = CameraKState.Starting) {}
-        }
-    }
-
-    @Test
-    fun error_retryable_showsRetryHint() {
-        paparazzi.snapshot {
-            CameraKScreen(cameraState = retryableError) {}
-        }
-    }
-
-    @Test
-    fun error_notRetryable_hidesRetryHint() {
-        paparazzi.snapshot {
-            DefaultErrorScreen(CameraKState.Error(CameraKError.CameraDisabled()))
+            CameraKScreen(holder, Modifier.fillMaxSize().background(Color.Blue), loading = { LoadingMarker() }) {
+                ContentMarker()
+            }
         }
     }
 
@@ -115,9 +106,14 @@ class CameraKScreenPaparazziTest {
     }
 
     @Composable
+    private fun LoadingMarker() {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(48.dp).background(Color.Green))
+        }
+    }
+
+    @Composable
     private fun CameraPreviewScope.ContentMarker() {
         Box(Modifier.align(Alignment.TopStart).size(24.dp).background(Color.Red))
     }
-
-    private val retryableError = CameraKState.Error(CameraKError.CameraInUse(IllegalStateException("camera in use")))
 }

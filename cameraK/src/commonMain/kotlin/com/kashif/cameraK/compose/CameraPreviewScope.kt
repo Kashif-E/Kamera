@@ -15,8 +15,8 @@ interface CameraPreviewScope : BoxScope {
 }
 
 /**
- * Runs [overlay] over this box with a [CameraPreviewScope]; every platform's CameraPreviewView calls
- * it. The scope is kept while the box and orientation stay the same, so the overlay skips when the
+ * Runs [overlay] over this box with a [CameraPreviewScope]; every platform's EnginePreview calls it.
+ * The scope is kept while the box and orientation stay the same, so the overlay skips when the
  * preview recomposes for anything else.
  */
 @Suppress("NOTHING_TO_INLINE")

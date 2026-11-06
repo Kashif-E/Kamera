@@ -1,8 +1,6 @@
 package com.kashif.cameraK.state
 
 import com.kashif.cameraK.plugin.CameraKPluginContext
-import com.kashif.cameraK.plugin.stateHolderOrNull
-import com.kashif.cameraK.utils.CameraKLogger
 
 /**
  * A camera plugin: QR scanning, OCR, frame analysis, saving captures. The holder attaches it once
@@ -42,26 +40,8 @@ interface CameraKPlugin {
      * Called once per attachment, outside any lock, with a new [context]. Throwing here sets that
      * context's `failure` and emits [CameraKEvent.PluginFailed]; the camera and the other plugins
      * carry on.
-     *
-     * The default forwards to the deprecated `onAttach(stateHolder)`, so a 1.x plugin keeps working.
      */
-    fun onAttach(context: CameraKPluginContext) {
-        val holder = checkNotNull(context.stateHolderOrNull) {
-            "A plugin that implements only onAttach(stateHolder) needs a context its holder made"
-        }
-        @Suppress("DEPRECATION")
-        onAttach(holder)
-    }
-
-    /**
-     * The 1.x attach. The holder calls [onAttach] with a context, whose default calls this. Its own
-     * default does nothing but log a warning, which only a plugin that overrides neither overload
-     * reaches.
-     */
-    @Deprecated("Implement onAttach(context: CameraKPluginContext); the context gives the plugin its scope and state.")
-    fun onAttach(stateHolder: CameraKStateHolder) {
-        CameraKLogger.w("CameraK", "A plugin overrides neither onAttach overload, so attaching it does nothing")
-    }
+    fun onAttach(context: CameraKPluginContext)
 
     /** Called when the plugin is detached. Its context's scope is cancelled right after. */
     fun onDetach()

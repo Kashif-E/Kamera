@@ -22,8 +22,8 @@ import kotlin.test.assertIs
 
 /**
  * The iOS controller no longer counts captures (pending-captures-double-decrement): the holder holds the
- * one counter and returns Busy(CAPTURE) for a fourth capture in flight. Every capture the facade or the
- * engine is asked for reaches the photo output.
+ * one counter and returns Busy(CAPTURE) for a fourth capture in flight. Every capture the engine is
+ * asked for reaches the photo output.
  */
 class PlatformCounterGoneTest {
     private val written = mutableListOf<String>()
@@ -37,15 +37,15 @@ class PlatformCounterGoneTest {
 
     @Test
     fun fourCapturesReachTheEngineAndTheHolderAloneRejectsTheFourth() {
-        val facadeRig = CaptureRig().also { rig = it }
-        facadeRig.start()
-        val facadeCaptures = List(4) { facadeRig.capture() }
-        assertEquals(4, facadeRig.capturer.requests.size, "facade captures that reached the photo output")
-        facadeCaptures.forEach { (_, request) ->
+        val engineRig = CaptureRig().also { rig = it }
+        engineRig.start()
+        val engineCaptures = List(4) { engineRig.capture() }
+        assertEquals(4, engineRig.capturer.requests.size, "engine captures that reached the photo output")
+        engineCaptures.forEach { (_, request) ->
             request.callbacks.photoProcessed(orientedJpeg(width = 4, height = 3, orientation = 1), null)
             request.callbacks.captureFinished(null)
         }
-        facadeCaptures.forEach { (capture, _) -> capture.awaitResult() }
+        engineCaptures.forEach { (capture, _) -> capture.awaitResult() }
 
         val driver = AppleEngineDriver()
         driver.runCase {

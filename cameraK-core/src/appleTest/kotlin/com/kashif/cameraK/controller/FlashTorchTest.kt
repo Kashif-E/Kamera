@@ -1,24 +1,32 @@
+@file:OptIn(com.kashif.cameraK.utils.CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.engine.CameraKEnvironment
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
-import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.enums.FlashMode
-import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.state.CameraConfiguration
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import platform.AVFoundation.AVCaptureFlashModeOff
-import platform.AVFoundation.AVCaptureFlashModeOn
 import platform.AVFoundation.AVCaptureTorchModeOn
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The flash and torch modes a CameraController is configured with have to reach AVFoundation: a
- * configured FlashMode.OFF must not fire the flash, and a configured torch must light once the
- * session runs and again on whichever lens the user switches to.
+ * The flash and torch modes an engine is started with have to reach AVFoundation: FlashMode.OFF must
+ * not fire the flash, and a torch must light once the session runs and again on whichever lens the
+ * user switches to.
  */
 class FlashTorchTest {
     private val back = FakeDevice(isFront = false)
@@ -35,57 +43,47 @@ class FlashTorchTest {
         },
     )
 
-    private fun cameraController(flash: FlashMode, torch: TorchMode, custom: CustomCameraController) = CameraController(
-        flashMode = flash,
-        torchMode = torch,
-        cameraLens = CameraLens.BACK,
-        imageFormat = ImageFormat.JPEG,
-        qualityPriority = QualityPrioritization.NONE,
-        directory = Directory.DOCUMENTS,
-        cameraDeviceType = CameraDeviceType.DEFAULT,
-        aspectRatio = AspectRatio.RATIO_4_3,
-        targetResolution = null,
-        mirrorFrontCamera = false,
-        customController = custom,
-    )
+    private val scope = MainScope()
 
-    @Test
-    fun theConfiguredFlashModeIsWhatCapturesUse() {
-        val custom = custom()
-        val controller = cameraController(FlashMode.OFF, TorchMode.OFF, custom)
+    @AfterTest
+    fun tearDown() = scope.cancel()
 
-        assertEquals(FlashMode.OFF, controller.getFlashMode(), "a FlashMode.OFF config reports another mode")
-        assertEquals(AVCaptureFlashModeOff, custom.flashMode, "a FlashMode.OFF config would still fire the flash")
+    private fun startedEngine(flash: FlashMode, torch: TorchMode, custom: CustomCameraController): AppleCameraEngine {
+        val engine =
+            AppleCameraEngine(CameraConfiguration { aspectRatio = AspectRatio.RATIO_4_3 }, CameraKEnvironment(), custom)
+        val desired = DesiredHardware(backCamera().selection, flash, torch, 1f, null)
+        scope.launch { engine.start(desired) }
+        awaitTrue("the engine to report Open") { engine.state.value == EngineState.Open }
+        return engine
     }
 
     @Test
-    fun aFlashModeSetBeforeTheSessionIsReadyIsKept() {
+    fun theFlashModeAStartAsksForIsWhatCapturesUse() {
         val custom = custom()
-        val controller = cameraController(FlashMode.OFF, TorchMode.OFF, custom)
+        val engine = startedEngine(FlashMode.OFF, TorchMode.OFF, custom)
 
-        controller.setFlashMode(FlashMode.ON)
-
-        assertEquals(AVCaptureFlashModeOn, custom.flashMode, "the requested flash mode was dropped before setup")
-        assertEquals(FlashMode.ON, controller.getFlashMode())
+        assertEquals(FlashMode.OFF, engine.hardware.value.flashMode, "a FlashMode.OFF start reports another mode")
+        assertEquals(AVCaptureFlashModeOff, custom.flashMode, "a FlashMode.OFF start would still fire the flash")
+        engine.close()
+        drainSessionThenMain(custom)
     }
 
     @Test
-    fun theConfiguredTorchLightsOnceTheSessionRunsAndFollowsALensSwitch() {
+    fun theTorchAStartAsksForLightsOnceTheSessionRunsAndFollowsALensSwitch() {
         val custom = custom()
-        val controller = cameraController(FlashMode.OFF, TorchMode.ON, custom)
+        val engine = startedEngine(FlashMode.OFF, TorchMode.ON, custom)
 
-        controller.startSession() // its own engine sets the session up and starts it, with no view
-        awaitTrue("the configured torch to reach the back camera") {
+        awaitTrue("the torch to reach the back camera") {
             back.callsOf("setTorchMode").any { it.value == AVCaptureTorchModeOn }
         }
         val applied = back.callsOf("setTorchMode").last()
         assertTrue(applied.locked, "the torch was set without the configuration lock: $applied")
 
-        controller.toggleCameraLens()
-        awaitTrue("the configured torch to reach the front camera after the lens switch") {
+        scope.launch { engine.selectCamera(CameraSelection.ByLens(CameraLens.FRONT, CameraDeviceType.DEFAULT)) }
+        awaitTrue("the torch to reach the front camera after the lens switch") {
             front.callsOf("setTorchMode").any { it.value == AVCaptureTorchModeOn }
         }
-        controller.cleanup()
+        engine.close()
         drainSessionThenMain(custom)
     }
 }

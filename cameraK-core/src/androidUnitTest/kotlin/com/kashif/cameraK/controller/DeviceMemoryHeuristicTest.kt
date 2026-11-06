@@ -1,20 +1,23 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import android.app.ActivityManager
 import android.content.Context
-import android.os.Looper
 import androidx.camera.core.ImageCapture
-import androidx.camera.view.PreviewView
 import androidx.test.core.app.ApplicationProvider
+import com.kashif.cameraK.engine.FakeAndroidPlatform
+import com.kashif.cameraK.engine.open
 import com.kashif.cameraK.enums.QualityPrioritization
-import com.kashif.cameraK.utils.MemoryManager
+import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.utils.CameraKEngineApi
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 
 /**
  * Android keeps cached processes in memory until it needs the space, so most of the device's RAM is
@@ -24,7 +27,6 @@ import kotlin.test.assertFalse
 @RunWith(RobolectricTestRunner::class)
 class DeviceMemoryHeuristicTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
-    private val backend = FakeCameraXBackend()
 
     @Before
     fun deviceRamIsMostlyInUse() {
@@ -39,26 +41,20 @@ class DeviceMemoryHeuristicTest {
     }
 
     @Test
-    fun qualityPrioritizationNone_capturesAtMaximumQualityWhateverTheDeviceWideMemoryUse() {
-        val controller = testController(context, backend, qualityPriority = QualityPrioritization.NONE)
+    fun qualityPrioritizationNone_capturesAtMaximumQualityWhateverTheDeviceWideMemoryUse() = runTest {
+        val platform = FakeAndroidPlatform()
+        val engine = platform.engine(
+            testScheduler,
+            CameraConfiguration { qualityPrioritization = QualityPrioritization.NONE },
+        )
+        open(platform, engine)
 
-        controller.bindCamera(PreviewView(context))
-        shadowOf(Looper.getMainLooper()).idle()
-
-        val imageCapture = backend.binding.bound.filterIsInstance<ImageCapture>().single()
+        val imageCapture = platform.backend.binding.bound.filterIsInstance<ImageCapture>().single()
         assertEquals(
             ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY,
             imageCapture.captureMode,
             "the capture mode followed device-wide memory use",
         )
-    }
-
-    @Suppress("DEPRECATION")
-    @Test
-    fun memoryManager_doesNotReportPressureFromDeviceWideMemoryUse() {
-        MemoryManager.initialize(context)
-        MemoryManager.updateMemoryStatus()
-
-        assertFalse(MemoryManager.isUnderMemoryPressure(), "87% of device RAM in use was reported as pressure")
+        engine.closeAndJoin()
     }
 }

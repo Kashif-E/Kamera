@@ -1,24 +1,17 @@
 package com.kashif.cameraK.enums
 
 /**
- * Where captured images are stored. The same value means different places for the camera
- * controller and for ImageSaverPlugin.
- *
- * Camera (`capture()`, `takePictureToFile()`, recordings, `CameraConfiguration.directory`): every
- * capture and recording is an app-owned file, whatever the value. It goes to
- * `CameraConfiguration.outputDirectory` when set, else to `filesDir/CameraK` on Android,
- * `Documents/CameraK` on iOS and `~/Documents/CameraK` on desktop. PICTURES and DCIM are ignored, with
- * one logged warning: the core never inserts into MediaStore, runs the media scanner or imports into
- * Photos. To publish a capture to the gallery, save it with ImageSaverPlugin.
- *
- * ImageSaverPlugin:
- * - PICTURES and DCIM: Android saves to the public `Pictures/` or `DCIM/` directory, desktop to
- *   `~/Pictures`, iOS to the Photos library
- * - DOCUMENTS: Android saves to the public, shared `Documents/` directory through `MediaStore.Files`,
- *   where other apps can see it; desktop saves to `~/Documents`; iOS saves to the Photos library
- * - Android puts the image in a `customFolderName` subfolder, `CameraK` by default; desktop uses
- *   `customFolderName` only when it is set; iOS ignores it.
+ * The 1.x choice of where captures went. 2.0 reads it nowhere: every capture and recording is an
+ * app-owned file, in `CameraConfiguration.outputDirectory` when set, and ImageSaverPlugin publishes
+ * to the gallery through its `GalleryDestination`. It remains only as the type of the 1.x
+ * named-argument `CameraConfiguration(...)` hint's `directory` parameter, and goes with that hint in
+ * 2.1.
  */
+@Deprecated(
+    "Removed in CameraK 2.0: captures are app-owned files (CameraConfiguration.outputDirectory), and " +
+        "ImageSaverPlugin publishes to the gallery through its GalleryDestination.",
+    level = DeprecationLevel.ERROR,
+)
 enum class Directory {
     PICTURES,
     DCIM,

@@ -3,7 +3,6 @@
 package com.kashif.cameraK.controller
 
 import android.graphics.Rect
-import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageInfo
 import androidx.camera.core.ImageProxy
 import com.kashif.cameraK.engine.WorkerDispatcher
@@ -26,146 +25,14 @@ import kotlin.test.assertEquals
  * keep the other consumers from the frame, and must not leave the frame open: CameraX delivers no
  * further frames until it is closed.
  *
- * The first six cases run over 1.x consumers (`ImageAnalysis.Analyzer`s, the facade's
- * registerImageAnalyzer) as they did before A4'. The rest port them onto FramePipeline's multiplexer
- * (§12.4 A4'): the two containment cases on both the synchronous and the pooled path, and the close
- * and buffer cases on the proxy a synchronous registration gets, each with its own read-only planes.
+ * The cases run on FramePipeline's multiplexer (§12.4 A4'): the two containment cases on both the
+ * synchronous and the pooled path, and the close and buffer cases on the proxy a synchronous
+ * registration gets, each with its own read-only planes. (The 1.x-consumer twins went with the
+ * facade's registerImageAnalyzer in C1'.)
  * Robolectric runs the class because the frames read the proxy's crop rect, an android.graphics.Rect.
  */
 @RunWith(RobolectricTestRunner::class)
 class MultiplexingAnalyzerTest {
-    @Test
-    fun throwingAnalyzer_isContainedAndTheOthersStillReceiveTheFrame() {
-        val frame = CountingFrame()
-        var secondSawFrame = false
-        val analyzer = MultiplexingAnalyzer(
-            listOf(
-                ImageAnalysis.Analyzer { throw IllegalStateException("consumer failed") },
-                ImageAnalysis.Analyzer { proxy ->
-                    secondSawFrame = true
-                    proxy.close()
-                },
-            ),
-        )
-
-        analyzer.analyze(frame.proxy)
-
-        assertEquals(true, secondSawFrame, "the analyzer after the throwing one never saw the frame")
-        assertEquals(1, frame.closes, "the frame must be closed exactly once")
-    }
-
-    @Test
-    fun singleThrowingAnalyzer_isContainedAndItsFrameIsClosed() {
-        val frame = CountingFrame()
-        val analyzer =
-            MultiplexingAnalyzer(listOf(ImageAnalysis.Analyzer { throw IllegalStateException("consumer failed") }))
-
-        analyzer.analyze(frame.proxy)
-
-        assertEquals(1, frame.closes, "a throwing analyzer left the frame open, stalling the stream")
-    }
-
-    @Test
-    fun analyzerThatClosesThenThrows_doesNotCloseTheFrameEarly() {
-        val frame = CountingFrame()
-        var closesSeenBySecond = -1
-        val analyzer = MultiplexingAnalyzer(
-            listOf(
-                ImageAnalysis.Analyzer { proxy ->
-                    proxy.close()
-                    throw IllegalStateException("consumer failed after closing")
-                },
-                ImageAnalysis.Analyzer { proxy ->
-                    closesSeenBySecond = frame.closes
-                    proxy.close()
-                },
-            ),
-        )
-
-        analyzer.analyze(frame.proxy)
-
-        assertEquals(0, closesSeenBySecond, "the frame was closed while another analyzer still held it")
-        assertEquals(1, frame.closes)
-    }
-
-    @Test
-    fun analyzerThatReadsAPlane_leavesItsPositionAsItWasForTheNextAnalyzer() {
-        val frame = CountingFrame(luma = byteArrayOf(10, 20, 30, 40))
-        var positionSeenBySecond = -1
-        var bytesSeenBySecond = ByteArray(0)
-        val analyzer = MultiplexingAnalyzer(
-            listOf(
-                ImageAnalysis.Analyzer { proxy ->
-                    // A bulk read, as a decoder copying the Y plane does: it moves the position.
-                    proxy.planes[0].buffer.get(ByteArray(4))
-                    proxy.close()
-                },
-                ImageAnalysis.Analyzer { proxy ->
-                    val buffer = proxy.planes[0].buffer
-                    positionSeenBySecond = buffer.position()
-                    bytesSeenBySecond = ByteArray(buffer.remaining()).also { buffer.get(it) }
-                    proxy.close()
-                },
-            ),
-        )
-
-        analyzer.analyze(frame.proxy)
-
-        assertEquals(0, positionSeenBySecond, "the first analyzer's read moved the plane for the second")
-        assertContentEquals(byteArrayOf(10, 20, 30, 40), bytesSeenBySecond)
-    }
-
-    @Test
-    fun analyzerThatWritesToAPlane_cannotChangeThePixelsTheNextAnalyzerReads() {
-        val frame = CountingFrame(luma = byteArrayOf(10, 20, 30, 40))
-        var firstPixelSeenBySecond: Byte = -1
-        val analyzer = MultiplexingAnalyzer(
-            listOf(
-                ImageAnalysis.Analyzer { proxy ->
-                    try {
-                        proxy.planes[0].buffer.put(0, 99)
-                    } finally {
-                        proxy.close()
-                    }
-                },
-                ImageAnalysis.Analyzer { proxy ->
-                    firstPixelSeenBySecond = proxy.planes[0].buffer.get(0)
-                    proxy.close()
-                },
-            ),
-        )
-
-        analyzer.analyze(frame.proxy)
-
-        assertEquals(10, firstPixelSeenBySecond, "one analyzer rewrote the frame another analyzer reads")
-        assertEquals(1, frame.closes)
-    }
-
-    @Test
-    fun analyzerReadingMultiByteValues_seesThePlaneInItsOwnByteOrder() {
-        // ImageReader sets every plane buffer to the device's native order, little-endian on every
-        // shipping Android ABI, so RGBA_8888 pixels and 16-bit samples are read with that order.
-        val frame = CountingFrame(luma = byteArrayOf(0x04, 0x03, 0x02, 0x01), order = ByteOrder.LITTLE_ENDIAN)
-        var orderSeen: ByteOrder? = null
-        var intSeen = 0
-        val analyzer = MultiplexingAnalyzer(
-            listOf(
-                ImageAnalysis.Analyzer { proxy ->
-                    val buffer = proxy.planes[0].buffer
-                    orderSeen = buffer.order()
-                    intSeen = buffer.getInt(0)
-                    proxy.close()
-                },
-                ImageAnalysis.Analyzer { proxy -> proxy.close() },
-            ),
-        )
-
-        analyzer.analyze(frame.proxy)
-
-        assertEquals(ByteOrder.LITTLE_ENDIAN, orderSeen, "the analyzer's view lost the plane's byte order")
-        assertEquals(0x01020304, intSeen, "a 32-bit read through the analyzer's view came back byte-swapped")
-    }
-
     @Test
     fun throwingAnalyzer_isContainedAndTheOthersStillReceiveTheFrame_onTheSynchronousPath() {
         val frame = CountingFrame()

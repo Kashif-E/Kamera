@@ -13,7 +13,6 @@ import androidx.compose.ui.unit.dp
 import com.kashif.cameraK.compose.CameraKScreen
 import com.kashif.cameraK.compose.CameraPreviewScope
 import com.kashif.cameraK.compose.CameraPreviewScopeImpl
-import com.kashif.cameraK.compose.DefaultErrorScreen
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.InterruptionReason
@@ -29,27 +28,23 @@ import kotlin.test.assertIs
 /**
  * Desktop renders of the cameraK composables that need no camera.
  *
- * The 1.x CameraKScreen(cameraState)'s Ready state is not covered: it renders CameraPreviewView,
- * which on desktop draws frames grabbed from a webcam by a running CameraController.
- * CameraKScreen(holder)'s is: over camerak-testing's fake engine, the preview draws the fake's
- * fixed 640 x 480 frame (dark left half, light right half).
+ * CameraKScreen(holder) runs over camerak-testing's fake engine: in Ready and Interrupted the
+ * preview draws the fake's fixed 640 x 480 frame (dark left half, light right half).
  */
 class CameraKScreenScreenshotTest {
-    private val error = CameraKState.Error(CameraKError.CameraInUse(IllegalStateException("camera in use")))
-
+    /** Starting shows the loading slot, here a green square, over the caller's background. */
     @Test
-    fun initializing_showsDefaultLoadingScreen() = Goldens.assertMatches("camerakscreen_initializing", 320, 240) {
-        CameraKScreen(modifier = Modifier.fillMaxSize(), cameraState = CameraKState.Starting) {}
-    }
-
-    @Test
-    fun error_retryable_showsRetryHint() = Goldens.assertMatches("camerakscreen_error_retryable", 320, 240) {
-        CameraKScreen(modifier = Modifier.fillMaxSize(), cameraState = error) {}
-    }
-
-    @Test
-    fun error_notRetryable_hidesRetryHint() = Goldens.assertMatches("defaulterrorscreen_not_retryable", 320, 240) {
-        DefaultErrorScreen(CameraKState.Error(CameraKError.CameraDisabled()))
+    fun holder_starting_showsTheLoadingSlot() = runTest {
+        val fake = FakeCameraEngine().apply { autoOpen = false }
+        val holder = fakeCameraKStateHolder(fake = fake)
+        holder.start()
+        runCurrent()
+        assertIs<CameraKState.Starting>(holder.cameraState.value)
+        Goldens.assertMatches("camerakscreen_holder_starting", 320, 320) {
+            CameraKScreen(holder, Modifier.fillMaxSize().background(Color.Blue), loading = { LoadingMarker() }) {
+                ContentMarker()
+            }
+        }
     }
 
     @Test
@@ -95,6 +90,14 @@ class CameraKScreenScreenshotTest {
     // In a square scene the 4:3 frame is letterboxed: 320 x 240 between bars 40 px high.
     private fun showsTheFixedFrame(image: BufferedImage): Boolean =
         image.getRGB(80, 160) and 0xFFFFFF == 0x202020 && image.getRGB(240, 160) and 0xFFFFFF == 0xE0E0E0
+
+    /** A green square in the screen's centre: the loading slot. */
+    @androidx.compose.runtime.Composable
+    private fun LoadingMarker() {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(48.dp).background(Color.Green))
+        }
+    }
 
     /** A red square in the content's top start corner: content shares the frame's box, not the screen's. */
     @androidx.compose.runtime.Composable

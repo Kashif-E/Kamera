@@ -1,25 +1,23 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import android.content.Context
-import android.os.Looper
 import android.provider.MediaStore
-import androidx.camera.view.PreviewView
 import androidx.test.core.app.ApplicationProvider
-import com.kashif.cameraK.enums.Directory
-import com.kashif.cameraK.result.ImageCaptureResult
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import com.kashif.cameraK.capture.CapturedImage
+import com.kashif.cameraK.engine.FakeAndroidPlatform
+import com.kashif.cameraK.engine.open
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.runBlocking
-import org.junit.After
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -35,32 +33,20 @@ import kotlin.test.assertTrue
 class PrivateCaptureTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val mediaStore = Robolectric.setupContentProvider(FakeMediaStore::class.java, MediaStore.AUTHORITY)
-    private val backend = FakeCameraXBackend()
-    private val hostScope = CoroutineScope(Job() + Dispatchers.Unconfined)
     private val filesDir = context.filesDir.canonicalFile
 
-    @After
-    fun tearDown() {
-        hostScope.cancel()
-    }
-
-    // DOCUMENTS was the 1.x configuration's default directory; the engine's default is DefaultOutputDirectoryTest's.
+    // The configuration's app-owned default, which 1.x's DOCUMENTS default became (DefaultOutputDirectoryTest).
     @Test
-    fun documentsFacadeCapture_staysOutOfTheGallery() {
-        val result = capture(Directory.DOCUMENTS)
+    fun defaultCapture_staysOutOfTheGallery() = runTest {
+        val path = capture().path
 
-        assertEquals(
-            emptyList(),
-            mediaStore.rows.keys.toList(),
-            "a DOCUMENTS capture was published",
-        )
-        val path = assertIs<ImageCaptureResult.SuccessWithFile>(result).filePath
+        assertEquals(emptyList(), mediaStore.rows.keys.toList(), "a default capture was published")
         assertTrue(File(path).canonicalPath.startsWith(filesDir.path + File.separator), "$path is not in $filesDir")
     }
 
     @Test
-    fun documentsCapture_isInInternalStorage() {
-        val path = assertIs<ImageCaptureResult.SuccessWithFile>(capture(Directory.DOCUMENTS)).filePath
+    fun defaultCapture_isInInternalStorage() = runTest {
+        val path = capture().path
 
         assertEquals(File(filesDir, "CameraK"), File(path).canonicalFile.parentFile)
     }
@@ -71,14 +57,17 @@ class PrivateCaptureTest {
         assertEquals(File(filesDir, "CameraK"), appCaptureDirectory(context).canonicalFile)
     }
 
-    private fun capture(directory: Directory): ImageCaptureResult {
-        val controller = testController(context, backend, directory = directory)
-        controller.bindCamera(PreviewView(context))
-        shadowOf(Looper.getMainLooper()).idle()
-        val result = hostScope.async(start = CoroutineStart.UNDISPATCHED) { controller.takePictureToFile() }
-        backend.captures.last().deliverSaved(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1))
-        shadowOf(Looper.getMainLooper()).idle()
-        assertTrue(result.isCompleted, "takePictureToFile did not return")
-        return runBlocking { result.await() }
+    private suspend fun TestScope.capture(): CapturedImage {
+        val platform = FakeAndroidPlatform()
+        val engine = platform.engine(testScheduler, CameraConfiguration())
+        open(platform, engine)
+        val result = async { engine.capture() }
+        platform.settle(testScheduler)
+        platform.backend.captures.last().deliverSaved(byteArrayOf(1, 2, 3))
+        platform.settle(testScheduler)
+        // The engine reads the written file's size on its image-processing thread before it returns.
+        val image = assertIs<CameraKResult.Success<CapturedImage>>(result.await()).value
+        engine.closeAndJoin()
+        return image
     }
 }

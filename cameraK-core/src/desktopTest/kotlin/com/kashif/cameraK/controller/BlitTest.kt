@@ -2,8 +2,8 @@
 
 package com.kashif.cameraK.controller
 
-import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capabilities.capabilitiesOf
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.engine.CameraSelection
@@ -98,7 +98,7 @@ class BlitTest {
         val steps = DesktopRecordingSteps(this, rig)
         val sut = rig.engine(
             config.copy { analysisFormat = FrameFormat.RGBA_8888 },
-            enumerate = { CameraCapabilities(listOf(camera)) },
+            enumerate = { capabilitiesOf(listOf(camera)) },
         )
         val analyzed = CopyOnWriteArrayList<Seen>()
         val registration = sut.frames.register(FrameSpec()) { frame ->

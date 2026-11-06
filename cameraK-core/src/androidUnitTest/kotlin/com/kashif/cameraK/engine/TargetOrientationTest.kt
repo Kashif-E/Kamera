@@ -21,9 +21,7 @@ import kotlin.test.assertIs
  * The target orientation is one value the engine owns (`engine.orientation`): setTargetOrientation
  * sets it, applies it to the bound outputs and, while Open, reports it in `hardware` before it
  * returns; null follows the display again. It is configuration, not a hardware command: before Open
- * it is stored and applied at the next bind (w4-design-decisions G2). The 1.x facade's setter goes
- * through the same engine member, and its startSession passes the value as
- * DesiredHardware.targetOrientation.
+ * it is stored and applied at the next bind (w4-design-decisions G2).
  */
 @RunWith(RobolectricTestRunner::class)
 class TargetOrientationTest {
@@ -89,26 +87,6 @@ class TargetOrientationTest {
             "after the switch",
         )
         assertEquals(Surface.ROTATION_180, boundCapture().targetRotation, "the new camera's capture")
-        engine.closeAndJoin()
-    }
-
-    @Test
-    fun facadeSetterSetsTheEnginesTargetAndIsReported() = runTest {
-        val engine = platform.engine(testScheduler)
-        val facade = (engine as LegacyControllerAccess).legacyController
-
-        // Before the facade's own startSession, which passes it as DesiredHardware.targetOrientation.
-        facade.setTargetOrientation(DeviceOrientation.LANDSCAPE_RIGHT)
-        facade.startSession()
-        platform.settle(testScheduler)
-        assertEquals(EngineState.Open, engine.state.value, "setup: the facade's session opened")
-        assertEquals(DeviceOrientation.LANDSCAPE_RIGHT, engine.hardware.value.targetOrientation, "set before start")
-        assertEquals(Surface.ROTATION_270, boundCapture().targetRotation, "set before start")
-
-        facade.setTargetOrientation(DeviceOrientation.LANDSCAPE_LEFT)
-        platform.settle(testScheduler)
-        assertEquals(DeviceOrientation.LANDSCAPE_LEFT, engine.hardware.value.targetOrientation, "set while Open")
-        assertEquals(Surface.ROTATION_90, boundCapture().targetRotation, "set while Open")
         engine.closeAndJoin()
     }
 

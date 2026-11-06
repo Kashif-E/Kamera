@@ -12,7 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Every platform's CameraPreviewView draws its overlay through CameraPreviewOverlay. The overlay's
+ * Every platform's CameraPreview draws its overlay through CameraPreviewOverlay. The overlay's
  * receiver stays the same object while the box and orientation do, so when the preview recomposes
  * for an unrelated reason the overlay skips instead of running again; a new orientation gives it a
  * new receiver, so it does run then.

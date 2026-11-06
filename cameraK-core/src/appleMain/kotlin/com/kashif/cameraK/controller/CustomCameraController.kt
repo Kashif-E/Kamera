@@ -1,3 +1,5 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.LensInfo
@@ -6,6 +8,7 @@ import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.ByteVar
@@ -52,7 +55,7 @@ internal fun CameraDeviceType.toAVCaptureDeviceType(): String? = when (this) {
     CameraDeviceType.DEFAULT -> AVCaptureDeviceTypeBuiltInWideAngleCamera
 }
 
-class CustomCameraController(
+internal class CustomCameraController(
     val qualityPrioritization: QualityPrioritization,
     private var initialCameraLens: CameraLens = CameraLens.BACK,
     private val aspectRatio: AspectRatio = AspectRatio.RATIO_4_3,
@@ -180,7 +183,7 @@ class CustomCameraController(
     private var isUsingFrontCamera = false
 
     /**
-     * The orientation photos are captured in; CameraController answers with its target orientation
+     * The orientation photos are captured in; AppleCameraEngine answers with its target orientation
      * when one is set, otherwise the device's.
      */
     @Volatile

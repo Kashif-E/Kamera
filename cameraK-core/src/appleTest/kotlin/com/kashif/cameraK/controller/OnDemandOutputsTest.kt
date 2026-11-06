@@ -1,21 +1,18 @@
+@file:OptIn(com.kashif.cameraK.utils.CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.engine.CameraKEnvironment
+import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.enums.AspectRatio
-import com.kashif.cameraK.enums.CameraDeviceType
-import com.kashif.cameraK.enums.CameraLens
-import com.kashif.cameraK.enums.Directory
-import com.kashif.cameraK.enums.FlashMode
-import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
-import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import platform.AVFoundation.AVCaptureMetadataOutput
-import platform.AVFoundation.AVCaptureMetadataOutputObjectsDelegateProtocol
 import platform.AVFoundation.AVCaptureMovieFileOutput
-import platform.darwin.NSObject
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -23,8 +20,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * A photo-only session carries no movie or metadata output. The metadata output is attached while a
- * scanner is set, and a recording's movie output and microphone leave the session when it ends.
+ * A photo-only session carries no movie or metadata output, and a recording's movie output and
+ * microphone leave the session when it ends.
  */
 class OnDemandOutputsTest {
     private val back = FakeDevice()
@@ -34,18 +31,12 @@ class OnDemandOutputsTest {
         sessionFactory = { session },
         cameraDevices = { _, _ -> back },
     )
-    private val controller = CameraController(
-        flashMode = FlashMode.OFF,
-        torchMode = TorchMode.OFF,
-        cameraLens = CameraLens.BACK,
-        imageFormat = ImageFormat.JPEG,
-        qualityPriority = QualityPrioritization.NONE,
-        directory = Directory.DOCUMENTS,
-        cameraDeviceType = CameraDeviceType.DEFAULT,
-        aspectRatio = AspectRatio.RATIO_4_3,
-        targetResolution = null,
-        mirrorFrontCamera = false,
-        customController = custom,
+    private val engine = AppleCameraEngine(
+        CameraConfiguration { aspectRatio = AspectRatio.RATIO_4_3 },
+        CameraKEnvironment(),
+        custom,
+        // The test bundle's Info.plist has no NSMicrophoneUsageDescription, which an app recording audio has.
+        hasUsageDescription = { true },
     )
 
     private fun setUpSession() {
@@ -60,7 +51,7 @@ class OnDemandOutputsTest {
 
     @AfterTest
     fun tearDown() {
-        controller.cleanup()
+        engine.close()
         drainSessionThenMain(custom)
     }
 
@@ -73,31 +64,17 @@ class OnDemandOutputsTest {
     }
 
     @Test
-    fun theMetadataOutputIsAttachedOnlyWhileAScannerIsSet() {
-        setUpSession()
-        val scanner = object : NSObject(), AVCaptureMetadataOutputObjectsDelegateProtocol {}
-
-        controller.setMetadataObjectsDelegate(scanner)
-        drainSessionThenMain(custom)
-        assertEquals(1, metadataOutputs().size, "setting a scanner did not attach the metadata output")
-
-        controller.clearMetadataObjectsDelegate()
-        drainSessionThenMain(custom)
-        assertEquals(emptyList(), metadataOutputs(), "clearing the scanner left the metadata output attached")
-    }
-
-    @Test
     fun aRecordingsMovieOutputAndMicrophoneLeaveTheSessionWhenItEnds() {
         val recorder = FakeMovieRecorder()
         val microphone = captureInputWithoutCamera()
-        controller.movieRecorder = recorder
-        controller.microphoneInput = { Result.success(microphone) }
-        controller.hasUsageDescription = { true }
-        controller.startSession()
-        awaitTrue("the session to start") { session.isRunning }
+        engine.movieRecorder = recorder
+        engine.microphoneInput = { Result.success(microphone) }
         val scope = MainScope()
         try {
-            scope.launch { controller.startRecording(VideoConfiguration { enableAudio = true }) }
+            scope.launch { engine.start(backCamera()) }
+            awaitTrue("the session to start") { session.isRunning }
+            awaitTrue("the engine to report Open") { engine.state.value == EngineState.Open }
+            scope.launch { engine.startRecording(VideoConfiguration { enableAudio = true }) }
             awaitTrue("the recording to start on the movie output") { recorder.starts.isNotEmpty() }
             val started = recorder.starts.single()
             assertTrue(started.output in session.outputs, "the recording's movie output is not attached")

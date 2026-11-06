@@ -1,19 +1,14 @@
 @file:OptIn(CameraKEngineApi::class, ExperimentalCoroutinesApi::class)
-@file:Suppress("DEPRECATION")
 
 package com.kashif.cameraK.state
 
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.HardwareState
-import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
-import com.kashif.cameraK.enums.ImageFormat
-import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.testing.FakeCapabilities
@@ -33,8 +28,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * `uiState` between H2' and C1': still the 1.x data class, every field derived from what the engine
- * reports, the capture counter and the configuration, and nothing else writes it.
+ * `uiState`: every field derived from what the engine reports and the capture counter, and nothing
+ * else writes it.
  */
 class UiStateShapeTest {
     private fun TestScope.readyHolder(engine: CameraEngine, config: CameraConfiguration = CameraConfiguration()) =
@@ -80,54 +75,5 @@ class UiStateShapeTest {
         scripted.reported.value = HardwareState(FlashMode.OFF, TorchMode.OFF, front, null)
         runCurrent()
         assertNull(other.uiState.value.targetOrientation, "a cleared target orientation")
-    }
-
-    @Test
-    fun deprecatedZoomFieldsFollowTheZoomFlow() = runTest {
-        val fake = FakeCameraEngine()
-        val holder = readyHolder(fake)
-
-        fake.reportZoom(3f, minRatio = 1f, maxRatio = 8f)
-        runCurrent()
-
-        assertEquals(ZoomState(3f, 1f, 8f), holder.zoom.value)
-        assertEquals(3f, holder.uiState.value.zoomLevel)
-        assertEquals(8f, holder.uiState.value.maxZoom)
-    }
-
-    @Test
-    fun configurationFieldsComeFromTheConfiguration() = runTest {
-        val config = CameraConfiguration {
-            imageFormat = ImageFormat.PNG
-            qualityPrioritization = QualityPrioritization.QUALITY
-            cameraDeviceType = CameraDeviceType.WIDE_ANGLE
-        }
-        val holder = CameraKStateHolder(config, { _, _ -> FakeCameraEngine() }, emptyList(), cameraKTestEnvironment())
-        assertEquals(ImageFormat.PNG, holder.uiState.value.imageFormat, "before the first start")
-        assertEquals(
-            QualityPrioritization.QUALITY,
-            holder.uiState.value.qualityPrioritization,
-            "before the first start",
-        )
-
-        holder.start()
-        runCurrent()
-
-        assertEquals(ImageFormat.PNG, holder.uiState.value.imageFormat)
-        assertEquals(QualityPrioritization.QUALITY, holder.uiState.value.qualityPrioritization)
-    }
-
-    @Test
-    fun lastErrorStaysNullAfterAFailedCommand() = runTest {
-        val fake = FakeCameraEngine()
-        fake.captureResult = { CameraKResult.Failure(CameraKError.Disconnected()) }
-        val holder = readyHolder(fake)
-
-        assertIs<CameraKResult.Failure>(holder.capture())
-        assertIs<CameraKResult.Failure>(holder.selectCamera("no-such-camera"))
-        assertIs<CameraKResult.Failure>(holder.setTorchMode(TorchMode.AUTO))
-        runCurrent()
-
-        assertNull(holder.uiState.value.lastError)
     }
 }

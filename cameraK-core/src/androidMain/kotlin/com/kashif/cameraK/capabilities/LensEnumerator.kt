@@ -1,3 +1,5 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.capabilities
 
 import android.content.Context
@@ -6,6 +8,7 @@ import android.hardware.camera2.CameraManager
 import android.os.Build
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 
 /**
@@ -15,7 +18,7 @@ import com.kashif.cameraK.utils.CameraKLogger
  * camera it was expanded from; null for top-level entries. CameraSelector.select() (CameraX 1.5.1)
  * resolves purely from the CameraFilter set — setPhysicalCameraId does NOT influence which logical
  * camera is picked — so pinning a physical child to the right hardware requires filtering on this
- * parent id too (see CameraController.createCameraSelector).
+ * parent id too (see CameraSelectorResolver).
  */
 internal class AndroidLensDescriptor(val info: LensInfo, val isPhysicalChild: Boolean, val parentLogicalId: String?)
 

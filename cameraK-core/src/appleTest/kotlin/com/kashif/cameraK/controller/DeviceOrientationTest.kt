@@ -9,7 +9,6 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.async
-import platform.Foundation.NSLock
 import platform.Foundation.NSNotificationCenter
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
@@ -20,8 +19,7 @@ import kotlin.test.assertIs
 
 /**
  * The engine publishes how the device is held from UIDeviceOrientationDidChangeNotification, observed
- * between start and stop; face up, face down and unknown keep the last value, as the 1.x facade's
- * listener did. The facade's getDeviceOrientation and orientation listener read the engine's value.
+ * between start and stop; face up, face down and unknown keep the last value, as the 1.x listener did.
  * The simulator cannot be turned, so the engine reads the orientation through a seam the driver answers.
  */
 class DeviceOrientationTest {
@@ -128,36 +126,6 @@ class DeviceOrientationTest {
             engine.deviceOrientation.value,
             "observed after a start whose session failed",
         )
-        engine.close()
-    }
-
-    @Test
-    fun facadeListenerAndGetterFollowTheEngine() = driver.runCase {
-        val engine = driver.createEngine()
-        driver.settle()
-        val facade = driver.engine.legacyController
-        val lock = NSLock()
-        val heard = mutableListOf<DeviceOrientation>()
-        facade.setOnOrientationChangedListener { orientation ->
-            lock.lock()
-            try {
-                heard += orientation
-            } finally {
-                lock.unlock()
-            }
-        }
-        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
-
-        turnTo(UIDeviceOrientation.UIDeviceOrientationLandscapeLeft)
-        driver.settle()
-        assertEquals(DeviceOrientation.LANDSCAPE_LEFT, facade.getDeviceOrientation(), "the facade's getter")
-        assertEquals(listOf(DeviceOrientation.LANDSCAPE_LEFT), heard.toList(), "the facade's listener")
-
-        facade.setOnOrientationChangedListener(null)
-        turnTo(UIDeviceOrientation.UIDeviceOrientationLandscapeRight)
-        driver.settle()
-        assertEquals(DeviceOrientation.LANDSCAPE_RIGHT, facade.getDeviceOrientation())
-        assertEquals(listOf(DeviceOrientation.LANDSCAPE_LEFT), heard.toList(), "a removed listener was still called")
         engine.close()
     }
 }

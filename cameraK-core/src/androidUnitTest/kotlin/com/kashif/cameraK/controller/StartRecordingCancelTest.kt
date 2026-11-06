@@ -1,23 +1,28 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
-import android.content.Context
-import android.os.Looper
 import androidx.camera.video.VideoCapture
-import androidx.camera.view.PreviewView
-import androidx.test.core.app.ApplicationProvider
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.FakeAndroidPlatform
+import com.kashif.cameraK.engine.open
+import com.kashif.cameraK.enums.CameraDeviceType
+import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
-import org.junit.After
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -27,46 +32,58 @@ import kotlin.test.assertTrue
  */
 @RunWith(RobolectricTestRunner::class)
 class StartRecordingCancelTest {
-    private val context: Context = ApplicationProvider.getApplicationContext()
-    private val backend = FakeCameraXBackend()
-    private val controller = testController(context, backend)
-    private val previewView = PreviewView(context)
-    private val hostScope = CoroutineScope(Job() + Dispatchers.Unconfined)
+    private val platform = FakeAndroidPlatform()
 
-    @After
-    fun tearDown() {
-        hostScope.cancel()
+    // The engine's background work, on the test scheduler until [held]: then queued, so the
+    // VideoCapture build a start waits for does not run.
+    private class HoldableDispatcher(private val delegate: CoroutineDispatcher) : CoroutineDispatcher() {
+        @Volatile var held = false
+        private val queued = mutableListOf<Pair<CoroutineContext, Runnable>>()
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            if (held) queued += context to block else delegate.dispatch(context, block)
+        }
+
+        fun release() {
+            held = false
+            queued.toList().also { queued.clear() }.forEach { (context, block) -> delegate.dispatch(context, block) }
+        }
     }
 
     @Test
-    fun startCancelledWhileWaitingForTheVideoBind_leavesTheSessionWithoutVideoCapture() {
-        controller.bindCamera(previewView)
-        idleMainLooper()
+    fun startCancelledWhileWaitingForTheVideoBind_leavesTheSessionWithoutVideoCapture() = runTest {
+        val background = HoldableDispatcher(StandardTestDispatcher(testScheduler))
+        val engine = platform.engine(testScheduler, background = background)
+        open(platform, engine)
+        background.held = true
 
-        val start = hostScope.launch(start = CoroutineStart.UNDISPATCHED) {
-            controller.startRecording(VideoConfiguration { enableAudio = false })
+        val start = launch(start = CoroutineStart.UNDISPATCHED) {
+            engine.startRecording(VideoConfiguration { enableAudio = false })
         }
-        // The VideoCapture bind is queued on the main thread; the caller gives up before it runs.
+        platform.settle(testScheduler)
+        // The VideoCapture build is queued on the held dispatcher; the caller gives up before it runs.
         assertTrue(start.isActive, "setup: startRecording should be waiting for the bind")
         start.cancel()
-        idleMainLooper()
+        // The build the start was waiting for now runs, after its caller left.
+        background.release()
+        platform.settle(testScheduler)
 
         assertEquals(
             emptyList(),
-            backend.binding.bound.filterIsInstance<VideoCapture<*>>(),
+            platform.backend.binding.bound.filterIsInstance<VideoCapture<*>>(),
             "a cancelled start left VideoCapture bound",
         )
 
         // Every later bind (lens switch, rotation) must also come back without VideoCapture.
-        controller.toggleCameraLens()
-        idleMainLooper()
+        val switch = async { engine.selectCamera(CameraSelection.ByLens(CameraLens.FRONT, CameraDeviceType.DEFAULT)) }
+        platform.settle(testScheduler)
+        assertIs<CameraKResult.Success<*>>(switch.await(), "the lens switch")
 
         assertEquals(
             emptyList(),
-            backend.binding.bound.filterIsInstance<VideoCapture<*>>(),
+            platform.backend.binding.bound.filterIsInstance<VideoCapture<*>>(),
             "a cancelled start keeps adding VideoCapture to later binds",
         )
+        engine.close()
     }
 }
-
-private fun idleMainLooper() = shadowOf(Looper.getMainLooper()).idle()

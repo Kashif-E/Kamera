@@ -2,8 +2,8 @@
 
 package com.kashif.cameraK.controller
 
-import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capabilities.capabilitiesOf
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.contract.BoundSettings
 import com.kashif.cameraK.engine.contract.CaptureDriver
@@ -72,7 +72,7 @@ internal class DesktopEngineDriver :
         rig.recorderScript = { path -> ScriptedFrameRecorder(path, rig.workers).apply { holdStop = true } }
         return rig.engine(
             config,
-            enumerate = { CameraCapabilities(listOf(webcam("cam-a"), webcam("cam-b"))) },
+            enumerate = { capabilitiesOf(listOf(webcam("cam-a"), webcam("cam-b"))) },
             wrap = { listener -> ScriptedListener(listener).also { lastListener = it } },
             nanoClock = { rig.clock.addAndGet(FRAME_NANOS) },
         )

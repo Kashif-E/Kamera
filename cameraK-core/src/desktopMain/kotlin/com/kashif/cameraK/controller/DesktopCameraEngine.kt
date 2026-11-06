@@ -4,6 +4,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capabilities.capabilitiesOf
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.engine.CameraEngine
@@ -13,7 +14,6 @@ import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineRecordingEvent
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.HardwareState
-import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewFrame
 import com.kashif.cameraK.engine.TraceNames
@@ -94,8 +94,7 @@ internal val RECOVERY_TIMEOUT: Duration = 10.seconds
  * them; the engine's own coroutines (enumeration, watchdog, recovery) run on
  * `environment.dispatchers.default`.
  *
- * The devices are what [enumerate] lists (D2': the bridge's [DeviceEnumerator]; the one default
- * device for an engine a 1.x constructor built). A webcam has no flash, no torch and a fixed zoom
+ * The devices are what [enumerate] lists (D2': the bridge's [DeviceEnumerator]). A webcam has no flash, no torch and a fixed zoom
  * of 1, so flash and torch OFF and zoom 1 succeed while Open and anything else is Unsupported;
  * outside Open they are NotReady. The target orientation is configuration, accepted in every state
  * but closed and applied to nothing (§2.4 desktop).
@@ -107,12 +106,10 @@ internal val RECOVERY_TIMEOUT: Duration = 10.seconds
  * configured with it fails with `Unsupported(IMAGE_FORMAT)`. A recording ([DesktopRecording]) is
  * video only (`enableAudio` is `Unsupported(AUDIO)`), enforces its limits itself, yields one
  * `Finalized` in [recordingEvents], and is finalized before the camera closes on [stop] or [close]
- * (§2.3 rule 7). A camera switch during one is `Busy`. Until C1' it carries the 1.x facade over
- * itself, [legacyController].
+ * (§2.3 rule 7). A camera switch during one is `Busy`.
  *
  * Frames (D4', §8 desktop): the producer blits each frame once into a leased slot, cropped to the
- * configured aspect ratio and mirrored for a FRONT camera under `mirrorFrontCamera` (and for every
- * camera under the facade's horizontal flip), so the preview, stills, recordings and analysis all
+ * configured aspect ratio and mirrored for a FRONT camera under `mirrorFrontCamera`, so the preview, stills, recordings and analysis all
  * see the same pixels. Analysis frames reach [frames]' registrations only while Open, from the
  * current run, in the configured `analysisFormat`. The recorder writes the leased frames themselves.
  */
@@ -123,27 +120,19 @@ internal class DesktopCameraEngine(
     private val authorization: CameraAuthorization = MacCameraAuthorization(),
     private val os: OperatingSystem = currentOperatingSystem(),
     private val nanoClock: () -> Long = System::nanoTime,
-    horizontalFlip: Boolean = false,
     private val listenerWrapper: (GrabLoopListener) -> GrabLoopListener = { it },
     private val enumerate: () -> CameraCapabilities = ::desktopCapabilities,
     /** Where and how stills and recordings are written. */
     internal val media: DesktopMedia = DesktopMedia(),
-    facade: (DesktopCameraEngine) -> CameraController = { CameraController(it, config) },
-    /** False for a 1.x controller's own engine, which keeps the camera's own frame (1.x parity). */
-    private val cropToAspectRatio: Boolean = true,
     /** How frames become analysis planes; tests pass one that fails. */
     analysisConversion: AnalysisConversion = LeasedFrameConversion,
-) : CameraEngine,
-    LegacyControllerAccess {
+) : CameraEngine {
     private val runtime = environment.runtime
     private val tracer: Tracer = runtime.tracer ?: DesktopLogTracer
     private val io = environment.dispatchers.io
 
-    /** The producer the facade's captures and recordings read their frames from. */
-    internal val grabber: CameraGrabber =
-        CameraGrabber(MutableSharedFlow(), { }, null, nanoClock).apply { setHorizontalFlip(horizontalFlip) }
-
-    override val legacyController: CameraController by lazy { facade(this) }
+    /** The producer every capture, recording, preview frame and analysis frame reads from. */
+    internal val grabber: CameraGrabber = CameraGrabber(MutableSharedFlow(), { }, null, nanoClock)
 
     /** The desired hardware the current session started with; null without one. */
     internal val startedWith: DesiredHardware? get() = synchronized(lock) { session?.desired }
@@ -157,7 +146,7 @@ internal class DesktopCameraEngine(
     private val _zoom = MutableStateFlow(ZoomState(1f, 1f, 1f))
     override val zoom: StateFlow<ZoomState> = _zoom.asStateFlow()
 
-    // A desktop camera does not rotate with anything; the 1.x controller reported PORTRAIT.
+    // A desktop camera does not rotate with anything.
     override val deviceOrientation: StateFlow<DeviceOrientation> =
         MutableStateFlow(DeviceOrientation.PORTRAIT).asStateFlow()
 
@@ -225,7 +214,7 @@ internal class DesktopCameraEngine(
             }
         }
         // A new generation is begun before the first suspension, so a stop that follows this call
-        // on the same thread always finds it (the 1.x facade starts and stops from any thread).
+        // on the same thread always finds it.
         if (fresh) begin(current)
         return try {
             current.outcome.await()
@@ -282,7 +271,7 @@ internal class DesktopCameraEngine(
         val listener = listenerWrapper(RunListener(run))
         val device = checkNotNull(session.device)
         val blit = FrameBlit(
-            aspectRatio = config.aspectRatio.takeIf { cropToAspectRatio },
+            aspectRatio = config.aspectRatio,
             mirrored = config.mirrorFrontCamera && device.lens == CameraLens.FRONT,
         )
         val job = grabber.startRun(scope, source, device, runtime.newWorker, listener, blit) { frameSource.poolSize }
@@ -511,17 +500,8 @@ internal class DesktopCameraEngine(
 
     private fun capabilitiesNow(): CameraCapabilities = enumeration.value.also { _capabilities.value = it }
 
-    /**
-     * The devices, enumerated on the calling thread if the engine's own enumeration has not run
-     * yet. The facade reads it: a 1.x engine lists the one default device without any I/O, and a
-     * bridge engine's facade is reachable only after a start, which enumerated.
-     */
-    internal fun enumeratedCapabilities(): CameraCapabilities = capabilitiesNow()
-
-    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = flashCommand(mode)
-
-    /** [setFlashMode] without suspending, for the facade. A desktop camera's flash is OFF. */
-    internal fun flashCommand(mode: FlashMode): CameraKResult<FlashMode> = hardwareCommand {
+    /** A desktop camera's flash is OFF. */
+    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = hardwareCommand {
         when (mode) {
             FlashMode.OFF -> CameraKResult.Success(FlashMode.OFF)
             FlashMode.ON -> unsupported(CameraFeature.FLASH_ON)
@@ -529,17 +509,13 @@ internal class DesktopCameraEngine(
         }
     }
 
-    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = torchCommand(mode)
-
-    /** [setTorchMode] without suspending, for the facade. A desktop camera has no torch. */
-    internal fun torchCommand(mode: TorchMode): CameraKResult<TorchMode> = hardwareCommand {
+    /** A desktop camera has no torch. */
+    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = hardwareCommand {
         if (mode == TorchMode.OFF) CameraKResult.Success(TorchMode.OFF) else unsupported(CameraFeature.TORCH)
     }
 
-    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = zoomCommand(ratio)
-
-    /** [setZoom] without suspending, for the facade. A desktop camera's zoom is fixed at 1. */
-    internal fun zoomCommand(ratio: Float): CameraKResult<ZoomState> = hardwareCommand {
+    /** A desktop camera's zoom is fixed at 1. */
+    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = hardwareCommand {
         if (ratio == 1f) CameraKResult.Success(_zoom.value) else unsupported(CameraFeature.ZOOM)
     }
 
@@ -637,19 +613,15 @@ internal class DesktopCameraEngine(
     override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> =
         if (isClosed()) CameraKResult.Failure(CameraKError.Closed) else CameraKResult.Success(Unit)
 
-    /** A still of the camera's next frame, written to an app-owned file; NotReady unless Open. */
-    override suspend fun capture(): CameraKResult<CapturedImage> = still(requireOpen = true)
-
     /**
-     * A still of the producer's next frame. [requireOpen] false is the 1.x facade's capture, which
-     * waits for the next frame in any state, as 1.x did. Completes with `Failure(Closed)` at once
-     * when the engine closes while it waits.
+     * A still of the camera's next frame, written to an app-owned file; NotReady unless Open.
+     * Completes with `Failure(Closed)` at once when the engine closes while it waits.
      */
-    internal suspend fun still(requireOpen: Boolean): CameraKResult<CapturedImage> {
+    override suspend fun capture(): CameraKResult<CapturedImage> {
         val pending = CompletableDeferred<CameraKResult<CapturedImage>>()
         synchronized(lock) {
             if (closed) return CameraKResult.Failure(CameraKError.Closed)
-            if (requireOpen && _state.value != EngineState.Open) return CameraKResult.Failure(CameraKError.NotReady)
+            if (_state.value != EngineState.Open) return CameraKResult.Failure(CameraKError.NotReady)
             pendingCaptures += pending
         }
         val writer = scope.launch(io) {
@@ -739,20 +711,13 @@ internal class DesktopCameraEngine(
     }
 
     override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> =
-        beginRecording(config, requireOpen = true).map { it.path }
+        beginRecording(config).map { it.path }
 
-    /**
-     * Starts a recording and returns it once the recorder started and `Started` was emitted.
-     * [requireOpen] false is the 1.x facade's start, which records whatever frames come, as 1.x did,
-     * and keeps the recording to claim its outcome.
-     */
-    internal suspend fun beginRecording(
-        video: VideoConfiguration,
-        requireOpen: Boolean,
-    ): CameraKResult<DesktopRecording> {
+    /** Starts a recording and returns it once the recorder started and `Started` was emitted. */
+    private suspend fun beginRecording(video: VideoConfiguration): CameraKResult<DesktopRecording> {
         synchronized(lock) {
             if (closed) return CameraKResult.Failure(CameraKError.Closed)
-            if (requireOpen && _state.value != EngineState.Open) return CameraKResult.Failure(CameraKError.NotReady)
+            if (_state.value != EngineState.Open) return CameraKResult.Failure(CameraKError.NotReady)
             if (recording != null || recordingStarting) {
                 return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_START))
             }
@@ -964,7 +929,7 @@ internal fun desktopLensInfo(): LensInfo = LensInfo(
 )
 
 /**
- * The capabilities of the desktop cameras [lenses] (the 1.x enumerator's one camera by default):
+ * The capabilities of the desktop cameras [lenses] (the one default entry by default):
  * flash and torch OFF only (from `hasFlash`), pause and resume through the common RecordingClock,
  * JPEG and PNG stills without HEIC, and all four video qualities with the quality's bitrate as the
  * encoder's target (D3', §6.3). The recording has the blitted frame's size, which `RecordedVideo`
@@ -972,12 +937,12 @@ internal fun desktopLensInfo(): LensInfo = LensInfo(
  * come in either format (D4').
  */
 internal fun desktopCapabilities(lenses: List<LensInfo> = listOf(desktopLensInfo())): CameraCapabilities {
-    val legacy = CameraCapabilities(lenses)
-    val ids = legacy.allLenses.map { it.id }
+    val plain = capabilitiesOf(lenses)
+    val ids = plain.allLenses.map { it.id }
     return CameraCapabilities(
-        allLenses = legacy.allLenses,
-        flashModes = ids.associateWith { legacy.supportedFlashModes(it) },
-        torchModes = ids.associateWith { legacy.supportedTorchModes(it) },
+        allLenses = plain.allLenses,
+        flashModes = ids.associateWith { plain.supportedFlashModes(it) },
+        torchModes = ids.associateWith { plain.supportedTorchModes(it) },
         supportsPauseResume = true,
         supportedVideoQualities = VideoQuality.entries.toSet(),
         supportsVideoBitrate = true,

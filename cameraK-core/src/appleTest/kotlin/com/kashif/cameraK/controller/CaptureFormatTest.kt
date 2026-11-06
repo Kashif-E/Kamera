@@ -1,7 +1,8 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.enums.QualityPrioritization
-import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.toNSData
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlin.test.AfterTest
@@ -38,8 +39,11 @@ class CaptureFormatTest {
             pair.second.callbacks.captureFinished(null)
         }
         captures.forEachIndexed { i, (capture, _) ->
-            val result = assertIs<ImageCaptureResult.SuccessWithFile>(capture.awaitResult(), "capture $i failed")
-            assertContentEquals(photo(i), fileBytes(result.filePath), "capture $i got another capture's photo")
+            val result = assertIs<CameraKResult.Success<CapturedImage>>(
+                capture.awaitResult(),
+                "capture $i failed",
+            ).value
+            assertContentEquals(photo(i), fileBytes(result.path), "capture $i got another capture's photo")
         }
         awaitTrue("every capture delegate to be released") { rig.custom.outstandingPhotoDelegates == 0 }
     }
@@ -57,8 +61,8 @@ class CaptureFormatTest {
         nextRequest.callbacks.photoProcessed(photo(2).toNSData(), null)
         nextRequest.callbacks.captureFinished(null)
 
-        val result = assertIs<ImageCaptureResult.SuccessWithFile>(next.awaitResult())
-        assertContentEquals(photo(2), fileBytes(result.filePath), "the cancelled capture's photo reached the next one")
+        val result = assertIs<CameraKResult.Success<CapturedImage>>(next.awaitResult()).value
+        assertContentEquals(photo(2), fileBytes(result.path), "the cancelled capture's photo reached the next one")
     }
 
     @OptIn(ExperimentalForeignApi::class)

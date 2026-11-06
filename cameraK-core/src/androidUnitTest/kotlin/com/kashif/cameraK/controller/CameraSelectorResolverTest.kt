@@ -1,9 +1,12 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.AndroidLensDescriptor
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.utils.CameraKEngineApi
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

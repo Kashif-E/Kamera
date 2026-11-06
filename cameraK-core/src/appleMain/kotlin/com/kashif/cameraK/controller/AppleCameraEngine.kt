@@ -13,7 +13,6 @@ import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineRecordingEvent
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.HardwareState
-import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewLayerLayout
 import com.kashif.cameraK.engine.TraceNames
@@ -51,7 +50,6 @@ import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -60,15 +58,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import platform.AVFoundation.AVCaptureFlashMode
 import platform.AVFoundation.AVCaptureFlashModeAuto
 import platform.AVFoundation.AVCaptureFlashModeOff
@@ -98,7 +93,6 @@ import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
 import platform.Foundation.NSProcessInfo
 import platform.Foundation.NSUUID
-import platform.Foundation.dataWithContentsOfFile
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIDeviceOrientationDidChangeNotification
@@ -128,7 +122,7 @@ import kotlin.coroutines.resume
  * - Torch and zoom are what the device reports by key-value observing, flash the photo output's mode
  *   read back on the session queue after each set and each input swap (contract rule 5). Flash, torch
  *   and zoom commands need an Open camera; the target orientation is a stored value any time before
- *   close, which the facade's captures and movies read.
+ *   close, which captures and movies read.
  * - The device orientation is observed from UIDeviceOrientationDidChangeNotification between start
  *   and stop.
  *
@@ -151,8 +145,7 @@ internal class AppleCameraEngine(
     /** Locks analysis frames' pixel buffers; tests count the locks. */
     private val pixelBufferLocker: PixelBufferLocker = CoreVideoPixelBufferLocker,
     private val enumerateLenses: () -> List<LensInfo> = custom::getCameraCapabilities,
-) : CameraEngine,
-    LegacyControllerAccess {
+) : CameraEngine {
     private val osVersion: Int = environment.runtime.osVersion ?: runningIosMajorVersion()
     private val tracer = environment.runtime.tracer ?: signpostTracer()
     private val dispatchers = environment.dispatchers
@@ -177,9 +170,6 @@ internal class AppleCameraEngine(
     private val target = atomic<DeviceOrientation?>(null)
     internal val targetOrientation: DeviceOrientation? get() = target.value
 
-    /** The facade's orientation listener, called with each new device orientation. */
-    private val orientationListener = atomic<((DeviceOrientation) -> Unit)?>(null)
-
     /** The zoom ratio the engine re-applies after each start and camera switch. */
     @Volatile
     private var desiredZoom = 1f
@@ -195,7 +185,7 @@ internal class AppleCameraEngine(
     private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
     override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
 
-    /** Recordings on the movie file output; the facade's recording calls reach it too. */
+    /** Recordings on the movie file output. */
     internal val recorder = AppleRecorder(
         custom = custom,
         cameraConfig = config,
@@ -281,20 +271,10 @@ internal class AppleCameraEngine(
     private val enumerated = CompletableDeferred<Unit>()
     private val closeDone = Job()
     private val starts = Mutex()
-    private val facadeCalls = Mutex()
-
-    /** The facade's starts launched and not yet returned, and whether the engine closed: what a facade capture waits on. */
-    private val pendingFacadeStarts = MutableStateFlow(0)
-    private val closedFlow = MutableStateFlow(false)
-    private val facade = atomic<CameraController?>(null)
 
     /** Captures waiting on AVFoundation, which close completes with Closed. Under [lock]. */
     private val pendingStills = mutableSetOf<StillRequest>()
     private val heicRefusalLogged = atomic(false)
-
-    /** The 1.x facade's image-capture listeners: each still's bytes as written. */
-    @Volatile
-    internal var stillListener: ((NSData) -> Unit)? = null
 
     /** Test seam: runs on the session queue between a lens switch's live check and its commit. */
     @Volatile
@@ -363,16 +343,6 @@ internal class AppleCameraEngine(
     ) {
         layer.setFrame(previewFrame(bounds, config.aspectRatio, interfaceOrientation))
         turnPreview(layer, interfaceOrientation?.toVideoOrientation())
-    }
-
-    override val legacyController: CameraController
-        get() = facade.value ?: CameraController(this, config).let { made ->
-            if (facade.compareAndSet(null, made)) made else facade.value!!
-        }
-
-    /** Makes [controller], a facade an app built directly, the one this engine carries. */
-    internal fun adopt(controller: CameraController) {
-        facade.compareAndSet(null, controller)
     }
 
     // ─── Lifecycle ──────────────────────────────────────────────────────────────────────────────
@@ -529,11 +499,9 @@ internal class AppleCameraEngine(
             pendingStart.also { pendingStart = null }
         }
         cut?.continuation?.resume(CLOSED)
-        closedFlow.value = true
         locked { pendingStills.toList().also { pendingStills.clear() } }.forEach { it.settle(CLOSED) }
         observers.forEach(center::removeObserver)
         stopObservingOrientation()
-        orientationListener.value = null
         enumerated.complete(Unit)
         if (session != null) {
             // A recording is finalized before the session is released (contract rule 7).
@@ -897,16 +865,6 @@ internal class AppleCameraEngine(
                 if (onDisk) CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = e) else CameraKError.Internal(e),
             )
         }
-        stillListener?.let { listener ->
-            val bytes = if (format == ImageFormat.JPEG &&
-                written.asDelivered
-            ) {
-                photo
-            } else {
-                NSData.dataWithContentsOfFile(path)
-            }
-            bytes?.let(listener) ?: CameraKLogger.e(TAG, "CameraK: reading the written photo back for listeners failed")
-        }
         return CameraKResult.Success(CapturedImage(path, format, written.width, written.height))
     }
 
@@ -1080,98 +1038,6 @@ internal class AppleCameraEngine(
         return failure(errorFor(cause, null))
     }
 
-    // ─── The facade's session calls ─────────────────────────────────────────────────────────────
-
-    /**
-     * The facade's startSession: starts after any facade call made before it, then runs [started],
-     * before the next facade call, when the start succeeded.
-     */
-    internal fun launchStart(desired: DesiredHardware, started: () -> Unit = {}) {
-        pendingFacadeStarts.update { it + 1 }
-        scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            try {
-                facadeCalls.withLock {
-                    val result = start(desired)
-                    if (result is CameraKResult.Failure) {
-                        CameraKLogger.e(TAG, "CameraK: starting the camera session failed", result.error.cause)
-                    } else {
-                        started()
-                    }
-                }
-            } finally {
-                pendingFacadeStarts.update { it - 1 }
-            }
-        }
-    }
-
-    /**
-     * The 1.x facade's capture: while a start is opening the camera, waits until it is Open, the start
-     * failed or the engine closed, for at most [START_TIMEOUT]. Returns at once when no start is
-     * pending; the capture then answers for the state it finds.
-     */
-    internal suspend fun awaitOpenForFacade() {
-        if (unusable() != null) return
-        withTimeoutOrNull(START_TIMEOUT) {
-            combine(_state, pendingFacadeStarts, closedFlow) { state, pending, closed ->
-                closed ||
-                    state == EngineState.Open ||
-                    state is EngineState.Failed ||
-                    (state == EngineState.Closed && pending == 0)
-            }.first { it }
-        }
-    }
-
-    /** The facade's stopSession: stops after any facade call made before it. */
-    internal fun launchStop() {
-        scope.launch(start = CoroutineStart.UNDISPATCHED) { facadeCalls.withLock { stop() } }
-    }
-
-    /**
-     * A facade setter, after any facade call made before it: [command] when the camera is Open then,
-     * else [whenNotOpen]. A failure is logged, as the 1.x setters, which return nothing, did.
-     */
-    internal fun launchFacadeCommand(
-        what: String,
-        whenNotOpen: () -> Unit = {},
-        command: suspend AppleCameraEngine.() -> CameraKResult<*>,
-    ) {
-        if (isClosed) return
-        scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            facadeCalls.withLock {
-                if (_state.value != EngineState.Open) return@withLock whenNotOpen()
-                val result = command()
-                if (result is CameraKResult.Failure) {
-                    CameraKLogger.e(TAG, "CameraK: $what failed: ${result.error::class.simpleName}", result.error.cause)
-                }
-            }
-        }
-    }
-
-    /**
-     * The flash mode the 1.x facade keeps for [mode]: OFF when the Open camera does not support it, as
-     * 1.x's setFlashMode stored for a camera without a flash; [mode] while none is Open.
-     */
-    internal fun facadeFlashMode(mode: FlashMode): FlashMode {
-        if (_state.value != EngineState.Open) return mode
-        val camera = custom.currentDevice?.let(::lensInfo) ?: return mode
-        if (mode in capabilities.value.supportedFlashModes(camera.id)) return mode
-        CameraKLogger.w(TAG, "CameraK: the camera does not support flash mode $mode; using OFF")
-        return FlashMode.OFF
-    }
-
-    /** The facade's target orientation: stored in any state, as 1.x did, and reported while a camera is bound. */
-    internal fun storeTargetOrientation(orientation: DeviceOrientation?) {
-        target.value = orientation
-        custom.afterQueuedSessionWork {
-            platformCallback("reporting the target orientation") { publishHardware() }
-        }
-    }
-
-    /** The facade's orientation listener; null removes it. */
-    internal fun setDeviceOrientationListener(listener: ((DeviceOrientation) -> Unit)?) {
-        orientationListener.value = listener
-    }
-
     /** The orientation captures and movies take: the target when one is set, otherwise the device's. */
     internal fun captureVideoOrientation(): AVCaptureVideoOrientation =
         target.value?.toVideoOrientation() ?: deviceVideoOrientation()
@@ -1195,22 +1061,6 @@ internal class AppleCameraEngine(
         val now = readDeviceOrientation().toVideoOrientation() ?: return lastDeviceVideoOrientation.value
         lastDeviceVideoOrientation.value = now
         return now
-    }
-
-    /**
-     * The facade's preview host laid out under an interface in [interfaceOrientation]: the newest
-     * preview layer takes the coordinator's angle when it drives that layer, otherwise the interface's.
-     */
-    internal fun turnNewestPreview(interfaceOrientation: AVCaptureVideoOrientation?) {
-        val layer = custom.cameraPreviewLayer
-        val driven = layer?.let { newest -> locked { rotation }?.takeIf { it.layer === newest } }
-        when {
-            layer != null && driven != null -> custom.turnPreview(
-                layer,
-                VideoRotation.Angle(driven.source.previewAngle),
-            )
-            interfaceOrientation != null -> custom.orientPreview(interfaceOrientation)
-        }
     }
 
     /** Main thread: [layer] by the coordinator's preview angle when it drives the layer, else to [interfaceOrientation]. */
@@ -1308,12 +1158,9 @@ internal class AppleCameraEngine(
     /** Face up, face down and unknown name no orientation, so they keep the last one. */
     private fun updateDeviceOrientation() {
         val orientation = readDeviceOrientation().toDeviceOrientation() ?: return
-        val changed = locked {
-            if (closed || _deviceOrientation.value == orientation) return@locked false
-            _deviceOrientation.value = orientation
-            true
+        locked {
+            if (!closed) _deviceOrientation.value = orientation
         }
-        if (changed) orientationListener.value?.invoke(orientation)
     }
 
     // ─── Platform reads ─────────────────────────────────────────────────────────────────────────

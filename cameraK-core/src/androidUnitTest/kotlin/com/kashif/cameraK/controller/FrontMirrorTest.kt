@@ -1,54 +1,58 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
-import android.content.Context
-import android.os.Looper
-import androidx.camera.view.PreviewView
-import androidx.test.core.app.ApplicationProvider
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.DesiredHardware
+import com.kashif.cameraK.engine.EngineState
+import com.kashif.cameraK.engine.FakeAndroidPlatform
+import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.launch
-import org.junit.After
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import kotlin.test.assertEquals
 
 /** With mirroring on, a front-camera photo is mirrored like the preview (#112); a back-camera one never is. */
 @RunWith(RobolectricTestRunner::class)
 class FrontMirrorTest {
-    private val context: Context = ApplicationProvider.getApplicationContext()
-    private val hostScope = CoroutineScope(Job() + Dispatchers.Unconfined)
-
-    @After
-    fun tearDown() {
-        hostScope.cancel()
-    }
-
     @Test
-    fun mirroring_reversesFrontCapturesOnly() {
+    fun mirroring_reversesFrontCapturesOnly() = runTest {
         assertEquals(true, captureIsReversed(mirror = true, front = true), "a mirrored front capture was not reversed")
         assertEquals(false, captureIsReversed(mirror = true, front = false), "a back capture was reversed")
         assertEquals(false, captureIsReversed(mirror = false, front = true), "an unmirrored front capture was reversed")
     }
 
-    private fun captureIsReversed(mirror: Boolean, front: Boolean): Boolean {
-        val backend = FakeCameraXBackend()
-        val controller = testController(context, backend, mirrorFrontCamera = mirror)
-        if (front) controller.toggleCameraLens()
-        assertEquals(if (front) CameraLens.FRONT else CameraLens.BACK, controller.getCameraLens())
-        controller.bindCamera(PreviewView(context))
-        idleMainLooper()
+    private suspend fun TestScope.captureIsReversed(mirror: Boolean, front: Boolean): Boolean {
+        val platform = FakeAndroidPlatform()
+        val engine = platform.engine(testScheduler, CameraConfiguration { mirrorFrontCamera = mirror })
+        platform.settle(testScheduler)
+        val lens = if (front) CameraLens.FRONT else CameraLens.BACK
+        val desired = FakeAndroidPlatform.desired.let {
+            DesiredHardware(
+                CameraSelection.ByLens(lens, CameraDeviceType.DEFAULT),
+                it.flashMode,
+                it.torchMode,
+                it.zoomRatio,
+                it.targetOrientation,
+            )
+        }
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired), "start")
+        platform.settle(testScheduler)
+        assertEquals(EngineState.Open, engine.state.value)
+        assertEquals(lens, engine.hardware.value.camera?.lens)
 
-        hostScope.launch(start = CoroutineStart.UNDISPATCHED) { controller.takePictureToFile() }
-        val reversed = backend.captures.single().options.metadata.isReversedHorizontal
-        controller.cleanup()
+        val capture = backgroundScope.launch { engine.capture() }
+        platform.settle(testScheduler)
+        val reversed = platform.backend.captures.single().options.metadata.isReversedHorizontal
+        capture.cancel()
+        engine.closeAndJoin()
         return reversed
     }
 }
-
-private fun idleMainLooper() = shadowOf(Looper.getMainLooper()).idle()

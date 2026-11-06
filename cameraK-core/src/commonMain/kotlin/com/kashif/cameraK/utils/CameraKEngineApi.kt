@@ -9,7 +9,8 @@ package com.kashif.cameraK.utils
     message = "Engine SPI for fakes and alternative backends. It may change in any release.",
     level = RequiresOptIn.Level.ERROR,
 )
-@Retention(AnnotationRetention.BINARY)
+// RUNTIME, as InternalCameraKApi is, so a test can read it with reflection.
+@Retention(AnnotationRetention.RUNTIME)
 @Target(
     AnnotationTarget.CLASS,
     AnnotationTarget.CONSTRUCTOR,

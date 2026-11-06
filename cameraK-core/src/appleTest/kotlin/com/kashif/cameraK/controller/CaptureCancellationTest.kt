@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Cancelling takePictureToFile does not stop AVFoundation: the photo output keeps working on the
+ * Cancelling a capture does not stop AVFoundation: the photo output keeps working on the
  * request until its last callback. AVFoundation does not retain a capture's delegate, so the
  * cancelled capture's delegate is kept alive until then and released exactly once, and the cancelled
  * capture returns nothing.

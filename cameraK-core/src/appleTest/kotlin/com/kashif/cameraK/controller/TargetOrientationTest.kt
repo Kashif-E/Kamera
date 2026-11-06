@@ -17,9 +17,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 
 /**
- * The target orientation is one value the engine owns (design §2.4). The facade's captures and movies
- * read it, `hardware.targetOrientation` reports it when the command returns, and a target set through
- * the holder or the facade orients the same photos. It is a configuration value, not a hardware
+ * The target orientation is one value the engine owns (design §2.4). Its photos and movies read it,
+ * and `hardware.targetOrientation` reports it when the command returns. It is a configuration value, not a hardware
  * command: before Open it is stored and applied at start, and only a closed engine refuses it
  * (w4 decision G2).
  */
@@ -35,16 +34,15 @@ class TargetOrientationTest {
     )
 
     @Test
-    fun engineTargetOrientsTheFacadesCaptures() = driver.runCase {
+    fun engineTargetOrientsPhotosAndMovies() = driver.runCase {
         val engine = driver.createEngine()
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
-        val facade = driver.engine.legacyController
 
         assertEquals(CameraKResult.Success(Unit), engine.setTargetOrientation(DeviceOrientation.LANDSCAPE_LEFT))
 
-        assertEquals(AVCaptureVideoOrientationLandscapeRight, facade.effectiveVideoOrientation(), "the facade's movies")
-        assertEquals(AVCaptureVideoOrientationLandscapeRight, driver.custom.captureOrientation(), "the facade's photos")
+        assertEquals(AVCaptureVideoOrientationLandscapeRight, driver.engine.captureVideoOrientation(), "movies")
+        assertEquals(AVCaptureVideoOrientationLandscapeRight, driver.custom.captureOrientation(), "photos")
         engine.close()
     }
 
@@ -66,7 +64,6 @@ class TargetOrientationTest {
         val engine = driver.createEngine()
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
-        val facade = driver.engine.legacyController
         val followingTheDevice = driver.custom.captureOrientation()
         assertEquals(CameraKResult.Success(Unit), engine.setTargetOrientation(DeviceOrientation.PORTRAIT_UPSIDE_DOWN))
         assertEquals(AVCaptureVideoOrientationPortraitUpsideDown, driver.custom.captureOrientation())
@@ -75,7 +72,7 @@ class TargetOrientationTest {
 
         assertNull(engine.hardware.value.targetOrientation, "the reported target after clearing it")
         assertEquals(followingTheDevice, driver.custom.captureOrientation(), "photos follow the device again")
-        assertEquals(followingTheDevice, facade.effectiveVideoOrientation(), "movies follow the device again")
+        assertEquals(followingTheDevice, driver.engine.captureVideoOrientation(), "movies follow the device again")
         engine.close()
     }
 
@@ -83,46 +80,17 @@ class TargetOrientationTest {
     fun targetSurvivesARestartAndALensSwitch() = driver.runCase {
         val engine = driver.createEngine()
         driver.settle()
-        val facade = driver.engine.legacyController
-        facade.startSession()
-        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         assertEquals(CameraKResult.Success(Unit), engine.setTargetOrientation(DeviceOrientation.LANDSCAPE_LEFT))
 
-        facade.stopSession()
+        engine.stop()
         driver.settle()
-        facade.startSession()
-        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCameraFacing(DeviceOrientation.LANDSCAPE_LEFT)))
         assertEquals(DeviceOrientation.LANDSCAPE_LEFT, engine.hardware.value.targetOrientation, "after a restart")
 
         assertIs<CameraKResult.Success<*>>(engine.selectCamera(CameraSelection.ById(AppleEngineDriver.FRONT_ID)))
         assertEquals(DeviceOrientation.LANDSCAPE_LEFT, engine.hardware.value.targetOrientation, "after a lens switch")
         assertEquals(AVCaptureVideoOrientationLandscapeRight, driver.custom.captureOrientation(), "photos after both")
-        engine.close()
-    }
-
-    @Test
-    fun facadeSetterSetsTheEnginesTarget() = driver.runCase {
-        val engine = driver.createEngine()
-        driver.settle()
-        val facade = driver.engine.legacyController
-
-        facade.setTargetOrientation(DeviceOrientation.LANDSCAPE_LEFT)
-        facade.startSession()
-        driver.settle()
-        assertEquals(
-            DeviceOrientation.LANDSCAPE_LEFT,
-            engine.hardware.value.targetOrientation,
-            "a target the facade set before startSession",
-        )
-
-        facade.setTargetOrientation(DeviceOrientation.PORTRAIT_UPSIDE_DOWN)
-        driver.settle()
-        assertEquals(
-            DeviceOrientation.PORTRAIT_UPSIDE_DOWN,
-            engine.hardware.value.targetOrientation,
-            "a target the facade set while open",
-        )
-        assertEquals(AVCaptureVideoOrientationPortraitUpsideDown, driver.custom.captureOrientation())
         engine.close()
     }
 

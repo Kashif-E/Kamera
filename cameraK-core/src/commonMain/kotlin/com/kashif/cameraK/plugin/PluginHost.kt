@@ -18,7 +18,6 @@ import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.state.CameraUIState
 import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
@@ -26,7 +25,6 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,19 +64,6 @@ internal class PluginHost(
     private val recordingState: StateFlow<RecordingState>,
     private val emit: (CameraKEvent) -> Unit,
 ) {
-    // A plugin coroutine that throws must not reach the platform's uncaught-exception handler, which
-    // kills the host app on Android and iOS.
-    @OptIn(InternalCameraKApi::class)
-    private val failureHandler = CoroutineExceptionHandler { _, error ->
-        CameraKLogger.e(TAG, "A plugin coroutine failed", error)
-        // The scope is shared by every plugin, so it cannot tell which one launched the coroutine.
-        emit(CameraKEvent.PluginFailed(SHARED_SCOPE_ID, CameraKError.Internal(error)))
-    }
-
-    /** The deprecated shared scope: a SupervisorJob child of the holder's scope. */
-    val scope: CoroutineScope =
-        CoroutineScope(holderScope.coroutineContext + SupervisorJob(holderScope.coroutineContext.job) + failureHandler)
-
     private val lock = SynchronizedObject()
     private val plugins = mutableListOf<CameraKPlugin>()
     private val contexts = mutableMapOf<CameraKPlugin, PluginContext>()
@@ -113,7 +98,7 @@ internal class PluginHost(
         pending.forEach(::attach)
     }
 
-    /** Detaches every plugin, refuses new ones and cancels every coroutine plugins launched. */
+    /** Detaches every plugin, refuses new ones and cancels every coroutine plugins launched in their scopes. */
     fun detachAll() {
         val current = synchronized(lock) {
             closed = true
@@ -123,13 +108,11 @@ internal class PluginHost(
             }
         }
         current.forEach { (plugin, context) -> detach(plugin, context) }
-        scope.coroutineContext.job.cancelChildren()
     }
 
     // Guarded by lock.
     private fun newContext(plugin: CameraKPlugin): PluginContext = PluginContext(plugin).also { contexts[plugin] = it }
 
-    @OptIn(InternalCameraKApi::class)
     private fun attach(context: PluginContext) {
         try {
             context.plugin.onAttach(context)
@@ -141,7 +124,6 @@ internal class PluginHost(
     }
 
     // A plugin removed before the first Ready has no context; it is still told it is detached, as in 1.x.
-    @OptIn(InternalCameraKApi::class)
     private fun detach(plugin: CameraKPlugin, context: PluginContext?) {
         try {
             plugin.onDetach()
@@ -164,7 +146,8 @@ internal class PluginHost(
         private val detached = atomic(false)
         override val failure: StateFlow<CameraKError?> = _failure.asStateFlow()
 
-        @OptIn(InternalCameraKApi::class)
+        // A plugin coroutine that throws must not reach the platform's uncaught-exception handler, which
+        // kills the host app on Android and iOS.
         override val scope: CoroutineScope = CoroutineScope(
             holderScope.coroutineContext + SupervisorJob(holderScope.coroutineContext.job) +
                 CoroutineExceptionHandler { _, error ->
@@ -172,9 +155,6 @@ internal class PluginHost(
                     fail(CameraKError.Internal(error))
                 },
         )
-
-        /** The holder, for the deprecated `onAttach(stateHolder)` the default `onAttach(context)` forwards to. */
-        val stateHolder: CameraKStateHolder get() = holder
 
         override val dispatchers: CameraKDispatchers get() = this@PluginHost.dispatchers
         override val cameraState: StateFlow<CameraKState> get() = holder.cameraState
@@ -204,7 +184,6 @@ internal class PluginHost(
          * Sets [failure] and emits PluginFailed for this attachment's first failure; a later one is
          * only logged by its caller. After the detach it does neither and logs that it ignored one.
          */
-        @OptIn(InternalCameraKApi::class)
         fun fail(error: CameraKError) {
             if (detached.value) {
                 CameraKLogger.w(TAG, "A plugin failed after its detach; the failure is ignored", error.cause)
@@ -220,10 +199,5 @@ internal class PluginHost(
 
     private companion object {
         const val TAG = "CameraK"
-        const val SHARED_SCOPE_ID = "pluginScope"
     }
 }
-
-/** The holder behind a context the holder made; null for any other context. */
-internal val CameraKPluginContext.stateHolderOrNull: CameraKStateHolder?
-    get() = (this as? PluginHost.PluginContext)?.stateHolder

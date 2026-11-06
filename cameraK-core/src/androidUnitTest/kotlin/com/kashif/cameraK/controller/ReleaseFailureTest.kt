@@ -2,26 +2,20 @@
 
 package com.kashif.cameraK.controller
 
-import android.content.Context
 import android.os.Looper
-import androidx.camera.view.PreviewView
 import androidx.lifecycle.Lifecycle
-import androidx.test.core.app.ApplicationProvider
 import com.kashif.cameraK.engine.EngineState
+import com.kashif.cameraK.engine.FakeAndroidPlatform
+import com.kashif.cameraK.engine.open
+import com.kashif.cameraK.engine.startRecording
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import java.util.concurrent.Executors
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -33,17 +27,9 @@ import kotlin.test.assertTrue
  */
 @RunWith(RobolectricTestRunner::class)
 class ReleaseFailureTest {
-    private val context: Context = ApplicationProvider.getApplicationContext()
-    private val backend = FakeCameraXBackend()
+    private val platform = FakeAndroidPlatform()
     private val imageExecutor = Executors.newFixedThreadPool(2)
     private val analyzerExecutor = Executors.newSingleThreadExecutor()
-    private val controller = testController(
-        context,
-        backend,
-        imageProcessingExecutor = imageExecutor,
-        analyzerExecutor = analyzerExecutor,
-    )
-    private val hostScope = CoroutineScope(Job() + Dispatchers.Unconfined)
     private val errors = mutableListOf<String>()
     private val escaped = mutableListOf<Throwable>()
     private val mainThread = Looper.getMainLooper().thread
@@ -52,7 +38,6 @@ class ReleaseFailureTest {
     @After
     fun tearDown() {
         mainThread.uncaughtExceptionHandler = previousHandler
-        hostScope.cancel()
         CameraKLogger.sink = null
         CameraKLogger.enabled = false
         imageExecutor.shutdownNow()
@@ -60,32 +45,30 @@ class ReleaseFailureTest {
     }
 
     @Test
-    fun aThrowingReleaseStepIsLoggedAndTheRemainingStepsStillRun() {
-        controller.bindCamera(PreviewView(context))
-        idleMainLooper()
-        val start = hostScope.async(start = CoroutineStart.UNDISPATCHED) {
-            controller.startRecording(VideoConfiguration { enableAudio = false })
-        }
-        idleMainLooper()
-        assertTrue(start.isCompleted, "setup: the recording did not start")
-        backend.recordings.single().stopFailure = IllegalStateException("scripted recording stop failure")
+    fun aThrowingReleaseStepIsLoggedAndTheRemainingStepsStillRun() = runTest {
+        val engine = platform.engine(
+            testScheduler,
+            imageProcessing = imageExecutor,
+            analyzerExecutor = analyzerExecutor,
+        )
+        open(platform, engine)
+        val (recording, _) = startRecording(platform, engine, VideoConfiguration { enableAudio = false })
+        recording.stopFailure = IllegalStateException("scripted recording stop failure")
         CameraKLogger.enabled = true
         CameraKLogger.sink = { level, _, message, _ -> if (level == CameraKLogger.Level.ERROR) errors += message }
         mainThread.uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { _, e -> escaped += e }
 
-        controller.cleanup()
-        runCatching { idleMainLooper() }.exceptionOrNull()?.let { escaped += it }
+        engine.close()
+        runCatching { platform.settle(testScheduler) }.exceptionOrNull()?.let { escaped += it }
 
         assertTrue(escaped.isEmpty(), "a release failure reached the main looper: $escaped")
         assertTrue(imageExecutor.isShutdown, "the image-processing executor was not shut down")
         assertTrue(analyzerExecutor.isShutdown, "the analyzer executor was not shut down")
-        assertEquals(EngineState.Closed, controller.engine.state.value)
-        assertEquals(Lifecycle.State.DESTROYED, controller.engine.lifecycle.currentState)
+        assertEquals(EngineState.Closed, engine.state.value)
+        assertEquals(Lifecycle.State.DESTROYED, engine.lifecycle.currentState)
         assertTrue(
             errors.any { "recording" in it.lowercase() && "release" in it.lowercase() },
             "the failed release step was not logged by name: $errors",
         )
     }
 }
-
-private fun idleMainLooper() = shadowOf(Looper.getMainLooper()).idle()

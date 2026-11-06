@@ -9,7 +9,7 @@ import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 
-/** The iOS engine over its own session; it carries the 1.x facade over itself to Ready.controller. */
+/** The iOS engine over its own session. */
 internal actual fun createPlatformEngine(
     config: CameraConfiguration,
     context: CameraKPlatformContext,

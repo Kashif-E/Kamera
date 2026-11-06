@@ -1,23 +1,17 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
-import android.content.Context
-import android.os.Looper
-import androidx.camera.view.PreviewView
-import androidx.test.core.app.ApplicationProvider
-import com.kashif.cameraK.enums.Directory
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
-import org.junit.After
+import com.kashif.cameraK.engine.FakeAndroidPlatform
+import com.kashif.cameraK.engine.open
+import com.kashif.cameraK.utils.CameraKEngineApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
@@ -31,15 +25,6 @@ import kotlin.test.assertTrue
 class CaptureFileNameTest {
     @get:Rule
     val folder = TemporaryFolder()
-
-    private val context: Context = ApplicationProvider.getApplicationContext()
-    private val backend = FakeCameraXBackend()
-    private val hostScope = CoroutineScope(Job() + Dispatchers.Unconfined)
-
-    @After
-    fun tearDown() {
-        hostScope.cancel()
-    }
 
     /** Photos and videos are both created this way; a burst stays well inside one second. */
     @Test
@@ -62,17 +47,16 @@ class CaptureFileNameTest {
     }
 
     @Test
-    fun twoFileCapturesInFlight_writeToDifferentFiles() {
-        captureTwice(Directory.DOCUMENTS)
+    fun twoFileCapturesInFlight_writeToDifferentFiles() = runTest {
+        val platform = FakeAndroidPlatform()
+        val engine = platform.engine(testScheduler)
+        open(platform, engine)
+        repeat(2) { backgroundScope.launch { engine.capture() } }
+        platform.settle(testScheduler)
+        val backend = platform.backend
+        assertEquals(2, backend.captures.size, "both captures should be in flight")
 
         assertNotEquals(backend.captures[0].outputFile, backend.captures[1].outputFile)
-    }
-
-    private fun captureTwice(directory: Directory) {
-        val controller = testController(context, backend, directory = directory)
-        controller.bindCamera(PreviewView(context))
-        shadowOf(Looper.getMainLooper()).idle()
-        repeat(2) { hostScope.async(start = CoroutineStart.UNDISPATCHED) { controller.takePictureToFile() } }
-        assertEquals(2, backend.captures.size, "both captures should be in flight")
+        engine.close()
     }
 }

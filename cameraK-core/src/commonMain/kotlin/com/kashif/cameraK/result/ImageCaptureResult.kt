@@ -1,39 +1,28 @@
+// The hint names itself in its subclasses.
+@file:Suppress("DEPRECATION_ERROR")
+
 package com.kashif.cameraK.result
 
 /**
- * Sealed class representing the result of an image capture operation.
+ * The 1.x outcome of a capture. Nothing in 2.0 produces it: `capture()` returns a
+ * `CameraKResult<CapturedImage>`. Kept, with its 1.x shape, only so the IDE can point 1.x code at the
+ * replacement; removed in 2.1.
  */
+@Deprecated(
+    "Removed in CameraK 2.0: capture() returns a CameraKResult<CapturedImage>.",
+    ReplaceWith("CameraKResult<CapturedImage>", "com.kashif.cameraK.capture.CapturedImage"),
+    level = DeprecationLevel.ERROR,
+)
 sealed class ImageCaptureResult {
     /**
-     * Represents a successful image capture with ByteArray data.
-     *
-     * @param byteArray The captured image data as a [ByteArray].
-     */
-    data class Success(val byteArray: ByteArray) : ImageCaptureResult() {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (other == null || this::class != other::class) return false
-
-            other as Success
-
-            return byteArray.contentEquals(other.byteArray)
-        }
-
-        override fun hashCode(): Int = byteArray.contentHashCode()
-    }
-
-    /**
-     * Represents a successful image capture with file path.
-     * Use this for maximum performance when you need the file instead of ByteArray.
-     * Skips all processing and file reading - fastest option.
+     * A capture written to an app-owned file.
      *
      * @param filePath The absolute path to the captured image file.
      */
     data class SuccessWithFile(val filePath: String) : ImageCaptureResult()
 
     /**
-     * Represents a successful image capture published to the shared gallery, which has no file path
-     * the app can use.
+     * A capture published to the shared gallery, which has no file path the app can use.
      *
      * @param uri The gallery entry: a `content://` MediaStore URI on Android.
      */
@@ -46,7 +35,7 @@ sealed class ImageCaptureResult {
     }
 
     /**
-     * Represents a failed image capture.
+     * A failed capture.
      *
      * @param exception The exception that occurred during image capture.
      */

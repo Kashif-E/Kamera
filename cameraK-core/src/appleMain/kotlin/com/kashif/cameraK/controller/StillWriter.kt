@@ -6,6 +6,11 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import platform.CoreFoundation.CFDataRef
 import platform.CoreFoundation.CFDictionaryRef
 import platform.CoreFoundation.CFRelease
@@ -17,8 +22,11 @@ import platform.CoreGraphics.CGRectMake
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
+import platform.Foundation.NSDataWritingAtomic
+import platform.Foundation.NSError
 import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
+import platform.Foundation.writeToFile
 import platform.ImageIO.CGImageDestinationAddImage
 import platform.ImageIO.CGImageDestinationCreateWithURL
 import platform.ImageIO.CGImageDestinationFinalize
@@ -184,3 +192,23 @@ private val ImageFormat.uniformType: String
         ImageFormat.PNG -> "public.png"
         ImageFormat.HEIC -> "public.heic"
     }
+
+/**
+ * Writes [data] to the file at [filePath], atomically; a failure carries the file system's NSError
+ * as its cause, and its message names neither the file nor its path.
+ */
+@OptIn(ExperimentalForeignApi::class)
+internal fun writeDataToFile(data: NSData, filePath: String): Result<Unit> = memScoped {
+    val error = alloc<ObjCObjectVar<NSError?>>()
+    if (data.writeToFile(filePath, NSDataWritingAtomic, error.ptr)) {
+        Result.success(Unit)
+    } else {
+        val cause = error.value
+        Result.failure(
+            IllegalStateException(
+                "Could not write the file${cause?.let { ": ${it.summary}" }.orEmpty()}",
+                cause?.let(::NSErrorException),
+            ),
+        )
+    }
+}

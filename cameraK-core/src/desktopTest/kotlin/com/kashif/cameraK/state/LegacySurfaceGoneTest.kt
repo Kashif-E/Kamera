@@ -53,10 +53,6 @@ class LegacySurfaceGoneTest {
             .filter { it.parameterCount == 1 && it.parameterTypes.single() == List::class.java }
             .forEach { present += "CameraCapabilities' one-argument constructor" }
 
-        Class.forName("com.kashif.cameraK.controller.CameraGrabber").methods
-            .filter { method -> method.parameterTypes.any { it.name == "org.bytedeco.javacv.FrameGrabber" } }
-            .forEach { present += "CameraGrabber.${it.name}, which takes the 1.x customGrabber" }
-
         assertTrue(present.isEmpty(), "1.x symbols still present:\n${present.joinToString("\n")}")
     }
 

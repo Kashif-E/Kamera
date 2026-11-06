@@ -2,8 +2,8 @@
 
 package com.kashif.cameraK.controller
 
-import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capabilities.capabilitiesOf
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.enums.CameraDeviceType
@@ -38,7 +38,7 @@ class SelectCameraByLensTest {
     // The device a start on ByLens([lens]) opens among [devices], listed in that order.
     private suspend fun TestScope.openedFor(lens: CameraLens, vararg devices: LensInfo): String? {
         val rig = DesktopEngineRig(testScheduler)
-        val sut = rig.engine(enumerate = { CameraCapabilities(devices.toList()) })
+        val sut = rig.engine(enumerate = { capabilitiesOf(devices.toList()) })
         try {
             val start = async { sut.start(desiredOn(CameraSelection.ByLens(lens, CameraDeviceType.DEFAULT))) }
             rig.settle()

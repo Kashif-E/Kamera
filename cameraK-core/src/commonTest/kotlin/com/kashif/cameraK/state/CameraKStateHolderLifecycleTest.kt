@@ -20,6 +20,7 @@ import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.CameraKPermissionChecker
 import com.kashif.cameraK.permissions.PermissionStatus
+import com.kashif.cameraK.plugin.CameraKPluginContext
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.testing.FakePermissionChecker
 import com.kashif.cameraK.testing.cameraKTestEnvironment
@@ -40,7 +41,6 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
@@ -116,14 +116,14 @@ class CameraKStateHolderLifecycleTest {
 
     private class CountingPlugin(
         private val onDetached: () -> Unit = {},
-        private val onAttached: (CameraKStateHolder) -> Unit = {},
+        private val onAttached: (CameraKPluginContext) -> Unit = {},
     ) : CameraKPlugin {
         var attaches = 0
         var detaches = 0
 
-        override fun onAttach(stateHolder: CameraKStateHolder) {
+        override fun onAttach(context: CameraKPluginContext) {
             attaches++
-            onAttached(stateHolder)
+            onAttached(context)
         }
 
         override fun onDetach() {
@@ -343,8 +343,7 @@ class CameraKStateHolderLifecycleTest {
 
     @Test
     fun closeAndJoinLeavesNoChildCoroutines() = runTest {
-        @Suppress("DEPRECATION")
-        val plugin = CountingPlugin { it.pluginScope.launch { awaitCancellation() } }
+        val plugin = CountingPlugin { it.scope.launch { awaitCancellation() } }
         val s = session(FakeCameraEngine(), plugins = listOf(plugin))
         s.holder.start()
         runCurrent()
@@ -362,7 +361,7 @@ class CameraKStateHolderLifecycleTest {
         val callsAtDetach = mutableListOf<List<String>>()
         val plugins = List(2) {
             object : CameraKPlugin {
-                override fun onAttach(stateHolder: CameraKStateHolder) = Unit
+                override fun onAttach(context: CameraKPluginContext) = Unit
 
                 override fun onDetach() {
                     callsAtDetach += fake.calls
@@ -471,21 +470,6 @@ class CameraKStateHolderLifecycleTest {
         runCurrent()
 
         s.ready()
-    }
-
-    // The legacy facade channel.
-
-    @Test
-    fun readyOverAFakeEngineThrowsOnControllerAccess() = runTest {
-        val s = session(FakeCameraEngine())
-        s.holder.start()
-        runCurrent()
-        val ready = s.ready()
-
-        assertFailsWith<IllegalStateException> {
-            @Suppress("DEPRECATION")
-            ready.controller
-        }
     }
 
     // Decision 14's call site and the permission checker the engine constructor resolves.

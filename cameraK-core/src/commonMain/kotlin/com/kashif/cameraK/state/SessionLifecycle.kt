@@ -27,9 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -95,7 +93,6 @@ internal class SessionLifecycle(
     private val engine: CameraEngine,
     private val permissionChecker: CameraKPermissionChecker?,
     scope: CoroutineScope,
-    private val readyState: CameraKState.Ready,
     private val desiredHardware: () -> DesiredHardware,
     private val beforeReady: () -> Unit,
     private val awaitPreviousClose: suspend () -> Unit,
@@ -112,15 +109,11 @@ internal class SessionLifecycle(
         data object Closed : Desired
     }
 
-    /** What the session of [attempt] left once it was no longer Starting. */
-    private class Settled(val attempt: Int, val state: CameraKState)
-
     private val desired = MutableStateFlow<Desired>(Desired.Stopped(upTo = 0))
     private val _state = MutableStateFlow<CameraKState>(CameraKState.Idle)
     val state: StateFlow<CameraKState> = _state.asStateFlow()
 
     private val attempts = atomic(0)
-    private val settled = MutableStateFlow(Settled(0, CameraKState.Idle))
     private val publishing = Mutex()
 
     // Read and written by the reconciler only, one desired value at a time.
@@ -146,7 +139,6 @@ internal class SessionLifecycle(
                         }
                     }
                     transition { CameraKState.Idle }
-                    settled.value = Settled(d.upTo, CameraKState.Idle)
                 }
                 // A session still open was never stopped: the grace was waiting, or the stop before
                 // this start was conflated away. A failed session is not continued; it starts again.
@@ -167,21 +159,17 @@ internal class SessionLifecycle(
         _state.update { current -> if (current is CameraKState.Closed) current else next(current) }
     }
 
-    /**
-     * Starts a session from Idle or Error; changes nothing while one is live. Returns the attempt
-     * whose outcome [awaitSettled] waits for, or 0 once closed.
-     */
-    fun start(): Int {
-        var target = 0
+    /** Starts a session from Idle or Error; changes nothing while one is live or once closed. */
+    fun start() {
         desired.update { d ->
             when {
-                d is Desired.Closed -> d.also { target = 0 }
-                d is Desired.Stopped || _state.value is CameraKState.Error ->
-                    Desired.Running(attempts.incrementAndGet()).also { target = it.attempt }
-                else -> d.also { target = (d as Desired.Running).attempt }
+                d is Desired.Closed -> d
+                d is Desired.Stopped || _state.value is CameraKState.Error -> Desired.Running(
+                    attempts.incrementAndGet(),
+                )
+                else -> d
             }
         }
-        return target
     }
 
     fun stop() {
@@ -223,18 +211,6 @@ internal class SessionLifecycle(
         return wrote
     }
 
-    /**
-     * The state the session of [attempt] settled in once it left Starting: Ready, Interrupted, Error,
-     * Idle after a stop, or Closed.
-     */
-    suspend fun awaitSettled(attempt: Int): CameraKState = combine(settled, _state) { s, current ->
-        when {
-            current is CameraKState.Closed -> current
-            s.attempt >= attempt -> s.state
-            else -> null
-        }
-    }.filterNotNull().first()
-
     /** Publishes Closed. From here [transition] keeps it. */
     fun enterClosed() {
         _state.value = CameraKState.Closed
@@ -262,7 +238,6 @@ internal class SessionLifecycle(
             CameraKLogger.e(TAG, "The camera session failed unexpectedly", e)
             stopEngine()
             transition { CameraKState.Error(CameraKError.Internal(e)) }
-            settle(attempt)
         }
     }
 
@@ -292,7 +267,6 @@ internal class SessionLifecycle(
         val status = checker?.status(CameraKPermission.CAMERA) ?: PermissionStatus.Granted
         if (checker != null && !checker.allowsOpen(status)) {
             transition { CameraKState.Error(CameraKError.Permission(CameraKPermission.CAMERA, status)) }
-            settle(attempt)
             return
         }
         awaitPreviousClose()
@@ -321,14 +295,12 @@ internal class SessionLifecycle(
                         mirror.cancel()
                         stopEngine()
                         transition { startTimeoutState(status) }
-                        settle(attempt)
                     }
                     is CameraKResult.Failure -> {
                         // Authoritative whether or not the engine also published Failed.
                         mirror.cancel()
                         stopEngine()
                         transition { CameraKState.Error(started.error) }
-                        settle(attempt)
                     }
                     is CameraKResult.Success -> {
                         // Success means Open or Interrupted. Mapping the current value covers a start
@@ -357,13 +329,7 @@ internal class SessionLifecycle(
     private suspend fun publish(attempt: Int, read: () -> EngineState) = publishing.withLock {
         val engineState = read()
         if (engineState is EngineState.Open && _state.value !is CameraKState.Closed) beforeReady()
-        transition { current -> engineState.toCameraKState(current, readyState) }
-        settle(attempt)
-    }
-
-    private fun settle(attempt: Int) {
-        val current = _state.value
-        if (current != CameraKState.Starting) settled.value = Settled(attempt, current)
+        transition { current -> engineState.toCameraKState(current) }
     }
 
     private companion object {

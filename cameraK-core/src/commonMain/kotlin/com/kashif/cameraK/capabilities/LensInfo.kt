@@ -19,7 +19,7 @@ import dev.drewhamilton.poko.Poko
  * @property id Platform camera id: the Camera2 id on Android and the AVCaptureDevice.uniqueID on iOS. On
  * Desktop, the `/dev/v4l/by-id` link name (else the `/dev/videoN` path) on Linux, the uniqueID on macOS
  * and the DirectShow alternative name on Windows. "" is the one default entry, listed when the cameras
- * cannot be read, by an engine with a grabber factory and no camera, and by a 1.x-constructed controller.
+ * cannot be read, and by an engine with a grabber factory and no camera.
  * @property deviceType Classified lens type. Unclassifiable lenses report [CameraDeviceType.DEFAULT].
  * @property lens Which side of the device the lens faces.
  * @property minZoom Minimum zoom ratio (can be < 1.0 on logical multi-cameras that reach ultra-wide via zoom-out).
@@ -29,9 +29,12 @@ import dev.drewhamilton.poko.Poko
  * @property isExternal A camera attached to the device rather than built in (a USB camera on a
  * Chromebook, tablet or TV). It faces neither way, so it reports [CameraLens.BACK] and
  * [CameraCapabilities.lenses] leaves it out; find it in [CameraCapabilities.externalLenses].
+ *
+ * Engines and fakes build it, so the constructor needs the engine opt-in; an app reads it from
+ * `CameraKStateHolder.capabilities`.
  */
 @Poko
-public class LensInfo(
+public class LensInfo @CameraKEngineApi constructor(
     public val id: String,
     public val deviceType: CameraDeviceType,
     public val lens: CameraLens,
@@ -43,8 +46,8 @@ public class LensInfo(
 )
 
 /**
- * Snapshot of the device's camera hardware: its lenses and what each platform supports. Obtain via
- * `CameraController.getCameraCapabilities()` or `CameraKStateHolder.getCameraCapabilities()`.
+ * Snapshot of the device's camera hardware: its lenses and what each platform supports. Read it from
+ * `CameraKStateHolder.capabilities`.
  *
  * Every collection is copied on construction so this class stays immutable, as camerak's
  * compose-stability.conf declares it to Compose, regardless of what the caller does with what it
@@ -68,30 +71,6 @@ public class CameraCapabilities @CameraKEngineApi constructor(
     supportedAnalysisFormats: Set<FrameFormat>,
     public val supportsSquareCapture: Boolean,
 ) {
-    /**
-     * The 1.x shape, which the 1.x controllers build. Everything it does not name is reported
-     * unsupported: flash OFF, AUTO and ON and torch OFF and ON for a lens with a flash unit, OFF only
-     * otherwise; no pause and resume, video qualities, video bitrate, analysis formats or square
-     * capture; JPEG only; the 4:3, 16:9 and 9:16 aspect ratios.
-     */
-    @OptIn(CameraKEngineApi::class)
-    public constructor(allLenses: List<LensInfo>) : this(
-        allLenses = allLenses,
-        flashModes = allLenses.associate {
-            it.id to if (it.hasFlash) setOf(FlashMode.OFF, FlashMode.AUTO, FlashMode.ON) else setOf(FlashMode.OFF)
-        },
-        torchModes = allLenses.associate {
-            it.id to if (it.hasFlash) setOf(TorchMode.OFF, TorchMode.ON) else setOf(TorchMode.OFF)
-        },
-        supportsPauseResume = false,
-        supportedVideoQualities = emptySet(),
-        supportsVideoBitrate = false,
-        supportedAspectRatios = setOf(AspectRatio.RATIO_4_3, AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16),
-        supportedImageFormats = setOf(ImageFormat.JPEG),
-        supportedAnalysisFormats = emptySet(),
-        supportsSquareCapture = false,
-    )
-
     public val allLenses: List<LensInfo> = allLenses.toList()
     private val flashModes: Map<String, Set<FlashMode>> = flashModes.mapValues { it.value.toSet() }
     private val torchModes: Map<String, Set<TorchMode>> = torchModes.mapValues { it.value.toSet() }
@@ -106,7 +85,7 @@ public class CameraCapabilities @CameraKEngineApi constructor(
     /** Cameras attached to the device rather than built in, in enumeration order. */
     public val externalLenses: List<LensInfo> get() = allLenses.filter { it.isExternal }
 
-    /** Device types selectable via `setPreferredCameraDeviceType` for [lens]. */
+    /** Device types `CameraKStateHolder.selectCamera(lens, deviceType)` can select for [lens]. */
     public fun availableDeviceTypes(lens: CameraLens): Set<CameraDeviceType> =
         lenses(lens).mapTo(mutableSetOf()) { it.deviceType }
 
@@ -159,6 +138,30 @@ public class CameraCapabilities @CameraKEngineApi constructor(
         "supportsSquareCapture=$supportsSquareCapture)"
 
     public companion object {
-        public val EMPTY: CameraCapabilities = CameraCapabilities(emptyList())
+        public val EMPTY: CameraCapabilities = capabilitiesOf(emptyList())
     }
 }
+
+/**
+ * Capabilities that claim only what [allLenses] says: flash OFF, AUTO and ON and torch OFF and ON
+ * for a lens with a flash unit, OFF only otherwise; no pause and resume, video qualities, video
+ * bitrate, analysis formats or square capture; JPEG only; the 4:3, 16:9 and 9:16 aspect ratios. An
+ * engine overrides what its platform offers beyond that.
+ */
+@OptIn(CameraKEngineApi::class)
+internal fun capabilitiesOf(allLenses: List<LensInfo>): CameraCapabilities = CameraCapabilities(
+    allLenses = allLenses,
+    flashModes = allLenses.associate {
+        it.id to if (it.hasFlash) setOf(FlashMode.OFF, FlashMode.AUTO, FlashMode.ON) else setOf(FlashMode.OFF)
+    },
+    torchModes = allLenses.associate {
+        it.id to if (it.hasFlash) setOf(TorchMode.OFF, TorchMode.ON) else setOf(TorchMode.OFF)
+    },
+    supportsPauseResume = false,
+    supportedVideoQualities = emptySet(),
+    supportsVideoBitrate = false,
+    supportedAspectRatios = setOf(AspectRatio.RATIO_4_3, AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16),
+    supportedImageFormats = setOf(ImageFormat.JPEG),
+    supportedAnalysisFormats = emptySet(),
+    supportsSquareCapture = false,
+)

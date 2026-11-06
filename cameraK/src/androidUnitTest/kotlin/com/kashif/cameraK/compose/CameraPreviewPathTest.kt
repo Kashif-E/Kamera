@@ -22,22 +22,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.test.core.app.ApplicationProvider
-import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewAttachment
-import com.kashif.cameraK.enums.AspectRatio
-import com.kashif.cameraK.enums.CameraDeviceType
-import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
-import com.kashif.cameraK.enums.Directory
-import com.kashif.cameraK.enums.FlashMode
-import com.kashif.cameraK.enums.ImageFormat
-import com.kashif.cameraK.enums.QualityPrioritization
-import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.utils.CameraKEngineApi
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,34 +35,13 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Both Android preview composables, the 1.x `CameraPreviewView` and the holder's `EnginePreview`
- * actual, render the engine's preview in CameraXViewfinder through `ViewfinderPreview`, never in a
+ * The holder's Android preview, the `EnginePreview` actual, renders the engine's preview in
+ * CameraXViewfinder through `ViewfinderPreview`, never in a
  * PreviewView (w6 A2 carry-over 5; design §7.1). The view tree is the evidence: a PreviewView is a
  * View in it, CameraXViewfinder lays out a request as a TextureView on a LEGACY camera.
  */
 @RunWith(RobolectricTestRunner::class)
 class CameraPreviewPathTest {
-    @Test
-    fun cameraPreviewViewRendersThroughTheViewfinder() {
-        val controller = legacyController()
-        var root: View? = null
-
-        try {
-            runComposeUiTest {
-                setContent {
-                    root = LocalView.current.rootView
-                    CameraPreviewView(controller, Modifier.size(100.dp), DeviceOrientation.PORTRAIT, null)
-                }
-                waitForIdle()
-
-                val views = viewsUnder(assertNotNull(root, "nothing was composed"))
-                assertTrue(views.none { it is PreviewView }, "CameraPreviewView composed a PreviewView: $views")
-            }
-        } finally {
-            controller.cleanup()
-        }
-    }
-
     @Test
     fun enginePreviewRendersThroughTheViewfinder() {
         val source = PathTestPreviewSource()
@@ -106,29 +72,11 @@ class CameraPreviewPathTest {
         }
         request.willNotProvideSurface()
     }
-
-    private fun legacyController() = CameraController(
-        context = ApplicationProvider.getApplicationContext(),
-        lifecycleOwner = ResumedOwner(),
-        flashMode = FlashMode.OFF,
-        torchMode = TorchMode.OFF,
-        cameraLens = CameraLens.BACK,
-        imageFormat = ImageFormat.JPEG,
-        qualityPriority = QualityPrioritization.BALANCED,
-        directory = Directory.DOCUMENTS,
-        cameraDeviceType = CameraDeviceType.DEFAULT,
-        aspectRatio = AspectRatio.RATIO_4_3,
-    )
 }
 
 private fun viewsUnder(view: View): List<View> {
     val group = view as? ViewGroup ?: return listOf(view)
     return listOf(view) + (0 until group.childCount).flatMap { viewsUnder(group.getChildAt(it)) }
-}
-
-private class ResumedOwner : LifecycleOwner {
-    private val registry = LifecycleRegistry(this).apply { currentState = Lifecycle.State.RESUMED }
-    override val lifecycle: Lifecycle get() = registry
 }
 
 /** Keeps the provider the preview attaches, so the test can send it a request. */

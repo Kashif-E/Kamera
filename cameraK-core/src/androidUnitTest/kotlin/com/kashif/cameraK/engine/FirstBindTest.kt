@@ -4,6 +4,7 @@ package com.kashif.cameraK.engine
 
 import androidx.camera.core.ImageAnalysis
 import com.kashif.cameraK.engine.FakeAndroidPlatform.Companion.desired
+import com.kashif.cameraK.frames.FrameSpec
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -24,17 +25,15 @@ import kotlin.test.assertNotNull
 @RunWith(RobolectricTestRunner::class)
 class FirstBindTest {
     private val platform = FakeAndroidPlatform()
-    private val analyzer = ImageAnalysis.Analyzer { it.close() }
 
     @Test
     fun oneBindBeforeTheFirstFrameWhenFrameAnalysisIsSet() = runTest {
         val engine = platform.engine(testScheduler, CameraConfiguration { frameAnalysis = true })
-        val facade = (engine as LegacyControllerAccess).legacyController
         platform.backend.binding.holdNextOpen = true
         val start = async { engine.start(desired) }
         platform.settle(testScheduler)
 
-        facade.registerImageAnalyzer(analyzer)
+        engine.frames.register { }
         platform.settle(testScheduler)
         platform.reportOpen()
         platform.settle(testScheduler)
@@ -55,14 +54,13 @@ class FirstBindTest {
     @Test
     fun withTheFlagOffTheFirstRegistrationRebindsOnce() = runTest {
         val engine = platform.engine(testScheduler)
-        val facade = (engine as LegacyControllerAccess).legacyController
         assertEquals(CameraKResult.Success(Unit), engine.start(desired))
         platform.settle(testScheduler)
         assertEquals(1, platform.backend.binding.bindCalls, "setup: one bind")
 
-        facade.registerImageAnalyzer(analyzer)
+        engine.frames.register { }
         platform.settle(testScheduler)
-        facade.registerImageAnalyzer(ImageAnalysis.Analyzer { it.close() })
+        engine.frames.register(FrameSpec(synchronous = true)) { }
         platform.settle(testScheduler)
 
         assertEquals(2, platform.backend.binding.bindCalls, "the first registration rebinds once, the second never")

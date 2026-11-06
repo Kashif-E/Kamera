@@ -60,13 +60,14 @@ internal class FakeAndroidPlatform(
         background: CoroutineDispatcher? = null,
         runtime: EngineRuntime? = null,
         imageProcessing: ExecutorService? = null,
+        analyzerExecutor: ExecutorService? = null,
     ): AndroidCameraEngine {
         val main = StandardTestDispatcher(scheduler)
         val environment = CameraKEnvironment(
             dispatchers = CameraKDispatchers(main = main, default = background ?: main, io = background ?: main),
         )
         runtime?.let { environment.runtime = it }
-        return engineIn(environment, config, imageProcessing)
+        return engineIn(environment, config, imageProcessing, analyzerExecutor)
     }
 
     /** An engine on [environment]'s dispatchers, as a holder's factory builds it. */
@@ -74,16 +75,29 @@ internal class FakeAndroidPlatform(
         environment: CameraKEnvironment,
         config: CameraConfiguration = CameraConfiguration(),
         imageProcessing: ExecutorService? = null,
-    ): AndroidCameraEngine = if (imageProcessing == null) {
-        AndroidCameraEngine(config, context, environment, backend, lensSource)
-    } else {
-        AndroidCameraEngine(
+        analyzerExecutor: ExecutorService? = null,
+    ): AndroidCameraEngine = when {
+        imageProcessing == null && analyzerExecutor == null ->
+            AndroidCameraEngine(config, context, environment, backend, lensSource)
+        analyzerExecutor == null ->
+            AndroidCameraEngine(
+                config,
+                context,
+                environment,
+                backend,
+                lensSource,
+                imageProcessingExecutor = imageProcessing!!,
+            )
+        imageProcessing == null ->
+            AndroidCameraEngine(config, context, environment, backend, lensSource, analyzerExecutor = analyzerExecutor)
+        else -> AndroidCameraEngine(
             config,
             context,
             environment,
             backend,
             lensSource,
-            imageProcessingExecutor = imageProcessing,
+            imageProcessing,
+            analyzerExecutor,
         )
     }
 

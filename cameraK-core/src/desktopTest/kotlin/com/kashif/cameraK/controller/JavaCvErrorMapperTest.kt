@@ -1,3 +1,5 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.LensInfo
@@ -7,6 +9,7 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
+import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.runBlocking
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber

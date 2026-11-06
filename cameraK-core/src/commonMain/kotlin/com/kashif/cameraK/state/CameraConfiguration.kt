@@ -171,7 +171,7 @@ public fun CameraConfiguration(block: CameraConfiguration.Builder.() -> Unit = {
     ),
     level = DeprecationLevel.ERROR,
 )
-@Suppress("UNUSED_PARAMETER")
+@Suppress("UNUSED_PARAMETER", "DEPRECATION_ERROR")
 public fun CameraConfiguration(
     flashMode: FlashMode = FlashMode.OFF,
     torchMode: TorchMode = TorchMode.OFF,

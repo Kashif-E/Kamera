@@ -3,7 +3,6 @@ package com.kashif.cameraK.video
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -110,40 +109,5 @@ class VideoTypesTest {
         val a = VideoConfiguration { quality = VideoQuality.FHD }
         val b = VideoConfiguration { quality = VideoQuality.HD }
         assertNotEquals(a, b)
-    }
-
-    @Test
-    fun videoCaptureResult_successHoldsFilePathAndDuration() {
-        val result = VideoCaptureResult.Success(filePath = "/path/to/video.mp4", durationMs = 5000L)
-        assertIs<VideoCaptureResult.Success>(result)
-        assertEquals("/path/to/video.mp4", result.filePath)
-        assertEquals(5000L, result.durationMs)
-    }
-
-    @Test
-    fun videoCaptureResult_errorHoldsException() {
-        val exception = RuntimeException("Recording failed")
-        val result = VideoCaptureResult.Error(exception)
-        assertIs<VideoCaptureResult.Error>(result)
-        assertEquals("Recording failed", result.exception.message)
-    }
-
-    @Test
-    fun videoCaptureResult_successIsNotError() {
-        val result: VideoCaptureResult = VideoCaptureResult.Success("/path", 1000L)
-        assertIs<VideoCaptureResult.Success>(result)
-    }
-
-    @Test
-    fun videoCaptureResult_errorIsNotSuccess() {
-        val result: VideoCaptureResult = VideoCaptureResult.Error(Exception("fail"))
-        assertIs<VideoCaptureResult.Error>(result)
-    }
-
-    @Test
-    fun videoCaptureResult_successEquality() {
-        val a = VideoCaptureResult.Success("/path", 1000L)
-        val b = VideoCaptureResult.Success("/path", 1000L)
-        assertEquals(a, b)
     }
 }

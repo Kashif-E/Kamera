@@ -17,9 +17,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 
 /**
  * A recording start still waiting on the engine when the holder closes ends with `Failure(Closed)`.
@@ -57,9 +55,6 @@ class RecordingAtCloseTest {
 
         assertEquals(CameraKResult.Failure(CameraKError.Closed), start.await())
         assertEquals(RecordingState.Idle, holder.recordingState.value, "a recording state was left after close")
-        assertFalse(holder.uiState.value.isRecording, "isRecording after close")
-        @Suppress("DEPRECATION")
-        assertNull(holder.uiState.value.lastError, "the cancelled start wrote lastError")
         assertEquals(
             emptyList(),
             errors.filterIsInstance<CancellationException>(),

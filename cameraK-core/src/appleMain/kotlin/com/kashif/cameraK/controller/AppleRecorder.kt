@@ -121,18 +121,7 @@ internal class AppleRecorder(
     private var active: Movie? = null
     private var prepared: Prepared? = null
 
-    /** The result of the last recording AVFoundation ended by itself, for the 1.x facade's stopRecording. */
-    private val unclaimed = atomic<CameraKResult<RecordedVideo>?>(null)
     private val audioRefusalLogged = atomic(false)
-
-    /** The 1.x facade's stopRecording after AVFoundation ended the recording by itself: that result, once. */
-    fun takeUnclaimedResult(): CameraKResult<RecordedVideo>? = unclaimed.getAndSet(null)
-
-    /** The last recording that failed but kept its playable file, and how long that file records. */
-    private val lastKept = atomic<Pair<String, Duration>?>(null)
-
-    /** How long the kept file at [path] records, for the 1.x facade, which reports it as a success. */
-    fun keptFileDuration(path: String): Duration? = lastKept.value?.takeIf { it.first == path }?.second
 
     suspend fun prepare(config: VideoConfiguration): CameraKResult<Unit> {
         refusal(config, CameraOperation.RECORD_PREPARE)?.let { return it }
@@ -271,9 +260,6 @@ internal class AppleRecorder(
     private fun begin(config: VideoConfiguration, path: String): CameraKResult<Movie> {
         if (active != null) return failure(CameraKError.Busy(CameraOperation.RECORD_START))
         if (!custom.isConfigured) return failure(CameraKError.NotReady)
-        if (unclaimed.getAndSet(null) != null) {
-            CameraKLogger.w(TAG, "CameraK: a new recording replaces the unclaimed result of one that ended by itself")
-        }
         val reused = prepared?.takeIf { it.matches(config) }
         val setup = reused?.setup ?: run {
             releasePreparedOnQueue()
@@ -411,13 +397,10 @@ internal class AppleRecorder(
             recording = false
             guarded("changing the outputs after a recording") { onIdle() }
         }
-        val kept = ((result as? CameraKResult.Failure)?.error as? CameraKError.Storage)?.keptFilePath
-        if (kept != null && movie.startedAt != null) lastKept.value = kept to recorded(movie)
         if (!movie.abandoned) {
             if (!_events.tryEmit(EngineRecordingEvent.Finalized(result, reason))) {
                 CameraKLogger.e(TAG, "CameraK: a recording's Finalized event was dropped: the event buffer is full")
             }
-            if (movie.stopReason == null) unclaimed.value = result
         }
         movie.finished.complete(result)
         movie.afterFinalized.forEach { it() }

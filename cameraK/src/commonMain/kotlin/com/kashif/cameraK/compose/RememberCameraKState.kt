@@ -25,47 +25,18 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.coroutines.flow.combine
 
-/**
- * Creates and remembers a [CameraKStateHolder] and returns its [CameraKState].
- *
- * The holder starts when the host reaches STARTED, stops below it, re-checks the camera permission
- * on every resume, and closes when it leaves the composition. [setupPlugins] runs once per holder;
- * plugins it attaches attach when the camera is first ready.
- *
- * @param config Camera configuration settings; a new value builds a new holder.
- * @param setupPlugins Attaches plugins to the holder.
- * @return State containing the current [CameraKState].
- *
- * @example
- * ```kotlin
- * @Composable
- * fun CameraScreen() {
- *     val cameraState by rememberCameraKState(
- *         config = CameraConfiguration {
- *             cameraLens = CameraLens.BACK
- *             flashMode = FlashMode.AUTO
- *         },
- *     )
- *
- *     when (val state = cameraState) {
- *         CameraKState.Idle, CameraKState.Starting, is CameraKState.Interrupted -> LoadingIndicator()
- *         is CameraKState.Ready -> CameraPreviewView(state.controller)
- *         is CameraKState.Error -> ErrorScreen(state.error)
- *         CameraKState.Closed -> Unit
- *     }
- * }
- * ```
- */
+/** Removed in 2.0. */
+@Deprecated(
+    "Removed in CameraK 2.0: remember the holder with rememberCameraKStateHolder and read its cameraState.",
+    ReplaceWith("rememberCameraKStateHolder(config)"),
+    level = DeprecationLevel.ERROR,
+)
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun rememberCameraKState(
     config: CameraConfiguration = CameraConfiguration(),
     setupPlugins: suspend (CameraKStateHolder) -> Unit = {},
-): State<CameraKState> {
-    // As in 1.x, the holder is remembered in this composition and closes with it, so setupPlugins runs once per holder.
-    val holder = rememberPlatformHolder(config, emptyList(), LocalLifecycleOwner.current, viewModelStoreOwner = null)
-    LaunchedEffect(holder) { setupPlugins(holder) }
-    return holder.collectCameraState()
-}
+): State<CameraKState> = throw UnsupportedOperationException(REMOVED_IN_2)
 
 /**
  * Creates and remembers a [CameraKStateHolder] over this platform's camera, created with [plugins].
@@ -103,10 +74,6 @@ fun rememberCameraKStateHolder(
 /** This platform's context for the production holder constructor. */
 @Composable
 internal expect fun platformContext(): CameraKPlatformContext
-
-/** [CameraKStateHolder.cameraState] as Compose state: lifecycle-aware on Android and iOS, as in 1.x. */
-@Composable
-internal expect fun CameraKStateHolder.collectCameraState(): State<CameraKState>
 
 // The production holder over this platform's camera.
 @OptIn(InternalCameraKApi::class)

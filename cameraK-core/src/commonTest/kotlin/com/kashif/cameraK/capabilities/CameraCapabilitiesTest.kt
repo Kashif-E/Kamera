@@ -28,7 +28,7 @@ class CameraCapabilitiesTest {
         isLogical = false,
     )
 
-    private val caps = CameraCapabilities(
+    private val caps = capabilitiesOf(
         listOf(
             lens("0", CameraDeviceType.WIDE_ANGLE, CameraLens.BACK),
             lens("2", CameraDeviceType.ULTRA_WIDE, CameraLens.BACK),
@@ -58,8 +58,8 @@ class CameraCapabilitiesTest {
     }
 
     @Test
-    fun oneArgumentConstructorClaimsNothingItWasNotGiven() {
-        val given = CameraCapabilities(listOf(lens("0", CameraDeviceType.WIDE_ANGLE, CameraLens.BACK)))
+    fun capabilitiesOfClaimsNothingItWasNotGiven() {
+        val given = capabilitiesOf(listOf(lens("0", CameraDeviceType.WIDE_ANGLE, CameraLens.BACK)))
 
         assertFalse(given.supportsPauseResume, "pause and resume")
         assertEquals(emptySet(), given.supportedVideoQualities, "video qualities")
@@ -76,7 +76,7 @@ class CameraCapabilitiesTest {
 
     @Test
     fun flashAndTorchModesDeriveFromHasFlashPerId() {
-        val given = CameraCapabilities(
+        val given = capabilitiesOf(
             listOf(
                 lens("0", CameraDeviceType.WIDE_ANGLE, CameraLens.BACK, hasFlash = true),
                 lens("1", CameraDeviceType.WIDE_ANGLE, CameraLens.FRONT, hasFlash = false),
@@ -139,7 +139,7 @@ class CameraCapabilitiesTest {
         assertEquals(full(), full())
         assertEquals(full().hashCode(), full().hashCode())
         assertEquals(full().toString(), full().toString())
-        assertEquals(CameraCapabilities(caps.allLenses), caps)
+        assertEquals(capabilitiesOf(caps.allLenses), caps)
 
         val variants = mapOf(
             "a lens" to full(lenses = listOf(lens("0", CameraDeviceType.TELEPHOTO, CameraLens.BACK, hasFlash = true))),

@@ -34,26 +34,14 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.MutableLiveData
 import com.google.common.util.concurrent.ListenableFuture
-import com.kashif.cameraK.coroutines.CameraKDispatchers
-import com.kashif.cameraK.engine.CameraKEnvironment
-import com.kashif.cameraK.enums.AspectRatio
-import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
-import com.kashif.cameraK.enums.Directory
-import com.kashif.cameraK.enums.FlashMode
-import com.kashif.cameraK.enums.ImageFormat
-import com.kashif.cameraK.enums.QualityPrioritization
-import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoQuality
-import kotlinx.coroutines.Dispatchers
 import org.robolectric.shadows.ShadowMediaMetadataRetriever
 import java.io.File
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.concurrent.Executor
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 
 /**
  * A [CameraXBackend] with no camera behind it. The provider is delivered on the executor the
@@ -576,42 +564,4 @@ private inline fun <reified T> proxy(crossinline answer: (Method, Array<Any?>?) 
 internal class ResumedLifecycleOwner : LifecycleOwner {
     private val registry = LifecycleRegistry(this).apply { currentState = Lifecycle.State.RESUMED }
     override val lifecycle: Lifecycle get() = registry
-}
-
-internal fun testController(
-    context: Context,
-    backend: CameraXBackend,
-    lifecycleOwner: LifecycleOwner = ResumedLifecycleOwner(),
-    imageProcessingExecutor: ExecutorService = Executors.newFixedThreadPool(2),
-    analyzerExecutor: ExecutorService = Executors.newSingleThreadExecutor(),
-    directory: Directory = Directory.DOCUMENTS,
-    imageFormat: ImageFormat = ImageFormat.JPEG,
-    torchMode: TorchMode = TorchMode.OFF,
-    qualityPriority: QualityPrioritization = QualityPrioritization.BALANCED,
-    flashMode: FlashMode = FlashMode.OFF,
-    mirrorFrontCamera: Boolean = false,
-    started: Boolean = true,
-) = CameraController(
-    context = context,
-    lifecycleOwner = lifecycleOwner,
-    flashMode = flashMode,
-    torchMode = torchMode,
-    cameraLens = CameraLens.BACK,
-    imageFormat = imageFormat,
-    qualityPriority = qualityPriority,
-    directory = directory,
-    cameraDeviceType = CameraDeviceType.DEFAULT,
-    aspectRatio = AspectRatio.RATIO_4_3,
-    targetResolution = null,
-    mirrorFrontCamera = mirrorFrontCamera,
-    backend = backend,
-    imageProcessingExecutor = imageProcessingExecutor,
-    analyzerExecutor = analyzerExecutor,
-    // Every engine dispatcher on the main looper, which the tests run with idleMainLooper().
-    environment = CameraKEnvironment(
-        dispatchers = CameraKDispatchers(main = Dispatchers.Main, default = Dispatchers.Main, io = Dispatchers.Main),
-    ),
-).also {
-    // A 1.x controller opens the camera from startSession, as the 1.x holder's initialize calls it.
-    if (started) it.startSession()
 }

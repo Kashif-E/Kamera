@@ -32,7 +32,6 @@ import com.kashif.cameraK.testing.FakeCaptures
 import com.kashif.cameraK.testing.FakePermissionChecker
 import com.kashif.cameraK.testing.cameraKTestEnvironment
 import com.kashif.cameraK.utils.CameraKEngineApi
-import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -439,9 +438,6 @@ class RecordingControllerTest {
 
         advanceTimeBy(1.seconds)
         runCurrent()
-        @Suppress("DEPRECATION")
-        val shown = holder.uiState.value.let { it.isRecording to it.recordingDurationMs }
-        assertEquals(false to 0L, shown, "uiState's isRecording and recordingDurationMs a second after the end")
         assertSame(finished, holder.recordingState.value, "the state moved after the end")
 
         fake.autoStartRecording = true
@@ -994,73 +990,6 @@ class RecordingControllerTest {
     }
 
     @Test
-    @Suppress("DEPRECATION")
-    fun theDeprecatedRecordingEventsFireBesideTheNewOnes() = runTest {
-        val fake = FakeCameraEngine()
-        val holder = readyHolder(fake)
-        val events = collectEvents(holder)
-        var from = 0
-        fun legacy() = events.drop(from).filter {
-            it is CameraKEvent.RecordingStarted ||
-                it is CameraKEvent.RecordingStopped ||
-                it is CameraKEvent.RecordingFailed ||
-                it is CameraKEvent.RecordingMaxDurationReached
-        }
-
-        // A stop the caller asked for, with a pause on the way: started once, stopped with the file.
-        val first = holder.recording()
-        assertEquals(CameraKResult.Success(Unit), holder.pauseRecording())
-        assertEquals(CameraKResult.Success(Unit), holder.resumeRecording())
-        val stopped = assertIs<CameraKResult.Success<RecordedVideo>>(holder.stopRecording()).value
-        runCurrent()
-        assertEquals(
-            listOf(
-                CameraKEvent.RecordingStarted(first.filePath),
-                CameraKEvent.RecordingStopped(
-                    VideoCaptureResult.Success(stopped.path, stopped.duration.inWholeMilliseconds),
-                ),
-            ),
-            legacy(),
-            "a user stop",
-        )
-
-        // The duration limit: the limit, then the file, beside RecordingEnded.
-        from = events.size
-        val second = holder.recording()
-        val limited = FakeCaptures.video(path = second.filePath, duration = 30.seconds)
-        fake.finishRecording(CameraKResult.Success(limited), RecordingEndReason.MAX_DURATION)
-        runCurrent()
-        assertEquals(
-            listOf(
-                CameraKEvent.RecordingStarted(second.filePath),
-                CameraKEvent.RecordingMaxDurationReached(second.filePath, 30_000L),
-                CameraKEvent.RecordingStopped(VideoCaptureResult.Success(second.filePath, 30_000L)),
-            ),
-            legacy(),
-            "the duration limit",
-        )
-        assertEquals(
-            RecordingEndReason.MAX_DURATION,
-            events.drop(from).filterIsInstance<CameraKEvent.RecordingEnded>().single().reason,
-        )
-
-        // A platform error: the failure, beside RecordingEnded, and no path in its message.
-        from = events.size
-        val third = holder.recording()
-        fake.finishRecording(CameraKResult.Failure(CameraKError.Hardware(platformCode = 7)), RecordingEndReason.ERROR)
-        runCurrent()
-        val shown = legacy()
-        assertEquals(CameraKEvent.RecordingStarted(third.filePath), shown.first(), "the third start")
-        val failed = assertIs<CameraKEvent.RecordingFailed>(shown.drop(1).single(), "the platform error: $shown")
-        assertFalse(third.filePath in failed.exception.message.orEmpty(), "the failure names the file")
-        assertEquals(
-            RecordingEndReason.ERROR,
-            events.drop(from).filterIsInstance<CameraKEvent.RecordingEnded>().single().reason,
-        )
-    }
-
-    @Test
-    @Suppress("DEPRECATION")
     fun aStartedThatArrivesWhileAnAbandonedStartIsStoppingLeavesTheStartAbandoned() = runTest {
         val fake = FakeCameraEngine().apply { autoStartRecording = false }
         val engine = ScriptedRecordingEngine(fake)
@@ -1092,28 +1021,21 @@ class RecordingControllerTest {
         assertIs<CameraKError.Timeout>(assertIs<CameraKResult.Failure>(start.await()).error)
         assertEquals(RecordingState.Idle, holder.recordingState.value)
         assertFalse(states.any { it is RecordingState.Recording }, "states: $states")
-        assertEquals(emptyList(), events.filterIsInstance<CameraKEvent.RecordingStarted>(), "an abandoned start")
+        assertEquals(emptyList(), events.filterIsInstance<CameraKEvent.RecordingEnded>(), "an abandoned start")
     }
 
     @Test
-    @Suppress("DEPRECATION")
-    fun aDurationLimitEndThatFailsStillReportsTheLimitWithThePathAndTheRecordedTime() = runTest {
+    fun aDurationLimitEndThatFailsIsRecordingEndedWithTheLimitAndTheFailure() = runTest {
         val fake = FakeCameraEngine()
         val holder = readyHolder(fake)
         val events = collectEvents(holder)
-        val recording = holder.recording()
+        holder.recording()
         advanceTimeBy(3.seconds)
 
         val failure = CameraKResult.Failure(CameraKError.Hardware(platformCode = 3))
         fake.finishRecording(failure, RecordingEndReason.MAX_DURATION)
         runCurrent()
 
-        val legacy = events.filter {
-            it is CameraKEvent.RecordingMaxDurationReached || it is CameraKEvent.RecordingFailed
-        }
-        assertEquals(2, legacy.size, "the 1.x events of a failed duration-limit end: $legacy")
-        assertEquals(CameraKEvent.RecordingMaxDurationReached(recording.filePath, 3_000L), legacy[0])
-        assertIs<CameraKEvent.RecordingFailed>(legacy[1])
         val ended = events.filterIsInstance<CameraKEvent.RecordingEnded>().single()
         assertEquals(RecordingEndReason.MAX_DURATION, ended.reason)
         assertIs<CameraKResult.Failure>(ended.result)

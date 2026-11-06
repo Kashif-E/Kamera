@@ -35,15 +35,11 @@ private const val TAG = "CameraK"
 /**
  * The engine's [FrameSource] and the one [ImageAnalysis] that feeds it (design §8). The bound
  * ImageAnalysis (`STRATEGY_KEEP_ONLY_LATEST`, the session's [sessionFormat], [resolutionSelector])
- * feeds every consumer through one [MultiplexingAnalyzer] that reads the consumer lists on every
- * frame, so registering or removing one never touches CameraX bindings. Consumers are of two kinds:
- *
- * - **FrameSource registrations** ([register]): a synchronous one gets the proxy itself on the
- *   analysis thread; the asynchronous ones share one copy of the planes from a pooled slot, each on
- *   its own worker from [newWorker], admitted by its own [AnalyzerGate]. With no 1.x consumer the
- *   proxy closes before `analyze` returns, whatever any registration holds.
- * - **1.x consumers** ([add], the facade's `registerImageAnalyzer`, until C1'): each gets a
- *   [LegacyImageProxy] share, and the proxy closes at the last share's close, as in 1.x.
+ * feeds every registration ([register]) through one [MultiplexingAnalyzer] that reads the list on
+ * every frame, so registering or removing one never touches CameraX bindings. A synchronous
+ * registration gets the proxy itself on the analysis thread; the asynchronous ones share one copy of
+ * the planes from a pooled slot, each on its own worker from [newWorker], admitted by its own
+ * [AnalyzerGate]. The proxy closes before `analyze` returns, whatever any registration holds.
  *
  * The ImageAnalysis is bound per Decision 14: from the first bind when [requestAnalysis] was called,
  * else by the first registration's one late bind, which the engine runs ([onConsumersChanged]).
@@ -56,10 +52,9 @@ internal class FramePipeline(
     private val nanoTime: () -> Long = System::nanoTime,
     private val resolutionSelector: ResolutionSelector? = null,
 ) : FrameSource {
-    private val consumers = atomic(emptyList<ImageAnalysis.Analyzer>())
     private val registrations = atomic(emptyList<Registration>())
     private val pool = FramePool()
-    internal val multiplexer = MultiplexingAnalyzer({ consumers.value }, { registrations.value }, sessionFormat, pool)
+    internal val multiplexer = MultiplexingAnalyzer({ registrations.value }, sessionFormat, pool)
     private val workerCount = AtomicInteger()
 
     /**
@@ -120,17 +115,6 @@ internal class FramePipeline(
     // Whether the multiplexer is set on the current analysis. Main thread only.
     private var multiplexerAttached = false
 
-    /** Adds [analyzer] as a 1.x frame consumer and asks every later bind for an ImageAnalysis. Any thread. */
-    fun add(analyzer: ImageAnalysis.Analyzer) {
-        consumers.update { it + analyzer }
-        analysisRequested = true
-    }
-
-    /** Removes [analyzer]; a frame already being dispatched may still reach it. Any thread. */
-    fun remove(analyzer: ImageAnalysis.Analyzer) {
-        consumers.update { it - analyzer }
-    }
-
     /**
      * Builds the [ImageAnalysis] use case in the session's format and size, baking in
      * [pinnedPhysicalId] via Camera2Interop, makes it the current [analysis] and attaches the
@@ -159,7 +143,7 @@ internal class FramePipeline(
     /** Attaches the multiplexer while anyone consumes frames and detaches it when no one does. Main thread. */
     fun applyConsumers() {
         val current = analysis ?: return
-        val wanted = consumers.value.isNotEmpty() || registrations.value.isNotEmpty()
+        val wanted = registrations.value.isNotEmpty()
         if (wanted == multiplexerAttached) return
         // Run analysis off the main thread — frame work (e.g. JPEG-encoding the analyzer frame,
         // QR/OCR) is too heavy to block the UI thread.
@@ -176,10 +160,9 @@ internal class FramePipeline(
         analysis?.let { backend.clearAnalyzer(it) }
     }
 
-    /** Drops every consumer and closes every registration; a registration made after it is never active. */
+    /** Closes every registration; a registration made after it is never active. */
     fun clearConsumers() {
         outputBound = false
-        consumers.value = emptyList()
         registrations.value.forEach { it.close() }
     }
 
@@ -264,31 +247,6 @@ internal class FramePool {
 
     fun give(slot: FrameSlot) {
         synchronized(free) { if (free.size < capacity) free.addLast(slot) }
-    }
-}
-
-/**
- * One 1.x consumer's share of an [ImageProxy] (the facade's `registerImageAnalyzer`, until C1'). The
- * real proxy is closed only when the last share is closed; each share's close counts once.
- *
- * Each holder reads the planes through its own read-only views of CameraX's buffers, so one analyzer
- * reading or trying to write a plane cannot move the position or change the pixels another analyzer
- * sees. [getImage] is still CameraX's shared image: read it, never write to it.
- */
-internal class LegacyImageProxy(private val delegate: ImageProxy, private val refCount: AtomicInteger) :
-    ImageProxy by delegate {
-    private val closed = AtomicBoolean(false)
-
-    private val ownPlanes: Array<ImageProxy.PlaneProxy> by lazy {
-        delegate.planes.map { plane -> ReadOnlyPlane(plane) as ImageProxy.PlaneProxy }.toTypedArray()
-    }
-
-    override fun getPlanes(): Array<ImageProxy.PlaneProxy> = ownPlanes
-
-    override fun close() {
-        if (closed.compareAndSet(false, true) && refCount.decrementAndGet() == 0) {
-            delegate.close()
-        }
     }
 }
 

@@ -1,27 +1,25 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
-import android.content.Context
-import android.os.Looper
 import androidx.camera.video.VideoRecordEvent
-import androidx.camera.view.PreviewView
-import androidx.test.core.app.ApplicationProvider
-import com.kashif.cameraK.video.VideoCaptureResult
+import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.engine.EngineRecordingEvent
+import com.kashif.cameraK.engine.FakeAndroidPlatform
+import com.kashif.cameraK.engine.open
+import com.kashif.cameraK.engine.recordingEventsOf
+import com.kashif.cameraK.engine.startRecording
+import com.kashif.cameraK.recording.RecordingEndReason
+import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.runBlocking
-import org.junit.After
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.microseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -31,18 +29,11 @@ import kotlin.time.Duration.Companion.seconds
  */
 @RunWith(RobolectricTestRunner::class)
 class RecordingLimitsTest {
-    private val context: Context = ApplicationProvider.getApplicationContext()
-    private val backend = FakeCameraXBackend()
-    private val controller = testController(context, backend)
-    private val hostScope = CoroutineScope(Job() + Dispatchers.Unconfined)
-
-    @After
-    fun tearDown() {
-        hostScope.cancel()
-    }
+    private val platform = FakeAndroidPlatform()
+    private val backend = platform.backend
 
     @Test
-    fun sizeAndDurationLimits_reachTheRecorder() {
+    fun sizeAndDurationLimits_reachTheRecorder() = runTest {
         start(
             VideoConfiguration {
                 enableAudio = false
@@ -57,7 +48,7 @@ class RecordingLimitsTest {
     }
 
     @Test
-    fun noLimits_recordWithoutLimits() {
+    fun noLimits_recordWithoutLimits() = runTest {
         start(VideoConfiguration { enableAudio = false })
 
         val output = backend.recordings.single().output
@@ -66,7 +57,7 @@ class RecordingLimitsTest {
     }
 
     @Test
-    fun subMillisecondDurationLimit_isOneMillisecond() {
+    fun subMillisecondDurationLimit_isOneMillisecond() = runTest {
         start(
             VideoConfiguration {
                 enableAudio = false
@@ -79,32 +70,27 @@ class RecordingLimitsTest {
     }
 
     @Test
-    fun recordingStoppedAtItsSizeLimit_keepsItsFile() {
-        start(
+    fun recordingStoppedAtItsSizeLimit_keepsItsFile() = runTest {
+        val events = start(
             VideoConfiguration {
                 enableAudio = false
                 maxFileSizeBytes = 4L
             },
         )
         backend.recordings.single().finalize(error = VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED)
-        idleMainLooper()
+        platform.settle(testScheduler)
 
-        val result = hostScope.async(start = CoroutineStart.UNDISPATCHED) { controller.stopRecording() }
-        idleMainLooper()
-        assertTrue(result.isCompleted, "stopRecording did not return")
-
-        val success = assertIs<VideoCaptureResult.Success>(runBlocking { result.await() })
-        assertEquals(backend.recordings.single().outputFile.absolutePath, success.filePath)
+        val finalized = events.filterIsInstance<EngineRecordingEvent.Finalized>().single()
+        assertEquals(RecordingEndReason.MAX_FILE_SIZE, finalized.reason)
+        val kept = assertIs<CameraKResult.Success<RecordedVideo>>(finalized.result).value
+        assertEquals(backend.recordings.single().outputFile.absolutePath, kept.path)
     }
 
-    private fun start(configuration: VideoConfiguration) {
-        controller.bindCamera(PreviewView(context))
-        idleMainLooper()
-        val started = hostScope.async(start = CoroutineStart.UNDISPATCHED) { controller.startRecording(configuration) }
-        idleMainLooper()
-        assertTrue(started.isCompleted, "setup: startRecording did not return")
-        runBlocking { started.await() }
+    private suspend fun TestScope.start(configuration: VideoConfiguration): List<EngineRecordingEvent> {
+        val engine = platform.engine(testScheduler)
+        open(platform, engine)
+        val events = recordingEventsOf(engine)
+        startRecording(platform, engine, configuration)
+        return events
     }
 }
-
-private fun idleMainLooper() = shadowOf(Looper.getMainLooper()).idle()

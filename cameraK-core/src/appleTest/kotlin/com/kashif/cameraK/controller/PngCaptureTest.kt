@@ -1,7 +1,8 @@
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.enums.ImageFormat
-import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.result.CameraKResult
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.CoreFoundation.CFDictionaryRef
 import platform.CoreFoundation.CFMutableDataRef
@@ -20,7 +21,6 @@ import platform.CoreGraphics.CGRectMake
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
-import platform.Foundation.NSLock
 import platform.Foundation.NSMutableData
 import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
@@ -32,7 +32,6 @@ import platform.ImageIO.CGImageSourceCreateWithURL
 import platform.ImageIO.CGImageSourceGetType
 import kotlin.test.AfterTest
 import kotlin.test.Test
-import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -51,29 +50,20 @@ class PngCaptureTest {
 
     @Test
     fun aPngCaptureKeepsTheSensorsPixelsAndCarriesTheOrientationAsMetadata() {
-        val heard = mutableListOf<ByteArray>()
-        val lock = NSLock()
-        rig.controller.addImageCaptureListener { bytes ->
-            lock.lock()
-            heard += bytes
-            lock.unlock()
-        }
         rig.start()
         val (capture, request) = rig.capture()
         request.callbacks.photoProcessed(orientedJpeg(width = 8, height = 4, orientation = RIGHT_TOP), null)
         request.callbacks.captureFinished(null)
 
-        val result = assertIs<ImageCaptureResult.SuccessWithFile>(capture.awaitResult())
+        val result = assertIs<CameraKResult.Success<CapturedImage>>(capture.awaitResult()).value
 
-        val png = imageProperties(result.filePath)
+        val png = imageProperties(result.path)
         assertEquals("public.png", png.type, "a PNG capture is not a PNG")
         assertEquals(
             Triple(8, 4, RIGHT_TOP),
             Triple(png.width, png.height, png.orientation),
             "the PNG was redrawn upright instead of carrying the orientation (width, height, orientation)",
         )
-        awaitTrue("listeners to hear about the photo") { lock.lock().let { heard.isNotEmpty().also { lock.unlock() } } }
-        assertContentEquals(fileBytes(result.filePath), heard.single(), "listeners did not get the PNG's bytes")
     }
 
     private class ImageProperties(val type: String?, val width: Int?, val height: Int?, val orientation: Int?)

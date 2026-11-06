@@ -31,7 +31,7 @@ import java.io.File
 import java.util.concurrent.Executor
 
 /**
- * The slice of [ProcessCameraProvider] that [CameraController] binds through. The provider is shared
+ * The slice of [ProcessCameraProvider] that [AndroidCameraEngine] binds through. The provider is shared
  * by the whole process, so it offers no unbindAll(): a controller unbinds only what it bound. A bind
  * names the [ResolvedCamera]; the binding turns it into CameraX's selector.
  */
@@ -87,7 +87,7 @@ internal enum class QualityFallback {
 }
 
 /**
- * The CameraX entry points [CameraController] calls that need camera hardware: obtaining the
+ * The CameraX entry points [AndroidCameraEngine] calls that need camera hardware: obtaining the
  * process camera provider, taking a still and recording video. Production uses
  * [CameraXBackend.Default]; unit tests substitute a backend that runs without a camera.
  */

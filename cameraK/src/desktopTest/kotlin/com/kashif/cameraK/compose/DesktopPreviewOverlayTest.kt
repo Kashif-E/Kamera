@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
 package com.kashif.cameraK.compose
 
 import androidx.compose.foundation.layout.Box
@@ -11,62 +13,67 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntRect
-import com.kashif.cameraK.controller.CameraController
-import com.kashif.cameraK.enums.DeviceOrientation
-import com.kashif.cameraK.enums.Directory
-import com.kashif.cameraK.enums.ImageFormat
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
-import org.bytedeco.javacv.Frame
-import org.bytedeco.javacv.FrameGrabber
+import com.kashif.cameraK.state.CameraKState
+import com.kashif.cameraK.testing.fakeCameraKStateHolder
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 
 /**
  * The desktop preview's overlay shares the box the camera frame is drawn in, so overlay
  * coordinates (a focus reticle, a detection box) land on the frame a capture writes, not on the
- * letterbox bars around it.
+ * letterbox bars around it. Over camerak-testing's fake engine, whose preview publishes one fixed,
+ * opaque 640 x 480 frame.
  */
 class DesktopPreviewOverlayTest {
-
     @Test
-    fun theOverlay_coversExactlyTheDrawnFrame() = runBlocking {
+    fun theOverlay_coversExactlyTheDrawnFrame() = runTest {
         // A 4:3 camera in a 2:1 preview: the frame is pillarboxed.
-        val controller = CameraController(
-            imageFormat = ImageFormat.JPEG,
-            directory = Directory.PICTURES,
-            customGrabber = StillFrameGrabber(width = 64, height = 48),
-        )
+        val holder = fakeCameraKStateHolder()
+        holder.start()
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value)
         val overlayBounds = AtomicReference<Rect?>(null)
-        val scene = ImageComposeScene(width = 200, height = 100, density = Density(1f)) {
-            CameraPreviewView(controller, Modifier.fillMaxSize(), DeviceOrientation.PORTRAIT) {
+        val scene = ImageComposeScene(
+            width = 200,
+            height = 100,
+            density = Density(1f),
+            coroutineContext = StandardTestDispatcher(testScheduler),
+        ) {
+            CameraPreview(holder, Modifier.fillMaxSize()) {
                 Box(Modifier.matchParentSize().onGloballyPositioned { overlayBounds.set(it.boundsInRoot()) })
             }
         }
         try {
-            controller.startSession()
-
-            // Render until a camera frame has been drawn, then once more so the layout has settled.
-            val drawn = withTimeoutOrNull(10_000) {
-                while (drawnFrameBounds(scene) == null) delay(10)
-                drawnFrameBounds(scene)
+            // Render until the frame has been drawn, then once more so the layout has settled.
+            var drawn: IntRect? = null
+            repeat(RENDERS) {
+                if (drawn == null) {
+                    runCurrent()
+                    drawn = drawnFrameBounds(scene)
+                }
             }
+            runCurrent()
+            drawn = drawnFrameBounds(scene)
 
             val frame = assertNotNull(drawn, "no camera frame was drawn")
             val overlay = assertNotNull(overlayBounds.get(), "the overlay was never laid out")
             assertEquals(frame, overlay.toIntRect(), "overlay bounds versus the drawn frame")
         } finally {
             scene.close()
-            controller.closeAndJoin()
+            holder.close()
         }
     }
 
-    // The fake camera's frames are opaque black and the scene's background is transparent, so the
-    // opaque pixels are exactly the drawn frame.
+    // The fake's frame is opaque and the scene's background is transparent, so the opaque pixels
+    // are exactly the drawn frame.
     private fun drawnFrameBounds(scene: ImageComposeScene): IntRect? {
         val pixels = scene.render().toComposeImageBitmap().toPixelMap()
         var left = Int.MAX_VALUE
@@ -86,19 +93,8 @@ class DesktopPreviewOverlayTest {
     }
 
     private fun Rect.toIntRect() = IntRect(left.roundToInt(), top.roundToInt(), right.roundToInt(), bottom.roundToInt())
-}
 
-/** A camera that is always open and grabs the same opaque black frame. */
-private class StillFrameGrabber(width: Int, height: Int) : FrameGrabber() {
-    private val frame = Frame(width, height, Frame.DEPTH_UBYTE, 3)
-
-    override fun start() = Unit
-
-    override fun stop() = Unit
-
-    override fun trigger() = Unit
-
-    override fun grab(): Frame = frame
-
-    override fun release() = Unit
+    private companion object {
+        const val RENDERS = 20
+    }
 }

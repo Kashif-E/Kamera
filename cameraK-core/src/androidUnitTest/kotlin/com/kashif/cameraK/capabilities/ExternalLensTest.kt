@@ -46,7 +46,7 @@ class ExternalLensTest {
 
     @Test
     fun backLenses_doNotIncludeTheExternalCamera() {
-        val capabilities = CameraCapabilities(LensEnumerator.snapshot(context).map { it.info })
+        val capabilities = capabilitiesOf(LensEnumerator.snapshot(context).map { it.info })
 
         assertEquals(listOf("0"), capabilities.lenses(CameraLens.BACK).map { it.id })
         assertEquals(listOf("1"), capabilities.lenses(CameraLens.FRONT).map { it.id })

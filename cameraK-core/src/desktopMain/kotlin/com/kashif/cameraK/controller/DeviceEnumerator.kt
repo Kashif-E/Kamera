@@ -1,8 +1,11 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import org.bytedeco.ffmpeg.avdevice.AVDeviceInfo
 import org.bytedeco.ffmpeg.avdevice.AVDeviceInfoList

@@ -503,6 +503,7 @@ fun cameraComposeVersionProblems(catalog: String): List<String> {
 }
 
 // The types camerak-core no longer annotates for Compose; cameraK/compose-stability.conf lists them.
+// VideoCaptureResult left with C1': it is an ERROR-level hint nothing produces.
 val strippedStableTypes =
     listOf(
         "com.kashif.cameraK.capabilities.LensInfo",
@@ -514,8 +515,6 @@ val strippedStableTypes =
         "com.kashif.cameraK.state.CameraKEvent.*",
         "com.kashif.cameraK.state.CameraConfiguration",
         "com.kashif.cameraK.state.CameraKStateHolder",
-        "com.kashif.cameraK.video.VideoCaptureResult",
-        "com.kashif.cameraK.video.VideoCaptureResult.*",
         "com.kashif.cameraK.video.VideoConfiguration",
     )
 
@@ -540,7 +539,20 @@ val addedStableTypes =
 fun stabilityConfigProblems(
     confLines: List<String>,
     declaredTypes: Map<String, DeprecationLevel?>,
-): List<String> = emptyList()
+): List<String> =
+    confLines
+        .map { it.substringBefore("//").trim() }
+        .filter(String::isNotEmpty)
+        .mapNotNull { entry ->
+            val type = entry.removeSuffix(".*")
+            val level = declaredTypes[type]
+            when {
+                type !in declaredTypes -> "$entry names $type, which no published module declares"
+                level == DeprecationLevel.ERROR || level == DeprecationLevel.HIDDEN ->
+                    "$entry names $type, deprecated at $level"
+                else -> null
+            }
+        }
 
 // The class, interface, object and typealias declarations in one Kotlin [source], by fully qualified
 // name (a nested declaration under its enclosing one, by indentation), with their @Deprecated level.

@@ -17,6 +17,7 @@ import com.kashif.cameraK.capabilities.AndroidLensDescriptor
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensEnumerator
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capabilities.capabilitiesOf
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.engine.CameraEngine
@@ -26,12 +27,10 @@ import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineRecordingEvent
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.engine.HardwareState
-import com.kashif.cameraK.engine.LegacyControllerAccess
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.TraceNames
 import com.kashif.cameraK.engine.Tracer
 import com.kashif.cameraK.enums.AspectRatio
-import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
@@ -75,7 +74,6 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadFactory
@@ -117,10 +115,6 @@ private const val TAG = "CameraK"
  * bound from the first bind when `frameAnalysis` is set, otherwise by the first registration's one
  * late bind, never during a recording (the recording's end binds it). Registering and unregistering
  * never rebind.
- *
- * The 1.x [CameraController] is a facade over this engine ([legacyController]): its capture and
- * recording run on the engine's own paths, and its analyzers are 1.x consumers of the same frame
- * pipeline, with 1.x close semantics, until C1'.
  */
 internal class AndroidCameraEngine(
     private val config: CameraConfiguration,
@@ -133,15 +127,14 @@ internal class AndroidCameraEngine(
     private val analyzerExecutor: ExecutorService =
         Executors.newSingleThreadExecutor(cameraKThreads("CameraK-analyzer")),
 ) : CameraEngine,
-    LifecycleOwner,
-    LegacyControllerAccess {
+    LifecycleOwner {
     private val registry = LifecycleRegistry(this)
     override val lifecycle: Lifecycle get() = registry
 
     private val main: CoroutineDispatcher = environment.dispatchers.main
 
-    // Runs at once when already on the main thread, so a 1.x call made there takes effect before it
-    // returns, as it did in 1.x. A test dispatcher has no immediate form and is used as it is.
+    // Runs at once when already on the main thread, so a call made there takes effect before it
+    // returns. A test dispatcher has no immediate form and is used as it is.
     private val mainImmediate: CoroutineDispatcher = immediateFormOf(main)
 
     private val scope = CoroutineScope(SupervisorJob(environment.parentJob) + main)
@@ -157,7 +150,7 @@ internal class AndroidCameraEngine(
 
     private val closed = atomic(false)
 
-    /** True from [close] on; the collaborators read it as the 1.x controller's `released`. */
+    /** True from [close] on. */
     internal val isClosed: Boolean get() = closed.value
 
     private val _state = MutableStateFlow<EngineState>(EngineState.Closed)
@@ -245,14 +238,9 @@ internal class AndroidCameraEngine(
     internal var pinnedPhysicalId: String? = null
         private set
 
-    /** The facing of the current bind; the facade's front-camera mirroring reads it. */
+    /** The facing of the current bind; the still capturer's front-camera mirroring reads it. */
     internal var boundLens: CameraLens = config.cameraLens ?: CameraLens.BACK
         private set
-
-    override val legacyController: CameraController by lazy { CameraController(this, hostLifecycle = null) }
-
-    // Called by the facade's 1.x orientation listener, on the main thread, while the sensor runs.
-    internal var onOrientationChanged: ((DeviceOrientation) -> Unit)? = null
 
     private val enumeration: Deferred<CameraCapabilities> = scope.async(environment.dispatchers.default) {
         androidCapabilities(enumerateLenses()).also { _capabilities.value = it }
@@ -265,9 +253,6 @@ internal class AndroidCameraEngine(
     private var session: Session? = null
     private var boundCamera: ResolvedCamera? = null
     private val observers = mutableListOf<() -> Unit>()
-
-    // The facade's onCameraReady callbacks, run once the next bind has a camera.
-    private val bindListeners = mutableListOf<() -> Unit>()
 
     // Set when a portrait↔landscape flip is detected during recording (when rebinding would tear
     // down the recording). The deferred rebind runs once the recording finalizes.
@@ -430,9 +415,6 @@ internal class AndroidCameraEngine(
         }
     }
 
-    /** The 1.x facade's capture: the written file, with no size read. */
-    internal suspend fun captureFile(): CameraKResult<File> = openCommand { stillCapturer.capture() }
-
     override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = command {
         val range = hardwareControls.reportedZoomRange()
             ?: _hardware.value.camera?.let { it.minZoom..it.maxZoom }
@@ -520,7 +502,7 @@ internal class AndroidCameraEngine(
      * `Busy(RECORD_START)` until its Finalized is out.
      */
     override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> =
-        openCommand { videoRecorder.start(config, legacy = false) }
+        openCommand { videoRecorder.start(config) }
 
     override suspend fun stopRecording(): CameraKResult<RecordedVideo> =
         recordingCommand { videoRecorder.stop() } ?: CLOSED
@@ -528,15 +510,6 @@ internal class AndroidCameraEngine(
     override suspend fun pauseRecording(): CameraKResult<Unit> = recordingCommand { videoRecorder.pause() } ?: CLOSED
 
     override suspend fun resumeRecording(): CameraKResult<Unit> = recordingCommand { videoRecorder.resume() } ?: CLOSED
-
-    /** The 1.x facade's start: a recording whose unclaimed outcome its next stop reports. */
-    internal suspend fun startRecordingForFacade(config: VideoConfiguration): CameraKResult<String> =
-        openCommand { videoRecorder.start(config, legacy = true) }
-
-    /** The 1.x facade's stop: the active or last unclaimed facade recording's outcome, or null. */
-    internal suspend fun stopRecordingForFacade(): RecordingOutcome? = recordingCommand {
-        videoRecorder.stopForFacade()
-    }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
@@ -568,40 +541,13 @@ internal class AndroidCameraEngine(
 
     /**
      * Sets the one target orientation captures follow, applies it to the bound outputs and, while
-     * Open, reports it; before Open the next bind applies it and the open reports it. The 1.x facade's
-     * setter calls this too. Main thread.
+     * Open, reports it; before Open the next bind applies it and the open reports it. Main thread.
      */
     internal fun applyTargetOrientation(target: DeviceOrientation?) {
         if (closed.value) return
         orientation.targetOrientation = target
         if (binder.camera != null) applyCaptureRotation()
         if (_state.value == EngineState.Open) publishHardware(targetOrientation = target)
-    }
-
-    /**
-     * Stores desired hardware for the next open or bind without asking the camera for anything: the
-     * 1.x facade's setters before Open, which keep their values as 1.x did. Main thread.
-     */
-    internal fun storeDesired(
-        flashMode: FlashMode = hardwareControls.flashMode,
-        torchMode: TorchMode = hardwareControls.torchMode,
-        zoomRatio: Float = hardwareControls.zoomRatio,
-    ) {
-        if (!closed.value) hardwareControls.store(flashMode, torchMode, zoomRatio)
-    }
-
-    /** Runs [block] once the camera is bound: at once when it is, else after the next bind. Main thread. */
-    internal fun whenBound(block: () -> Unit) {
-        if (binder.camera != null) runCameraReady(block) else bindListeners += block
-    }
-
-    // The facade's onCameraReady is app code: one that throws is logged, as 1.x did, and goes no further.
-    private fun runCameraReady(block: () -> Unit) {
-        try {
-            block()
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "An onCameraReady callback failed", e)
-        }
     }
 
     /**
@@ -637,17 +583,6 @@ internal class AndroidCameraEngine(
 
     /** Whether a bind has given the session its camera. */
     internal val isBound: Boolean get() = binder.camera != null
-
-    /** The camera for the facade's lens and device type, as the 1.x bind resolved it. */
-    internal fun boundCameraOr(lens: CameraLens, deviceType: CameraDeviceType): ResolvedCamera =
-        boundCamera ?: selectorResolver.resolve(lens, deviceType)
-
-    /** Unbinds this engine's use cases, as the 1.x stopSession did; the next start binds again. Main thread. */
-    internal fun unbindOwnUseCases() {
-        stopObserving()
-        binder.unbindOwnUseCases()
-        boundCamera = null
-    }
 
     // ── Session ────────────────────────────────────────────────────────────────────────────────
 
@@ -735,9 +670,6 @@ internal class AndroidCameraEngine(
         // A bind while the engine runs attaches the use cases at once; the first bind of a start waits
         // for the camera to open, which applies them.
         if (registry.currentState == Lifecycle.State.RESUMED) hardwareControls.applyDesiredHardwareState(camera)
-        val ready = bindListeners.toList()
-        bindListeners.clear()
-        ready.forEach(::runCameraReady)
         return null
     }
 
@@ -955,7 +887,6 @@ internal class AndroidCameraEngine(
     private fun onDeviceOrientation(orientation: DeviceOrientation) {
         if (session == null) return
         _deviceOrientation.value = orientation
-        onOrientationChanged?.invoke(orientation)
     }
 
     // On a camera thread, for every frame of the preview.
@@ -1075,7 +1006,6 @@ internal class AndroidCameraEngine(
         releaseStep("Dropping the capture listeners") { stillCapturer.clearListeners() }
         // A capture still in flight would otherwise wait for a callback that is now ignored.
         releaseStep("Failing the captures in flight") { stillCapturer.failInFlight() }
-        bindListeners.clear()
         releaseStep("Shutting down the image-processing executor") { imageProcessingExecutor.shutdown() }
         releaseStep("Shutting down the analyzer executor") { analyzerExecutor.shutdown() }
         scope.cancel()
@@ -1131,11 +1061,11 @@ internal fun androidCapabilities(
     lenses: List<LensInfo>,
     videoQualities: Set<VideoQuality> = emptySet(),
 ): CameraCapabilities {
-    val legacy = CameraCapabilities(lenses)
+    val plain = capabilitiesOf(lenses)
     return CameraCapabilities(
         allLenses = lenses,
-        flashModes = lenses.associate { it.id to legacy.supportedFlashModes(it.id) },
-        torchModes = lenses.associate { it.id to legacy.supportedTorchModes(it.id) },
+        flashModes = lenses.associate { it.id to plain.supportedFlashModes(it.id) },
+        torchModes = lenses.associate { it.id to plain.supportedTorchModes(it.id) },
         supportsPauseResume = true,
         supportedVideoQualities = videoQualities,
         supportsVideoBitrate = true,

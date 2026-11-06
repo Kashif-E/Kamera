@@ -4,12 +4,10 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
-import com.kashif.cameraK.enums.Directory
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
-import com.kashif.cameraK.video.VideoCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.MainScope
@@ -43,8 +41,8 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * A recording's outcome is what AVFoundation says it is: a recording it reports as not successfully
  * finished is an error and its file is deleted, one it reports as playable is a success whatever ended
- * it, and a full disk keeps a playable file's path (design §5's partial-file rule). DOCUMENTS videos
- * stay in Documents/CameraK, which iOS does not purge; the movie output keeps disk space free and
+ * it, and a full disk keeps a playable file's path (design §5's partial-file rule). Videos stay in
+ * the app-owned Documents/CameraK by default, which iOS does not purge; the movie output keeps disk space free and
  * stops at the configured maximum duration. Core no longer imports recordings into Photos.
  */
 @OptIn(ExperimentalForeignApi::class)
@@ -60,10 +58,6 @@ class VideoFileOutcomeTest {
         scope.cancel()
         rig.tearDown()
         written.forEach { NSFileManager.defaultManager.removeItemAtPath(it, null) }
-    }
-
-    private fun use(directory: Directory) {
-        rig = CaptureRig(directory = directory)
     }
 
     private fun <T> run(what: String, block: suspend () -> T): T {
@@ -83,9 +77,9 @@ class VideoFileOutcomeTest {
     private fun startedRecording(
         config: VideoConfiguration = VideoConfiguration { enableAudio = false },
     ): FakeMovieRecorder.Start {
-        rig.controller.movieRecorder = recorder
+        rig.engine.movieRecorder = recorder
         rig.start()
-        scope.launch { rig.controller.startRecording(config) }
+        scope.launch { rig.engine.startRecording(config) }
         awaitTrue("the recording to start on the movie output") { recorder.starts.isNotEmpty() }
         val started = recorder.starts.single()
         recorder.reportStarted(started)
@@ -104,9 +98,9 @@ class VideoFileOutcomeTest {
         mapOf<Any?, Any?>(AVErrorRecordingSuccessfullyFinishedKey to successfullyFinished),
     )
 
-    private fun stop(started: FakeMovieRecorder.Start, error: NSError?): VideoCaptureResult {
-        var result: VideoCaptureResult? = null
-        scope.launch { result = rig.controller.stopRecording() }
+    private fun stop(started: FakeMovieRecorder.Start, error: NSError?): CameraKResult<RecordedVideo> {
+        var result: CameraKResult<RecordedVideo>? = null
+        scope.launch { result = rig.engine.stopRecording() }
         awaitTrue("stopRecording to ask the movie output to stop") { recorder.stops > 0 }
         recorder.reportFinished(started, error)
         awaitTrue("stopRecording to return") { result != null }
@@ -116,45 +110,39 @@ class VideoFileOutcomeTest {
     /** Guard: AVFoundation's playable verdict decides, not the presence of an error (green before the fix). */
     @Test
     fun aRecordingAVFoundationReportsAsPlayableIsASuccess() {
-        use(Directory.DOCUMENTS)
         val started = startedRecording()
 
         val result = stop(started, avError(AVErrorMaximumDurationReached, successfullyFinished = true))
 
-        val success = assertIs<VideoCaptureResult.Success>(result, "a playable recording was reported as failed")
-        assertEquals(started.url.path, success.filePath)
+        val success =
+            assertIs<CameraKResult.Success<RecordedVideo>>(result, "a playable recording was reported as failed")
+        assertEquals(started.url.path, success.value.path)
     }
 
-    /**
-     * A full disk that kept a playable file is a 1.x success (w6 decision G4's mapping, applied on iOS),
-     * and like any success it reports how long the file records.
-     */
+    /** A full disk that kept a playable file is Storage(FULL) naming the kept file (design §5). */
     @Test
-    fun aFullDiskThatKeptAPlayableFileIsASuccessWithItsDuration() {
-        use(Directory.DOCUMENTS)
+    fun aFullDiskThatKeptAPlayableFileNamesTheKeptFile() {
         val started = startedRecording()
 
         val result = stop(started, avError(AVErrorDiskFull, successfullyFinished = true))
 
-        val success = assertIs<VideoCaptureResult.Success>(result, "a kept recording was reported as $result")
-        assertEquals(started.url.path, success.filePath)
-        assertTrue(success.durationMs > 0, "the kept recording's duration: ${success.durationMs} ms")
+        val full = assertIs<CameraKError.Storage>(assertIs<CameraKResult.Failure>(result, "result: $result").error)
+        assertEquals(StorageFailure.FULL, full.kind)
+        assertEquals(started.url.path, full.keptFilePath, "the kept recording's path")
     }
 
     @Test
     fun documentsVideosAreKeptUnderDocumentsCameraK() {
-        use(Directory.DOCUMENTS)
         val started = startedRecording()
 
         assertTrue(
             started.url.path!!.contains("/Documents/CameraK/"),
-            "a DOCUMENTS video is recorded where iOS may purge it: ${started.url.lastPathComponent}",
+            "a video is recorded where iOS may purge it: ${started.url.lastPathComponent}",
         )
     }
 
     @Test
     fun theMovieOutputKeepsDiskSpaceFreeAndStopsAtTheConfiguredMaximumDuration() {
-        use(Directory.DOCUMENTS)
         val started = startedRecording(
             VideoConfiguration {
                 enableAudio = false
@@ -168,42 +156,39 @@ class VideoFileOutcomeTest {
 
     @Test
     fun aFailedRecordingKeepsAVFoundationsErrorAsItsCause() {
-        use(Directory.DOCUMENTS)
         val started = startedRecording()
         val failure = avError(AVErrorDiskFull, successfullyFinished = false)
 
         val result = stop(started, failure)
 
-        val error =
-            assertIs<VideoCaptureResult.Error>(result, "a recording AVFoundation failed was reported as $result")
-        assertSame(failure, error.exception.platformError(), "the error does not carry AVFoundation's NSError")
+        val error = assertIs<CameraKResult.Failure>(result, "a recording AVFoundation failed was reported as $result")
+        val cause = assertNotNull(error.error.cause, "the error has no cause")
+        assertSame(failure, cause.platformError(), "the error does not carry AVFoundation's NSError")
     }
 
     @Test
     fun anOutputDirectoryThatCannotBeCreatedFailsTheStartWithTheFileSystemsError() {
-        use(Directory.DOCUMENTS)
-        rig.controller.movieRecorder = recorder
-        rig.controller.recordingStartTimeoutMs = 300
+        rig.engine.movieRecorder = recorder
+        rig.engine.recorder.startTimeoutMs = 300
         rig.start()
         // A directory cannot be made inside a regular file.
         val blocker = "${NSTemporaryDirectory()}cameraK-not-a-directory-${NSUUID().UUIDString}"
         NSFileManager.defaultManager.createFileAtPath(blocker, NSData(), null)
         written += blocker
 
-        val failure = runCatching {
-            run("startRecording to return") {
-                rig.controller.startRecording(
-                    VideoConfiguration {
-                        enableAudio = false
-                        outputDirectory = "$blocker/videos"
-                    },
-                )
-            }
-        }.exceptionOrNull()
+        val result = run("startRecording to return") {
+            rig.engine.startRecording(
+                VideoConfiguration {
+                    enableAudio = false
+                    outputDirectory = "$blocker/videos"
+                },
+            )
+        }
 
         assertEquals(emptyList(), recorder.starts.map { it.url.path }, "recorded into a directory that does not exist")
-        val error = assertNotNull(failure, "startRecording succeeded without its output directory")
-        val cause = assertNotNull(error.platformError(), "the error does not carry the file system's NSError: $error")
+        val error = assertIs<CameraKResult.Failure>(result, "startRecording succeeded without its output directory")
+        val thrown = assertNotNull(error.error.cause, "the error has no cause: ${error.error}")
+        val cause = assertNotNull(thrown.platformError(), "the error does not carry the file system's NSError: $thrown")
         assertEquals(NSCocoaErrorDomain, cause.domain)
     }
 

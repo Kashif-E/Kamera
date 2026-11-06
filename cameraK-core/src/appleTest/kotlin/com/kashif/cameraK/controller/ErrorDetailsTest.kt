@@ -2,7 +2,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.result.ImageCaptureResult
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.atomicfu.atomic
@@ -23,7 +23,6 @@ import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSLocalizedDescriptionKey
-import platform.Foundation.NSLock
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
@@ -178,7 +177,7 @@ class ErrorDetailsTest {
     }
 
     @Test
-    fun aFailedTakePictureToFileKeepsAVFoundationsErrorAsItsCause() {
+    fun aFailedCaptureKeepsAVFoundationsErrorAsItsCause() {
         val rig = CaptureRig().also(rigs::add)
         rig.start()
         val failure = describedAVError(AVErrorUnknown, "The operation could not be completed")
@@ -187,56 +186,36 @@ class ErrorDetailsTest {
         request.callbacks.photoProcessed(null, failure)
         request.callbacks.captureFinished(failure)
 
-        val result = assertIs<ImageCaptureResult.Error>(capture.awaitResult())
-        assertSame(failure, result.exception.platformError(), "the error does not carry AVFoundation's NSError")
+        val result = assertIs<CameraKResult.Failure>(capture.awaitResult())
+        val cause = assertNotNull(result.error.cause, "the failure has no cause")
+        assertSame(failure, cause.platformError(), "the error does not carry AVFoundation's NSError")
     }
 
     @Test
-    fun cameraControllerLogsACameraErrorWithTheErrorItself() {
+    fun aRefusedTorchLockIsAFailureWhoseCauseIsTheCameraException() {
         val device = FakeDevice()
         val rig = CaptureRig(device = device).also(rigs::add)
         rig.start()
-        val lock = NSLock()
-        val logged = mutableListOf<Throwable?>()
-        val previousSink = CameraKLogger.sink
-        val wasEnabled = CameraKLogger.enabled
-        CameraKLogger.sink = { level, _, _, throwable ->
-            if (level == CameraKLogger.Level.ERROR) {
-                lock.lock()
-                try {
-                    logged += throwable
-                } finally {
-                    lock.unlock()
-                }
-            }
-        }
-        CameraKLogger.enabled = true
-        try {
-            device.lockSucceeds = false
-            rig.controller.setTorchMode(TorchMode.ON)
-            drainSessionThenMain(rig.custom)
-            awaitTrue("CameraController to log the camera's error") {
-                lock.lock()
-                try {
-                    logged.any { it is CustomCameraController.CameraException }
-                } finally {
-                    lock.unlock()
-                }
-            }
-        } finally {
-            CameraKLogger.sink = previousSink
-            CameraKLogger.enabled = wasEnabled
-        }
+        var result: CameraKResult<TorchMode>? = null
+
+        device.lockSucceeds = false
+        rig.launch { result = setTorchMode(TorchMode.ON) }
+        awaitTrue("setTorchMode to return") { result != null }
+
+        val failure = assertIs<CameraKResult.Failure>(result, "a torch the camera would not lock for: $result")
+        assertIs<CustomCameraController.CameraException>(
+            failure.error.cause,
+            "the failure's cause: ${failure.error.cause}",
+        )
     }
 
     /** A recording with audio on [rig], started and reported started, while [microphone] answers for the microphone. */
     private fun recordWithAudio(rig: CaptureRig, microphone: () -> Result<platform.AVFoundation.AVCaptureInput>) {
         val recorder = FakeMovieRecorder()
-        rig.controller.movieRecorder = recorder
-        rig.controller.microphoneInput = microphone
-        // The test bundle's Info.plist has no NSMicrophoneUsageDescription, which an app recording audio has.
-        rig.controller.hasUsageDescription = { true }
-        scope.launch { rig.controller.startRecording(VideoConfiguration { enableAudio = true }) }
+        rig.engine.movieRecorder = recorder
+        rig.engine.microphoneInput = microphone
+        // The rig answers true for NSMicrophoneUsageDescription, which an app recording audio has and the test bundle has not.
+        scope.launch { rig.engine.startRecording(VideoConfiguration { enableAudio = true }) }
         awaitTrue("the recording to start on the movie output") { recorder.starts.isNotEmpty() }
         recorder.reportStarted(recorder.starts.single())
     }
