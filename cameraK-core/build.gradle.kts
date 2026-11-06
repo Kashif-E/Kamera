@@ -79,6 +79,19 @@ kotlin {
             implementation(libs.androidx.activity)
         }
 
+        // The release gate's device run of the contract kit (design §12.4 B1): five cases over real
+        // CameraX, run by the maintainer with connectedDebugAndroidTest. commonTest is not in this
+        // set's tree, so the kit comes in by its directory, as it does for commonTest.
+        val androidInstrumentedTest by getting {
+            kotlin.srcDir("src/engineContract/kotlin")
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.kotlinx.coroutines.test)
+                implementation(libs.androidx.test.runner)
+                implementation(libs.androidx.test.rules)
+            }
+        }
+
         androidMain.dependencies {
             api(libs.kotlinx.coroutines.android)
             // CameraFrame.imageProxy names camera-core's ImageProxy; the dump names no other CameraX
@@ -109,6 +122,7 @@ android {
             libs.versions.android.minSdk
                 .get()
                 .toInt()
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     testOptions {

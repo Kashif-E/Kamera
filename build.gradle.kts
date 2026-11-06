@@ -2452,6 +2452,8 @@ fun verifyTaskPaths(
         if ("android" in targets) {
             paths +=
                 listOf(":$module:testDebugUnitTest", ":$module:compileReleaseKotlinAndroid", ":$module:lintRelease")
+            // The release gate's device contract subset: compiled here, run on a device by the maintainer.
+            if (module == "cameraK-core") paths += ":cameraK-core:compileDebugAndroidTestKotlinAndroid"
         }
         if ("ios" in targets) {
             paths +=

@@ -48,7 +48,8 @@ poko = "0.23.2"
 # Test-only
 junit = "4.13.2"
 robolectric = "4.17"
-androidx-test-core = "1.7.0"
+# The androidx.test release train: core (Robolectric tests), runner and rules (core's device contract subset).
+androidx-test = "1.7.0"
 # 2.0.0-alpha04 and later are compiled for Java 21; this build runs on JDK 17.
 paparazzi = "2.0.0-alpha02"
 # ui-test-manifest declares the ComponentActivity Robolectric launches for camerak's Compose tests. It is
@@ -99,7 +100,9 @@ kflite = {module = "io.github.shadmanadman:kflite", version.ref = "kflite"}
 
 junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
-androidx-test-core = { module = "androidx.test:core", version.ref = "androidx-test-core" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidx-test" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test" }
+androidx-test-rules = { module = "androidx.test:rules", version.ref = "androidx-test" }
 compose-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "compose-multiplatform" }
 androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "androidx-compose-ui-test" }
 
