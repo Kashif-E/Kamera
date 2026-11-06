@@ -12,7 +12,7 @@ package com.kashif.cameraK.enums
         "MediaSaverPlugin publishes to the gallery through its GalleryDestination.",
     level = DeprecationLevel.ERROR,
 )
-enum class Directory {
+public enum class Directory {
     PICTURES,
     DCIM,
     DOCUMENTS,

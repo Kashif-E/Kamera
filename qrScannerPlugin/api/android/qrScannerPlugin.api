@@ -1,0 +1,91 @@
+public final class com/kashif/qrscannerplugin/Barcode {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;[BLjava/lang/String;Lcom/kashif/cameraK/frames/FrameRect;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBoundingBox ()Lcom/kashif/cameraK/frames/FrameRect;
+	public final fun getFormat-8sl4etA ()Ljava/lang/String;
+	public final fun getRawBytes ()[B
+	public final fun getRawValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/qrscannerplugin/BarcodeFormat {
+	public static final field Companion Lcom/kashif/qrscannerplugin/BarcodeFormat$Companion;
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/kashif/qrscannerplugin/BarcodeFormat;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/kashif/qrscannerplugin/BarcodeFormat$Companion {
+	public final fun getAZTEC-8sl4etA ()Ljava/lang/String;
+	public final fun getCODABAR-8sl4etA ()Ljava/lang/String;
+	public final fun getCODE_128-8sl4etA ()Ljava/lang/String;
+	public final fun getCODE_39-8sl4etA ()Ljava/lang/String;
+	public final fun getCODE_93-8sl4etA ()Ljava/lang/String;
+	public final fun getDATA_MATRIX-8sl4etA ()Ljava/lang/String;
+	public final fun getEAN_13-8sl4etA ()Ljava/lang/String;
+	public final fun getEAN_8-8sl4etA ()Ljava/lang/String;
+	public final fun getEntries ()Ljava/util/List;
+	public final fun getITF-8sl4etA ()Ljava/lang/String;
+	public final fun getPDF_417-8sl4etA ()Ljava/lang/String;
+	public final fun getQR_CODE-8sl4etA ()Ljava/lang/String;
+	public final fun getUPC_A-8sl4etA ()Ljava/lang/String;
+	public final fun getUPC_E-8sl4etA ()Ljava/lang/String;
+}
+
+public final class com/kashif/qrscannerplugin/QRScannerConfig {
+	public static final field $stable I
+	public final fun copy (Lkotlin/jvm/functions/Function1;)Lcom/kashif/qrscannerplugin/QRScannerConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDedupeWindow-UwyO8pc ()J
+	public final fun getFormats ()Ljava/util/Set;
+	public final fun getMaxFps ()F
+	public final fun getRegion ()Lcom/kashif/cameraK/frames/FrameRect;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/qrscannerplugin/QRScannerConfig$Builder {
+	public static final field $stable I
+	public final fun getDedupeWindow-UwyO8pc ()J
+	public final fun getFormats ()Ljava/util/Set;
+	public final fun getMaxFps ()F
+	public final fun getRegion ()Lcom/kashif/cameraK/frames/FrameRect;
+	public final fun setDedupeWindow-LRDsOJo (J)V
+	public final fun setFormats (Ljava/util/Set;)V
+	public final fun setMaxFps (F)V
+	public final fun setRegion (Lcom/kashif/cameraK/frames/FrameRect;)V
+}
+
+public final class com/kashif/qrscannerplugin/QRScannerConfigKt {
+	public static final fun QRScannerConfig (Lkotlin/jvm/functions/Function1;)Lcom/kashif/qrscannerplugin/QRScannerConfig;
+	public static synthetic fun QRScannerConfig$default (Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/kashif/qrscannerplugin/QRScannerConfig;
+}
+
+public final class com/kashif/qrscannerplugin/QRScannerPlugin : com/kashif/cameraK/state/CameraKPlugin {
+	public static final field $stable I
+	public fun <init> (Lcom/kashif/qrscannerplugin/QRScannerConfig;)V
+	public synthetic fun <init> (Lcom/kashif/qrscannerplugin/QRScannerConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getConfig ()Lcom/kashif/qrscannerplugin/QRScannerConfig;
+	public fun getId ()Ljava/lang/String;
+	public fun getNeedsFrames ()Z
+	public final fun getResults ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getStatus ()Lkotlinx/coroutines/flow/StateFlow;
+	public fun onAttach (Lcom/kashif/cameraK/plugin/CameraKPluginContext;)V
+	public fun onDetach ()V
+	public final fun pause ()V
+	public final fun resume ()V
+}
+
+public final class com/kashif/qrscannerplugin/QRScannerPluginKt {
+	public static final fun rememberQRScannerPlugin (Lcom/kashif/qrscannerplugin/QRScannerConfig;Landroidx/compose/runtime/Composer;II)Lcom/kashif/qrscannerplugin/QRScannerPlugin;
+}
+

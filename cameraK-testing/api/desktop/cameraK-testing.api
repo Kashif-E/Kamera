@@ -1,0 +1,131 @@
+public final class com/kashif/cameraK/testing/CameraKTestEnvironmentKt {
+	public static final fun cameraKTestEnvironment (Lkotlinx/coroutines/test/TestScope;Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;)Lcom/kashif/cameraK/engine/CameraKEnvironment;
+	public static synthetic fun cameraKTestEnvironment$default (Lkotlinx/coroutines/test/TestScope;Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;ILjava/lang/Object;)Lcom/kashif/cameraK/engine/CameraKEnvironment;
+}
+
+public final class com/kashif/cameraK/testing/FakeCameraEngine : com/kashif/cameraK/engine/CameraEngine {
+	public fun <init> ()V
+	public fun <init> (Lcom/kashif/cameraK/capabilities/CameraCapabilities;Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;F)V
+	public synthetic fun <init> (Lcom/kashif/cameraK/capabilities/CameraCapabilities;Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;FILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun capture (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun close ()V
+	public fun closeAndJoin (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deliverOpen ()V
+	public final fun deliverRecordingFinalized ()V
+	public final fun deliverRecordingStarted ()V
+	public final fun endInterruption ()V
+	public final fun fail (Lcom/kashif/cameraK/error/CameraKError;)V
+	public final fun failOpen (Lcom/kashif/cameraK/error/CameraKError;)V
+	public final fun finishRecording (Lcom/kashif/cameraK/result/CameraKResult;Lcom/kashif/cameraK/recording/RecordingEndReason;)V
+	public final fun getAppliedCameraId ()Ljava/lang/String;
+	public final fun getAppliedFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
+	public final fun getAppliedTorchMode ()Lcom/kashif/cameraK/enums/TorchMode;
+	public final fun getAppliedZoomRatio ()F
+	public final fun getAutoFinalizeRecording ()Z
+	public final fun getAutoOpen ()Z
+	public final fun getAutoStartRecording ()Z
+	public final fun getCalls ()Ljava/util/List;
+	public fun getCapabilities ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getCaptureResult ()Lkotlin/jvm/functions/Function1;
+	public final fun getCloseCalls ()I
+	public final fun getConfiguration ()Lcom/kashif/cameraK/state/CameraConfiguration;
+	public fun getDeviceOrientation ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getFakeFrames ()Lcom/kashif/cameraK/testing/FakeFrameSource;
+	public fun getFrames ()Lcom/kashif/cameraK/frames/FrameSource;
+	public fun getHardware ()Lkotlinx/coroutines/flow/StateFlow;
+	public fun getPreview ()Lcom/kashif/cameraK/engine/PlatformPreviewSource;
+	public fun getRecordingEvents ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getReleaseCount ()I
+	public final fun getSetZoomCalls ()I
+	public final fun getStartCalls ()I
+	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getStopCalls ()I
+	public final fun getSupportsPause ()Z
+	public fun getZoom ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun holdNextCapture ()V
+	public final fun interrupt-1p3bEoE (Ljava/lang/String;)V
+	public fun pauseRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun prepareRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun releaseCapture ()V
+	public final fun reopenAfterFailure ()V
+	public final fun reportCamera (Ljava/lang/String;)V
+	public final fun reportFlash (Lcom/kashif/cameraK/enums/FlashMode;)V
+	public final fun reportTorch (Lcom/kashif/cameraK/enums/TorchMode;)V
+	public final fun reportZoom (FFF)V
+	public static synthetic fun reportZoom$default (Lcom/kashif/cameraK/testing/FakeCameraEngine;FFFILjava/lang/Object;)V
+	public fun resumeRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun selectCamera (Lcom/kashif/cameraK/engine/CameraSelection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setAutoFinalizeRecording (Z)V
+	public final fun setAutoOpen (Z)V
+	public final fun setAutoStartRecording (Z)V
+	public final fun setCaptureResult (Lkotlin/jvm/functions/Function1;)V
+	public final fun setConfiguration (Lcom/kashif/cameraK/state/CameraConfiguration;)V
+	public fun setFlashMode (Lcom/kashif/cameraK/enums/FlashMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setSupportsPause (Z)V
+	public fun setTargetOrientation (Lcom/kashif/cameraK/enums/DeviceOrientation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun setTorchMode (Lcom/kashif/cameraK/enums/TorchMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun setZoom (FLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun start (Lcom/kashif/cameraK/engine/DesiredHardware;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun startRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun startReturnsWithoutPublishing (Lcom/kashif/cameraK/error/CameraKError;)V
+	public fun stop (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun stopRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun throwFromNextCallback ()V
+}
+
+public final class com/kashif/cameraK/testing/FakeCameraKStateHolderKt {
+	public static final fun fakeCameraKStateHolder (Lkotlinx/coroutines/test/TestScope;Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/testing/FakeCameraEngine;Ljava/util/List;Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;)Lcom/kashif/cameraK/state/CameraKStateHolder;
+	public static synthetic fun fakeCameraKStateHolder$default (Lkotlinx/coroutines/test/TestScope;Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/testing/FakeCameraEngine;Ljava/util/List;Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;ILjava/lang/Object;)Lcom/kashif/cameraK/state/CameraKStateHolder;
+}
+
+public final class com/kashif/cameraK/testing/FakeCapabilities {
+	public static final field BACK_ID Ljava/lang/String;
+	public static final field FRONT_ID Ljava/lang/String;
+	public static final field INSTANCE Lcom/kashif/cameraK/testing/FakeCapabilities;
+	public final fun backAndFront (Ljava/util/Set;)Lcom/kashif/cameraK/capabilities/CameraCapabilities;
+	public static synthetic fun backAndFront$default (Lcom/kashif/cameraK/testing/FakeCapabilities;Ljava/util/Set;ILjava/lang/Object;)Lcom/kashif/cameraK/capabilities/CameraCapabilities;
+}
+
+public final class com/kashif/cameraK/testing/FakeCaptures {
+	public static final field INSTANCE Lcom/kashif/cameraK/testing/FakeCaptures;
+	public final fun image (Ljava/lang/String;IILcom/kashif/cameraK/enums/ImageFormat;)Lcom/kashif/cameraK/capture/CapturedImage;
+	public static synthetic fun image$default (Lcom/kashif/cameraK/testing/FakeCaptures;Ljava/lang/String;IILcom/kashif/cameraK/enums/ImageFormat;ILjava/lang/Object;)Lcom/kashif/cameraK/capture/CapturedImage;
+	public final fun video-WPwdCS8 (Ljava/lang/String;JIIZ)Lcom/kashif/cameraK/capture/RecordedVideo;
+	public static synthetic fun video-WPwdCS8$default (Lcom/kashif/cameraK/testing/FakeCaptures;Ljava/lang/String;JIIZILjava/lang/Object;)Lcom/kashif/cameraK/capture/RecordedVideo;
+}
+
+public final class com/kashif/cameraK/testing/FakeFrameSource : com/kashif/cameraK/frames/FrameSource {
+	public final fun emit (Lcom/kashif/cameraK/frames/CameraFrame;)V
+	public fun register (Lcom/kashif/cameraK/frames/FrameSpec;Lcom/kashif/cameraK/frames/FrameAnalyzer;)Lcom/kashif/cameraK/frames/FrameRegistration;
+}
+
+public final class com/kashif/cameraK/testing/FakePermissionChecker : com/kashif/cameraK/permissions/CameraKPermissionChecker {
+	public fun <init> ()V
+	public fun <init> (Lcom/kashif/cameraK/permissions/PermissionStatus;)V
+	public synthetic fun <init> (Lcom/kashif/cameraK/permissions/PermissionStatus;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun allowsOpen (Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
+	public final fun getAllowsOpenWhenNotDetermined ()Z
+	public final fun setAllowsOpenWhenNotDetermined (Z)V
+	public final fun setStatus (Lcom/kashif/cameraK/permissions/CameraKPermission;Lcom/kashif/cameraK/permissions/PermissionStatus;)V
+	public fun status (Lcom/kashif/cameraK/permissions/CameraKPermission;)Lcom/kashif/cameraK/permissions/PermissionStatus;
+}
+
+public final class com/kashif/cameraK/testing/TestFrame : com/kashif/cameraK/frames/CameraFrame {
+	public static final field Companion Lcom/kashif/cameraK/testing/TestFrame$Companion;
+	public fun getCropRect ()Lcom/kashif/cameraK/frames/FrameRect;
+	public fun getFormat ()Lcom/kashif/cameraK/frames/FrameFormat;
+	public fun getHeight ()I
+	public fun getPlanes ()Ljava/util/List;
+	public fun getRotationDegrees ()I
+	public fun getTimestampNanos ()J
+	public fun getWidth ()I
+	public fun retain ()Lcom/kashif/cameraK/frames/RetainedFrame;
+}
+
+public final class com/kashif/cameraK/testing/TestFrame$Companion {
+	public final fun luma (II[BIIJLcom/kashif/cameraK/frames/FrameRect;)Lcom/kashif/cameraK/testing/TestFrame;
+	public static synthetic fun luma$default (Lcom/kashif/cameraK/testing/TestFrame$Companion;II[BIIJLcom/kashif/cameraK/frames/FrameRect;ILjava/lang/Object;)Lcom/kashif/cameraK/testing/TestFrame;
+	public final fun rgba (II[BIIJLcom/kashif/cameraK/frames/FrameRect;)Lcom/kashif/cameraK/testing/TestFrame;
+	public static synthetic fun rgba$default (Lcom/kashif/cameraK/testing/TestFrame$Companion;II[BIIJLcom/kashif/cameraK/frames/FrameRect;ILjava/lang/Object;)Lcom/kashif/cameraK/testing/TestFrame;
+}
+

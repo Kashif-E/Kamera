@@ -1,10 +1,11 @@
-@file:OptIn(ExperimentalForeignApi::class)
+@file:OptIn(ExperimentalForeignApi::class, InternalCameraKApi::class)
 
 package com.kashif.analyzerplugin
 
 import com.kashif.cameraK.frames.CameraFrame
 import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.utils.toByteArray
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi

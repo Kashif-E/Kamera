@@ -35,7 +35,7 @@ import com.kashif.cameraK.utils.InternalCameraKApi
  * @param overlay Drawn over the frame, with [CameraPreviewScope] for orientation-aware content.
  */
 @Composable
-fun CameraPreview(
+public fun CameraPreview(
     holder: CameraKStateHolder,
     modifier: Modifier = Modifier,
     contentDescription: String? = null,

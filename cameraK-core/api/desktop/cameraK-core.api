@@ -1,0 +1,1273 @@
+public final class com/kashif/cameraK/capabilities/CameraCapabilities {
+	public static final field Companion Lcom/kashif/cameraK/capabilities/CameraCapabilities$Companion;
+	public fun <init> (Ljava/util/List;Ljava/util/Map;Ljava/util/Map;ZLjava/util/Set;ZLjava/util/Set;Ljava/util/Set;Ljava/util/Set;Z)V
+	public final fun availableDeviceTypes (Lcom/kashif/cameraK/enums/CameraLens;)Ljava/util/Set;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAllLenses ()Ljava/util/List;
+	public final fun getExternalLenses ()Ljava/util/List;
+	public final fun getSupportedAnalysisFormats ()Ljava/util/Set;
+	public final fun getSupportedAspectRatios ()Ljava/util/Set;
+	public final fun getSupportedImageFormats ()Ljava/util/Set;
+	public final fun getSupportedVideoQualities ()Ljava/util/Set;
+	public final fun getSupportsPauseResume ()Z
+	public final fun getSupportsSquareCapture ()Z
+	public final fun getSupportsVideoBitrate ()Z
+	public fun hashCode ()I
+	public final fun lenses (Lcom/kashif/cameraK/enums/CameraLens;)Ljava/util/List;
+	public final fun supportedFlashModes (Ljava/lang/String;)Ljava/util/Set;
+	public final fun supportedTorchModes (Ljava/lang/String;)Ljava/util/Set;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/capabilities/CameraCapabilities$Companion {
+	public final fun getEMPTY ()Lcom/kashif/cameraK/capabilities/CameraCapabilities;
+}
+
+public final class com/kashif/cameraK/capabilities/LensInfo {
+	public fun <init> (Ljava/lang/String;Lcom/kashif/cameraK/enums/CameraDeviceType;Lcom/kashif/cameraK/enums/CameraLens;FFZZZ)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/kashif/cameraK/enums/CameraDeviceType;Lcom/kashif/cameraK/enums/CameraLens;FFZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDeviceType ()Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public final fun getHasFlash ()Z
+	public final fun getId ()Ljava/lang/String;
+	public final fun getLens ()Lcom/kashif/cameraK/enums/CameraLens;
+	public final fun getMaxZoom ()F
+	public final fun getMinZoom ()F
+	public fun hashCode ()I
+	public final fun isExternal ()Z
+	public final fun isLogical ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/capture/CapturedImage {
+	public fun <init> (Ljava/lang/String;Lcom/kashif/cameraK/enums/ImageFormat;II)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFormat ()Lcom/kashif/cameraK/enums/ImageFormat;
+	public final fun getHeight ()I
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getWidth ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/capture/GalleryAsset {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDisplayName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/capture/GalleryAsset_desktopKt {
+	public static final fun GalleryAsset (Ljava/lang/String;Ljava/lang/String;)Lcom/kashif/cameraK/capture/GalleryAsset;
+	public static final fun getPath (Lcom/kashif/cameraK/capture/GalleryAsset;)Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/capture/RecordedVideo {
+	public synthetic fun <init> (Ljava/lang/String;JIILjava/lang/Integer;ZLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBitrateBps ()Ljava/lang/Integer;
+	public final fun getDuration-UwyO8pc ()J
+	public final fun getHasAudio ()Z
+	public final fun getHeight ()I
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getWidth ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/controller/CameraGrabber {
+	public final fun grabCurrentFrame ()Ljava/awt/image/BufferedImage;
+}
+
+public final class com/kashif/cameraK/controls/TogglesKt {
+	public static final fun cycleFlashMode (Lcom/kashif/cameraK/state/CameraKStateHolder;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun toggleLens (Lcom/kashif/cameraK/state/CameraKStateHolder;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun toggleTorch (Lcom/kashif/cameraK/state/CameraKStateHolder;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/kashif/cameraK/coroutines/CameraKDispatchers {
+	public fun <init> ()V
+	public fun <init> (Lkotlinx/coroutines/CoroutineDispatcher;Lkotlinx/coroutines/CoroutineDispatcher;Lkotlinx/coroutines/CoroutineDispatcher;)V
+	public synthetic fun <init> (Lkotlinx/coroutines/CoroutineDispatcher;Lkotlinx/coroutines/CoroutineDispatcher;Lkotlinx/coroutines/CoroutineDispatcher;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDefault ()Lkotlinx/coroutines/CoroutineDispatcher;
+	public final fun getIo ()Lkotlinx/coroutines/CoroutineDispatcher;
+	public final fun getMain ()Lkotlinx/coroutines/CoroutineDispatcher;
+}
+
+public abstract interface class com/kashif/cameraK/engine/CameraEngine {
+	public abstract fun capture (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun close ()V
+	public abstract fun closeAndJoin (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getCapabilities ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getDeviceOrientation ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getFrames ()Lcom/kashif/cameraK/frames/FrameSource;
+	public abstract fun getHardware ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getPreview ()Lcom/kashif/cameraK/engine/PlatformPreviewSource;
+	public abstract fun getRecordingEvents ()Lkotlinx/coroutines/flow/Flow;
+	public abstract fun getState ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getZoom ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun pauseRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun prepareRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun resumeRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun selectCamera (Lcom/kashif/cameraK/engine/CameraSelection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setFlashMode (Lcom/kashif/cameraK/enums/FlashMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setTargetOrientation (Lcom/kashif/cameraK/enums/DeviceOrientation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setTorchMode (Lcom/kashif/cameraK/enums/TorchMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setZoom (FLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun start (Lcom/kashif/cameraK/engine/DesiredHardware;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun startRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun stop (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun stopRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/kashif/cameraK/engine/CameraEngineFactory {
+	public abstract fun create (Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/engine/CameraKEnvironment;)Lcom/kashif/cameraK/engine/CameraEngine;
+}
+
+public final class com/kashif/cameraK/engine/CameraKEnvironment {
+	public fun <init> ()V
+	public fun <init> (Lcom/kashif/cameraK/coroutines/CameraKDispatchers;Lkotlin/time/TimeSource$WithComparableMarks;Lkotlinx/coroutines/Job;Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;)V
+	public synthetic fun <init> (Lcom/kashif/cameraK/coroutines/CameraKDispatchers;Lkotlin/time/TimeSource$WithComparableMarks;Lkotlinx/coroutines/Job;Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDispatchers ()Lcom/kashif/cameraK/coroutines/CameraKDispatchers;
+	public final fun getParentJob ()Lkotlinx/coroutines/Job;
+	public final fun getPermissionChecker ()Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;
+	public final fun getTimeSource ()Lkotlin/time/TimeSource$WithComparableMarks;
+}
+
+public abstract interface class com/kashif/cameraK/engine/CameraSelection {
+}
+
+public final class com/kashif/cameraK/engine/CameraSelection$ById : com/kashif/cameraK/engine/CameraSelection {
+	public fun <init> (Ljava/lang/String;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/CameraSelection$ByLens : com/kashif/cameraK/engine/CameraSelection {
+	public fun <init> (Lcom/kashif/cameraK/enums/CameraLens;Lcom/kashif/cameraK/enums/CameraDeviceType;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDeviceType ()Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public final fun getLens ()Lcom/kashif/cameraK/enums/CameraLens;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/CameraSelection$Default : com/kashif/cameraK/engine/CameraSelection {
+	public fun <init> (Lcom/kashif/cameraK/enums/CameraDeviceType;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDeviceType ()Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/DesiredHardware {
+	public fun <init> (Lcom/kashif/cameraK/engine/CameraSelection;Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;FLcom/kashif/cameraK/enums/DeviceOrientation;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
+	public final fun getSelection ()Lcom/kashif/cameraK/engine/CameraSelection;
+	public final fun getTargetOrientation ()Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public final fun getTorchMode ()Lcom/kashif/cameraK/enums/TorchMode;
+	public final fun getZoomRatio ()F
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/kashif/cameraK/engine/EngineRecordingEvent {
+}
+
+public final class com/kashif/cameraK/engine/EngineRecordingEvent$Finalized : com/kashif/cameraK/engine/EngineRecordingEvent {
+	public fun <init> (Lcom/kashif/cameraK/result/CameraKResult;Lcom/kashif/cameraK/recording/RecordingEndReason;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public final fun getResult ()Lcom/kashif/cameraK/result/CameraKResult;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/EngineRecordingEvent$Paused : com/kashif/cameraK/engine/EngineRecordingEvent {
+	public static final field INSTANCE Lcom/kashif/cameraK/engine/EngineRecordingEvent$Paused;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/EngineRecordingEvent$Resumed : com/kashif/cameraK/engine/EngineRecordingEvent {
+	public static final field INSTANCE Lcom/kashif/cameraK/engine/EngineRecordingEvent$Resumed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/EngineRecordingEvent$Started : com/kashif/cameraK/engine/EngineRecordingEvent {
+	public fun <init> (Ljava/lang/String;Z)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHasAudio ()Z
+	public final fun getPath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/kashif/cameraK/engine/EngineState {
+}
+
+public final class com/kashif/cameraK/engine/EngineState$Closed : com/kashif/cameraK/engine/EngineState {
+	public static final field INSTANCE Lcom/kashif/cameraK/engine/EngineState$Closed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/EngineState$Failed : com/kashif/cameraK/engine/EngineState {
+	public fun <init> (Lcom/kashif/cameraK/error/CameraKError;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getError ()Lcom/kashif/cameraK/error/CameraKError;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/EngineState$Interrupted : com/kashif/cameraK/engine/EngineState {
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason-fQZM-Kk ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/EngineState$Open : com/kashif/cameraK/engine/EngineState {
+	public static final field INSTANCE Lcom/kashif/cameraK/engine/EngineState$Open;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/EngineState$Opening : com/kashif/cameraK/engine/EngineState {
+	public static final field INSTANCE Lcom/kashif/cameraK/engine/EngineState$Opening;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/engine/HardwareState {
+	public fun <init> (Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;Lcom/kashif/cameraK/capabilities/LensInfo;Lcom/kashif/cameraK/enums/DeviceOrientation;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCamera ()Lcom/kashif/cameraK/capabilities/LensInfo;
+	public final fun getFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
+	public final fun getTargetOrientation ()Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public final fun getTorchMode ()Lcom/kashif/cameraK/enums/TorchMode;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/kashif/cameraK/engine/PlatformPreviewSource {
+	public abstract fun getFrames ()Lkotlinx/coroutines/flow/StateFlow;
+}
+
+public final class com/kashif/cameraK/engine/PreviewFrame {
+	public fun <init> (Ljava/awt/image/BufferedImage;J)V
+	public final fun getImage ()Ljava/awt/image/BufferedImage;
+	public final fun getTimestampNanos ()J
+}
+
+public final class com/kashif/cameraK/enums/AspectRatio : java/lang/Enum {
+	public static final field RATIO_16_9 Lcom/kashif/cameraK/enums/AspectRatio;
+	public static final field RATIO_1_1 Lcom/kashif/cameraK/enums/AspectRatio;
+	public static final field RATIO_4_3 Lcom/kashif/cameraK/enums/AspectRatio;
+	public static final field RATIO_9_16 Lcom/kashif/cameraK/enums/AspectRatio;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/enums/AspectRatio;
+	public static fun values ()[Lcom/kashif/cameraK/enums/AspectRatio;
+}
+
+public final class com/kashif/cameraK/enums/AspectRatioKt {
+	public static final fun previewAspectRatio (Lcom/kashif/cameraK/enums/AspectRatio;Lcom/kashif/cameraK/enums/DeviceOrientation;)F
+}
+
+public final class com/kashif/cameraK/enums/CameraDeviceType : java/lang/Enum {
+	public static final field DEFAULT Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public static final field MACRO Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public static final field TELEPHOTO Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public static final field ULTRA_WIDE Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public static final field WIDE_ANGLE Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public static fun values ()[Lcom/kashif/cameraK/enums/CameraDeviceType;
+}
+
+public final class com/kashif/cameraK/enums/CameraLens : java/lang/Enum {
+	public static final field BACK Lcom/kashif/cameraK/enums/CameraLens;
+	public static final field FRONT Lcom/kashif/cameraK/enums/CameraLens;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/enums/CameraLens;
+	public static fun values ()[Lcom/kashif/cameraK/enums/CameraLens;
+}
+
+public final class com/kashif/cameraK/enums/DeviceOrientation : java/lang/Enum {
+	public static final field LANDSCAPE_LEFT Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public static final field LANDSCAPE_RIGHT Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public static final field PORTRAIT Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public static final field PORTRAIT_UPSIDE_DOWN Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public final fun getCompensationDegrees ()F
+	public final fun getDegrees ()I
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public static fun values ()[Lcom/kashif/cameraK/enums/DeviceOrientation;
+}
+
+public final class com/kashif/cameraK/enums/Directory : java/lang/Enum {
+	public static final field DCIM Lcom/kashif/cameraK/enums/Directory;
+	public static final field DOCUMENTS Lcom/kashif/cameraK/enums/Directory;
+	public static final field PICTURES Lcom/kashif/cameraK/enums/Directory;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/enums/Directory;
+	public static fun values ()[Lcom/kashif/cameraK/enums/Directory;
+}
+
+public final class com/kashif/cameraK/enums/FlashMode : java/lang/Enum {
+	public static final field AUTO Lcom/kashif/cameraK/enums/FlashMode;
+	public static final field OFF Lcom/kashif/cameraK/enums/FlashMode;
+	public static final field ON Lcom/kashif/cameraK/enums/FlashMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/enums/FlashMode;
+	public static fun values ()[Lcom/kashif/cameraK/enums/FlashMode;
+}
+
+public final class com/kashif/cameraK/enums/ImageFormat : java/lang/Enum {
+	public static final field HEIC Lcom/kashif/cameraK/enums/ImageFormat;
+	public static final field JPEG Lcom/kashif/cameraK/enums/ImageFormat;
+	public static final field PNG Lcom/kashif/cameraK/enums/ImageFormat;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getExtension ()Ljava/lang/String;
+	public final fun getMimeType ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/enums/ImageFormat;
+	public static fun values ()[Lcom/kashif/cameraK/enums/ImageFormat;
+}
+
+public final class com/kashif/cameraK/enums/QualityPrioritization : java/lang/Enum {
+	public static final field BALANCED Lcom/kashif/cameraK/enums/QualityPrioritization;
+	public static final field NONE Lcom/kashif/cameraK/enums/QualityPrioritization;
+	public static final field QUALITY Lcom/kashif/cameraK/enums/QualityPrioritization;
+	public static final field SPEED Lcom/kashif/cameraK/enums/QualityPrioritization;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/enums/QualityPrioritization;
+	public static fun values ()[Lcom/kashif/cameraK/enums/QualityPrioritization;
+}
+
+public final class com/kashif/cameraK/enums/TorchMode : java/lang/Enum {
+	public static final field AUTO Lcom/kashif/cameraK/enums/TorchMode;
+	public static final field OFF Lcom/kashif/cameraK/enums/TorchMode;
+	public static final field ON Lcom/kashif/cameraK/enums/TorchMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/enums/TorchMode;
+	public static fun values ()[Lcom/kashif/cameraK/enums/TorchMode;
+}
+
+public final class com/kashif/cameraK/error/CameraFeature {
+	public static final field Companion Lcom/kashif/cameraK/error/CameraFeature$Companion;
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/kashif/cameraK/error/CameraFeature;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/error/CameraFeature$Companion {
+	public final fun getANALYSIS_FORMAT-h2w28t0 ()Ljava/lang/String;
+	public final fun getASPECT_RATIO-h2w28t0 ()Ljava/lang/String;
+	public final fun getAUDIO-h2w28t0 ()Ljava/lang/String;
+	public final fun getDEVICE_TYPE-h2w28t0 ()Ljava/lang/String;
+	public final fun getFLASH_AUTO-h2w28t0 ()Ljava/lang/String;
+	public final fun getFLASH_ON-h2w28t0 ()Ljava/lang/String;
+	public final fun getIMAGE_FORMAT-h2w28t0 ()Ljava/lang/String;
+	public final fun getLENS_SWITCH-h2w28t0 ()Ljava/lang/String;
+	public final fun getPAUSE_RESUME-h2w28t0 ()Ljava/lang/String;
+	public final fun getPLATFORM_VERSION-h2w28t0 ()Ljava/lang/String;
+	public final fun getTARGET_ORIENTATION-h2w28t0 ()Ljava/lang/String;
+	public final fun getTARGET_RESOLUTION-h2w28t0 ()Ljava/lang/String;
+	public final fun getTORCH-h2w28t0 ()Ljava/lang/String;
+	public final fun getVIDEO_BITRATE-h2w28t0 ()Ljava/lang/String;
+	public final fun getVIDEO_QUALITY-h2w28t0 ()Ljava/lang/String;
+	public final fun getZOOM-h2w28t0 ()Ljava/lang/String;
+}
+
+public abstract class com/kashif/cameraK/error/CameraKError {
+	public synthetic fun <init> (Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getCause ()Ljava/lang/Throwable;
+	public abstract fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$Busy : com/kashif/cameraK/error/CameraKError {
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getOperation-rFEmPBI ()Ljava/lang/String;
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$CameraDisabled : com/kashif/cameraK/error/CameraKError {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$CameraInUse : com/kashif/cameraK/error/CameraKError {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$Closed : com/kashif/cameraK/error/CameraKError {
+	public static final field INSTANCE Lcom/kashif/cameraK/error/CameraKError$Closed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun isRetryable ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/error/CameraKError$Disconnected : com/kashif/cameraK/error/CameraKError {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$Hardware : com/kashif/cameraK/error/CameraKError {
+	public fun <init> (Ljava/lang/Integer;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getPlatformCode ()Ljava/lang/Integer;
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$Internal : com/kashif/cameraK/error/CameraKError {
+	public fun <init> (Ljava/lang/Throwable;)V
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$InvalidState : com/kashif/cameraK/error/CameraKError {
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getOperation-rFEmPBI ()Ljava/lang/String;
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$NativeLibraryMissing : com/kashif/cameraK/error/CameraKError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getPlatform ()Ljava/lang/String;
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$NoCamera : com/kashif/cameraK/error/CameraKError {
+	public fun <init> (Lcom/kashif/cameraK/enums/CameraLens;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Lcom/kashif/cameraK/enums/CameraLens;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getLens ()Lcom/kashif/cameraK/enums/CameraLens;
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$NotReady : com/kashif/cameraK/error/CameraKError {
+	public static final field INSTANCE Lcom/kashif/cameraK/error/CameraKError$NotReady;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun isRetryable ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/error/CameraKError$Permission : com/kashif/cameraK/error/CameraKError {
+	public fun <init> (Lcom/kashif/cameraK/permissions/CameraKPermission;Lcom/kashif/cameraK/permissions/PermissionStatus;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Lcom/kashif/cameraK/permissions/CameraKPermission;Lcom/kashif/cameraK/permissions/PermissionStatus;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getNeedsSettings ()Z
+	public final fun getPermission ()Lcom/kashif/cameraK/permissions/CameraKPermission;
+	public final fun getStatus ()Lcom/kashif/cameraK/permissions/PermissionStatus;
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$Storage : com/kashif/cameraK/error/CameraKError {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getKeptFilePath ()Ljava/lang/String;
+	public final fun getKind-QJaAIT0 ()Ljava/lang/String;
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$Timeout : com/kashif/cameraK/error/CameraKError {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getOperation-rFEmPBI ()Ljava/lang/String;
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$Unsupported : com/kashif/cameraK/error/CameraKError {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getFeature-h2w28t0 ()Ljava/lang/String;
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraOperation {
+	public static final field Companion Lcom/kashif/cameraK/error/CameraOperation$Companion;
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/kashif/cameraK/error/CameraOperation;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/error/CameraOperation$Companion {
+	public final fun getCAPTURE-rFEmPBI ()Ljava/lang/String;
+	public final fun getDEVICE_TYPE-rFEmPBI ()Ljava/lang/String;
+	public final fun getFLASH-rFEmPBI ()Ljava/lang/String;
+	public final fun getLENS-rFEmPBI ()Ljava/lang/String;
+	public final fun getORIENTATION-rFEmPBI ()Ljava/lang/String;
+	public final fun getRECORD_PAUSE-rFEmPBI ()Ljava/lang/String;
+	public final fun getRECORD_PREPARE-rFEmPBI ()Ljava/lang/String;
+	public final fun getRECORD_RESUME-rFEmPBI ()Ljava/lang/String;
+	public final fun getRECORD_START-rFEmPBI ()Ljava/lang/String;
+	public final fun getRECORD_STOP-rFEmPBI ()Ljava/lang/String;
+	public final fun getSTART-rFEmPBI ()Ljava/lang/String;
+	public final fun getTORCH-rFEmPBI ()Ljava/lang/String;
+	public final fun getZOOM-rFEmPBI ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/error/InterruptionReason {
+	public static final field Companion Lcom/kashif/cameraK/error/InterruptionReason$Companion;
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/kashif/cameraK/error/InterruptionReason;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/error/InterruptionReason$Companion {
+	public final fun getAPP_IN_BACKGROUND-fQZM-Kk ()Ljava/lang/String;
+	public final fun getAUDIO_IN_USE-fQZM-Kk ()Ljava/lang/String;
+	public final fun getIN_USE_BY_ANOTHER_CLIENT-fQZM-Kk ()Ljava/lang/String;
+	public final fun getMEDIA_SERVICES_RESET-fQZM-Kk ()Ljava/lang/String;
+	public final fun getMULTITASKING-fQZM-Kk ()Ljava/lang/String;
+	public final fun getOTHER-fQZM-Kk ()Ljava/lang/String;
+	public final fun getSYSTEM_PRESSURE-fQZM-Kk ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/error/StorageFailure {
+	public static final field Companion Lcom/kashif/cameraK/error/StorageFailure$Companion;
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/kashif/cameraK/error/StorageFailure;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/error/StorageFailure$Companion {
+	public final fun getFULL-QJaAIT0 ()Ljava/lang/String;
+	public final fun getGALLERY_IMPORT_FAILED-QJaAIT0 ()Ljava/lang/String;
+	public final fun getNOT_FOUND-QJaAIT0 ()Ljava/lang/String;
+	public final fun getNOT_WRITABLE-QJaAIT0 ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/frames/AnalyzerAdmission {
+	public fun <init> (Ljava/lang/Float;Lkotlin/jvm/functions/Function0;)V
+	public final fun deliver (Lkotlin/jvm/functions/Function0;)Z
+}
+
+public final class com/kashif/cameraK/frames/AnalyzerFailureKt {
+	public static final fun isFatalAnalyzerFailure (Ljava/lang/Throwable;)Z
+}
+
+public abstract interface class com/kashif/cameraK/frames/CameraFrame {
+	public abstract fun getCropRect ()Lcom/kashif/cameraK/frames/FrameRect;
+	public abstract fun getFormat ()Lcom/kashif/cameraK/frames/FrameFormat;
+	public abstract fun getHeight ()I
+	public abstract fun getPlanes ()Ljava/util/List;
+	public abstract fun getRotationDegrees ()I
+	public abstract fun getTimestampNanos ()J
+	public abstract fun getWidth ()I
+	public abstract fun retain ()Lcom/kashif/cameraK/frames/RetainedFrame;
+}
+
+public final class com/kashif/cameraK/frames/CopyLumaKt {
+	public static final fun copyLuma (Lcom/kashif/cameraK/frames/CameraFrame;[BI[B)I
+	public static synthetic fun copyLuma$default (Lcom/kashif/cameraK/frames/CameraFrame;[BI[BILjava/lang/Object;)I
+}
+
+public abstract interface class com/kashif/cameraK/frames/FrameAnalyzer {
+	public abstract fun analyze (Lcom/kashif/cameraK/frames/CameraFrame;)V
+}
+
+public final class com/kashif/cameraK/frames/FrameFormat : java/lang/Enum {
+	public static final field RGBA_8888 Lcom/kashif/cameraK/frames/FrameFormat;
+	public static final field YUV_420 Lcom/kashif/cameraK/frames/FrameFormat;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/frames/FrameFormat;
+	public static fun values ()[Lcom/kashif/cameraK/frames/FrameFormat;
+}
+
+public abstract interface class com/kashif/cameraK/frames/FramePlane {
+	public abstract fun copyTo ([BI)I
+	public abstract fun copyTo ([BIII)V
+	public static synthetic fun copyTo$default (Lcom/kashif/cameraK/frames/FramePlane;[BIILjava/lang/Object;)I
+	public abstract fun getPixelStride ()I
+	public abstract fun getRowStride ()I
+	public abstract fun getSize ()I
+}
+
+public final class com/kashif/cameraK/frames/FramePlane$DefaultImpls {
+	public static synthetic fun copyTo$default (Lcom/kashif/cameraK/frames/FramePlane;[BIILjava/lang/Object;)I
+}
+
+public final class com/kashif/cameraK/frames/FrameRect {
+	public fun <init> (IIII)V
+	public final fun getBottom ()I
+	public final fun getLeft ()I
+	public final fun getRight ()I
+	public final fun getTop ()I
+}
+
+public abstract interface class com/kashif/cameraK/frames/FrameRegistration : java/lang/AutoCloseable {
+	public abstract fun getActive ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getRejection ()Lcom/kashif/cameraK/error/CameraKError;
+}
+
+public abstract interface class com/kashif/cameraK/frames/FrameSource {
+	public abstract fun register (Lcom/kashif/cameraK/frames/FrameSpec;Lcom/kashif/cameraK/frames/FrameAnalyzer;)Lcom/kashif/cameraK/frames/FrameRegistration;
+	public static synthetic fun register$default (Lcom/kashif/cameraK/frames/FrameSource;Lcom/kashif/cameraK/frames/FrameSpec;Lcom/kashif/cameraK/frames/FrameAnalyzer;ILjava/lang/Object;)Lcom/kashif/cameraK/frames/FrameRegistration;
+}
+
+public final class com/kashif/cameraK/frames/FrameSource$DefaultImpls {
+	public static synthetic fun register$default (Lcom/kashif/cameraK/frames/FrameSource;Lcom/kashif/cameraK/frames/FrameSpec;Lcom/kashif/cameraK/frames/FrameAnalyzer;ILjava/lang/Object;)Lcom/kashif/cameraK/frames/FrameRegistration;
+}
+
+public final class com/kashif/cameraK/frames/FrameSpec {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/Float;IZLjava/util/Set;)V
+	public synthetic fun <init> (Ljava/lang/Float;IZLjava/util/Set;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getAcceptedFormats ()Ljava/util/Set;
+	public final fun getMaxFps ()Ljava/lang/Float;
+	public final fun getMaxRetained ()I
+	public final fun getSynchronous ()Z
+}
+
+public abstract interface class com/kashif/cameraK/frames/RetainedFrame : com/kashif/cameraK/frames/CameraFrame, java/lang/AutoCloseable {
+}
+
+public final class com/kashif/cameraK/lifecycle/LifecycleBindingKt {
+	public static final fun bindToLifecycle (Lcom/kashif/cameraK/state/CameraKStateHolder;Landroidx/lifecycle/Lifecycle;)Ljava/lang/AutoCloseable;
+}
+
+public final class com/kashif/cameraK/permissions/CameraKPermission : java/lang/Enum {
+	public static final field CAMERA Lcom/kashif/cameraK/permissions/CameraKPermission;
+	public static final field GALLERY_ADD Lcom/kashif/cameraK/permissions/CameraKPermission;
+	public static final field MICROPHONE Lcom/kashif/cameraK/permissions/CameraKPermission;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/permissions/CameraKPermission;
+	public static fun values ()[Lcom/kashif/cameraK/permissions/CameraKPermission;
+}
+
+public abstract interface class com/kashif/cameraK/permissions/CameraKPermissionChecker {
+	public fun allowsOpen (Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
+	public abstract fun status (Lcom/kashif/cameraK/permissions/CameraKPermission;)Lcom/kashif/cameraK/permissions/PermissionStatus;
+}
+
+public final class com/kashif/cameraK/permissions/CameraKPermissionChecker$DefaultImpls {
+	public static fun allowsOpen (Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
+}
+
+public abstract interface class com/kashif/cameraK/permissions/PermissionStatus {
+}
+
+public final class com/kashif/cameraK/permissions/PermissionStatus$Denied : com/kashif/cameraK/permissions/PermissionStatus {
+	public fun <init> (Z)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getShouldShowRationale ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/permissions/PermissionStatus$Granted : com/kashif/cameraK/permissions/PermissionStatus {
+	public static final field INSTANCE Lcom/kashif/cameraK/permissions/PermissionStatus$Granted;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/permissions/PermissionStatus$Limited : com/kashif/cameraK/permissions/PermissionStatus {
+	public static final field INSTANCE Lcom/kashif/cameraK/permissions/PermissionStatus$Limited;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/permissions/PermissionStatus$NotDetermined : com/kashif/cameraK/permissions/PermissionStatus {
+	public static final field INSTANCE Lcom/kashif/cameraK/permissions/PermissionStatus$NotDetermined;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/permissions/PermissionStatus$PermanentlyDenied : com/kashif/cameraK/permissions/PermissionStatus {
+	public static final field INSTANCE Lcom/kashif/cameraK/permissions/PermissionStatus$PermanentlyDenied;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/permissions/PermissionStatus$Restricted : com/kashif/cameraK/permissions/PermissionStatus {
+	public static final field INSTANCE Lcom/kashif/cameraK/permissions/PermissionStatus$Restricted;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/permissions/PlatformPermissionChecker_desktopKt {
+	public static final fun platformPermissionStatus (Lcom/kashif/cameraK/platform/CameraKPlatformContext;Lcom/kashif/cameraK/permissions/CameraKPermission;)Lcom/kashif/cameraK/permissions/PermissionStatus;
+	public static final fun requestPlatformPermissions (Lcom/kashif/cameraK/platform/CameraKPlatformContext;Ljava/util/List;Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class com/kashif/cameraK/platform/CameraKPlatformContext {
+	public fun <init> ()V
+	public fun <init> (Lcom/kashif/cameraK/platform/DesktopGrabberFactory;)V
+}
+
+public abstract interface class com/kashif/cameraK/platform/DesktopGrabberFactory {
+	public abstract fun create (Ljava/lang/String;)Lorg/bytedeco/javacv/FrameGrabber;
+}
+
+public abstract interface class com/kashif/cameraK/plugin/CameraKPluginContext {
+	public abstract fun getCameraState ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getCapabilities ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getCaptures ()Lkotlinx/coroutines/flow/SharedFlow;
+	public abstract fun getDeviceOrientation ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getDispatchers ()Lcom/kashif/cameraK/coroutines/CameraKDispatchers;
+	public abstract fun getFailure ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getFrames ()Lcom/kashif/cameraK/frames/FrameSource;
+	public abstract fun getRecordingState ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getScope ()Lkotlinx/coroutines/CoroutineScope;
+	public abstract fun getUiState ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun reportFailure (Lcom/kashif/cameraK/error/CameraKError;)V
+}
+
+public final class com/kashif/cameraK/plugin/LaunchPerSessionKt {
+	public static final fun launchPerSession (Lcom/kashif/cameraK/plugin/CameraKPluginContext;Lkotlin/jvm/functions/Function2;)Lkotlinx/coroutines/Job;
+}
+
+public abstract interface class com/kashif/cameraK/plugin/PluginStatus {
+}
+
+public final class com/kashif/cameraK/plugin/PluginStatus$Failed : com/kashif/cameraK/plugin/PluginStatus {
+	public fun <init> (Lcom/kashif/cameraK/error/CameraKError;)V
+	public final fun getError ()Lcom/kashif/cameraK/error/CameraKError;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/plugin/PluginStatus$Idle : com/kashif/cameraK/plugin/PluginStatus {
+	public static final field INSTANCE Lcom/kashif/cameraK/plugin/PluginStatus$Idle;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/plugin/PluginStatus$Paused : com/kashif/cameraK/plugin/PluginStatus {
+	public static final field INSTANCE Lcom/kashif/cameraK/plugin/PluginStatus$Paused;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/plugin/PluginStatus$Running : com/kashif/cameraK/plugin/PluginStatus {
+	public static final field INSTANCE Lcom/kashif/cameraK/plugin/PluginStatus$Running;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/recording/RecordingEndReason : java/lang/Enum {
+	public static final field ERROR Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public static final field INTERRUPTED Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public static final field MAX_DURATION Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public static final field MAX_FILE_SIZE Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public static final field SHUTDOWN Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public static final field USER Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public static fun values ()[Lcom/kashif/cameraK/recording/RecordingEndReason;
+}
+
+public abstract interface class com/kashif/cameraK/recording/RecordingState {
+}
+
+public final class com/kashif/cameraK/recording/RecordingState$Finished : com/kashif/cameraK/recording/RecordingState {
+	public fun <init> (JLcom/kashif/cameraK/result/CameraKResult;Lcom/kashif/cameraK/recording/RecordingEndReason;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public final fun getRecordingId ()J
+	public final fun getResult ()Lcom/kashif/cameraK/result/CameraKResult;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/recording/RecordingState$Idle : com/kashif/cameraK/recording/RecordingState {
+	public static final field INSTANCE Lcom/kashif/cameraK/recording/RecordingState$Idle;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/recording/RecordingState$Paused : com/kashif/cameraK/recording/RecordingState {
+	public synthetic fun <init> (JLjava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccumulated-UwyO8pc ()J
+	public final fun getFilePath ()Ljava/lang/String;
+	public final fun getRecordingId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/recording/RecordingState$Recording : com/kashif/cameraK/recording/RecordingState {
+	public synthetic fun <init> (JLjava/lang/String;Lkotlin/time/ComparableTimeMark;JZLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccumulated-UwyO8pc ()J
+	public final fun getActiveSince ()Lkotlin/time/ComparableTimeMark;
+	public final fun getFilePath ()Ljava/lang/String;
+	public final fun getHasAudio ()Z
+	public final fun getRecordingId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/recording/RecordingState$Starting : com/kashif/cameraK/recording/RecordingState {
+	public fun <init> (Lcom/kashif/cameraK/video/VideoConfiguration;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConfig ()Lcom/kashif/cameraK/video/VideoConfiguration;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/recording/RecordingState$Stopping : com/kashif/cameraK/recording/RecordingState {
+	public fun <init> (JLjava/lang/String;Lcom/kashif/cameraK/recording/RecordingEndReason;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFilePath ()Ljava/lang/String;
+	public final fun getReason ()Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public final fun getRecordingId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/recording/RecordingStateKt {
+	public static final fun elapsed (Lcom/kashif/cameraK/recording/RecordingState;)J
+}
+
+public abstract interface class com/kashif/cameraK/result/CameraKResult {
+}
+
+public final class com/kashif/cameraK/result/CameraKResult$Failure : com/kashif/cameraK/result/CameraKResult {
+	public fun <init> (Lcom/kashif/cameraK/error/CameraKError;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getError ()Lcom/kashif/cameraK/error/CameraKError;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/result/CameraKResult$Success : com/kashif/cameraK/result/CameraKResult {
+	public fun <init> (Ljava/lang/Object;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()Ljava/lang/Object;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/result/CameraKResultKt {
+	public static final fun fold (Lcom/kashif/cameraK/result/CameraKResult;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+	public static final fun getErrorOrNull (Lcom/kashif/cameraK/result/CameraKResult;)Lcom/kashif/cameraK/error/CameraKError;
+	public static final fun getOrElse (Lcom/kashif/cameraK/result/CameraKResult;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+	public static final fun getOrNull (Lcom/kashif/cameraK/result/CameraKResult;)Ljava/lang/Object;
+	public static final fun map (Lcom/kashif/cameraK/result/CameraKResult;Lkotlin/jvm/functions/Function1;)Lcom/kashif/cameraK/result/CameraKResult;
+	public static final fun onFailure (Lcom/kashif/cameraK/result/CameraKResult;Lkotlin/jvm/functions/Function1;)Lcom/kashif/cameraK/result/CameraKResult;
+	public static final fun onSuccess (Lcom/kashif/cameraK/result/CameraKResult;Lkotlin/jvm/functions/Function1;)Lcom/kashif/cameraK/result/CameraKResult;
+}
+
+public abstract class com/kashif/cameraK/result/ImageCaptureResult {
+}
+
+public final class com/kashif/cameraK/result/ImageCaptureResult$Error : com/kashif/cameraK/result/ImageCaptureResult {
+	public fun <init> (Ljava/lang/Exception;)V
+	public final fun component1 ()Ljava/lang/Exception;
+	public final fun copy (Ljava/lang/Exception;)Lcom/kashif/cameraK/result/ImageCaptureResult$Error;
+	public static synthetic fun copy$default (Lcom/kashif/cameraK/result/ImageCaptureResult$Error;Ljava/lang/Exception;ILjava/lang/Object;)Lcom/kashif/cameraK/result/ImageCaptureResult$Error;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getException ()Ljava/lang/Exception;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/result/ImageCaptureResult$SuccessWithFile : com/kashif/cameraK/result/ImageCaptureResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/kashif/cameraK/result/ImageCaptureResult$SuccessWithFile;
+	public static synthetic fun copy$default (Lcom/kashif/cameraK/result/ImageCaptureResult$SuccessWithFile;Ljava/lang/String;ILjava/lang/Object;)Lcom/kashif/cameraK/result/ImageCaptureResult$SuccessWithFile;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFilePath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/result/ImageCaptureResult$SuccessWithUri : com/kashif/cameraK/result/ImageCaptureResult {
+	public fun <init> (Ljava/lang/String;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getUri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/CameraConfiguration {
+	public final fun copy (Lkotlin/jvm/functions/Function1;)Lcom/kashif/cameraK/state/CameraConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAnalysisFormat ()Lcom/kashif/cameraK/frames/FrameFormat;
+	public final fun getAnalysisResolution ()Lcom/kashif/cameraK/state/Resolution;
+	public final fun getAspectRatio ()Lcom/kashif/cameraK/enums/AspectRatio;
+	public final fun getCameraDeviceType ()Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public final fun getCameraId ()Ljava/lang/String;
+	public final fun getCameraLens ()Lcom/kashif/cameraK/enums/CameraLens;
+	public final fun getFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
+	public final fun getFrameAnalysis ()Z
+	public final fun getImageFormat ()Lcom/kashif/cameraK/enums/ImageFormat;
+	public final fun getInitialZoomRatio ()F
+	public final fun getMirrorFrontCamera ()Z
+	public final fun getOutputDirectory ()Ljava/lang/String;
+	public final fun getQualityPrioritization ()Lcom/kashif/cameraK/enums/QualityPrioritization;
+	public final fun getTargetOrientation ()Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public final fun getTargetResolution ()Lcom/kashif/cameraK/state/Resolution;
+	public final fun getTorchMode ()Lcom/kashif/cameraK/enums/TorchMode;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/CameraConfiguration$Builder {
+	public final fun getAnalysisFormat ()Lcom/kashif/cameraK/frames/FrameFormat;
+	public final fun getAnalysisResolution ()Lcom/kashif/cameraK/state/Resolution;
+	public final fun getAspectRatio ()Lcom/kashif/cameraK/enums/AspectRatio;
+	public final fun getCameraDeviceType ()Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public final fun getCameraId ()Ljava/lang/String;
+	public final fun getCameraLens ()Lcom/kashif/cameraK/enums/CameraLens;
+	public final fun getFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
+	public final fun getFrameAnalysis ()Z
+	public final fun getImageFormat ()Lcom/kashif/cameraK/enums/ImageFormat;
+	public final fun getInitialZoomRatio ()F
+	public final fun getMirrorFrontCamera ()Z
+	public final fun getOutputDirectory ()Ljava/lang/String;
+	public final fun getQualityPrioritization ()Lcom/kashif/cameraK/enums/QualityPrioritization;
+	public final fun getTargetOrientation ()Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public final fun getTargetResolution ()Lcom/kashif/cameraK/state/Resolution;
+	public final fun getTorchMode ()Lcom/kashif/cameraK/enums/TorchMode;
+	public final fun setAnalysisFormat (Lcom/kashif/cameraK/frames/FrameFormat;)V
+	public final fun setAnalysisResolution (Lcom/kashif/cameraK/state/Resolution;)V
+	public final fun setAspectRatio (Lcom/kashif/cameraK/enums/AspectRatio;)V
+	public final fun setCameraDeviceType (Lcom/kashif/cameraK/enums/CameraDeviceType;)V
+	public final fun setCameraId (Ljava/lang/String;)V
+	public final fun setCameraLens (Lcom/kashif/cameraK/enums/CameraLens;)V
+	public final fun setFlashMode (Lcom/kashif/cameraK/enums/FlashMode;)V
+	public final fun setFrameAnalysis (Z)V
+	public final fun setImageFormat (Lcom/kashif/cameraK/enums/ImageFormat;)V
+	public final fun setInitialZoomRatio (F)V
+	public final fun setMirrorFrontCamera (Z)V
+	public final fun setOutputDirectory (Ljava/lang/String;)V
+	public final fun setQualityPrioritization (Lcom/kashif/cameraK/enums/QualityPrioritization;)V
+	public final fun setTargetOrientation (Lcom/kashif/cameraK/enums/DeviceOrientation;)V
+	public final fun setTargetResolution (Lcom/kashif/cameraK/state/Resolution;)V
+	public final fun setTorchMode (Lcom/kashif/cameraK/enums/TorchMode;)V
+}
+
+public final class com/kashif/cameraK/state/CameraConfigurationKt {
+	public static final fun CameraConfiguration (Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;Lcom/kashif/cameraK/enums/CameraLens;Lcom/kashif/cameraK/enums/ImageFormat;Lcom/kashif/cameraK/enums/QualityPrioritization;Lcom/kashif/cameraK/enums/CameraDeviceType;Lcom/kashif/cameraK/enums/AspectRatio;Lkotlin/Pair;Lcom/kashif/cameraK/enums/Directory;ZLjava/lang/String;Ljava/lang/String;ZLcom/kashif/cameraK/state/Resolution;Lcom/kashif/cameraK/frames/FrameFormat;)Lcom/kashif/cameraK/state/CameraConfiguration;
+	public static final fun CameraConfiguration (Lkotlin/jvm/functions/Function1;)Lcom/kashif/cameraK/state/CameraConfiguration;
+	public static synthetic fun CameraConfiguration$default (Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;Lcom/kashif/cameraK/enums/CameraLens;Lcom/kashif/cameraK/enums/ImageFormat;Lcom/kashif/cameraK/enums/QualityPrioritization;Lcom/kashif/cameraK/enums/CameraDeviceType;Lcom/kashif/cameraK/enums/AspectRatio;Lkotlin/Pair;Lcom/kashif/cameraK/enums/Directory;ZLjava/lang/String;Ljava/lang/String;ZLcom/kashif/cameraK/state/Resolution;Lcom/kashif/cameraK/frames/FrameFormat;ILjava/lang/Object;)Lcom/kashif/cameraK/state/CameraConfiguration;
+	public static synthetic fun CameraConfiguration$default (Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/kashif/cameraK/state/CameraConfiguration;
+}
+
+public abstract class com/kashif/cameraK/state/CameraKEvent {
+}
+
+public final class com/kashif/cameraK/state/CameraKEvent$PluginFailed : com/kashif/cameraK/state/CameraKEvent {
+	public final fun getError ()Lcom/kashif/cameraK/error/CameraKError;
+	public final fun getPluginId ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/CameraKEvent$RecordingEnded : com/kashif/cameraK/state/CameraKEvent {
+	public final fun getReason ()Lcom/kashif/cameraK/recording/RecordingEndReason;
+	public final fun getRecordingId ()J
+	public final fun getResult ()Lcom/kashif/cameraK/result/CameraKResult;
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/kashif/cameraK/state/CameraKPlugin {
+	public fun getId ()Ljava/lang/String;
+	public fun getNeedsFrames ()Z
+	public abstract fun onAttach (Lcom/kashif/cameraK/plugin/CameraKPluginContext;)V
+	public abstract fun onDetach ()V
+}
+
+public final class com/kashif/cameraK/state/CameraKPlugin$DefaultImpls {
+	public static fun getId (Lcom/kashif/cameraK/state/CameraKPlugin;)Ljava/lang/String;
+	public static fun getNeedsFrames (Lcom/kashif/cameraK/state/CameraKPlugin;)Z
+}
+
+public abstract interface class com/kashif/cameraK/state/CameraKState {
+}
+
+public final class com/kashif/cameraK/state/CameraKState$Closed : com/kashif/cameraK/state/CameraKState {
+	public static final field INSTANCE Lcom/kashif/cameraK/state/CameraKState$Closed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/CameraKState$Error : com/kashif/cameraK/state/CameraKState {
+	public fun <init> (Lcom/kashif/cameraK/error/CameraKError;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getError ()Lcom/kashif/cameraK/error/CameraKError;
+	public fun hashCode ()I
+	public final fun isRetryable ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/CameraKState$Idle : com/kashif/cameraK/state/CameraKState {
+	public static final field INSTANCE Lcom/kashif/cameraK/state/CameraKState$Idle;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/CameraKState$Interrupted : com/kashif/cameraK/state/CameraKState {
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason-fQZM-Kk ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/CameraKState$Ready : com/kashif/cameraK/state/CameraKState {
+	public static final field INSTANCE Lcom/kashif/cameraK/state/CameraKState$Ready;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/CameraKState$Starting : com/kashif/cameraK/state/CameraKState {
+	public static final field INSTANCE Lcom/kashif/cameraK/state/CameraKState$Starting;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/CameraKStateHolder : java/lang/AutoCloseable {
+	public fun <init> (Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/engine/CameraEngineFactory;Ljava/util/List;Lcom/kashif/cameraK/engine/CameraKEnvironment;)V
+	public synthetic fun <init> (Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/engine/CameraEngineFactory;Ljava/util/List;Lcom/kashif/cameraK/engine/CameraKEnvironment;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/engine/CameraEngineFactory;Ljava/util/List;Lcom/kashif/cameraK/engine/CameraKEnvironment;Lkotlinx/coroutines/Job;)V
+	public fun <init> (Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/platform/CameraKPlatformContext;Ljava/util/List;)V
+	public synthetic fun <init> (Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/platform/CameraKPlatformContext;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/platform/CameraKPlatformContext;Ljava/util/List;Lkotlinx/coroutines/Job;)V
+	public final fun attachPlugin (Lcom/kashif/cameraK/state/CameraKPlugin;)V
+	public final fun capture (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun captureImage ()V
+	public fun close ()V
+	public final fun closeAndJoin (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun detachPlugin (Lcom/kashif/cameraK/state/CameraKPlugin;)V
+	public final fun getCameraCapabilities ()Lcom/kashif/cameraK/capabilities/CameraCapabilities;
+	public final fun getCameraState ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getCapabilities ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getCaptures ()Lkotlinx/coroutines/flow/SharedFlow;
+	public final fun getCloseCompletion ()Lkotlinx/coroutines/Job;
+	public final fun getDeviceOrientation ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getEvents ()Lkotlinx/coroutines/flow/SharedFlow;
+	public final fun getFrames ()Lcom/kashif/cameraK/frames/FrameSource;
+	public final fun getPreviewSource ()Lcom/kashif/cameraK/engine/PlatformPreviewSource;
+	public final fun getRecordingState ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getSelectsPlatformDefault ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getUiState ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getZoom ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun pauseRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun prepareRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun prepareRecording$default (Lcom/kashif/cameraK/state/CameraKStateHolder;Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun recheckPermission ()V
+	public final fun resumeRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun retry ()Z
+	public final fun selectCamera (Lcom/kashif/cameraK/enums/CameraLens;Lcom/kashif/cameraK/enums/CameraDeviceType;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun selectCamera (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun selectCamera$default (Lcom/kashif/cameraK/state/CameraKStateHolder;Lcom/kashif/cameraK/enums/CameraLens;Lcom/kashif/cameraK/enums/CameraDeviceType;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun setFlashMode (Lcom/kashif/cameraK/enums/FlashMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setTargetOrientation (Lcom/kashif/cameraK/enums/DeviceOrientation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setTorchMode (Lcom/kashif/cameraK/enums/TorchMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setZoom (FLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun shutdown ()V
+	public final fun start ()V
+	public final fun startRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun startRecording$default (Lcom/kashif/cameraK/state/CameraKStateHolder;Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun stop ()V
+	public final fun stopRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun toggleCameraLens ()V
+	public final fun toggleFlashMode ()V
+	public final fun toggleTorchMode ()V
+}
+
+public final class com/kashif/cameraK/state/CameraUIState {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCameraDeviceType ()Lcom/kashif/cameraK/enums/CameraDeviceType;
+	public final fun getCameraId ()Ljava/lang/String;
+	public final fun getCameraLens ()Lcom/kashif/cameraK/enums/CameraLens;
+	public final fun getFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
+	public final fun getPendingCaptures ()I
+	public final fun getTargetOrientation ()Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public final fun getTorchMode ()Lcom/kashif/cameraK/enums/TorchMode;
+	public fun hashCode ()I
+	public final fun isCapturing ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/Resolution {
+	public fun <init> (II)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHeight ()I
+	public final fun getWidth ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/state/ZoomState {
+	public fun <init> (FFF)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMaxRatio ()F
+	public final fun getMinRatio ()F
+	public final fun getRatio ()F
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface annotation class com/kashif/cameraK/utils/CameraKEngineApi : java/lang/annotation/Annotation {
+}
+
+public final class com/kashif/cameraK/utils/CameraKLogger {
+	public static final field INSTANCE Lcom/kashif/cameraK/utils/CameraKLogger;
+	public final fun d (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun e (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V
+	public static synthetic fun e$default (Lcom/kashif/cameraK/utils/CameraKLogger;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)V
+	public final fun getEnabled ()Z
+	public final fun getSink ()Lkotlin/jvm/functions/Function4;
+	public final fun setEnabled (Z)V
+	public final fun setSink (Lkotlin/jvm/functions/Function4;)V
+	public final fun w (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V
+	public static synthetic fun w$default (Lcom/kashif/cameraK/utils/CameraKLogger;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)V
+}
+
+public final class com/kashif/cameraK/utils/CameraKLogger$Level : java/lang/Enum {
+	public static final field DEBUG Lcom/kashif/cameraK/utils/CameraKLogger$Level;
+	public static final field ERROR Lcom/kashif/cameraK/utils/CameraKLogger$Level;
+	public static final field WARN Lcom/kashif/cameraK/utils/CameraKLogger$Level;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/utils/CameraKLogger$Level;
+	public static fun values ()[Lcom/kashif/cameraK/utils/CameraKLogger$Level;
+}
+
+public abstract interface annotation class com/kashif/cameraK/utils/CameraKPlatformApi : java/lang/annotation/Annotation {
+}
+
+public final class com/kashif/cameraK/utils/CaptureFileNamesKt {
+	public static final fun captureFileName (Ljava/lang/String;Ljava/lang/String;Lkotlin/random/Random;)Ljava/lang/String;
+	public static synthetic fun captureFileName$default (Ljava/lang/String;Ljava/lang/String;Lkotlin/random/Random;ILjava/lang/Object;)Ljava/lang/String;
+}
+
+public abstract interface annotation class com/kashif/cameraK/utils/InternalCameraKApi : java/lang/annotation/Annotation {
+}
+
+public abstract class com/kashif/cameraK/video/VideoCaptureResult {
+}
+
+public final class com/kashif/cameraK/video/VideoCaptureResult$Error : com/kashif/cameraK/video/VideoCaptureResult {
+	public fun <init> (Ljava/lang/Exception;)V
+	public final fun component1 ()Ljava/lang/Exception;
+	public final fun copy (Ljava/lang/Exception;)Lcom/kashif/cameraK/video/VideoCaptureResult$Error;
+	public static synthetic fun copy$default (Lcom/kashif/cameraK/video/VideoCaptureResult$Error;Ljava/lang/Exception;ILjava/lang/Object;)Lcom/kashif/cameraK/video/VideoCaptureResult$Error;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getException ()Ljava/lang/Exception;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/video/VideoCaptureResult$Success : com/kashif/cameraK/video/VideoCaptureResult {
+	public fun <init> (Ljava/lang/String;J)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun copy (Ljava/lang/String;J)Lcom/kashif/cameraK/video/VideoCaptureResult$Success;
+	public static synthetic fun copy$default (Lcom/kashif/cameraK/video/VideoCaptureResult$Success;Ljava/lang/String;JILjava/lang/Object;)Lcom/kashif/cameraK/video/VideoCaptureResult$Success;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDurationMs ()J
+	public final fun getFilePath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/video/VideoConfiguration {
+	public final fun copy (Lkotlin/jvm/functions/Function1;)Lcom/kashif/cameraK/video/VideoConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnableAudio ()Z
+	public final fun getFilePrefix ()Ljava/lang/String;
+	public final fun getMaxDuration-FghU774 ()Lkotlin/time/Duration;
+	public final fun getMaxFileSizeBytes ()Ljava/lang/Long;
+	public final fun getOutputDirectory ()Ljava/lang/String;
+	public final fun getQuality ()Lcom/kashif/cameraK/video/VideoQuality;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/cameraK/video/VideoConfiguration$Builder {
+	public final fun getEnableAudio ()Z
+	public final fun getFilePrefix ()Ljava/lang/String;
+	public final fun getMaxDuration-FghU774 ()Lkotlin/time/Duration;
+	public final fun getMaxFileSizeBytes ()Ljava/lang/Long;
+	public final fun getOutputDirectory ()Ljava/lang/String;
+	public final fun getQuality ()Lcom/kashif/cameraK/video/VideoQuality;
+	public final fun setEnableAudio (Z)V
+	public final fun setFilePrefix (Ljava/lang/String;)V
+	public final fun setMaxDuration-BwNAW2A (Lkotlin/time/Duration;)V
+	public final fun setMaxFileSizeBytes (Ljava/lang/Long;)V
+	public final fun setOutputDirectory (Ljava/lang/String;)V
+	public final fun setQuality (Lcom/kashif/cameraK/video/VideoQuality;)V
+}
+
+public final class com/kashif/cameraK/video/VideoConfigurationKt {
+	public static final fun VideoConfiguration (Lkotlin/jvm/functions/Function1;)Lcom/kashif/cameraK/video/VideoConfiguration;
+	public static synthetic fun VideoConfiguration$default (Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/kashif/cameraK/video/VideoConfiguration;
+	public static final fun VideoConfiguration-mY9Nd3A (Lcom/kashif/cameraK/video/VideoQuality;ZLkotlin/time/Duration;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;J)Lcom/kashif/cameraK/video/VideoConfiguration;
+	public static synthetic fun VideoConfiguration-mY9Nd3A$default (Lcom/kashif/cameraK/video/VideoQuality;ZLkotlin/time/Duration;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;JILjava/lang/Object;)Lcom/kashif/cameraK/video/VideoConfiguration;
+}
+
+public final class com/kashif/cameraK/video/VideoQuality : java/lang/Enum {
+	public static final field FHD Lcom/kashif/cameraK/video/VideoQuality;
+	public static final field HD Lcom/kashif/cameraK/video/VideoQuality;
+	public static final field SD Lcom/kashif/cameraK/video/VideoQuality;
+	public static final field UHD Lcom/kashif/cameraK/video/VideoQuality;
+	public final fun getBitrateBps ()I
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getHeight ()I
+	public final fun getWidth ()I
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/video/VideoQuality;
+	public static fun values ()[Lcom/kashif/cameraK/video/VideoQuality;
+}
+

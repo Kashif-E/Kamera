@@ -11,7 +11,7 @@ import kotlin.time.ExperimentalTime
  */
 @InternalCameraKApi
 @OptIn(ExperimentalTime::class)
-fun captureFileName(prefix: String, extension: String, random: Random = Random.Default): String {
+public fun captureFileName(prefix: String, extension: String, random: Random = Random.Default): String {
     val millis = Clock.System.now().toEpochMilliseconds()
     val suffix = random.nextInt().toUInt().toString(16).padStart(8, '0')
     return "${prefix}_${millis}_$suffix.$extension"

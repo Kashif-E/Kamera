@@ -1,0 +1,49 @@
+public final class com/kashif/cameraK/compose/CameraKScreenKt {
+	public static final fun CameraKScreen (Landroidx/compose/ui/Modifier;Lcom/kashif/cameraK/state/CameraKState;Lcom/kashif/cameraK/enums/DeviceOrientation;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function3;ZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun CameraKScreen (Lcom/kashif/cameraK/state/CameraKStateHolder;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class com/kashif/cameraK/compose/CameraPreviewKt {
+	public static final fun CameraPreview (Lcom/kashif/cameraK/state/CameraKStateHolder;Landroidx/compose/ui/Modifier;Ljava/lang/String;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
+public abstract interface class com/kashif/cameraK/compose/CameraPreviewScope : androidx/compose/foundation/layout/BoxScope {
+	public abstract fun getDeviceOrientation ()Lcom/kashif/cameraK/enums/DeviceOrientation;
+	public abstract fun keepUpright (Landroidx/compose/ui/Modifier;)Landroidx/compose/ui/Modifier;
+}
+
+public final class com/kashif/cameraK/compose/ComposableSingletons$CameraKScreenKt {
+	public static final field INSTANCE Lcom/kashif/cameraK/compose/ComposableSingletons$CameraKScreenKt;
+	public fun <init> ()V
+	public final fun getLambda$-774068693$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function2;
+	public final fun getLambda$1247929777$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$2011792275$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function2;
+	public final fun getLambda$280984956$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$405971343$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function3;
+}
+
+public final class com/kashif/cameraK/compose/ComposableSingletons$CameraPreviewKt {
+	public static final field INSTANCE Lcom/kashif/cameraK/compose/ComposableSingletons$CameraPreviewKt;
+	public fun <init> ()V
+	public final fun getLambda$-1675353941$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function3;
+}
+
+public final class com/kashif/cameraK/compose/RememberCameraKStateKt {
+	public static final fun rememberCameraKState (Lcom/kashif/cameraK/state/CameraConfiguration;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)Landroidx/compose/runtime/State;
+	public static final fun rememberCameraKStateHolder (Lcom/kashif/cameraK/state/CameraConfiguration;Ljava/util/List;Landroidx/lifecycle/LifecycleOwner;Landroidx/compose/runtime/Composer;II)Lcom/kashif/cameraK/state/CameraKStateHolder;
+}
+
+public final class com/kashif/cameraK/compose/RememberRecordingElapsedKt {
+	public static final fun rememberRecordingElapsed-WPwdCS8 (Lcom/kashif/cameraK/state/CameraKStateHolder;JLandroidx/compose/runtime/Composer;II)Landroidx/compose/runtime/State;
+}
+
+public abstract interface class com/kashif/cameraK/permissions/CameraKPermissionState {
+	public abstract fun getAllGranted ()Z
+	public abstract fun getStatuses ()Ljava/util/Map;
+	public abstract fun launchRequest ()V
+}
+
+public final class com/kashif/cameraK/permissions/RememberCameraKPermissionState_desktopKt {
+	public static final fun rememberCameraKPermissionState ([Lcom/kashif/cameraK/permissions/CameraKPermission;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)Lcom/kashif/cameraK/permissions/CameraKPermissionState;
+}
+

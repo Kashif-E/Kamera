@@ -11,8 +11,13 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 checks=(
+    :ImageSaverPlugin:checkKotlinAbi
     :Sample:checkMacOsCameraPackaging
+    :analyzerPlugin:checkKotlinAbi
+    :cameraK-core:checkKotlinAbi
+    :cameraK-testing:checkKotlinAbi
     :cameraK:checkComposableStability
+    :cameraK:checkKotlinAbi
     :checkAgentPermissions
     :checkAndroidSdkFloor
     :checkAndroidSdkFloorRules
@@ -34,6 +39,8 @@ checks=(
     :checkRepositoryLinks
     :checkSecurityPolicy
     :checkVerifyCoverage
+    :ocrPlugin:checkKotlinAbi
+    :qrScannerPlugin:checkKotlinAbi
     :spotlessCheck
 )
 

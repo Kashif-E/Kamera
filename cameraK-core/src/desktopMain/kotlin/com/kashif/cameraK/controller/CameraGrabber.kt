@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicLong
  * builds and runs it. [nanoClock] reads the capture time of each frame, which the recording
  * timestamps frames with.
  */
-class CameraGrabber internal constructor(private val nanoClock: () -> Long = System::nanoTime) {
+public class CameraGrabber internal constructor(private val nanoClock: () -> Long = System::nanoTime) {
     private val job = atomic<Job?>(null)
 
     // Serialises startRun() and stop(), so a run and the stop of the run before it never interleave.
@@ -69,7 +69,7 @@ class CameraGrabber internal constructor(private val nanoClock: () -> Long = Sys
         ReplaceWith("holder.capture()"),
         level = DeprecationLevel.ERROR,
     )
-    fun grabCurrentFrame(): BufferedImage? = throw removedIn2()
+    public fun grabCurrentFrame(): BufferedImage? = throw removedIn2()
 
     /** Whether a grab loop is running. */
     internal val isRunning: Boolean get() = job.value?.isActive == true

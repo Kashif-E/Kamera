@@ -1,5 +1,8 @@
+@file:OptIn(InternalCameraKApi::class)
+
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.utils.toNSData
 import kotlin.test.AfterTest
 import kotlin.test.Test

@@ -1,0 +1,80 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <io.github.kashif-mehmood-km:analyzerPlugin>
+final class com.kashif.analyzerplugin/AnalyzerConfig { // com.kashif.analyzerplugin/AnalyzerConfig|null[0]
+    final val jpegQuality // com.kashif.analyzerplugin/AnalyzerConfig.jpegQuality|{}jpegQuality[0]
+        final fun <get-jpegQuality>(): kotlin/Int // com.kashif.analyzerplugin/AnalyzerConfig.jpegQuality.<get-jpegQuality>|<get-jpegQuality>(){}[0]
+    final val maxDimension // com.kashif.analyzerplugin/AnalyzerConfig.maxDimension|{}maxDimension[0]
+        final fun <get-maxDimension>(): kotlin/Int? // com.kashif.analyzerplugin/AnalyzerConfig.maxDimension.<get-maxDimension>|<get-maxDimension>(){}[0]
+    final val maxFps // com.kashif.analyzerplugin/AnalyzerConfig.maxFps|{}maxFps[0]
+        final fun <get-maxFps>(): kotlin/Float // com.kashif.analyzerplugin/AnalyzerConfig.maxFps.<get-maxFps>|<get-maxFps>(){}[0]
+
+    final fun copy(kotlin/Function1<com.kashif.analyzerplugin/AnalyzerConfig.Builder, kotlin/Unit>): com.kashif.analyzerplugin/AnalyzerConfig // com.kashif.analyzerplugin/AnalyzerConfig.copy|copy(kotlin.Function1<com.kashif.analyzerplugin.AnalyzerConfig.Builder,kotlin.Unit>){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.analyzerplugin/AnalyzerConfig.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.analyzerplugin/AnalyzerConfig.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.analyzerplugin/AnalyzerConfig.toString|toString(){}[0]
+
+    final class Builder { // com.kashif.analyzerplugin/AnalyzerConfig.Builder|null[0]
+        final var jpegQuality // com.kashif.analyzerplugin/AnalyzerConfig.Builder.jpegQuality|{}jpegQuality[0]
+            final fun <get-jpegQuality>(): kotlin/Int // com.kashif.analyzerplugin/AnalyzerConfig.Builder.jpegQuality.<get-jpegQuality>|<get-jpegQuality>(){}[0]
+            final fun <set-jpegQuality>(kotlin/Int) // com.kashif.analyzerplugin/AnalyzerConfig.Builder.jpegQuality.<set-jpegQuality>|<set-jpegQuality>(kotlin.Int){}[0]
+        final var maxDimension // com.kashif.analyzerplugin/AnalyzerConfig.Builder.maxDimension|{}maxDimension[0]
+            final fun <get-maxDimension>(): kotlin/Int? // com.kashif.analyzerplugin/AnalyzerConfig.Builder.maxDimension.<get-maxDimension>|<get-maxDimension>(){}[0]
+            final fun <set-maxDimension>(kotlin/Int?) // com.kashif.analyzerplugin/AnalyzerConfig.Builder.maxDimension.<set-maxDimension>|<set-maxDimension>(kotlin.Int?){}[0]
+        final var maxFps // com.kashif.analyzerplugin/AnalyzerConfig.Builder.maxFps|{}maxFps[0]
+            final fun <get-maxFps>(): kotlin/Float // com.kashif.analyzerplugin/AnalyzerConfig.Builder.maxFps.<get-maxFps>|<get-maxFps>(){}[0]
+            final fun <set-maxFps>(kotlin/Float) // com.kashif.analyzerplugin/AnalyzerConfig.Builder.maxFps.<set-maxFps>|<set-maxFps>(kotlin.Float){}[0]
+    }
+}
+
+final class com.kashif.analyzerplugin/AnalyzerPlugin : com.kashif.cameraK.state/CameraKPlugin { // com.kashif.analyzerplugin/AnalyzerPlugin|null[0]
+    constructor <init>(com.kashif.analyzerplugin/AnalyzerConfig = ...) // com.kashif.analyzerplugin/AnalyzerPlugin.<init>|<init>(com.kashif.analyzerplugin.AnalyzerConfig){}[0]
+
+    final val config // com.kashif.analyzerplugin/AnalyzerPlugin.config|{}config[0]
+        final fun <get-config>(): com.kashif.analyzerplugin/AnalyzerConfig // com.kashif.analyzerplugin/AnalyzerPlugin.config.<get-config>|<get-config>(){}[0]
+    final val results // com.kashif.analyzerplugin/AnalyzerPlugin.results|{}results[0]
+        final fun <get-results>(): kotlinx.coroutines.flow/Flow<com.kashif.analyzerplugin/EncodedFrame> // com.kashif.analyzerplugin/AnalyzerPlugin.results.<get-results>|<get-results>(){}[0]
+    final val status // com.kashif.analyzerplugin/AnalyzerPlugin.status|{}status[0]
+        final fun <get-status>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.plugin/PluginStatus> // com.kashif.analyzerplugin/AnalyzerPlugin.status.<get-status>|<get-status>(){}[0]
+
+    final fun onAttach(com.kashif.cameraK.plugin/CameraKPluginContext) // com.kashif.analyzerplugin/AnalyzerPlugin.onAttach|onAttach(com.kashif.cameraK.plugin.CameraKPluginContext){}[0]
+    final fun onDetach() // com.kashif.analyzerplugin/AnalyzerPlugin.onDetach|onDetach(){}[0]
+    final fun pause() // com.kashif.analyzerplugin/AnalyzerPlugin.pause|pause(){}[0]
+    final fun resume() // com.kashif.analyzerplugin/AnalyzerPlugin.resume|resume(){}[0]
+}
+
+final class com.kashif.analyzerplugin/EncodedFrame { // com.kashif.analyzerplugin/EncodedFrame|null[0]
+    constructor <init>(kotlin/ByteArray, kotlin/Int, kotlin/Int, kotlin/Int, kotlin/Long) // com.kashif.analyzerplugin/EncodedFrame.<init>|<init>(kotlin.ByteArray;kotlin.Int;kotlin.Int;kotlin.Int;kotlin.Long){}[0]
+
+    final val bytes // com.kashif.analyzerplugin/EncodedFrame.bytes|{}bytes[0]
+        final fun <get-bytes>(): kotlin/ByteArray // com.kashif.analyzerplugin/EncodedFrame.bytes.<get-bytes>|<get-bytes>(){}[0]
+    final val height // com.kashif.analyzerplugin/EncodedFrame.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // com.kashif.analyzerplugin/EncodedFrame.height.<get-height>|<get-height>(){}[0]
+    final val rotationDegrees // com.kashif.analyzerplugin/EncodedFrame.rotationDegrees|{}rotationDegrees[0]
+        final fun <get-rotationDegrees>(): kotlin/Int // com.kashif.analyzerplugin/EncodedFrame.rotationDegrees.<get-rotationDegrees>|<get-rotationDegrees>(){}[0]
+    final val timestampNanos // com.kashif.analyzerplugin/EncodedFrame.timestampNanos|{}timestampNanos[0]
+        final fun <get-timestampNanos>(): kotlin/Long // com.kashif.analyzerplugin/EncodedFrame.timestampNanos.<get-timestampNanos>|<get-timestampNanos>(){}[0]
+    final val width // com.kashif.analyzerplugin/EncodedFrame.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // com.kashif.analyzerplugin/EncodedFrame.width.<get-width>|<get-width>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.analyzerplugin/EncodedFrame.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.analyzerplugin/EncodedFrame.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.analyzerplugin/EncodedFrame.toString|toString(){}[0]
+}
+
+final val com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerConfig$stableprop // com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerConfig$stableprop|#static{}com_kashif_analyzerplugin_AnalyzerConfig$stableprop[0]
+final val com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerConfig_Builder$stableprop // com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerConfig_Builder$stableprop|#static{}com_kashif_analyzerplugin_AnalyzerConfig_Builder$stableprop[0]
+final val com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerPlugin$stableprop // com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerPlugin$stableprop|#static{}com_kashif_analyzerplugin_AnalyzerPlugin$stableprop[0]
+final val com.kashif.analyzerplugin/com_kashif_analyzerplugin_EncodedFrame$stableprop // com.kashif.analyzerplugin/com_kashif_analyzerplugin_EncodedFrame$stableprop|#static{}com_kashif_analyzerplugin_EncodedFrame$stableprop[0]
+
+final fun com.kashif.analyzerplugin/AnalyzerConfig(kotlin/Function1<com.kashif.analyzerplugin/AnalyzerConfig.Builder, kotlin/Unit> = ...): com.kashif.analyzerplugin/AnalyzerConfig // com.kashif.analyzerplugin/AnalyzerConfig|AnalyzerConfig(kotlin.Function1<com.kashif.analyzerplugin.AnalyzerConfig.Builder,kotlin.Unit>){}[0]
+final fun com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerConfig$stableprop_getter(): kotlin/Int // com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerConfig$stableprop_getter|com_kashif_analyzerplugin_AnalyzerConfig$stableprop_getter(){}[0]
+final fun com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerConfig_Builder$stableprop_getter(): kotlin/Int // com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerConfig_Builder$stableprop_getter|com_kashif_analyzerplugin_AnalyzerConfig_Builder$stableprop_getter(){}[0]
+final fun com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerPlugin$stableprop_getter(): kotlin/Int // com.kashif.analyzerplugin/com_kashif_analyzerplugin_AnalyzerPlugin$stableprop_getter|com_kashif_analyzerplugin_AnalyzerPlugin$stableprop_getter(){}[0]
+final fun com.kashif.analyzerplugin/com_kashif_analyzerplugin_EncodedFrame$stableprop_getter(): kotlin/Int // com.kashif.analyzerplugin/com_kashif_analyzerplugin_EncodedFrame$stableprop_getter|com_kashif_analyzerplugin_EncodedFrame$stableprop_getter(){}[0]
+final fun com.kashif.analyzerplugin/rememberAnalyzerPlugin(com.kashif.analyzerplugin/AnalyzerConfig?, androidx.compose.runtime/Composer?, kotlin/Int, kotlin/Int): com.kashif.analyzerplugin/AnalyzerPlugin // com.kashif.analyzerplugin/rememberAnalyzerPlugin|rememberAnalyzerPlugin(com.kashif.analyzerplugin.AnalyzerConfig?;androidx.compose.runtime.Composer?;kotlin.Int;kotlin.Int){}[0]

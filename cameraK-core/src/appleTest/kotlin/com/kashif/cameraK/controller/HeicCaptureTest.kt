@@ -1,4 +1,4 @@
-@file:OptIn(CameraKEngineApi::class, ExperimentalForeignApi::class)
+@file:OptIn(CameraKEngineApi::class, ExperimentalForeignApi::class, InternalCameraKApi::class)
 
 package com.kashif.cameraK.controller
 
@@ -12,6 +12,7 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.utils.toByteArray
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AVFoundation.AVVideoCodecKey

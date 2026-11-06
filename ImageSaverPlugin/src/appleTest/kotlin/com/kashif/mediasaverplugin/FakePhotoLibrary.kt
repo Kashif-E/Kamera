@@ -1,7 +1,8 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, InternalCameraKApi::class)
 
 package com.kashif.mediasaverplugin
 
+import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.utils.toNSData
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.update

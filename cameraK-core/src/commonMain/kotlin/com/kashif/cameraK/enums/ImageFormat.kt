@@ -7,7 +7,7 @@ package com.kashif.cameraK.enums
  * it is written. [HEIC] is written only on iOS, where the photo output can encode HEVC; elsewhere a
  * capture or start configured as HEIC fails with `Unsupported(IMAGE_FORMAT)` and writes nothing.
  */
-enum class ImageFormat(val extension: String, val mimeType: String) {
+public enum class ImageFormat(public val extension: String, public val mimeType: String) {
     JPEG("jpg", "image/jpeg"),
     PNG("png", "image/png"),
     HEIC("heic", "image/heic"),

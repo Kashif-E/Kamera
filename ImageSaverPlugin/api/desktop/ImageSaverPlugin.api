@@ -1,0 +1,86 @@
+public final class com/kashif/imagesaverplugin/ImageSaverPluginKt {
+	public static final fun rememberImageSaverPlugin (Lcom/kashif/mediasaverplugin/MediaSaverConfig;Landroidx/compose/runtime/Composer;I)Lcom/kashif/mediasaverplugin/MediaSaverPlugin;
+}
+
+public final class com/kashif/mediasaverplugin/GalleryDestination : java/lang/Enum {
+	public static final field DCIM Lcom/kashif/mediasaverplugin/GalleryDestination;
+	public static final field DOCUMENTS Lcom/kashif/mediasaverplugin/GalleryDestination;
+	public static final field PICTURES Lcom/kashif/mediasaverplugin/GalleryDestination;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/mediasaverplugin/GalleryDestination;
+	public static fun values ()[Lcom/kashif/mediasaverplugin/GalleryDestination;
+}
+
+public final class com/kashif/mediasaverplugin/MediaSaverConfig {
+	public static final field $stable I
+	public final fun copy (Lkotlin/jvm/functions/Function1;)Lcom/kashif/mediasaverplugin/MediaSaverConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAutoSave ()Z
+	public final fun getDestination ()Lcom/kashif/mediasaverplugin/GalleryDestination;
+	public final fun getFolderName ()Ljava/lang/String;
+	public final fun getImageFormat ()Lcom/kashif/cameraK/enums/ImageFormat;
+	public final fun getPrefix ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/mediasaverplugin/MediaSaverConfig$Builder {
+	public static final field $stable I
+	public final fun getAutoSave ()Z
+	public final fun getDestination ()Lcom/kashif/mediasaverplugin/GalleryDestination;
+	public final fun getFolderName ()Ljava/lang/String;
+	public final fun getImageFormat ()Lcom/kashif/cameraK/enums/ImageFormat;
+	public final fun getPrefix ()Ljava/lang/String;
+	public final fun setAutoSave (Z)V
+	public final fun setDestination (Lcom/kashif/mediasaverplugin/GalleryDestination;)V
+	public final fun setFolderName (Ljava/lang/String;)V
+	public final fun setImageFormat (Lcom/kashif/cameraK/enums/ImageFormat;)V
+	public final fun setPrefix (Ljava/lang/String;)V
+}
+
+public final class com/kashif/mediasaverplugin/MediaSaverConfigKt {
+	public static final fun MediaSaverConfig (Lkotlin/jvm/functions/Function1;)Lcom/kashif/mediasaverplugin/MediaSaverConfig;
+	public static synthetic fun MediaSaverConfig$default (Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/kashif/mediasaverplugin/MediaSaverConfig;
+}
+
+public final class com/kashif/mediasaverplugin/MediaSaverPlugin : com/kashif/cameraK/state/CameraKPlugin {
+	public static final field $stable I
+	public fun <init> (Lcom/kashif/mediasaverplugin/MediaSaverConfig;Lcom/kashif/cameraK/platform/CameraKPlatformContext;)V
+	public final fun getByteArrayFrom (Ljava/lang/String;)[B
+	public final fun getConfig ()Lcom/kashif/mediasaverplugin/MediaSaverConfig;
+	public final fun getGalleryPermission ()Lcom/kashif/cameraK/permissions/CameraKPermission;
+	public fun getId ()Ljava/lang/String;
+	public fun getNeedsFrames ()Z
+	public final fun getResults ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getStatus ()Lkotlinx/coroutines/flow/StateFlow;
+	public fun onAttach (Lcom/kashif/cameraK/plugin/CameraKPluginContext;)V
+	public fun onDetach ()V
+	public final fun readBytes (Lcom/kashif/mediasaverplugin/SavedImage;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun save (Lcom/kashif/cameraK/capture/CapturedImage;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun save (Lcom/kashif/cameraK/capture/RecordedVideo;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun save$default (Lcom/kashif/mediasaverplugin/MediaSaverPlugin;Lcom/kashif/cameraK/capture/CapturedImage;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun save$default (Lcom/kashif/mediasaverplugin/MediaSaverPlugin;Lcom/kashif/cameraK/capture/RecordedVideo;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/kashif/mediasaverplugin/MediaSaverPluginKt {
+	public static final fun rememberMediaSaverPlugin (Lcom/kashif/mediasaverplugin/MediaSaverConfig;Lcom/kashif/cameraK/platform/CameraKPlatformContext;Landroidx/compose/runtime/Composer;II)Lcom/kashif/mediasaverplugin/MediaSaverPlugin;
+}
+
+public final class com/kashif/mediasaverplugin/SavedImage {
+	public static final field $stable I
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsset ()Lcom/kashif/cameraK/capture/GalleryAsset;
+	public final fun getDisplayName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/mediasaverplugin/SavedVideo {
+	public static final field $stable I
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAsset ()Lcom/kashif/cameraK/capture/GalleryAsset;
+	public final fun getDisplayName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+

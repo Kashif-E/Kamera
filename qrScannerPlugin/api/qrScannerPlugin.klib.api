@@ -1,0 +1,123 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <io.github.kashif-mehmood-km:qrScannerPlugin>
+final class com.kashif.qrscannerplugin/Barcode { // com.kashif.qrscannerplugin/Barcode|null[0]
+    constructor <init>(kotlin/String?, kotlin/ByteArray?, com.kashif.qrscannerplugin/BarcodeFormat, com.kashif.cameraK.frames/FrameRect?) // com.kashif.qrscannerplugin/Barcode.<init>|<init>(kotlin.String?;kotlin.ByteArray?;com.kashif.qrscannerplugin.BarcodeFormat;com.kashif.cameraK.frames.FrameRect?){}[0]
+
+    final val boundingBox // com.kashif.qrscannerplugin/Barcode.boundingBox|{}boundingBox[0]
+        final fun <get-boundingBox>(): com.kashif.cameraK.frames/FrameRect? // com.kashif.qrscannerplugin/Barcode.boundingBox.<get-boundingBox>|<get-boundingBox>(){}[0]
+    final val format // com.kashif.qrscannerplugin/Barcode.format|{}format[0]
+        final fun <get-format>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/Barcode.format.<get-format>|<get-format>(){}[0]
+    final val rawBytes // com.kashif.qrscannerplugin/Barcode.rawBytes|{}rawBytes[0]
+        final fun <get-rawBytes>(): kotlin/ByteArray? // com.kashif.qrscannerplugin/Barcode.rawBytes.<get-rawBytes>|<get-rawBytes>(){}[0]
+    final val rawValue // com.kashif.qrscannerplugin/Barcode.rawValue|{}rawValue[0]
+        final fun <get-rawValue>(): kotlin/String? // com.kashif.qrscannerplugin/Barcode.rawValue.<get-rawValue>|<get-rawValue>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.qrscannerplugin/Barcode.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.qrscannerplugin/Barcode.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.qrscannerplugin/Barcode.toString|toString(){}[0]
+}
+
+final class com.kashif.qrscannerplugin/QRScannerConfig { // com.kashif.qrscannerplugin/QRScannerConfig|null[0]
+    final val dedupeWindow // com.kashif.qrscannerplugin/QRScannerConfig.dedupeWindow|{}dedupeWindow[0]
+        final fun <get-dedupeWindow>(): kotlin.time/Duration // com.kashif.qrscannerplugin/QRScannerConfig.dedupeWindow.<get-dedupeWindow>|<get-dedupeWindow>(){}[0]
+    final val formats // com.kashif.qrscannerplugin/QRScannerConfig.formats|{}formats[0]
+        final fun <get-formats>(): kotlin.collections/Set<com.kashif.qrscannerplugin/BarcodeFormat> // com.kashif.qrscannerplugin/QRScannerConfig.formats.<get-formats>|<get-formats>(){}[0]
+    final val maxFps // com.kashif.qrscannerplugin/QRScannerConfig.maxFps|{}maxFps[0]
+        final fun <get-maxFps>(): kotlin/Float // com.kashif.qrscannerplugin/QRScannerConfig.maxFps.<get-maxFps>|<get-maxFps>(){}[0]
+    final val region // com.kashif.qrscannerplugin/QRScannerConfig.region|{}region[0]
+        final fun <get-region>(): com.kashif.cameraK.frames/FrameRect? // com.kashif.qrscannerplugin/QRScannerConfig.region.<get-region>|<get-region>(){}[0]
+
+    final fun copy(kotlin/Function1<com.kashif.qrscannerplugin/QRScannerConfig.Builder, kotlin/Unit>): com.kashif.qrscannerplugin/QRScannerConfig // com.kashif.qrscannerplugin/QRScannerConfig.copy|copy(kotlin.Function1<com.kashif.qrscannerplugin.QRScannerConfig.Builder,kotlin.Unit>){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.qrscannerplugin/QRScannerConfig.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.qrscannerplugin/QRScannerConfig.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.qrscannerplugin/QRScannerConfig.toString|toString(){}[0]
+
+    final class Builder { // com.kashif.qrscannerplugin/QRScannerConfig.Builder|null[0]
+        final var dedupeWindow // com.kashif.qrscannerplugin/QRScannerConfig.Builder.dedupeWindow|{}dedupeWindow[0]
+            final fun <get-dedupeWindow>(): kotlin.time/Duration // com.kashif.qrscannerplugin/QRScannerConfig.Builder.dedupeWindow.<get-dedupeWindow>|<get-dedupeWindow>(){}[0]
+            final fun <set-dedupeWindow>(kotlin.time/Duration) // com.kashif.qrscannerplugin/QRScannerConfig.Builder.dedupeWindow.<set-dedupeWindow>|<set-dedupeWindow>(kotlin.time.Duration){}[0]
+        final var formats // com.kashif.qrscannerplugin/QRScannerConfig.Builder.formats|{}formats[0]
+            final fun <get-formats>(): kotlin.collections/Set<com.kashif.qrscannerplugin/BarcodeFormat> // com.kashif.qrscannerplugin/QRScannerConfig.Builder.formats.<get-formats>|<get-formats>(){}[0]
+            final fun <set-formats>(kotlin.collections/Set<com.kashif.qrscannerplugin/BarcodeFormat>) // com.kashif.qrscannerplugin/QRScannerConfig.Builder.formats.<set-formats>|<set-formats>(kotlin.collections.Set<com.kashif.qrscannerplugin.BarcodeFormat>){}[0]
+        final var maxFps // com.kashif.qrscannerplugin/QRScannerConfig.Builder.maxFps|{}maxFps[0]
+            final fun <get-maxFps>(): kotlin/Float // com.kashif.qrscannerplugin/QRScannerConfig.Builder.maxFps.<get-maxFps>|<get-maxFps>(){}[0]
+            final fun <set-maxFps>(kotlin/Float) // com.kashif.qrscannerplugin/QRScannerConfig.Builder.maxFps.<set-maxFps>|<set-maxFps>(kotlin.Float){}[0]
+        final var region // com.kashif.qrscannerplugin/QRScannerConfig.Builder.region|{}region[0]
+            final fun <get-region>(): com.kashif.cameraK.frames/FrameRect? // com.kashif.qrscannerplugin/QRScannerConfig.Builder.region.<get-region>|<get-region>(){}[0]
+            final fun <set-region>(com.kashif.cameraK.frames/FrameRect?) // com.kashif.qrscannerplugin/QRScannerConfig.Builder.region.<set-region>|<set-region>(com.kashif.cameraK.frames.FrameRect?){}[0]
+    }
+}
+
+final class com.kashif.qrscannerplugin/QRScannerPlugin : com.kashif.cameraK.state/CameraKPlugin { // com.kashif.qrscannerplugin/QRScannerPlugin|null[0]
+    constructor <init>(com.kashif.qrscannerplugin/QRScannerConfig = ...) // com.kashif.qrscannerplugin/QRScannerPlugin.<init>|<init>(com.kashif.qrscannerplugin.QRScannerConfig){}[0]
+
+    final val config // com.kashif.qrscannerplugin/QRScannerPlugin.config|{}config[0]
+        final fun <get-config>(): com.kashif.qrscannerplugin/QRScannerConfig // com.kashif.qrscannerplugin/QRScannerPlugin.config.<get-config>|<get-config>(){}[0]
+    final val results // com.kashif.qrscannerplugin/QRScannerPlugin.results|{}results[0]
+        final fun <get-results>(): kotlinx.coroutines.flow/Flow<com.kashif.qrscannerplugin/Barcode> // com.kashif.qrscannerplugin/QRScannerPlugin.results.<get-results>|<get-results>(){}[0]
+    final val status // com.kashif.qrscannerplugin/QRScannerPlugin.status|{}status[0]
+        final fun <get-status>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.plugin/PluginStatus> // com.kashif.qrscannerplugin/QRScannerPlugin.status.<get-status>|<get-status>(){}[0]
+
+    final fun onAttach(com.kashif.cameraK.plugin/CameraKPluginContext) // com.kashif.qrscannerplugin/QRScannerPlugin.onAttach|onAttach(com.kashif.cameraK.plugin.CameraKPluginContext){}[0]
+    final fun onDetach() // com.kashif.qrscannerplugin/QRScannerPlugin.onDetach|onDetach(){}[0]
+    final fun pause() // com.kashif.qrscannerplugin/QRScannerPlugin.pause|pause(){}[0]
+    final fun resume() // com.kashif.qrscannerplugin/QRScannerPlugin.resume|resume(){}[0]
+}
+
+final value class com.kashif.qrscannerplugin/BarcodeFormat { // com.kashif.qrscannerplugin/BarcodeFormat|null[0]
+    final val name // com.kashif.qrscannerplugin/BarcodeFormat.name|{}name[0]
+        final fun <get-name>(): kotlin/String // com.kashif.qrscannerplugin/BarcodeFormat.name.<get-name>|<get-name>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.qrscannerplugin/BarcodeFormat.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.qrscannerplugin/BarcodeFormat.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.qrscannerplugin/BarcodeFormat.toString|toString(){}[0]
+
+    final object Companion { // com.kashif.qrscannerplugin/BarcodeFormat.Companion|null[0]
+        final val AZTEC // com.kashif.qrscannerplugin/BarcodeFormat.Companion.AZTEC|{}AZTEC[0]
+            final fun <get-AZTEC>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.AZTEC.<get-AZTEC>|<get-AZTEC>(){}[0]
+        final val CODABAR // com.kashif.qrscannerplugin/BarcodeFormat.Companion.CODABAR|{}CODABAR[0]
+            final fun <get-CODABAR>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.CODABAR.<get-CODABAR>|<get-CODABAR>(){}[0]
+        final val CODE_128 // com.kashif.qrscannerplugin/BarcodeFormat.Companion.CODE_128|{}CODE_128[0]
+            final fun <get-CODE_128>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.CODE_128.<get-CODE_128>|<get-CODE_128>(){}[0]
+        final val CODE_39 // com.kashif.qrscannerplugin/BarcodeFormat.Companion.CODE_39|{}CODE_39[0]
+            final fun <get-CODE_39>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.CODE_39.<get-CODE_39>|<get-CODE_39>(){}[0]
+        final val CODE_93 // com.kashif.qrscannerplugin/BarcodeFormat.Companion.CODE_93|{}CODE_93[0]
+            final fun <get-CODE_93>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.CODE_93.<get-CODE_93>|<get-CODE_93>(){}[0]
+        final val DATA_MATRIX // com.kashif.qrscannerplugin/BarcodeFormat.Companion.DATA_MATRIX|{}DATA_MATRIX[0]
+            final fun <get-DATA_MATRIX>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.DATA_MATRIX.<get-DATA_MATRIX>|<get-DATA_MATRIX>(){}[0]
+        final val EAN_13 // com.kashif.qrscannerplugin/BarcodeFormat.Companion.EAN_13|{}EAN_13[0]
+            final fun <get-EAN_13>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.EAN_13.<get-EAN_13>|<get-EAN_13>(){}[0]
+        final val EAN_8 // com.kashif.qrscannerplugin/BarcodeFormat.Companion.EAN_8|{}EAN_8[0]
+            final fun <get-EAN_8>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.EAN_8.<get-EAN_8>|<get-EAN_8>(){}[0]
+        final val ITF // com.kashif.qrscannerplugin/BarcodeFormat.Companion.ITF|{}ITF[0]
+            final fun <get-ITF>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.ITF.<get-ITF>|<get-ITF>(){}[0]
+        final val PDF_417 // com.kashif.qrscannerplugin/BarcodeFormat.Companion.PDF_417|{}PDF_417[0]
+            final fun <get-PDF_417>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.PDF_417.<get-PDF_417>|<get-PDF_417>(){}[0]
+        final val QR_CODE // com.kashif.qrscannerplugin/BarcodeFormat.Companion.QR_CODE|{}QR_CODE[0]
+            final fun <get-QR_CODE>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.QR_CODE.<get-QR_CODE>|<get-QR_CODE>(){}[0]
+        final val UPC_A // com.kashif.qrscannerplugin/BarcodeFormat.Companion.UPC_A|{}UPC_A[0]
+            final fun <get-UPC_A>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.UPC_A.<get-UPC_A>|<get-UPC_A>(){}[0]
+        final val UPC_E // com.kashif.qrscannerplugin/BarcodeFormat.Companion.UPC_E|{}UPC_E[0]
+            final fun <get-UPC_E>(): com.kashif.qrscannerplugin/BarcodeFormat // com.kashif.qrscannerplugin/BarcodeFormat.Companion.UPC_E.<get-UPC_E>|<get-UPC_E>(){}[0]
+        final val entries // com.kashif.qrscannerplugin/BarcodeFormat.Companion.entries|{}entries[0]
+            final fun <get-entries>(): kotlin.collections/List<com.kashif.qrscannerplugin/BarcodeFormat> // com.kashif.qrscannerplugin/BarcodeFormat.Companion.entries.<get-entries>|<get-entries>(){}[0]
+    }
+}
+
+final val com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_Barcode$stableprop // com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_Barcode$stableprop|#static{}com_kashif_qrscannerplugin_Barcode$stableprop[0]
+final val com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerConfig$stableprop // com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerConfig$stableprop|#static{}com_kashif_qrscannerplugin_QRScannerConfig$stableprop[0]
+final val com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerConfig_Builder$stableprop // com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerConfig_Builder$stableprop|#static{}com_kashif_qrscannerplugin_QRScannerConfig_Builder$stableprop[0]
+final val com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerPlugin$stableprop // com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerPlugin$stableprop|#static{}com_kashif_qrscannerplugin_QRScannerPlugin$stableprop[0]
+
+final fun com.kashif.qrscannerplugin/QRScannerConfig(kotlin/Function1<com.kashif.qrscannerplugin/QRScannerConfig.Builder, kotlin/Unit> = ...): com.kashif.qrscannerplugin/QRScannerConfig // com.kashif.qrscannerplugin/QRScannerConfig|QRScannerConfig(kotlin.Function1<com.kashif.qrscannerplugin.QRScannerConfig.Builder,kotlin.Unit>){}[0]
+final fun com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_Barcode$stableprop_getter(): kotlin/Int // com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_Barcode$stableprop_getter|com_kashif_qrscannerplugin_Barcode$stableprop_getter(){}[0]
+final fun com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerConfig$stableprop_getter(): kotlin/Int // com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerConfig$stableprop_getter|com_kashif_qrscannerplugin_QRScannerConfig$stableprop_getter(){}[0]
+final fun com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerConfig_Builder$stableprop_getter(): kotlin/Int // com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerConfig_Builder$stableprop_getter|com_kashif_qrscannerplugin_QRScannerConfig_Builder$stableprop_getter(){}[0]
+final fun com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerPlugin$stableprop_getter(): kotlin/Int // com.kashif.qrscannerplugin/com_kashif_qrscannerplugin_QRScannerPlugin$stableprop_getter|com_kashif_qrscannerplugin_QRScannerPlugin$stableprop_getter(){}[0]
+final fun com.kashif.qrscannerplugin/rememberQRScannerPlugin(com.kashif.qrscannerplugin/QRScannerConfig?, androidx.compose.runtime/Composer?, kotlin/Int, kotlin/Int): com.kashif.qrscannerplugin/QRScannerPlugin // com.kashif.qrscannerplugin/rememberQRScannerPlugin|rememberQRScannerPlugin(com.kashif.qrscannerplugin.QRScannerConfig?;androidx.compose.runtime.Composer?;kotlin.Int;kotlin.Int){}[0]

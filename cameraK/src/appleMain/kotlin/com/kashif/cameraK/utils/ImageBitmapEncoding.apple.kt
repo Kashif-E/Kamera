@@ -5,7 +5,7 @@ import androidx.compose.ui.graphics.asSkiaBitmap
 import org.jetbrains.skia.Data
 import org.jetbrains.skia.Image
 
-fun ImageBitmap.toByteArray(): ByteArray? {
+public fun ImageBitmap.toByteArray(): ByteArray? {
     val skiaBitmap = this.asSkiaBitmap()
     val skiaImage: Image = Image.makeFromBitmap(skiaBitmap)
 

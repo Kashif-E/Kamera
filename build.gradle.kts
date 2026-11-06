@@ -66,6 +66,22 @@ tasks.named("spotlessCheck") { group = lintGroup }
 
 val bomModule = "camerak-bom"
 
+// Every published module states the visibility of each declaration (explicit API mode), and checks its
+// public ABI against the dumps committed under its api/ directory: a JVM dump per JVM target and one klib
+// dump for the native targets. checkKotlinAbi runs in the lint target; after a reviewed change,
+// ./gradlew updateKotlinAbi rewrites the dumps (CONTRIBUTING.md).
+subprojects {
+    if (name !in publishedModules) return@subprojects
+    plugins.withId("org.jetbrains.kotlin.multiplatform") {
+        extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension> {
+            explicitApi()
+            @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
+            abiValidation()
+        }
+        tasks.matching { it.name == "checkKotlinAbi" }.configureEach { group = lintGroup }
+    }
+}
+
 // The 1.x artifact ids 2.0 renamed (design §9.4), each to the module whose POM_ARTIFACT_ID is its 2.0
 // id. Each old id is a POM-only project under relocations/ whose POM relocates it there, so a build
 // that still names the old id resolves the new one. video_recorder_plugin has no 2.0 successor.
@@ -908,18 +924,63 @@ fun PublicDeclaration.isLive(): Boolean =
 
 fun PublicDeclaration.describe(): String = "$location: ${header.lines().first().trim()}"
 
+fun headerProblems(
+    declarations: List<PublicDeclaration>,
+    pattern: Regex,
+    reason: String,
+): List<String> =
+    declarations
+        .filter { it.isLive() && pattern.containsMatchIn(it.header) }
+        .map { "${it.describe()}: $reason" }
+
 // public_data_class_fails_lint: a public data class cannot grow without breaking binaries (CC-28).
-fun publicDataClassProblems(declarations: List<PublicDeclaration>): List<String> = emptyList()
+fun publicDataClassProblems(declarations: List<PublicDeclaration>): List<String> =
+    headerProblems(
+        declarations,
+        Regex("""\bdata\s+class\b"""),
+        "a public data class; its copy and componentN change signature with every new property",
+    )
 
 // public_channel_fails_lint: a Channel in a public signature hands callers the library's own queue.
-fun publicChannelProblems(declarations: List<PublicDeclaration>): List<String> = emptyList()
+fun publicChannelProblems(declarations: List<PublicDeclaration>): List<String> =
+    headerProblems(
+        declarations,
+        Regex("""\b(?:Send|Receive)?Channel\s*<"""),
+        "a Channel in a public signature; expose a Flow",
+    )
 
 // public_mutable_flow_fails_lint: a Mutable*Flow in a public signature lets callers write library state.
-fun publicMutableFlowProblems(declarations: List<PublicDeclaration>): List<String> = emptyList()
+fun publicMutableFlowProblems(declarations: List<PublicDeclaration>): List<String> =
+    headerProblems(
+        declarations,
+        Regex("""\bMutable(?:State|Shared)Flow\b"""),
+        "a mutable flow in a public signature; expose a StateFlow or SharedFlow",
+    )
+
+// The first words of a KDoc, without its comment markers.
+fun kdocText(kdoc: String): String =
+    kdoc
+        .lines()
+        .joinToString(" ") {
+            it
+                .trim()
+                .removePrefix("/**")
+                .removeSuffix("*/")
+                .removePrefix("*")
+                .trim()
+        }.trim()
 
 // public_sealed_or_enum_without_classification_fails_lint: every public sealed type and enum states in its
-// KDoc's first words whether it is closed or open (Decision 8, design §4).
-fun unclassifiedHierarchyProblems(declarations: List<PublicDeclaration>): List<String> = emptyList()
+// KDoc's first words whether it is closed or open (Decision 8, design §4). An actual declaration's KDoc is
+// on its expect.
+fun unclassifiedHierarchyProblems(declarations: List<PublicDeclaration>): List<String> =
+    declarations
+        .filter { declaration ->
+            declaration.isLive() &&
+                Regex("""\b(?:sealed\s+(?:class|interface)|enum\s+class)\b""").containsMatchIn(declaration.header) &&
+                !Regex("""\bactual\b""").containsMatchIn(declaration.header) &&
+                kdocText(declaration.kdoc).let { !it.startsWith("Closed") && !it.startsWith("Open") }
+        }.map { "${it.describe()}: its KDoc does not open with \"Closed\" or \"Open\" (design §4)" }
 
 // unreviewed_abi_change_fails: every published module validates its ABI against committed dumps, and its
 // check task is in the lint group, so verify.sh fails on any ABI change the dumps do not record.
@@ -929,7 +990,21 @@ fun abiValidationProblems(
     modules: List<String>,
     enabled: Map<String, Boolean>,
     checkTaskGroups: Map<String, String?>,
-): List<String> = emptyList()
+): List<String> =
+    modules.flatMap { module ->
+        val group = checkTaskGroups[module]
+        listOfNotNull(
+            "$module does not validate its ABI".takeIf { enabled[module] != true },
+            "$module has no $abiCheckTask task".takeIf {
+                enabled[module] == true &&
+                    !checkTaskGroups.containsKey(
+                        module,
+                    )
+            },
+            "$module's $abiCheckTask is not in the '$lintGroup' group, so verify.sh never runs it"
+                .takeIf { enabled[module] == true && group != lintGroup },
+        )
+    }
 
 // The public declarations of every published module's main sources (src/*Main).
 fun publishedApiDeclarations(moduleDirs: List<File>): List<PublicDeclaration> =
@@ -951,9 +1026,12 @@ fun apiRuleCase(
     sources: List<PublicDeclaration>,
 ): List<String> {
     val accepted = rule(publicDeclarations("Kept.kt", "package fixture\n\n$kept\n"))
+    // The hint's @Deprecated goes on the declaration itself, below any KDoc.
     val hint =
-        "package fixture\n\n@Deprecated(\"Removed\", level = DeprecationLevel.ERROR)\n" +
-            planted.replace("Planted", "Hint") + "\n"
+        "package fixture\n\n" +
+            planted
+                .replace("Planted", "Hint")
+                .replaceFirst("public ", "@Deprecated(\"Removed\", level = DeprecationLevel.ERROR)\npublic ") + "\n"
     return listOfNotNull(
         "the planted source is accepted:\n$planted"
             .takeIf { rule(publicDeclarations("Planted.kt", "package fixture\n\n$planted\n")).isEmpty() },
@@ -2342,8 +2420,13 @@ val lintChecksFile = layout.buildDirectory.file("verify/lint-checks.txt")
 // purpose means removing it here and in scripts/test_lint_minimum_set.sh too, which covers this list.
 val requiredLintChecks =
     listOf(
+        ":ImageSaverPlugin:checkKotlinAbi",
         ":Sample:checkMacOsCameraPackaging",
+        ":analyzerPlugin:checkKotlinAbi",
+        ":cameraK-core:checkKotlinAbi",
+        ":cameraK-testing:checkKotlinAbi",
         ":cameraK:checkComposableStability",
+        ":cameraK:checkKotlinAbi",
         ":checkAgentPermissions",
         ":checkAndroidSdkFloor",
         ":checkAndroidSdkFloorRules",
@@ -2365,6 +2448,8 @@ val requiredLintChecks =
         ":checkRepositoryLinks",
         ":checkSecurityPolicy",
         ":checkVerifyCoverage",
+        ":ocrPlugin:checkKotlinAbi",
+        ":qrScannerPlugin:checkKotlinAbi",
         ":spotlessCheck",
     )
 

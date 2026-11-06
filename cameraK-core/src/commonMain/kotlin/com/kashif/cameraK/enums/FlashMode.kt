@@ -1,9 +1,9 @@
 package com.kashif.cameraK.enums
 
 /**
- * Enum representing the flash mode of the camera.
+ * Closed: the flash mode of the camera. A new mode waits for a major release.
  */
-enum class FlashMode {
+public enum class FlashMode {
     ON,
     OFF,
     AUTO,

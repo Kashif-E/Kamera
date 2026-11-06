@@ -1,9 +1,10 @@
 package com.kashif.cameraK.enums
 
 /**
- * Enum class representing the quality prioritization options for image capture.
+ * Closed: the quality prioritization options for image capture. A new option waits for a major
+ * release.
  */
-enum class QualityPrioritization {
+public enum class QualityPrioritization {
     QUALITY,
     SPEED,
     BALANCED,

@@ -1,7 +1,8 @@
 package com.kashif.cameraK.enums
 
 /**
- * Enum representing different types of camera devices/lenses available on a device.
+ * Closed: the types of camera devices/lenses available on a device. A new type waits for a major
+ * release.
  *
  * Note: Availability varies by device hardware and platform:
  * - iOS: All types supported via AVFoundation device types
@@ -10,7 +11,7 @@ package com.kashif.cameraK.enums
  *   falling back to the default camera when the requested type isn't present
  * - Desktop: Not supported (single camera only)
  */
-enum class CameraDeviceType {
+public enum class CameraDeviceType {
     /**
      * Standard wide-angle camera (main camera).
      * Available on most devices.

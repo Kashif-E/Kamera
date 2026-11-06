@@ -37,7 +37,7 @@ import com.kashif.cameraK.state.CameraKStateHolder
  * @sample com.kashif.cameraK.samples.CameraKScreenSample
  */
 @Composable
-fun CameraKScreen(
+public fun CameraKScreen(
     holder: CameraKStateHolder,
     modifier: Modifier = Modifier,
     loading: @Composable () -> Unit = {},
@@ -106,7 +106,7 @@ internal fun DefaultErrorSlot(error: CameraKError, retry: () -> Unit) {
 )
 @Suppress("UNUSED_PARAMETER")
 @Composable
-fun CameraKScreen(
+public fun CameraKScreen(
     modifier: Modifier = Modifier,
     cameraState: CameraKState,
     deviceOrientation: DeviceOrientation = DeviceOrientation.PORTRAIT,

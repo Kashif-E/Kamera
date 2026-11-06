@@ -1,0 +1,1541 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <io.github.kashif-mehmood-km:cameraK-core>
+open annotation class com.kashif.cameraK.utils/CameraKEngineApi : kotlin/Annotation { // com.kashif.cameraK.utils/CameraKEngineApi|null[0]
+    constructor <init>() // com.kashif.cameraK.utils/CameraKEngineApi.<init>|<init>(){}[0]
+}
+
+open annotation class com.kashif.cameraK.utils/CameraKPlatformApi : kotlin/Annotation { // com.kashif.cameraK.utils/CameraKPlatformApi|null[0]
+    constructor <init>() // com.kashif.cameraK.utils/CameraKPlatformApi.<init>|<init>(){}[0]
+}
+
+open annotation class com.kashif.cameraK.utils/InternalCameraKApi : kotlin/Annotation { // com.kashif.cameraK.utils/InternalCameraKApi|null[0]
+    constructor <init>() // com.kashif.cameraK.utils/InternalCameraKApi.<init>|<init>(){}[0]
+}
+
+final enum class com.kashif.cameraK.enums/AspectRatio : kotlin/Enum<com.kashif.cameraK.enums/AspectRatio> { // com.kashif.cameraK.enums/AspectRatio|null[0]
+    enum entry RATIO_16_9 // com.kashif.cameraK.enums/AspectRatio.RATIO_16_9|null[0]
+    enum entry RATIO_1_1 // com.kashif.cameraK.enums/AspectRatio.RATIO_1_1|null[0]
+    enum entry RATIO_4_3 // com.kashif.cameraK.enums/AspectRatio.RATIO_4_3|null[0]
+    enum entry RATIO_9_16 // com.kashif.cameraK.enums/AspectRatio.RATIO_9_16|null[0]
+
+    final val entries // com.kashif.cameraK.enums/AspectRatio.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.enums/AspectRatio> // com.kashif.cameraK.enums/AspectRatio.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.enums/AspectRatio // com.kashif.cameraK.enums/AspectRatio.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.enums/AspectRatio> // com.kashif.cameraK.enums/AspectRatio.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.enums/CameraDeviceType : kotlin/Enum<com.kashif.cameraK.enums/CameraDeviceType> { // com.kashif.cameraK.enums/CameraDeviceType|null[0]
+    enum entry DEFAULT // com.kashif.cameraK.enums/CameraDeviceType.DEFAULT|null[0]
+    enum entry MACRO // com.kashif.cameraK.enums/CameraDeviceType.MACRO|null[0]
+    enum entry TELEPHOTO // com.kashif.cameraK.enums/CameraDeviceType.TELEPHOTO|null[0]
+    enum entry ULTRA_WIDE // com.kashif.cameraK.enums/CameraDeviceType.ULTRA_WIDE|null[0]
+    enum entry WIDE_ANGLE // com.kashif.cameraK.enums/CameraDeviceType.WIDE_ANGLE|null[0]
+
+    final val entries // com.kashif.cameraK.enums/CameraDeviceType.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.enums/CameraDeviceType> // com.kashif.cameraK.enums/CameraDeviceType.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.enums/CameraDeviceType // com.kashif.cameraK.enums/CameraDeviceType.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.enums/CameraDeviceType> // com.kashif.cameraK.enums/CameraDeviceType.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.enums/CameraLens : kotlin/Enum<com.kashif.cameraK.enums/CameraLens> { // com.kashif.cameraK.enums/CameraLens|null[0]
+    enum entry BACK // com.kashif.cameraK.enums/CameraLens.BACK|null[0]
+    enum entry FRONT // com.kashif.cameraK.enums/CameraLens.FRONT|null[0]
+
+    final val entries // com.kashif.cameraK.enums/CameraLens.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.enums/CameraLens> // com.kashif.cameraK.enums/CameraLens.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.enums/CameraLens // com.kashif.cameraK.enums/CameraLens.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.enums/CameraLens> // com.kashif.cameraK.enums/CameraLens.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.enums/DeviceOrientation : kotlin/Enum<com.kashif.cameraK.enums/DeviceOrientation> { // com.kashif.cameraK.enums/DeviceOrientation|null[0]
+    enum entry LANDSCAPE_LEFT // com.kashif.cameraK.enums/DeviceOrientation.LANDSCAPE_LEFT|null[0]
+    enum entry LANDSCAPE_RIGHT // com.kashif.cameraK.enums/DeviceOrientation.LANDSCAPE_RIGHT|null[0]
+    enum entry PORTRAIT // com.kashif.cameraK.enums/DeviceOrientation.PORTRAIT|null[0]
+    enum entry PORTRAIT_UPSIDE_DOWN // com.kashif.cameraK.enums/DeviceOrientation.PORTRAIT_UPSIDE_DOWN|null[0]
+
+    final val compensationDegrees // com.kashif.cameraK.enums/DeviceOrientation.compensationDegrees|{}compensationDegrees[0]
+        final fun <get-compensationDegrees>(): kotlin/Float // com.kashif.cameraK.enums/DeviceOrientation.compensationDegrees.<get-compensationDegrees>|<get-compensationDegrees>(){}[0]
+    final val degrees // com.kashif.cameraK.enums/DeviceOrientation.degrees|{}degrees[0]
+        final fun <get-degrees>(): kotlin/Int // com.kashif.cameraK.enums/DeviceOrientation.degrees.<get-degrees>|<get-degrees>(){}[0]
+    final val entries // com.kashif.cameraK.enums/DeviceOrientation.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.enums/DeviceOrientation> // com.kashif.cameraK.enums/DeviceOrientation.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.enums/DeviceOrientation // com.kashif.cameraK.enums/DeviceOrientation.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.enums/DeviceOrientation> // com.kashif.cameraK.enums/DeviceOrientation.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.enums/Directory : kotlin/Enum<com.kashif.cameraK.enums/Directory> { // com.kashif.cameraK.enums/Directory|null[0]
+    enum entry DCIM // com.kashif.cameraK.enums/Directory.DCIM|null[0]
+    enum entry DOCUMENTS // com.kashif.cameraK.enums/Directory.DOCUMENTS|null[0]
+    enum entry PICTURES // com.kashif.cameraK.enums/Directory.PICTURES|null[0]
+
+    final val entries // com.kashif.cameraK.enums/Directory.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.enums/Directory> // com.kashif.cameraK.enums/Directory.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.enums/Directory // com.kashif.cameraK.enums/Directory.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.enums/Directory> // com.kashif.cameraK.enums/Directory.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.enums/FlashMode : kotlin/Enum<com.kashif.cameraK.enums/FlashMode> { // com.kashif.cameraK.enums/FlashMode|null[0]
+    enum entry AUTO // com.kashif.cameraK.enums/FlashMode.AUTO|null[0]
+    enum entry OFF // com.kashif.cameraK.enums/FlashMode.OFF|null[0]
+    enum entry ON // com.kashif.cameraK.enums/FlashMode.ON|null[0]
+
+    final val entries // com.kashif.cameraK.enums/FlashMode.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.enums/FlashMode> // com.kashif.cameraK.enums/FlashMode.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.enums/FlashMode // com.kashif.cameraK.enums/FlashMode.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.enums/FlashMode> // com.kashif.cameraK.enums/FlashMode.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.enums/ImageFormat : kotlin/Enum<com.kashif.cameraK.enums/ImageFormat> { // com.kashif.cameraK.enums/ImageFormat|null[0]
+    enum entry HEIC // com.kashif.cameraK.enums/ImageFormat.HEIC|null[0]
+    enum entry JPEG // com.kashif.cameraK.enums/ImageFormat.JPEG|null[0]
+    enum entry PNG // com.kashif.cameraK.enums/ImageFormat.PNG|null[0]
+
+    final val entries // com.kashif.cameraK.enums/ImageFormat.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.enums/ImageFormat> // com.kashif.cameraK.enums/ImageFormat.entries.<get-entries>|<get-entries>#static(){}[0]
+    final val extension // com.kashif.cameraK.enums/ImageFormat.extension|{}extension[0]
+        final fun <get-extension>(): kotlin/String // com.kashif.cameraK.enums/ImageFormat.extension.<get-extension>|<get-extension>(){}[0]
+    final val mimeType // com.kashif.cameraK.enums/ImageFormat.mimeType|{}mimeType[0]
+        final fun <get-mimeType>(): kotlin/String // com.kashif.cameraK.enums/ImageFormat.mimeType.<get-mimeType>|<get-mimeType>(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.enums/ImageFormat // com.kashif.cameraK.enums/ImageFormat.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.enums/ImageFormat> // com.kashif.cameraK.enums/ImageFormat.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.enums/QualityPrioritization : kotlin/Enum<com.kashif.cameraK.enums/QualityPrioritization> { // com.kashif.cameraK.enums/QualityPrioritization|null[0]
+    enum entry BALANCED // com.kashif.cameraK.enums/QualityPrioritization.BALANCED|null[0]
+    enum entry NONE // com.kashif.cameraK.enums/QualityPrioritization.NONE|null[0]
+    enum entry QUALITY // com.kashif.cameraK.enums/QualityPrioritization.QUALITY|null[0]
+    enum entry SPEED // com.kashif.cameraK.enums/QualityPrioritization.SPEED|null[0]
+
+    final val entries // com.kashif.cameraK.enums/QualityPrioritization.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.enums/QualityPrioritization> // com.kashif.cameraK.enums/QualityPrioritization.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.enums/QualityPrioritization // com.kashif.cameraK.enums/QualityPrioritization.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.enums/QualityPrioritization> // com.kashif.cameraK.enums/QualityPrioritization.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.enums/TorchMode : kotlin/Enum<com.kashif.cameraK.enums/TorchMode> { // com.kashif.cameraK.enums/TorchMode|null[0]
+    enum entry AUTO // com.kashif.cameraK.enums/TorchMode.AUTO|null[0]
+    enum entry OFF // com.kashif.cameraK.enums/TorchMode.OFF|null[0]
+    enum entry ON // com.kashif.cameraK.enums/TorchMode.ON|null[0]
+
+    final val entries // com.kashif.cameraK.enums/TorchMode.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.enums/TorchMode> // com.kashif.cameraK.enums/TorchMode.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.enums/TorchMode // com.kashif.cameraK.enums/TorchMode.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.enums/TorchMode> // com.kashif.cameraK.enums/TorchMode.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.frames/FrameFormat : kotlin/Enum<com.kashif.cameraK.frames/FrameFormat> { // com.kashif.cameraK.frames/FrameFormat|null[0]
+    enum entry RGBA_8888 // com.kashif.cameraK.frames/FrameFormat.RGBA_8888|null[0]
+    enum entry YUV_420 // com.kashif.cameraK.frames/FrameFormat.YUV_420|null[0]
+
+    final val entries // com.kashif.cameraK.frames/FrameFormat.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.frames/FrameFormat> // com.kashif.cameraK.frames/FrameFormat.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.frames/FrameFormat // com.kashif.cameraK.frames/FrameFormat.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.frames/FrameFormat> // com.kashif.cameraK.frames/FrameFormat.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.permissions/CameraKPermission : kotlin/Enum<com.kashif.cameraK.permissions/CameraKPermission> { // com.kashif.cameraK.permissions/CameraKPermission|null[0]
+    enum entry CAMERA // com.kashif.cameraK.permissions/CameraKPermission.CAMERA|null[0]
+    enum entry GALLERY_ADD // com.kashif.cameraK.permissions/CameraKPermission.GALLERY_ADD|null[0]
+    enum entry MICROPHONE // com.kashif.cameraK.permissions/CameraKPermission.MICROPHONE|null[0]
+
+    final val entries // com.kashif.cameraK.permissions/CameraKPermission.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.permissions/CameraKPermission> // com.kashif.cameraK.permissions/CameraKPermission.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.permissions/CameraKPermission // com.kashif.cameraK.permissions/CameraKPermission.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.permissions/CameraKPermission> // com.kashif.cameraK.permissions/CameraKPermission.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.recording/RecordingEndReason : kotlin/Enum<com.kashif.cameraK.recording/RecordingEndReason> { // com.kashif.cameraK.recording/RecordingEndReason|null[0]
+    enum entry ERROR // com.kashif.cameraK.recording/RecordingEndReason.ERROR|null[0]
+    enum entry INTERRUPTED // com.kashif.cameraK.recording/RecordingEndReason.INTERRUPTED|null[0]
+    enum entry MAX_DURATION // com.kashif.cameraK.recording/RecordingEndReason.MAX_DURATION|null[0]
+    enum entry MAX_FILE_SIZE // com.kashif.cameraK.recording/RecordingEndReason.MAX_FILE_SIZE|null[0]
+    enum entry SHUTDOWN // com.kashif.cameraK.recording/RecordingEndReason.SHUTDOWN|null[0]
+    enum entry USER // com.kashif.cameraK.recording/RecordingEndReason.USER|null[0]
+
+    final val entries // com.kashif.cameraK.recording/RecordingEndReason.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.recording/RecordingEndReason> // com.kashif.cameraK.recording/RecordingEndReason.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.recording/RecordingEndReason // com.kashif.cameraK.recording/RecordingEndReason.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.recording/RecordingEndReason> // com.kashif.cameraK.recording/RecordingEndReason.values|values#static(){}[0]
+}
+
+final enum class com.kashif.cameraK.video/VideoQuality : kotlin/Enum<com.kashif.cameraK.video/VideoQuality> { // com.kashif.cameraK.video/VideoQuality|null[0]
+    enum entry FHD // com.kashif.cameraK.video/VideoQuality.FHD|null[0]
+    enum entry HD // com.kashif.cameraK.video/VideoQuality.HD|null[0]
+    enum entry SD // com.kashif.cameraK.video/VideoQuality.SD|null[0]
+    enum entry UHD // com.kashif.cameraK.video/VideoQuality.UHD|null[0]
+
+    final val bitrateBps // com.kashif.cameraK.video/VideoQuality.bitrateBps|{}bitrateBps[0]
+        final fun <get-bitrateBps>(): kotlin/Int // com.kashif.cameraK.video/VideoQuality.bitrateBps.<get-bitrateBps>|<get-bitrateBps>(){}[0]
+    final val entries // com.kashif.cameraK.video/VideoQuality.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.video/VideoQuality> // com.kashif.cameraK.video/VideoQuality.entries.<get-entries>|<get-entries>#static(){}[0]
+    final val height // com.kashif.cameraK.video/VideoQuality.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // com.kashif.cameraK.video/VideoQuality.height.<get-height>|<get-height>(){}[0]
+    final val width // com.kashif.cameraK.video/VideoQuality.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // com.kashif.cameraK.video/VideoQuality.width.<get-width>|<get-width>(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.cameraK.video/VideoQuality // com.kashif.cameraK.video/VideoQuality.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.cameraK.video/VideoQuality> // com.kashif.cameraK.video/VideoQuality.values|values#static(){}[0]
+}
+
+abstract fun interface com.kashif.cameraK.engine/CameraEngineFactory { // com.kashif.cameraK.engine/CameraEngineFactory|null[0]
+    abstract fun create(com.kashif.cameraK.state/CameraConfiguration, com.kashif.cameraK.engine/CameraKEnvironment): com.kashif.cameraK.engine/CameraEngine // com.kashif.cameraK.engine/CameraEngineFactory.create|create(com.kashif.cameraK.state.CameraConfiguration;com.kashif.cameraK.engine.CameraKEnvironment){}[0]
+}
+
+abstract fun interface com.kashif.cameraK.frames/FrameAnalyzer { // com.kashif.cameraK.frames/FrameAnalyzer|null[0]
+    abstract fun analyze(com.kashif.cameraK.frames/CameraFrame) // com.kashif.cameraK.frames/FrameAnalyzer.analyze|analyze(com.kashif.cameraK.frames.CameraFrame){}[0]
+}
+
+abstract fun interface com.kashif.cameraK.permissions/CameraKPermissionChecker { // com.kashif.cameraK.permissions/CameraKPermissionChecker|null[0]
+    abstract fun status(com.kashif.cameraK.permissions/CameraKPermission): com.kashif.cameraK.permissions/PermissionStatus // com.kashif.cameraK.permissions/CameraKPermissionChecker.status|status(com.kashif.cameraK.permissions.CameraKPermission){}[0]
+    open fun allowsOpen(com.kashif.cameraK.permissions/PermissionStatus): kotlin/Boolean // com.kashif.cameraK.permissions/CameraKPermissionChecker.allowsOpen|allowsOpen(com.kashif.cameraK.permissions.PermissionStatus){}[0]
+}
+
+abstract interface com.kashif.cameraK.engine/CameraEngine { // com.kashif.cameraK.engine/CameraEngine|null[0]
+    abstract val capabilities // com.kashif.cameraK.engine/CameraEngine.capabilities|{}capabilities[0]
+        abstract fun <get-capabilities>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.capabilities/CameraCapabilities> // com.kashif.cameraK.engine/CameraEngine.capabilities.<get-capabilities>|<get-capabilities>(){}[0]
+    abstract val deviceOrientation // com.kashif.cameraK.engine/CameraEngine.deviceOrientation|{}deviceOrientation[0]
+        abstract fun <get-deviceOrientation>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.enums/DeviceOrientation> // com.kashif.cameraK.engine/CameraEngine.deviceOrientation.<get-deviceOrientation>|<get-deviceOrientation>(){}[0]
+    abstract val frames // com.kashif.cameraK.engine/CameraEngine.frames|{}frames[0]
+        abstract fun <get-frames>(): com.kashif.cameraK.frames/FrameSource // com.kashif.cameraK.engine/CameraEngine.frames.<get-frames>|<get-frames>(){}[0]
+    abstract val hardware // com.kashif.cameraK.engine/CameraEngine.hardware|{}hardware[0]
+        abstract fun <get-hardware>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.engine/HardwareState> // com.kashif.cameraK.engine/CameraEngine.hardware.<get-hardware>|<get-hardware>(){}[0]
+    abstract val preview // com.kashif.cameraK.engine/CameraEngine.preview|{}preview[0]
+        abstract fun <get-preview>(): com.kashif.cameraK.engine/PlatformPreviewSource // com.kashif.cameraK.engine/CameraEngine.preview.<get-preview>|<get-preview>(){}[0]
+    abstract val recordingEvents // com.kashif.cameraK.engine/CameraEngine.recordingEvents|{}recordingEvents[0]
+        abstract fun <get-recordingEvents>(): kotlinx.coroutines.flow/Flow<com.kashif.cameraK.engine/EngineRecordingEvent> // com.kashif.cameraK.engine/CameraEngine.recordingEvents.<get-recordingEvents>|<get-recordingEvents>(){}[0]
+    abstract val state // com.kashif.cameraK.engine/CameraEngine.state|{}state[0]
+        abstract fun <get-state>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.engine/EngineState> // com.kashif.cameraK.engine/CameraEngine.state.<get-state>|<get-state>(){}[0]
+    abstract val zoom // com.kashif.cameraK.engine/CameraEngine.zoom|{}zoom[0]
+        abstract fun <get-zoom>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.state/ZoomState> // com.kashif.cameraK.engine/CameraEngine.zoom.<get-zoom>|<get-zoom>(){}[0]
+
+    abstract fun close() // com.kashif.cameraK.engine/CameraEngine.close|close(){}[0]
+    abstract suspend fun capture(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/CapturedImage> // com.kashif.cameraK.engine/CameraEngine.capture|capture(){}[0]
+    abstract suspend fun closeAndJoin() // com.kashif.cameraK.engine/CameraEngine.closeAndJoin|closeAndJoin(){}[0]
+    abstract suspend fun pauseRecording(): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.engine/CameraEngine.pauseRecording|pauseRecording(){}[0]
+    abstract suspend fun prepareRecording(com.kashif.cameraK.video/VideoConfiguration): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.engine/CameraEngine.prepareRecording|prepareRecording(com.kashif.cameraK.video.VideoConfiguration){}[0]
+    abstract suspend fun resumeRecording(): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.engine/CameraEngine.resumeRecording|resumeRecording(){}[0]
+    abstract suspend fun selectCamera(com.kashif.cameraK.engine/CameraSelection): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.engine/CameraEngine.selectCamera|selectCamera(com.kashif.cameraK.engine.CameraSelection){}[0]
+    abstract suspend fun setFlashMode(com.kashif.cameraK.enums/FlashMode): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.enums/FlashMode> // com.kashif.cameraK.engine/CameraEngine.setFlashMode|setFlashMode(com.kashif.cameraK.enums.FlashMode){}[0]
+    abstract suspend fun setTargetOrientation(com.kashif.cameraK.enums/DeviceOrientation?): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.engine/CameraEngine.setTargetOrientation|setTargetOrientation(com.kashif.cameraK.enums.DeviceOrientation?){}[0]
+    abstract suspend fun setTorchMode(com.kashif.cameraK.enums/TorchMode): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.enums/TorchMode> // com.kashif.cameraK.engine/CameraEngine.setTorchMode|setTorchMode(com.kashif.cameraK.enums.TorchMode){}[0]
+    abstract suspend fun setZoom(kotlin/Float): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.state/ZoomState> // com.kashif.cameraK.engine/CameraEngine.setZoom|setZoom(kotlin.Float){}[0]
+    abstract suspend fun start(com.kashif.cameraK.engine/DesiredHardware): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.engine/CameraEngine.start|start(com.kashif.cameraK.engine.DesiredHardware){}[0]
+    abstract suspend fun startRecording(com.kashif.cameraK.video/VideoConfiguration): com.kashif.cameraK.result/CameraKResult<kotlin/String> // com.kashif.cameraK.engine/CameraEngine.startRecording|startRecording(com.kashif.cameraK.video.VideoConfiguration){}[0]
+    abstract suspend fun stop() // com.kashif.cameraK.engine/CameraEngine.stop|stop(){}[0]
+    abstract suspend fun stopRecording(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/RecordedVideo> // com.kashif.cameraK.engine/CameraEngine.stopRecording|stopRecording(){}[0]
+}
+
+abstract interface com.kashif.cameraK.engine/PlatformPreviewSource { // com.kashif.cameraK.engine/PlatformPreviewSource|null[0]
+    abstract fun createPreviewLayer(): platform.AVFoundation/AVCaptureVideoPreviewLayer // com.kashif.cameraK.engine/PlatformPreviewSource.createPreviewLayer|createPreviewLayer(){}[0]
+}
+
+abstract interface com.kashif.cameraK.frames/CameraFrame { // com.kashif.cameraK.frames/CameraFrame|null[0]
+    abstract val cropRect // com.kashif.cameraK.frames/CameraFrame.cropRect|{}cropRect[0]
+        abstract fun <get-cropRect>(): com.kashif.cameraK.frames/FrameRect // com.kashif.cameraK.frames/CameraFrame.cropRect.<get-cropRect>|<get-cropRect>(){}[0]
+    abstract val format // com.kashif.cameraK.frames/CameraFrame.format|{}format[0]
+        abstract fun <get-format>(): com.kashif.cameraK.frames/FrameFormat // com.kashif.cameraK.frames/CameraFrame.format.<get-format>|<get-format>(){}[0]
+    abstract val height // com.kashif.cameraK.frames/CameraFrame.height|{}height[0]
+        abstract fun <get-height>(): kotlin/Int // com.kashif.cameraK.frames/CameraFrame.height.<get-height>|<get-height>(){}[0]
+    abstract val planes // com.kashif.cameraK.frames/CameraFrame.planes|{}planes[0]
+        abstract fun <get-planes>(): kotlin.collections/List<com.kashif.cameraK.frames/FramePlane> // com.kashif.cameraK.frames/CameraFrame.planes.<get-planes>|<get-planes>(){}[0]
+    abstract val rotationDegrees // com.kashif.cameraK.frames/CameraFrame.rotationDegrees|{}rotationDegrees[0]
+        abstract fun <get-rotationDegrees>(): kotlin/Int // com.kashif.cameraK.frames/CameraFrame.rotationDegrees.<get-rotationDegrees>|<get-rotationDegrees>(){}[0]
+    abstract val timestampNanos // com.kashif.cameraK.frames/CameraFrame.timestampNanos|{}timestampNanos[0]
+        abstract fun <get-timestampNanos>(): kotlin/Long // com.kashif.cameraK.frames/CameraFrame.timestampNanos.<get-timestampNanos>|<get-timestampNanos>(){}[0]
+    abstract val width // com.kashif.cameraK.frames/CameraFrame.width|{}width[0]
+        abstract fun <get-width>(): kotlin/Int // com.kashif.cameraK.frames/CameraFrame.width.<get-width>|<get-width>(){}[0]
+
+    abstract fun retain(): com.kashif.cameraK.frames/RetainedFrame // com.kashif.cameraK.frames/CameraFrame.retain|retain(){}[0]
+}
+
+abstract interface com.kashif.cameraK.frames/FramePlane { // com.kashif.cameraK.frames/FramePlane|null[0]
+    abstract val pixelStride // com.kashif.cameraK.frames/FramePlane.pixelStride|{}pixelStride[0]
+        abstract fun <get-pixelStride>(): kotlin/Int // com.kashif.cameraK.frames/FramePlane.pixelStride.<get-pixelStride>|<get-pixelStride>(){}[0]
+    abstract val rowStride // com.kashif.cameraK.frames/FramePlane.rowStride|{}rowStride[0]
+        abstract fun <get-rowStride>(): kotlin/Int // com.kashif.cameraK.frames/FramePlane.rowStride.<get-rowStride>|<get-rowStride>(){}[0]
+    abstract val size // com.kashif.cameraK.frames/FramePlane.size|{}size[0]
+        abstract fun <get-size>(): kotlin/Int // com.kashif.cameraK.frames/FramePlane.size.<get-size>|<get-size>(){}[0]
+
+    abstract fun copyTo(kotlin/ByteArray, kotlin/Int = ...): kotlin/Int // com.kashif.cameraK.frames/FramePlane.copyTo|copyTo(kotlin.ByteArray;kotlin.Int){}[0]
+    abstract fun copyTo(kotlin/ByteArray, kotlin/Int, kotlin/Int, kotlin/Int) // com.kashif.cameraK.frames/FramePlane.copyTo|copyTo(kotlin.ByteArray;kotlin.Int;kotlin.Int;kotlin.Int){}[0]
+}
+
+abstract interface com.kashif.cameraK.frames/FrameRegistration : kotlin/AutoCloseable { // com.kashif.cameraK.frames/FrameRegistration|null[0]
+    abstract val active // com.kashif.cameraK.frames/FrameRegistration.active|{}active[0]
+        abstract fun <get-active>(): kotlinx.coroutines.flow/StateFlow<kotlin/Boolean> // com.kashif.cameraK.frames/FrameRegistration.active.<get-active>|<get-active>(){}[0]
+    abstract val rejection // com.kashif.cameraK.frames/FrameRegistration.rejection|{}rejection[0]
+        abstract fun <get-rejection>(): com.kashif.cameraK.error/CameraKError? // com.kashif.cameraK.frames/FrameRegistration.rejection.<get-rejection>|<get-rejection>(){}[0]
+}
+
+abstract interface com.kashif.cameraK.frames/FrameSource { // com.kashif.cameraK.frames/FrameSource|null[0]
+    abstract fun register(com.kashif.cameraK.frames/FrameSpec = ..., com.kashif.cameraK.frames/FrameAnalyzer): com.kashif.cameraK.frames/FrameRegistration // com.kashif.cameraK.frames/FrameSource.register|register(com.kashif.cameraK.frames.FrameSpec;com.kashif.cameraK.frames.FrameAnalyzer){}[0]
+}
+
+abstract interface com.kashif.cameraK.frames/RetainedFrame : com.kashif.cameraK.frames/CameraFrame, kotlin/AutoCloseable // com.kashif.cameraK.frames/RetainedFrame|null[0]
+
+abstract interface com.kashif.cameraK.plugin/CameraKPluginContext { // com.kashif.cameraK.plugin/CameraKPluginContext|null[0]
+    abstract val cameraState // com.kashif.cameraK.plugin/CameraKPluginContext.cameraState|{}cameraState[0]
+        abstract fun <get-cameraState>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.state/CameraKState> // com.kashif.cameraK.plugin/CameraKPluginContext.cameraState.<get-cameraState>|<get-cameraState>(){}[0]
+    abstract val capabilities // com.kashif.cameraK.plugin/CameraKPluginContext.capabilities|{}capabilities[0]
+        abstract fun <get-capabilities>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.capabilities/CameraCapabilities> // com.kashif.cameraK.plugin/CameraKPluginContext.capabilities.<get-capabilities>|<get-capabilities>(){}[0]
+    abstract val captures // com.kashif.cameraK.plugin/CameraKPluginContext.captures|{}captures[0]
+        abstract fun <get-captures>(): kotlinx.coroutines.flow/SharedFlow<com.kashif.cameraK.capture/CapturedImage> // com.kashif.cameraK.plugin/CameraKPluginContext.captures.<get-captures>|<get-captures>(){}[0]
+    abstract val deviceOrientation // com.kashif.cameraK.plugin/CameraKPluginContext.deviceOrientation|{}deviceOrientation[0]
+        abstract fun <get-deviceOrientation>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.enums/DeviceOrientation> // com.kashif.cameraK.plugin/CameraKPluginContext.deviceOrientation.<get-deviceOrientation>|<get-deviceOrientation>(){}[0]
+    abstract val dispatchers // com.kashif.cameraK.plugin/CameraKPluginContext.dispatchers|{}dispatchers[0]
+        abstract fun <get-dispatchers>(): com.kashif.cameraK.coroutines/CameraKDispatchers // com.kashif.cameraK.plugin/CameraKPluginContext.dispatchers.<get-dispatchers>|<get-dispatchers>(){}[0]
+    abstract val failure // com.kashif.cameraK.plugin/CameraKPluginContext.failure|{}failure[0]
+        abstract fun <get-failure>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.error/CameraKError?> // com.kashif.cameraK.plugin/CameraKPluginContext.failure.<get-failure>|<get-failure>(){}[0]
+    abstract val frames // com.kashif.cameraK.plugin/CameraKPluginContext.frames|{}frames[0]
+        abstract fun <get-frames>(): com.kashif.cameraK.frames/FrameSource // com.kashif.cameraK.plugin/CameraKPluginContext.frames.<get-frames>|<get-frames>(){}[0]
+    abstract val recordingState // com.kashif.cameraK.plugin/CameraKPluginContext.recordingState|{}recordingState[0]
+        abstract fun <get-recordingState>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.recording/RecordingState> // com.kashif.cameraK.plugin/CameraKPluginContext.recordingState.<get-recordingState>|<get-recordingState>(){}[0]
+    abstract val scope // com.kashif.cameraK.plugin/CameraKPluginContext.scope|{}scope[0]
+        abstract fun <get-scope>(): kotlinx.coroutines/CoroutineScope // com.kashif.cameraK.plugin/CameraKPluginContext.scope.<get-scope>|<get-scope>(){}[0]
+    abstract val uiState // com.kashif.cameraK.plugin/CameraKPluginContext.uiState|{}uiState[0]
+        abstract fun <get-uiState>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.state/CameraUIState> // com.kashif.cameraK.plugin/CameraKPluginContext.uiState.<get-uiState>|<get-uiState>(){}[0]
+
+    abstract fun reportFailure(com.kashif.cameraK.error/CameraKError) // com.kashif.cameraK.plugin/CameraKPluginContext.reportFailure|reportFailure(com.kashif.cameraK.error.CameraKError){}[0]
+}
+
+abstract interface com.kashif.cameraK.state/CameraKPlugin { // com.kashif.cameraK.state/CameraKPlugin|null[0]
+    open val id // com.kashif.cameraK.state/CameraKPlugin.id|{}id[0]
+        open fun <get-id>(): kotlin/String // com.kashif.cameraK.state/CameraKPlugin.id.<get-id>|<get-id>(){}[0]
+    open val needsFrames // com.kashif.cameraK.state/CameraKPlugin.needsFrames|{}needsFrames[0]
+        open fun <get-needsFrames>(): kotlin/Boolean // com.kashif.cameraK.state/CameraKPlugin.needsFrames.<get-needsFrames>|<get-needsFrames>(){}[0]
+
+    abstract fun onAttach(com.kashif.cameraK.plugin/CameraKPluginContext) // com.kashif.cameraK.state/CameraKPlugin.onAttach|onAttach(com.kashif.cameraK.plugin.CameraKPluginContext){}[0]
+    abstract fun onDetach() // com.kashif.cameraK.state/CameraKPlugin.onDetach|onDetach(){}[0]
+}
+
+sealed interface <#A: out kotlin/Any?> com.kashif.cameraK.result/CameraKResult { // com.kashif.cameraK.result/CameraKResult|null[0]
+    final class <#A1: out kotlin/Any?> Success : com.kashif.cameraK.result/CameraKResult<#A1> { // com.kashif.cameraK.result/CameraKResult.Success|null[0]
+        constructor <init>(#A1) // com.kashif.cameraK.result/CameraKResult.Success.<init>|<init>(1:0){}[0]
+
+        final val value // com.kashif.cameraK.result/CameraKResult.Success.value|{}value[0]
+            final fun <get-value>(): #A1 // com.kashif.cameraK.result/CameraKResult.Success.value.<get-value>|<get-value>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.result/CameraKResult.Success.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.result/CameraKResult.Success.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.result/CameraKResult.Success.toString|toString(){}[0]
+    }
+
+    final class Failure : com.kashif.cameraK.result/CameraKResult<kotlin/Nothing> { // com.kashif.cameraK.result/CameraKResult.Failure|null[0]
+        constructor <init>(com.kashif.cameraK.error/CameraKError) // com.kashif.cameraK.result/CameraKResult.Failure.<init>|<init>(com.kashif.cameraK.error.CameraKError){}[0]
+
+        final val error // com.kashif.cameraK.result/CameraKResult.Failure.error|{}error[0]
+            final fun <get-error>(): com.kashif.cameraK.error/CameraKError // com.kashif.cameraK.result/CameraKResult.Failure.error.<get-error>|<get-error>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.result/CameraKResult.Failure.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.result/CameraKResult.Failure.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.result/CameraKResult.Failure.toString|toString(){}[0]
+    }
+}
+
+sealed interface com.kashif.cameraK.engine/CameraSelection { // com.kashif.cameraK.engine/CameraSelection|null[0]
+    final class ById : com.kashif.cameraK.engine/CameraSelection { // com.kashif.cameraK.engine/CameraSelection.ById|null[0]
+        constructor <init>(kotlin/String) // com.kashif.cameraK.engine/CameraSelection.ById.<init>|<init>(kotlin.String){}[0]
+
+        final val id // com.kashif.cameraK.engine/CameraSelection.ById.id|{}id[0]
+            final fun <get-id>(): kotlin/String // com.kashif.cameraK.engine/CameraSelection.ById.id.<get-id>|<get-id>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/CameraSelection.ById.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/CameraSelection.ById.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/CameraSelection.ById.toString|toString(){}[0]
+    }
+
+    final class ByLens : com.kashif.cameraK.engine/CameraSelection { // com.kashif.cameraK.engine/CameraSelection.ByLens|null[0]
+        constructor <init>(com.kashif.cameraK.enums/CameraLens, com.kashif.cameraK.enums/CameraDeviceType) // com.kashif.cameraK.engine/CameraSelection.ByLens.<init>|<init>(com.kashif.cameraK.enums.CameraLens;com.kashif.cameraK.enums.CameraDeviceType){}[0]
+
+        final val deviceType // com.kashif.cameraK.engine/CameraSelection.ByLens.deviceType|{}deviceType[0]
+            final fun <get-deviceType>(): com.kashif.cameraK.enums/CameraDeviceType // com.kashif.cameraK.engine/CameraSelection.ByLens.deviceType.<get-deviceType>|<get-deviceType>(){}[0]
+        final val lens // com.kashif.cameraK.engine/CameraSelection.ByLens.lens|{}lens[0]
+            final fun <get-lens>(): com.kashif.cameraK.enums/CameraLens // com.kashif.cameraK.engine/CameraSelection.ByLens.lens.<get-lens>|<get-lens>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/CameraSelection.ByLens.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/CameraSelection.ByLens.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/CameraSelection.ByLens.toString|toString(){}[0]
+    }
+
+    final class Default : com.kashif.cameraK.engine/CameraSelection { // com.kashif.cameraK.engine/CameraSelection.Default|null[0]
+        constructor <init>(com.kashif.cameraK.enums/CameraDeviceType) // com.kashif.cameraK.engine/CameraSelection.Default.<init>|<init>(com.kashif.cameraK.enums.CameraDeviceType){}[0]
+
+        final val deviceType // com.kashif.cameraK.engine/CameraSelection.Default.deviceType|{}deviceType[0]
+            final fun <get-deviceType>(): com.kashif.cameraK.enums/CameraDeviceType // com.kashif.cameraK.engine/CameraSelection.Default.deviceType.<get-deviceType>|<get-deviceType>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/CameraSelection.Default.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/CameraSelection.Default.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/CameraSelection.Default.toString|toString(){}[0]
+    }
+}
+
+sealed interface com.kashif.cameraK.engine/EngineRecordingEvent { // com.kashif.cameraK.engine/EngineRecordingEvent|null[0]
+    final class Finalized : com.kashif.cameraK.engine/EngineRecordingEvent { // com.kashif.cameraK.engine/EngineRecordingEvent.Finalized|null[0]
+        constructor <init>(com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/RecordedVideo>, com.kashif.cameraK.recording/RecordingEndReason) // com.kashif.cameraK.engine/EngineRecordingEvent.Finalized.<init>|<init>(com.kashif.cameraK.result.CameraKResult<com.kashif.cameraK.capture.RecordedVideo>;com.kashif.cameraK.recording.RecordingEndReason){}[0]
+
+        final val reason // com.kashif.cameraK.engine/EngineRecordingEvent.Finalized.reason|{}reason[0]
+            final fun <get-reason>(): com.kashif.cameraK.recording/RecordingEndReason // com.kashif.cameraK.engine/EngineRecordingEvent.Finalized.reason.<get-reason>|<get-reason>(){}[0]
+        final val result // com.kashif.cameraK.engine/EngineRecordingEvent.Finalized.result|{}result[0]
+            final fun <get-result>(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/RecordedVideo> // com.kashif.cameraK.engine/EngineRecordingEvent.Finalized.result.<get-result>|<get-result>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/EngineRecordingEvent.Finalized.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/EngineRecordingEvent.Finalized.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/EngineRecordingEvent.Finalized.toString|toString(){}[0]
+    }
+
+    final class Started : com.kashif.cameraK.engine/EngineRecordingEvent { // com.kashif.cameraK.engine/EngineRecordingEvent.Started|null[0]
+        constructor <init>(kotlin/String, kotlin/Boolean) // com.kashif.cameraK.engine/EngineRecordingEvent.Started.<init>|<init>(kotlin.String;kotlin.Boolean){}[0]
+
+        final val hasAudio // com.kashif.cameraK.engine/EngineRecordingEvent.Started.hasAudio|{}hasAudio[0]
+            final fun <get-hasAudio>(): kotlin/Boolean // com.kashif.cameraK.engine/EngineRecordingEvent.Started.hasAudio.<get-hasAudio>|<get-hasAudio>(){}[0]
+        final val path // com.kashif.cameraK.engine/EngineRecordingEvent.Started.path|{}path[0]
+            final fun <get-path>(): kotlin/String // com.kashif.cameraK.engine/EngineRecordingEvent.Started.path.<get-path>|<get-path>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/EngineRecordingEvent.Started.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/EngineRecordingEvent.Started.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/EngineRecordingEvent.Started.toString|toString(){}[0]
+    }
+
+    final object Paused : com.kashif.cameraK.engine/EngineRecordingEvent { // com.kashif.cameraK.engine/EngineRecordingEvent.Paused|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/EngineRecordingEvent.Paused.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/EngineRecordingEvent.Paused.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/EngineRecordingEvent.Paused.toString|toString(){}[0]
+    }
+
+    final object Resumed : com.kashif.cameraK.engine/EngineRecordingEvent { // com.kashif.cameraK.engine/EngineRecordingEvent.Resumed|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/EngineRecordingEvent.Resumed.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/EngineRecordingEvent.Resumed.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/EngineRecordingEvent.Resumed.toString|toString(){}[0]
+    }
+}
+
+sealed interface com.kashif.cameraK.engine/EngineState { // com.kashif.cameraK.engine/EngineState|null[0]
+    final class Failed : com.kashif.cameraK.engine/EngineState { // com.kashif.cameraK.engine/EngineState.Failed|null[0]
+        constructor <init>(com.kashif.cameraK.error/CameraKError) // com.kashif.cameraK.engine/EngineState.Failed.<init>|<init>(com.kashif.cameraK.error.CameraKError){}[0]
+
+        final val error // com.kashif.cameraK.engine/EngineState.Failed.error|{}error[0]
+            final fun <get-error>(): com.kashif.cameraK.error/CameraKError // com.kashif.cameraK.engine/EngineState.Failed.error.<get-error>|<get-error>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/EngineState.Failed.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/EngineState.Failed.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/EngineState.Failed.toString|toString(){}[0]
+    }
+
+    final class Interrupted : com.kashif.cameraK.engine/EngineState { // com.kashif.cameraK.engine/EngineState.Interrupted|null[0]
+        constructor <init>(com.kashif.cameraK.error/InterruptionReason) // com.kashif.cameraK.engine/EngineState.Interrupted.<init>|<init>(com.kashif.cameraK.error.InterruptionReason){}[0]
+
+        final val reason // com.kashif.cameraK.engine/EngineState.Interrupted.reason|{}reason[0]
+            final fun <get-reason>(): com.kashif.cameraK.error/InterruptionReason // com.kashif.cameraK.engine/EngineState.Interrupted.reason.<get-reason>|<get-reason>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/EngineState.Interrupted.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/EngineState.Interrupted.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/EngineState.Interrupted.toString|toString(){}[0]
+    }
+
+    final object Closed : com.kashif.cameraK.engine/EngineState { // com.kashif.cameraK.engine/EngineState.Closed|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/EngineState.Closed.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/EngineState.Closed.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/EngineState.Closed.toString|toString(){}[0]
+    }
+
+    final object Open : com.kashif.cameraK.engine/EngineState { // com.kashif.cameraK.engine/EngineState.Open|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/EngineState.Open.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/EngineState.Open.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/EngineState.Open.toString|toString(){}[0]
+    }
+
+    final object Opening : com.kashif.cameraK.engine/EngineState { // com.kashif.cameraK.engine/EngineState.Opening|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/EngineState.Opening.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/EngineState.Opening.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.engine/EngineState.Opening.toString|toString(){}[0]
+    }
+}
+
+sealed interface com.kashif.cameraK.permissions/PermissionStatus { // com.kashif.cameraK.permissions/PermissionStatus|null[0]
+    final class Denied : com.kashif.cameraK.permissions/PermissionStatus { // com.kashif.cameraK.permissions/PermissionStatus.Denied|null[0]
+        constructor <init>(kotlin/Boolean) // com.kashif.cameraK.permissions/PermissionStatus.Denied.<init>|<init>(kotlin.Boolean){}[0]
+
+        final val shouldShowRationale // com.kashif.cameraK.permissions/PermissionStatus.Denied.shouldShowRationale|{}shouldShowRationale[0]
+            final fun <get-shouldShowRationale>(): kotlin/Boolean // com.kashif.cameraK.permissions/PermissionStatus.Denied.shouldShowRationale.<get-shouldShowRationale>|<get-shouldShowRationale>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.permissions/PermissionStatus.Denied.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.permissions/PermissionStatus.Denied.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.permissions/PermissionStatus.Denied.toString|toString(){}[0]
+    }
+
+    final object Granted : com.kashif.cameraK.permissions/PermissionStatus { // com.kashif.cameraK.permissions/PermissionStatus.Granted|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.permissions/PermissionStatus.Granted.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.permissions/PermissionStatus.Granted.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.permissions/PermissionStatus.Granted.toString|toString(){}[0]
+    }
+
+    final object Limited : com.kashif.cameraK.permissions/PermissionStatus { // com.kashif.cameraK.permissions/PermissionStatus.Limited|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.permissions/PermissionStatus.Limited.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.permissions/PermissionStatus.Limited.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.permissions/PermissionStatus.Limited.toString|toString(){}[0]
+    }
+
+    final object NotDetermined : com.kashif.cameraK.permissions/PermissionStatus { // com.kashif.cameraK.permissions/PermissionStatus.NotDetermined|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.permissions/PermissionStatus.NotDetermined.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.permissions/PermissionStatus.NotDetermined.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.permissions/PermissionStatus.NotDetermined.toString|toString(){}[0]
+    }
+
+    final object PermanentlyDenied : com.kashif.cameraK.permissions/PermissionStatus { // com.kashif.cameraK.permissions/PermissionStatus.PermanentlyDenied|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.permissions/PermissionStatus.PermanentlyDenied.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.permissions/PermissionStatus.PermanentlyDenied.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.permissions/PermissionStatus.PermanentlyDenied.toString|toString(){}[0]
+    }
+
+    final object Restricted : com.kashif.cameraK.permissions/PermissionStatus { // com.kashif.cameraK.permissions/PermissionStatus.Restricted|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.permissions/PermissionStatus.Restricted.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.permissions/PermissionStatus.Restricted.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.permissions/PermissionStatus.Restricted.toString|toString(){}[0]
+    }
+}
+
+sealed interface com.kashif.cameraK.plugin/PluginStatus { // com.kashif.cameraK.plugin/PluginStatus|null[0]
+    final class Failed : com.kashif.cameraK.plugin/PluginStatus { // com.kashif.cameraK.plugin/PluginStatus.Failed|null[0]
+        constructor <init>(com.kashif.cameraK.error/CameraKError) // com.kashif.cameraK.plugin/PluginStatus.Failed.<init>|<init>(com.kashif.cameraK.error.CameraKError){}[0]
+
+        final val error // com.kashif.cameraK.plugin/PluginStatus.Failed.error|{}error[0]
+            final fun <get-error>(): com.kashif.cameraK.error/CameraKError // com.kashif.cameraK.plugin/PluginStatus.Failed.error.<get-error>|<get-error>(){}[0]
+
+        final fun toString(): kotlin/String // com.kashif.cameraK.plugin/PluginStatus.Failed.toString|toString(){}[0]
+    }
+
+    final object Idle : com.kashif.cameraK.plugin/PluginStatus { // com.kashif.cameraK.plugin/PluginStatus.Idle|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.plugin/PluginStatus.Idle.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.plugin/PluginStatus.Idle.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.plugin/PluginStatus.Idle.toString|toString(){}[0]
+    }
+
+    final object Paused : com.kashif.cameraK.plugin/PluginStatus { // com.kashif.cameraK.plugin/PluginStatus.Paused|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.plugin/PluginStatus.Paused.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.plugin/PluginStatus.Paused.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.plugin/PluginStatus.Paused.toString|toString(){}[0]
+    }
+
+    final object Running : com.kashif.cameraK.plugin/PluginStatus { // com.kashif.cameraK.plugin/PluginStatus.Running|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.plugin/PluginStatus.Running.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.plugin/PluginStatus.Running.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.plugin/PluginStatus.Running.toString|toString(){}[0]
+    }
+}
+
+sealed interface com.kashif.cameraK.recording/RecordingState { // com.kashif.cameraK.recording/RecordingState|null[0]
+    final class Finished : com.kashif.cameraK.recording/RecordingState { // com.kashif.cameraK.recording/RecordingState.Finished|null[0]
+        constructor <init>(kotlin/Long, com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/RecordedVideo>, com.kashif.cameraK.recording/RecordingEndReason) // com.kashif.cameraK.recording/RecordingState.Finished.<init>|<init>(kotlin.Long;com.kashif.cameraK.result.CameraKResult<com.kashif.cameraK.capture.RecordedVideo>;com.kashif.cameraK.recording.RecordingEndReason){}[0]
+
+        final val reason // com.kashif.cameraK.recording/RecordingState.Finished.reason|{}reason[0]
+            final fun <get-reason>(): com.kashif.cameraK.recording/RecordingEndReason // com.kashif.cameraK.recording/RecordingState.Finished.reason.<get-reason>|<get-reason>(){}[0]
+        final val recordingId // com.kashif.cameraK.recording/RecordingState.Finished.recordingId|{}recordingId[0]
+            final fun <get-recordingId>(): kotlin/Long // com.kashif.cameraK.recording/RecordingState.Finished.recordingId.<get-recordingId>|<get-recordingId>(){}[0]
+        final val result // com.kashif.cameraK.recording/RecordingState.Finished.result|{}result[0]
+            final fun <get-result>(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/RecordedVideo> // com.kashif.cameraK.recording/RecordingState.Finished.result.<get-result>|<get-result>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.recording/RecordingState.Finished.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.recording/RecordingState.Finished.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.recording/RecordingState.Finished.toString|toString(){}[0]
+    }
+
+    final class Paused : com.kashif.cameraK.recording/RecordingState { // com.kashif.cameraK.recording/RecordingState.Paused|null[0]
+        constructor <init>(kotlin/Long, kotlin/String, kotlin.time/Duration) // com.kashif.cameraK.recording/RecordingState.Paused.<init>|<init>(kotlin.Long;kotlin.String;kotlin.time.Duration){}[0]
+
+        final val accumulated // com.kashif.cameraK.recording/RecordingState.Paused.accumulated|{}accumulated[0]
+            final fun <get-accumulated>(): kotlin.time/Duration // com.kashif.cameraK.recording/RecordingState.Paused.accumulated.<get-accumulated>|<get-accumulated>(){}[0]
+        final val filePath // com.kashif.cameraK.recording/RecordingState.Paused.filePath|{}filePath[0]
+            final fun <get-filePath>(): kotlin/String // com.kashif.cameraK.recording/RecordingState.Paused.filePath.<get-filePath>|<get-filePath>(){}[0]
+        final val recordingId // com.kashif.cameraK.recording/RecordingState.Paused.recordingId|{}recordingId[0]
+            final fun <get-recordingId>(): kotlin/Long // com.kashif.cameraK.recording/RecordingState.Paused.recordingId.<get-recordingId>|<get-recordingId>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.recording/RecordingState.Paused.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.recording/RecordingState.Paused.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.recording/RecordingState.Paused.toString|toString(){}[0]
+    }
+
+    final class Recording : com.kashif.cameraK.recording/RecordingState { // com.kashif.cameraK.recording/RecordingState.Recording|null[0]
+        constructor <init>(kotlin/Long, kotlin/String, kotlin.time/ComparableTimeMark, kotlin.time/Duration, kotlin/Boolean) // com.kashif.cameraK.recording/RecordingState.Recording.<init>|<init>(kotlin.Long;kotlin.String;kotlin.time.ComparableTimeMark;kotlin.time.Duration;kotlin.Boolean){}[0]
+
+        final val accumulated // com.kashif.cameraK.recording/RecordingState.Recording.accumulated|{}accumulated[0]
+            final fun <get-accumulated>(): kotlin.time/Duration // com.kashif.cameraK.recording/RecordingState.Recording.accumulated.<get-accumulated>|<get-accumulated>(){}[0]
+        final val activeSince // com.kashif.cameraK.recording/RecordingState.Recording.activeSince|{}activeSince[0]
+            final fun <get-activeSince>(): kotlin.time/ComparableTimeMark // com.kashif.cameraK.recording/RecordingState.Recording.activeSince.<get-activeSince>|<get-activeSince>(){}[0]
+        final val filePath // com.kashif.cameraK.recording/RecordingState.Recording.filePath|{}filePath[0]
+            final fun <get-filePath>(): kotlin/String // com.kashif.cameraK.recording/RecordingState.Recording.filePath.<get-filePath>|<get-filePath>(){}[0]
+        final val hasAudio // com.kashif.cameraK.recording/RecordingState.Recording.hasAudio|{}hasAudio[0]
+            final fun <get-hasAudio>(): kotlin/Boolean // com.kashif.cameraK.recording/RecordingState.Recording.hasAudio.<get-hasAudio>|<get-hasAudio>(){}[0]
+        final val recordingId // com.kashif.cameraK.recording/RecordingState.Recording.recordingId|{}recordingId[0]
+            final fun <get-recordingId>(): kotlin/Long // com.kashif.cameraK.recording/RecordingState.Recording.recordingId.<get-recordingId>|<get-recordingId>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.recording/RecordingState.Recording.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.recording/RecordingState.Recording.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.recording/RecordingState.Recording.toString|toString(){}[0]
+    }
+
+    final class Starting : com.kashif.cameraK.recording/RecordingState { // com.kashif.cameraK.recording/RecordingState.Starting|null[0]
+        constructor <init>(com.kashif.cameraK.video/VideoConfiguration) // com.kashif.cameraK.recording/RecordingState.Starting.<init>|<init>(com.kashif.cameraK.video.VideoConfiguration){}[0]
+
+        final val config // com.kashif.cameraK.recording/RecordingState.Starting.config|{}config[0]
+            final fun <get-config>(): com.kashif.cameraK.video/VideoConfiguration // com.kashif.cameraK.recording/RecordingState.Starting.config.<get-config>|<get-config>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.recording/RecordingState.Starting.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.recording/RecordingState.Starting.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.recording/RecordingState.Starting.toString|toString(){}[0]
+    }
+
+    final class Stopping : com.kashif.cameraK.recording/RecordingState { // com.kashif.cameraK.recording/RecordingState.Stopping|null[0]
+        constructor <init>(kotlin/Long, kotlin/String, com.kashif.cameraK.recording/RecordingEndReason) // com.kashif.cameraK.recording/RecordingState.Stopping.<init>|<init>(kotlin.Long;kotlin.String;com.kashif.cameraK.recording.RecordingEndReason){}[0]
+
+        final val filePath // com.kashif.cameraK.recording/RecordingState.Stopping.filePath|{}filePath[0]
+            final fun <get-filePath>(): kotlin/String // com.kashif.cameraK.recording/RecordingState.Stopping.filePath.<get-filePath>|<get-filePath>(){}[0]
+        final val reason // com.kashif.cameraK.recording/RecordingState.Stopping.reason|{}reason[0]
+            final fun <get-reason>(): com.kashif.cameraK.recording/RecordingEndReason // com.kashif.cameraK.recording/RecordingState.Stopping.reason.<get-reason>|<get-reason>(){}[0]
+        final val recordingId // com.kashif.cameraK.recording/RecordingState.Stopping.recordingId|{}recordingId[0]
+            final fun <get-recordingId>(): kotlin/Long // com.kashif.cameraK.recording/RecordingState.Stopping.recordingId.<get-recordingId>|<get-recordingId>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.recording/RecordingState.Stopping.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.recording/RecordingState.Stopping.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.recording/RecordingState.Stopping.toString|toString(){}[0]
+    }
+
+    final object Idle : com.kashif.cameraK.recording/RecordingState { // com.kashif.cameraK.recording/RecordingState.Idle|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.recording/RecordingState.Idle.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.recording/RecordingState.Idle.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.recording/RecordingState.Idle.toString|toString(){}[0]
+    }
+}
+
+sealed interface com.kashif.cameraK.state/CameraKState { // com.kashif.cameraK.state/CameraKState|null[0]
+    final class Error : com.kashif.cameraK.state/CameraKState { // com.kashif.cameraK.state/CameraKState.Error|null[0]
+        constructor <init>(com.kashif.cameraK.error/CameraKError) // com.kashif.cameraK.state/CameraKState.Error.<init>|<init>(com.kashif.cameraK.error.CameraKError){}[0]
+
+        final val error // com.kashif.cameraK.state/CameraKState.Error.error|{}error[0]
+            final fun <get-error>(): com.kashif.cameraK.error/CameraKError // com.kashif.cameraK.state/CameraKState.Error.error.<get-error>|<get-error>(){}[0]
+        final val isRetryable // com.kashif.cameraK.state/CameraKState.Error.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.state/CameraKState.Error.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.state/CameraKState.Error.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.state/CameraKState.Error.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.state/CameraKState.Error.toString|toString(){}[0]
+    }
+
+    final class Interrupted : com.kashif.cameraK.state/CameraKState { // com.kashif.cameraK.state/CameraKState.Interrupted|null[0]
+        constructor <init>(com.kashif.cameraK.error/InterruptionReason) // com.kashif.cameraK.state/CameraKState.Interrupted.<init>|<init>(com.kashif.cameraK.error.InterruptionReason){}[0]
+
+        final val reason // com.kashif.cameraK.state/CameraKState.Interrupted.reason|{}reason[0]
+            final fun <get-reason>(): com.kashif.cameraK.error/InterruptionReason // com.kashif.cameraK.state/CameraKState.Interrupted.reason.<get-reason>|<get-reason>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.state/CameraKState.Interrupted.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.state/CameraKState.Interrupted.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.state/CameraKState.Interrupted.toString|toString(){}[0]
+    }
+
+    final object Closed : com.kashif.cameraK.state/CameraKState { // com.kashif.cameraK.state/CameraKState.Closed|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.state/CameraKState.Closed.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.state/CameraKState.Closed.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.state/CameraKState.Closed.toString|toString(){}[0]
+    }
+
+    final object Idle : com.kashif.cameraK.state/CameraKState { // com.kashif.cameraK.state/CameraKState.Idle|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.state/CameraKState.Idle.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.state/CameraKState.Idle.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.state/CameraKState.Idle.toString|toString(){}[0]
+    }
+
+    final object Ready : com.kashif.cameraK.state/CameraKState { // com.kashif.cameraK.state/CameraKState.Ready|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.state/CameraKState.Ready.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.state/CameraKState.Ready.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.state/CameraKState.Ready.toString|toString(){}[0]
+    }
+
+    final object Starting : com.kashif.cameraK.state/CameraKState { // com.kashif.cameraK.state/CameraKState.Starting|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.state/CameraKState.Starting.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.state/CameraKState.Starting.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.state/CameraKState.Starting.toString|toString(){}[0]
+    }
+}
+
+abstract class com.kashif.cameraK.state/CameraKEvent { // com.kashif.cameraK.state/CameraKEvent|null[0]
+    final class PluginFailed : com.kashif.cameraK.state/CameraKEvent { // com.kashif.cameraK.state/CameraKEvent.PluginFailed|null[0]
+        final val error // com.kashif.cameraK.state/CameraKEvent.PluginFailed.error|{}error[0]
+            final fun <get-error>(): com.kashif.cameraK.error/CameraKError // com.kashif.cameraK.state/CameraKEvent.PluginFailed.error.<get-error>|<get-error>(){}[0]
+        final val pluginId // com.kashif.cameraK.state/CameraKEvent.PluginFailed.pluginId|{}pluginId[0]
+            final fun <get-pluginId>(): kotlin/String // com.kashif.cameraK.state/CameraKEvent.PluginFailed.pluginId.<get-pluginId>|<get-pluginId>(){}[0]
+
+        final fun toString(): kotlin/String // com.kashif.cameraK.state/CameraKEvent.PluginFailed.toString|toString(){}[0]
+    }
+
+    final class RecordingEnded : com.kashif.cameraK.state/CameraKEvent { // com.kashif.cameraK.state/CameraKEvent.RecordingEnded|null[0]
+        final val reason // com.kashif.cameraK.state/CameraKEvent.RecordingEnded.reason|{}reason[0]
+            final fun <get-reason>(): com.kashif.cameraK.recording/RecordingEndReason // com.kashif.cameraK.state/CameraKEvent.RecordingEnded.reason.<get-reason>|<get-reason>(){}[0]
+        final val recordingId // com.kashif.cameraK.state/CameraKEvent.RecordingEnded.recordingId|{}recordingId[0]
+            final fun <get-recordingId>(): kotlin/Long // com.kashif.cameraK.state/CameraKEvent.RecordingEnded.recordingId.<get-recordingId>|<get-recordingId>(){}[0]
+        final val result // com.kashif.cameraK.state/CameraKEvent.RecordingEnded.result|{}result[0]
+            final fun <get-result>(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/RecordedVideo> // com.kashif.cameraK.state/CameraKEvent.RecordingEnded.result.<get-result>|<get-result>(){}[0]
+
+        final fun toString(): kotlin/String // com.kashif.cameraK.state/CameraKEvent.RecordingEnded.toString|toString(){}[0]
+    }
+}
+
+final class com.kashif.cameraK.capabilities/CameraCapabilities { // com.kashif.cameraK.capabilities/CameraCapabilities|null[0]
+    constructor <init>(kotlin.collections/List<com.kashif.cameraK.capabilities/LensInfo>, kotlin.collections/Map<kotlin/String, kotlin.collections/Set<com.kashif.cameraK.enums/FlashMode>>, kotlin.collections/Map<kotlin/String, kotlin.collections/Set<com.kashif.cameraK.enums/TorchMode>>, kotlin/Boolean, kotlin.collections/Set<com.kashif.cameraK.video/VideoQuality>, kotlin/Boolean, kotlin.collections/Set<com.kashif.cameraK.enums/AspectRatio>, kotlin.collections/Set<com.kashif.cameraK.enums/ImageFormat>, kotlin.collections/Set<com.kashif.cameraK.frames/FrameFormat>, kotlin/Boolean) // com.kashif.cameraK.capabilities/CameraCapabilities.<init>|<init>(kotlin.collections.List<com.kashif.cameraK.capabilities.LensInfo>;kotlin.collections.Map<kotlin.String,kotlin.collections.Set<com.kashif.cameraK.enums.FlashMode>>;kotlin.collections.Map<kotlin.String,kotlin.collections.Set<com.kashif.cameraK.enums.TorchMode>>;kotlin.Boolean;kotlin.collections.Set<com.kashif.cameraK.video.VideoQuality>;kotlin.Boolean;kotlin.collections.Set<com.kashif.cameraK.enums.AspectRatio>;kotlin.collections.Set<com.kashif.cameraK.enums.ImageFormat>;kotlin.collections.Set<com.kashif.cameraK.frames.FrameFormat>;kotlin.Boolean){}[0]
+
+    final val allLenses // com.kashif.cameraK.capabilities/CameraCapabilities.allLenses|{}allLenses[0]
+        final fun <get-allLenses>(): kotlin.collections/List<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.capabilities/CameraCapabilities.allLenses.<get-allLenses>|<get-allLenses>(){}[0]
+    final val externalLenses // com.kashif.cameraK.capabilities/CameraCapabilities.externalLenses|{}externalLenses[0]
+        final fun <get-externalLenses>(): kotlin.collections/List<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.capabilities/CameraCapabilities.externalLenses.<get-externalLenses>|<get-externalLenses>(){}[0]
+    final val supportedAnalysisFormats // com.kashif.cameraK.capabilities/CameraCapabilities.supportedAnalysisFormats|{}supportedAnalysisFormats[0]
+        final fun <get-supportedAnalysisFormats>(): kotlin.collections/Set<com.kashif.cameraK.frames/FrameFormat> // com.kashif.cameraK.capabilities/CameraCapabilities.supportedAnalysisFormats.<get-supportedAnalysisFormats>|<get-supportedAnalysisFormats>(){}[0]
+    final val supportedAspectRatios // com.kashif.cameraK.capabilities/CameraCapabilities.supportedAspectRatios|{}supportedAspectRatios[0]
+        final fun <get-supportedAspectRatios>(): kotlin.collections/Set<com.kashif.cameraK.enums/AspectRatio> // com.kashif.cameraK.capabilities/CameraCapabilities.supportedAspectRatios.<get-supportedAspectRatios>|<get-supportedAspectRatios>(){}[0]
+    final val supportedImageFormats // com.kashif.cameraK.capabilities/CameraCapabilities.supportedImageFormats|{}supportedImageFormats[0]
+        final fun <get-supportedImageFormats>(): kotlin.collections/Set<com.kashif.cameraK.enums/ImageFormat> // com.kashif.cameraK.capabilities/CameraCapabilities.supportedImageFormats.<get-supportedImageFormats>|<get-supportedImageFormats>(){}[0]
+    final val supportedVideoQualities // com.kashif.cameraK.capabilities/CameraCapabilities.supportedVideoQualities|{}supportedVideoQualities[0]
+        final fun <get-supportedVideoQualities>(): kotlin.collections/Set<com.kashif.cameraK.video/VideoQuality> // com.kashif.cameraK.capabilities/CameraCapabilities.supportedVideoQualities.<get-supportedVideoQualities>|<get-supportedVideoQualities>(){}[0]
+    final val supportsPauseResume // com.kashif.cameraK.capabilities/CameraCapabilities.supportsPauseResume|{}supportsPauseResume[0]
+        final fun <get-supportsPauseResume>(): kotlin/Boolean // com.kashif.cameraK.capabilities/CameraCapabilities.supportsPauseResume.<get-supportsPauseResume>|<get-supportsPauseResume>(){}[0]
+    final val supportsSquareCapture // com.kashif.cameraK.capabilities/CameraCapabilities.supportsSquareCapture|{}supportsSquareCapture[0]
+        final fun <get-supportsSquareCapture>(): kotlin/Boolean // com.kashif.cameraK.capabilities/CameraCapabilities.supportsSquareCapture.<get-supportsSquareCapture>|<get-supportsSquareCapture>(){}[0]
+    final val supportsVideoBitrate // com.kashif.cameraK.capabilities/CameraCapabilities.supportsVideoBitrate|{}supportsVideoBitrate[0]
+        final fun <get-supportsVideoBitrate>(): kotlin/Boolean // com.kashif.cameraK.capabilities/CameraCapabilities.supportsVideoBitrate.<get-supportsVideoBitrate>|<get-supportsVideoBitrate>(){}[0]
+
+    final fun availableDeviceTypes(com.kashif.cameraK.enums/CameraLens): kotlin.collections/Set<com.kashif.cameraK.enums/CameraDeviceType> // com.kashif.cameraK.capabilities/CameraCapabilities.availableDeviceTypes|availableDeviceTypes(com.kashif.cameraK.enums.CameraLens){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.capabilities/CameraCapabilities.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.capabilities/CameraCapabilities.hashCode|hashCode(){}[0]
+    final fun lenses(com.kashif.cameraK.enums/CameraLens): kotlin.collections/List<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.capabilities/CameraCapabilities.lenses|lenses(com.kashif.cameraK.enums.CameraLens){}[0]
+    final fun supportedFlashModes(kotlin/String): kotlin.collections/Set<com.kashif.cameraK.enums/FlashMode> // com.kashif.cameraK.capabilities/CameraCapabilities.supportedFlashModes|supportedFlashModes(kotlin.String){}[0]
+    final fun supportedTorchModes(kotlin/String): kotlin.collections/Set<com.kashif.cameraK.enums/TorchMode> // com.kashif.cameraK.capabilities/CameraCapabilities.supportedTorchModes|supportedTorchModes(kotlin.String){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.capabilities/CameraCapabilities.toString|toString(){}[0]
+
+    final object Companion { // com.kashif.cameraK.capabilities/CameraCapabilities.Companion|null[0]
+        final val EMPTY // com.kashif.cameraK.capabilities/CameraCapabilities.Companion.EMPTY|{}EMPTY[0]
+            final fun <get-EMPTY>(): com.kashif.cameraK.capabilities/CameraCapabilities // com.kashif.cameraK.capabilities/CameraCapabilities.Companion.EMPTY.<get-EMPTY>|<get-EMPTY>(){}[0]
+    }
+}
+
+final class com.kashif.cameraK.capabilities/LensInfo { // com.kashif.cameraK.capabilities/LensInfo|null[0]
+    constructor <init>(kotlin/String, com.kashif.cameraK.enums/CameraDeviceType, com.kashif.cameraK.enums/CameraLens, kotlin/Float, kotlin/Float, kotlin/Boolean, kotlin/Boolean, kotlin/Boolean = ...) // com.kashif.cameraK.capabilities/LensInfo.<init>|<init>(kotlin.String;com.kashif.cameraK.enums.CameraDeviceType;com.kashif.cameraK.enums.CameraLens;kotlin.Float;kotlin.Float;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean){}[0]
+
+    final val deviceType // com.kashif.cameraK.capabilities/LensInfo.deviceType|{}deviceType[0]
+        final fun <get-deviceType>(): com.kashif.cameraK.enums/CameraDeviceType // com.kashif.cameraK.capabilities/LensInfo.deviceType.<get-deviceType>|<get-deviceType>(){}[0]
+    final val hasFlash // com.kashif.cameraK.capabilities/LensInfo.hasFlash|{}hasFlash[0]
+        final fun <get-hasFlash>(): kotlin/Boolean // com.kashif.cameraK.capabilities/LensInfo.hasFlash.<get-hasFlash>|<get-hasFlash>(){}[0]
+    final val id // com.kashif.cameraK.capabilities/LensInfo.id|{}id[0]
+        final fun <get-id>(): kotlin/String // com.kashif.cameraK.capabilities/LensInfo.id.<get-id>|<get-id>(){}[0]
+    final val isExternal // com.kashif.cameraK.capabilities/LensInfo.isExternal|{}isExternal[0]
+        final fun <get-isExternal>(): kotlin/Boolean // com.kashif.cameraK.capabilities/LensInfo.isExternal.<get-isExternal>|<get-isExternal>(){}[0]
+    final val isLogical // com.kashif.cameraK.capabilities/LensInfo.isLogical|{}isLogical[0]
+        final fun <get-isLogical>(): kotlin/Boolean // com.kashif.cameraK.capabilities/LensInfo.isLogical.<get-isLogical>|<get-isLogical>(){}[0]
+    final val lens // com.kashif.cameraK.capabilities/LensInfo.lens|{}lens[0]
+        final fun <get-lens>(): com.kashif.cameraK.enums/CameraLens // com.kashif.cameraK.capabilities/LensInfo.lens.<get-lens>|<get-lens>(){}[0]
+    final val maxZoom // com.kashif.cameraK.capabilities/LensInfo.maxZoom|{}maxZoom[0]
+        final fun <get-maxZoom>(): kotlin/Float // com.kashif.cameraK.capabilities/LensInfo.maxZoom.<get-maxZoom>|<get-maxZoom>(){}[0]
+    final val minZoom // com.kashif.cameraK.capabilities/LensInfo.minZoom|{}minZoom[0]
+        final fun <get-minZoom>(): kotlin/Float // com.kashif.cameraK.capabilities/LensInfo.minZoom.<get-minZoom>|<get-minZoom>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.capabilities/LensInfo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.capabilities/LensInfo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.capabilities/LensInfo.toString|toString(){}[0]
+}
+
+final class com.kashif.cameraK.capture/CapturedImage { // com.kashif.cameraK.capture/CapturedImage|null[0]
+    constructor <init>(kotlin/String, com.kashif.cameraK.enums/ImageFormat, kotlin/Int, kotlin/Int) // com.kashif.cameraK.capture/CapturedImage.<init>|<init>(kotlin.String;com.kashif.cameraK.enums.ImageFormat;kotlin.Int;kotlin.Int){}[0]
+
+    final val format // com.kashif.cameraK.capture/CapturedImage.format|{}format[0]
+        final fun <get-format>(): com.kashif.cameraK.enums/ImageFormat // com.kashif.cameraK.capture/CapturedImage.format.<get-format>|<get-format>(){}[0]
+    final val height // com.kashif.cameraK.capture/CapturedImage.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // com.kashif.cameraK.capture/CapturedImage.height.<get-height>|<get-height>(){}[0]
+    final val path // com.kashif.cameraK.capture/CapturedImage.path|{}path[0]
+        final fun <get-path>(): kotlin/String // com.kashif.cameraK.capture/CapturedImage.path.<get-path>|<get-path>(){}[0]
+    final val width // com.kashif.cameraK.capture/CapturedImage.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // com.kashif.cameraK.capture/CapturedImage.width.<get-width>|<get-width>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.capture/CapturedImage.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.capture/CapturedImage.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.capture/CapturedImage.toString|toString(){}[0]
+}
+
+final class com.kashif.cameraK.capture/GalleryAsset { // com.kashif.cameraK.capture/GalleryAsset|null[0]
+    final val displayName // com.kashif.cameraK.capture/GalleryAsset.displayName|{}displayName[0]
+        final fun <get-displayName>(): kotlin/String // com.kashif.cameraK.capture/GalleryAsset.displayName.<get-displayName>|<get-displayName>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.capture/GalleryAsset.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.capture/GalleryAsset.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.capture/GalleryAsset.toString|toString(){}[0]
+}
+
+final class com.kashif.cameraK.capture/RecordedVideo { // com.kashif.cameraK.capture/RecordedVideo|null[0]
+    constructor <init>(kotlin/String, kotlin.time/Duration, kotlin/Int, kotlin/Int, kotlin/Int?, kotlin/Boolean) // com.kashif.cameraK.capture/RecordedVideo.<init>|<init>(kotlin.String;kotlin.time.Duration;kotlin.Int;kotlin.Int;kotlin.Int?;kotlin.Boolean){}[0]
+
+    final val bitrateBps // com.kashif.cameraK.capture/RecordedVideo.bitrateBps|{}bitrateBps[0]
+        final fun <get-bitrateBps>(): kotlin/Int? // com.kashif.cameraK.capture/RecordedVideo.bitrateBps.<get-bitrateBps>|<get-bitrateBps>(){}[0]
+    final val duration // com.kashif.cameraK.capture/RecordedVideo.duration|{}duration[0]
+        final fun <get-duration>(): kotlin.time/Duration // com.kashif.cameraK.capture/RecordedVideo.duration.<get-duration>|<get-duration>(){}[0]
+    final val hasAudio // com.kashif.cameraK.capture/RecordedVideo.hasAudio|{}hasAudio[0]
+        final fun <get-hasAudio>(): kotlin/Boolean // com.kashif.cameraK.capture/RecordedVideo.hasAudio.<get-hasAudio>|<get-hasAudio>(){}[0]
+    final val height // com.kashif.cameraK.capture/RecordedVideo.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // com.kashif.cameraK.capture/RecordedVideo.height.<get-height>|<get-height>(){}[0]
+    final val path // com.kashif.cameraK.capture/RecordedVideo.path|{}path[0]
+        final fun <get-path>(): kotlin/String // com.kashif.cameraK.capture/RecordedVideo.path.<get-path>|<get-path>(){}[0]
+    final val width // com.kashif.cameraK.capture/RecordedVideo.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // com.kashif.cameraK.capture/RecordedVideo.width.<get-width>|<get-width>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.capture/RecordedVideo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.capture/RecordedVideo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.capture/RecordedVideo.toString|toString(){}[0]
+}
+
+final class com.kashif.cameraK.coroutines/CameraKDispatchers { // com.kashif.cameraK.coroutines/CameraKDispatchers|null[0]
+    constructor <init>(kotlinx.coroutines/CoroutineDispatcher = ..., kotlinx.coroutines/CoroutineDispatcher = ..., kotlinx.coroutines/CoroutineDispatcher = ...) // com.kashif.cameraK.coroutines/CameraKDispatchers.<init>|<init>(kotlinx.coroutines.CoroutineDispatcher;kotlinx.coroutines.CoroutineDispatcher;kotlinx.coroutines.CoroutineDispatcher){}[0]
+
+    final val default // com.kashif.cameraK.coroutines/CameraKDispatchers.default|{}default[0]
+        final fun <get-default>(): kotlinx.coroutines/CoroutineDispatcher // com.kashif.cameraK.coroutines/CameraKDispatchers.default.<get-default>|<get-default>(){}[0]
+    final val io // com.kashif.cameraK.coroutines/CameraKDispatchers.io|{}io[0]
+        final fun <get-io>(): kotlinx.coroutines/CoroutineDispatcher // com.kashif.cameraK.coroutines/CameraKDispatchers.io.<get-io>|<get-io>(){}[0]
+    final val main // com.kashif.cameraK.coroutines/CameraKDispatchers.main|{}main[0]
+        final fun <get-main>(): kotlinx.coroutines/CoroutineDispatcher // com.kashif.cameraK.coroutines/CameraKDispatchers.main.<get-main>|<get-main>(){}[0]
+}
+
+final class com.kashif.cameraK.engine/CameraKEnvironment { // com.kashif.cameraK.engine/CameraKEnvironment|null[0]
+    constructor <init>(com.kashif.cameraK.coroutines/CameraKDispatchers = ..., kotlin.time/TimeSource.WithComparableMarks = ..., kotlinx.coroutines/Job? = ..., com.kashif.cameraK.permissions/CameraKPermissionChecker? = ...) // com.kashif.cameraK.engine/CameraKEnvironment.<init>|<init>(com.kashif.cameraK.coroutines.CameraKDispatchers;kotlin.time.TimeSource.WithComparableMarks;kotlinx.coroutines.Job?;com.kashif.cameraK.permissions.CameraKPermissionChecker?){}[0]
+
+    final val dispatchers // com.kashif.cameraK.engine/CameraKEnvironment.dispatchers|{}dispatchers[0]
+        final fun <get-dispatchers>(): com.kashif.cameraK.coroutines/CameraKDispatchers // com.kashif.cameraK.engine/CameraKEnvironment.dispatchers.<get-dispatchers>|<get-dispatchers>(){}[0]
+    final val parentJob // com.kashif.cameraK.engine/CameraKEnvironment.parentJob|{}parentJob[0]
+        final fun <get-parentJob>(): kotlinx.coroutines/Job? // com.kashif.cameraK.engine/CameraKEnvironment.parentJob.<get-parentJob>|<get-parentJob>(){}[0]
+    final val permissionChecker // com.kashif.cameraK.engine/CameraKEnvironment.permissionChecker|{}permissionChecker[0]
+        final fun <get-permissionChecker>(): com.kashif.cameraK.permissions/CameraKPermissionChecker? // com.kashif.cameraK.engine/CameraKEnvironment.permissionChecker.<get-permissionChecker>|<get-permissionChecker>(){}[0]
+    final val timeSource // com.kashif.cameraK.engine/CameraKEnvironment.timeSource|{}timeSource[0]
+        final fun <get-timeSource>(): kotlin.time/TimeSource.WithComparableMarks // com.kashif.cameraK.engine/CameraKEnvironment.timeSource.<get-timeSource>|<get-timeSource>(){}[0]
+}
+
+final class com.kashif.cameraK.engine/DesiredHardware { // com.kashif.cameraK.engine/DesiredHardware|null[0]
+    constructor <init>(com.kashif.cameraK.engine/CameraSelection, com.kashif.cameraK.enums/FlashMode, com.kashif.cameraK.enums/TorchMode, kotlin/Float, com.kashif.cameraK.enums/DeviceOrientation?) // com.kashif.cameraK.engine/DesiredHardware.<init>|<init>(com.kashif.cameraK.engine.CameraSelection;com.kashif.cameraK.enums.FlashMode;com.kashif.cameraK.enums.TorchMode;kotlin.Float;com.kashif.cameraK.enums.DeviceOrientation?){}[0]
+
+    final val flashMode // com.kashif.cameraK.engine/DesiredHardware.flashMode|{}flashMode[0]
+        final fun <get-flashMode>(): com.kashif.cameraK.enums/FlashMode // com.kashif.cameraK.engine/DesiredHardware.flashMode.<get-flashMode>|<get-flashMode>(){}[0]
+    final val selection // com.kashif.cameraK.engine/DesiredHardware.selection|{}selection[0]
+        final fun <get-selection>(): com.kashif.cameraK.engine/CameraSelection // com.kashif.cameraK.engine/DesiredHardware.selection.<get-selection>|<get-selection>(){}[0]
+    final val targetOrientation // com.kashif.cameraK.engine/DesiredHardware.targetOrientation|{}targetOrientation[0]
+        final fun <get-targetOrientation>(): com.kashif.cameraK.enums/DeviceOrientation? // com.kashif.cameraK.engine/DesiredHardware.targetOrientation.<get-targetOrientation>|<get-targetOrientation>(){}[0]
+    final val torchMode // com.kashif.cameraK.engine/DesiredHardware.torchMode|{}torchMode[0]
+        final fun <get-torchMode>(): com.kashif.cameraK.enums/TorchMode // com.kashif.cameraK.engine/DesiredHardware.torchMode.<get-torchMode>|<get-torchMode>(){}[0]
+    final val zoomRatio // com.kashif.cameraK.engine/DesiredHardware.zoomRatio|{}zoomRatio[0]
+        final fun <get-zoomRatio>(): kotlin/Float // com.kashif.cameraK.engine/DesiredHardware.zoomRatio.<get-zoomRatio>|<get-zoomRatio>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/DesiredHardware.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/DesiredHardware.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.engine/DesiredHardware.toString|toString(){}[0]
+}
+
+final class com.kashif.cameraK.engine/HardwareState { // com.kashif.cameraK.engine/HardwareState|null[0]
+    constructor <init>(com.kashif.cameraK.enums/FlashMode, com.kashif.cameraK.enums/TorchMode, com.kashif.cameraK.capabilities/LensInfo?, com.kashif.cameraK.enums/DeviceOrientation?) // com.kashif.cameraK.engine/HardwareState.<init>|<init>(com.kashif.cameraK.enums.FlashMode;com.kashif.cameraK.enums.TorchMode;com.kashif.cameraK.capabilities.LensInfo?;com.kashif.cameraK.enums.DeviceOrientation?){}[0]
+
+    final val camera // com.kashif.cameraK.engine/HardwareState.camera|{}camera[0]
+        final fun <get-camera>(): com.kashif.cameraK.capabilities/LensInfo? // com.kashif.cameraK.engine/HardwareState.camera.<get-camera>|<get-camera>(){}[0]
+    final val flashMode // com.kashif.cameraK.engine/HardwareState.flashMode|{}flashMode[0]
+        final fun <get-flashMode>(): com.kashif.cameraK.enums/FlashMode // com.kashif.cameraK.engine/HardwareState.flashMode.<get-flashMode>|<get-flashMode>(){}[0]
+    final val targetOrientation // com.kashif.cameraK.engine/HardwareState.targetOrientation|{}targetOrientation[0]
+        final fun <get-targetOrientation>(): com.kashif.cameraK.enums/DeviceOrientation? // com.kashif.cameraK.engine/HardwareState.targetOrientation.<get-targetOrientation>|<get-targetOrientation>(){}[0]
+    final val torchMode // com.kashif.cameraK.engine/HardwareState.torchMode|{}torchMode[0]
+        final fun <get-torchMode>(): com.kashif.cameraK.enums/TorchMode // com.kashif.cameraK.engine/HardwareState.torchMode.<get-torchMode>|<get-torchMode>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.engine/HardwareState.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.engine/HardwareState.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.engine/HardwareState.toString|toString(){}[0]
+}
+
+final class com.kashif.cameraK.frames/AnalyzerAdmission { // com.kashif.cameraK.frames/AnalyzerAdmission|null[0]
+    constructor <init>(kotlin/Float?, kotlin/Function0<kotlin/Long>) // com.kashif.cameraK.frames/AnalyzerAdmission.<init>|<init>(kotlin.Float?;kotlin.Function0<kotlin.Long>){}[0]
+
+    final fun deliver(kotlin/Function0<kotlin/Unit>): kotlin/Boolean // com.kashif.cameraK.frames/AnalyzerAdmission.deliver|deliver(kotlin.Function0<kotlin.Unit>){}[0]
+}
+
+final class com.kashif.cameraK.frames/FrameRect { // com.kashif.cameraK.frames/FrameRect|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int, kotlin/Int, kotlin/Int) // com.kashif.cameraK.frames/FrameRect.<init>|<init>(kotlin.Int;kotlin.Int;kotlin.Int;kotlin.Int){}[0]
+
+    final val bottom // com.kashif.cameraK.frames/FrameRect.bottom|{}bottom[0]
+        final fun <get-bottom>(): kotlin/Int // com.kashif.cameraK.frames/FrameRect.bottom.<get-bottom>|<get-bottom>(){}[0]
+    final val left // com.kashif.cameraK.frames/FrameRect.left|{}left[0]
+        final fun <get-left>(): kotlin/Int // com.kashif.cameraK.frames/FrameRect.left.<get-left>|<get-left>(){}[0]
+    final val right // com.kashif.cameraK.frames/FrameRect.right|{}right[0]
+        final fun <get-right>(): kotlin/Int // com.kashif.cameraK.frames/FrameRect.right.<get-right>|<get-right>(){}[0]
+    final val top // com.kashif.cameraK.frames/FrameRect.top|{}top[0]
+        final fun <get-top>(): kotlin/Int // com.kashif.cameraK.frames/FrameRect.top.<get-top>|<get-top>(){}[0]
+}
+
+final class com.kashif.cameraK.frames/FrameSpec { // com.kashif.cameraK.frames/FrameSpec|null[0]
+    constructor <init>(kotlin/Float? = ..., kotlin/Int = ..., kotlin/Boolean = ..., kotlin.collections/Set<com.kashif.cameraK.frames/FrameFormat> = ...) // com.kashif.cameraK.frames/FrameSpec.<init>|<init>(kotlin.Float?;kotlin.Int;kotlin.Boolean;kotlin.collections.Set<com.kashif.cameraK.frames.FrameFormat>){}[0]
+
+    final val acceptedFormats // com.kashif.cameraK.frames/FrameSpec.acceptedFormats|{}acceptedFormats[0]
+        final fun <get-acceptedFormats>(): kotlin.collections/Set<com.kashif.cameraK.frames/FrameFormat> // com.kashif.cameraK.frames/FrameSpec.acceptedFormats.<get-acceptedFormats>|<get-acceptedFormats>(){}[0]
+    final val maxFps // com.kashif.cameraK.frames/FrameSpec.maxFps|{}maxFps[0]
+        final fun <get-maxFps>(): kotlin/Float? // com.kashif.cameraK.frames/FrameSpec.maxFps.<get-maxFps>|<get-maxFps>(){}[0]
+    final val maxRetained // com.kashif.cameraK.frames/FrameSpec.maxRetained|{}maxRetained[0]
+        final fun <get-maxRetained>(): kotlin/Int // com.kashif.cameraK.frames/FrameSpec.maxRetained.<get-maxRetained>|<get-maxRetained>(){}[0]
+    final val synchronous // com.kashif.cameraK.frames/FrameSpec.synchronous|{}synchronous[0]
+        final fun <get-synchronous>(): kotlin/Boolean // com.kashif.cameraK.frames/FrameSpec.synchronous.<get-synchronous>|<get-synchronous>(){}[0]
+}
+
+final class com.kashif.cameraK.platform/CameraKPlatformContext { // com.kashif.cameraK.platform/CameraKPlatformContext|null[0]
+    constructor <init>() // com.kashif.cameraK.platform/CameraKPlatformContext.<init>|<init>(){}[0]
+}
+
+final class com.kashif.cameraK.state/CameraConfiguration { // com.kashif.cameraK.state/CameraConfiguration|null[0]
+    final val analysisFormat // com.kashif.cameraK.state/CameraConfiguration.analysisFormat|{}analysisFormat[0]
+        final fun <get-analysisFormat>(): com.kashif.cameraK.frames/FrameFormat // com.kashif.cameraK.state/CameraConfiguration.analysisFormat.<get-analysisFormat>|<get-analysisFormat>(){}[0]
+    final val analysisResolution // com.kashif.cameraK.state/CameraConfiguration.analysisResolution|{}analysisResolution[0]
+        final fun <get-analysisResolution>(): com.kashif.cameraK.state/Resolution? // com.kashif.cameraK.state/CameraConfiguration.analysisResolution.<get-analysisResolution>|<get-analysisResolution>(){}[0]
+    final val aspectRatio // com.kashif.cameraK.state/CameraConfiguration.aspectRatio|{}aspectRatio[0]
+        final fun <get-aspectRatio>(): com.kashif.cameraK.enums/AspectRatio // com.kashif.cameraK.state/CameraConfiguration.aspectRatio.<get-aspectRatio>|<get-aspectRatio>(){}[0]
+    final val cameraDeviceType // com.kashif.cameraK.state/CameraConfiguration.cameraDeviceType|{}cameraDeviceType[0]
+        final fun <get-cameraDeviceType>(): com.kashif.cameraK.enums/CameraDeviceType // com.kashif.cameraK.state/CameraConfiguration.cameraDeviceType.<get-cameraDeviceType>|<get-cameraDeviceType>(){}[0]
+    final val cameraId // com.kashif.cameraK.state/CameraConfiguration.cameraId|{}cameraId[0]
+        final fun <get-cameraId>(): kotlin/String? // com.kashif.cameraK.state/CameraConfiguration.cameraId.<get-cameraId>|<get-cameraId>(){}[0]
+    final val cameraLens // com.kashif.cameraK.state/CameraConfiguration.cameraLens|{}cameraLens[0]
+        final fun <get-cameraLens>(): com.kashif.cameraK.enums/CameraLens? // com.kashif.cameraK.state/CameraConfiguration.cameraLens.<get-cameraLens>|<get-cameraLens>(){}[0]
+    final val flashMode // com.kashif.cameraK.state/CameraConfiguration.flashMode|{}flashMode[0]
+        final fun <get-flashMode>(): com.kashif.cameraK.enums/FlashMode // com.kashif.cameraK.state/CameraConfiguration.flashMode.<get-flashMode>|<get-flashMode>(){}[0]
+    final val frameAnalysis // com.kashif.cameraK.state/CameraConfiguration.frameAnalysis|{}frameAnalysis[0]
+        final fun <get-frameAnalysis>(): kotlin/Boolean // com.kashif.cameraK.state/CameraConfiguration.frameAnalysis.<get-frameAnalysis>|<get-frameAnalysis>(){}[0]
+    final val imageFormat // com.kashif.cameraK.state/CameraConfiguration.imageFormat|{}imageFormat[0]
+        final fun <get-imageFormat>(): com.kashif.cameraK.enums/ImageFormat // com.kashif.cameraK.state/CameraConfiguration.imageFormat.<get-imageFormat>|<get-imageFormat>(){}[0]
+    final val initialZoomRatio // com.kashif.cameraK.state/CameraConfiguration.initialZoomRatio|{}initialZoomRatio[0]
+        final fun <get-initialZoomRatio>(): kotlin/Float // com.kashif.cameraK.state/CameraConfiguration.initialZoomRatio.<get-initialZoomRatio>|<get-initialZoomRatio>(){}[0]
+    final val mirrorFrontCamera // com.kashif.cameraK.state/CameraConfiguration.mirrorFrontCamera|{}mirrorFrontCamera[0]
+        final fun <get-mirrorFrontCamera>(): kotlin/Boolean // com.kashif.cameraK.state/CameraConfiguration.mirrorFrontCamera.<get-mirrorFrontCamera>|<get-mirrorFrontCamera>(){}[0]
+    final val outputDirectory // com.kashif.cameraK.state/CameraConfiguration.outputDirectory|{}outputDirectory[0]
+        final fun <get-outputDirectory>(): kotlin/String? // com.kashif.cameraK.state/CameraConfiguration.outputDirectory.<get-outputDirectory>|<get-outputDirectory>(){}[0]
+    final val qualityPrioritization // com.kashif.cameraK.state/CameraConfiguration.qualityPrioritization|{}qualityPrioritization[0]
+        final fun <get-qualityPrioritization>(): com.kashif.cameraK.enums/QualityPrioritization // com.kashif.cameraK.state/CameraConfiguration.qualityPrioritization.<get-qualityPrioritization>|<get-qualityPrioritization>(){}[0]
+    final val targetOrientation // com.kashif.cameraK.state/CameraConfiguration.targetOrientation|{}targetOrientation[0]
+        final fun <get-targetOrientation>(): com.kashif.cameraK.enums/DeviceOrientation? // com.kashif.cameraK.state/CameraConfiguration.targetOrientation.<get-targetOrientation>|<get-targetOrientation>(){}[0]
+    final val targetResolution // com.kashif.cameraK.state/CameraConfiguration.targetResolution|{}targetResolution[0]
+        final fun <get-targetResolution>(): com.kashif.cameraK.state/Resolution? // com.kashif.cameraK.state/CameraConfiguration.targetResolution.<get-targetResolution>|<get-targetResolution>(){}[0]
+    final val torchMode // com.kashif.cameraK.state/CameraConfiguration.torchMode|{}torchMode[0]
+        final fun <get-torchMode>(): com.kashif.cameraK.enums/TorchMode // com.kashif.cameraK.state/CameraConfiguration.torchMode.<get-torchMode>|<get-torchMode>(){}[0]
+
+    final fun copy(kotlin/Function1<com.kashif.cameraK.state/CameraConfiguration.Builder, kotlin/Unit>): com.kashif.cameraK.state/CameraConfiguration // com.kashif.cameraK.state/CameraConfiguration.copy|copy(kotlin.Function1<com.kashif.cameraK.state.CameraConfiguration.Builder,kotlin.Unit>){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.state/CameraConfiguration.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.state/CameraConfiguration.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.state/CameraConfiguration.toString|toString(){}[0]
+
+    final class Builder { // com.kashif.cameraK.state/CameraConfiguration.Builder|null[0]
+        final var analysisFormat // com.kashif.cameraK.state/CameraConfiguration.Builder.analysisFormat|{}analysisFormat[0]
+            final fun <get-analysisFormat>(): com.kashif.cameraK.frames/FrameFormat // com.kashif.cameraK.state/CameraConfiguration.Builder.analysisFormat.<get-analysisFormat>|<get-analysisFormat>(){}[0]
+            final fun <set-analysisFormat>(com.kashif.cameraK.frames/FrameFormat) // com.kashif.cameraK.state/CameraConfiguration.Builder.analysisFormat.<set-analysisFormat>|<set-analysisFormat>(com.kashif.cameraK.frames.FrameFormat){}[0]
+        final var analysisResolution // com.kashif.cameraK.state/CameraConfiguration.Builder.analysisResolution|{}analysisResolution[0]
+            final fun <get-analysisResolution>(): com.kashif.cameraK.state/Resolution? // com.kashif.cameraK.state/CameraConfiguration.Builder.analysisResolution.<get-analysisResolution>|<get-analysisResolution>(){}[0]
+            final fun <set-analysisResolution>(com.kashif.cameraK.state/Resolution?) // com.kashif.cameraK.state/CameraConfiguration.Builder.analysisResolution.<set-analysisResolution>|<set-analysisResolution>(com.kashif.cameraK.state.Resolution?){}[0]
+        final var aspectRatio // com.kashif.cameraK.state/CameraConfiguration.Builder.aspectRatio|{}aspectRatio[0]
+            final fun <get-aspectRatio>(): com.kashif.cameraK.enums/AspectRatio // com.kashif.cameraK.state/CameraConfiguration.Builder.aspectRatio.<get-aspectRatio>|<get-aspectRatio>(){}[0]
+            final fun <set-aspectRatio>(com.kashif.cameraK.enums/AspectRatio) // com.kashif.cameraK.state/CameraConfiguration.Builder.aspectRatio.<set-aspectRatio>|<set-aspectRatio>(com.kashif.cameraK.enums.AspectRatio){}[0]
+        final var cameraDeviceType // com.kashif.cameraK.state/CameraConfiguration.Builder.cameraDeviceType|{}cameraDeviceType[0]
+            final fun <get-cameraDeviceType>(): com.kashif.cameraK.enums/CameraDeviceType // com.kashif.cameraK.state/CameraConfiguration.Builder.cameraDeviceType.<get-cameraDeviceType>|<get-cameraDeviceType>(){}[0]
+            final fun <set-cameraDeviceType>(com.kashif.cameraK.enums/CameraDeviceType) // com.kashif.cameraK.state/CameraConfiguration.Builder.cameraDeviceType.<set-cameraDeviceType>|<set-cameraDeviceType>(com.kashif.cameraK.enums.CameraDeviceType){}[0]
+        final var cameraId // com.kashif.cameraK.state/CameraConfiguration.Builder.cameraId|{}cameraId[0]
+            final fun <get-cameraId>(): kotlin/String? // com.kashif.cameraK.state/CameraConfiguration.Builder.cameraId.<get-cameraId>|<get-cameraId>(){}[0]
+            final fun <set-cameraId>(kotlin/String?) // com.kashif.cameraK.state/CameraConfiguration.Builder.cameraId.<set-cameraId>|<set-cameraId>(kotlin.String?){}[0]
+        final var cameraLens // com.kashif.cameraK.state/CameraConfiguration.Builder.cameraLens|{}cameraLens[0]
+            final fun <get-cameraLens>(): com.kashif.cameraK.enums/CameraLens? // com.kashif.cameraK.state/CameraConfiguration.Builder.cameraLens.<get-cameraLens>|<get-cameraLens>(){}[0]
+            final fun <set-cameraLens>(com.kashif.cameraK.enums/CameraLens?) // com.kashif.cameraK.state/CameraConfiguration.Builder.cameraLens.<set-cameraLens>|<set-cameraLens>(com.kashif.cameraK.enums.CameraLens?){}[0]
+        final var flashMode // com.kashif.cameraK.state/CameraConfiguration.Builder.flashMode|{}flashMode[0]
+            final fun <get-flashMode>(): com.kashif.cameraK.enums/FlashMode // com.kashif.cameraK.state/CameraConfiguration.Builder.flashMode.<get-flashMode>|<get-flashMode>(){}[0]
+            final fun <set-flashMode>(com.kashif.cameraK.enums/FlashMode) // com.kashif.cameraK.state/CameraConfiguration.Builder.flashMode.<set-flashMode>|<set-flashMode>(com.kashif.cameraK.enums.FlashMode){}[0]
+        final var frameAnalysis // com.kashif.cameraK.state/CameraConfiguration.Builder.frameAnalysis|{}frameAnalysis[0]
+            final fun <get-frameAnalysis>(): kotlin/Boolean // com.kashif.cameraK.state/CameraConfiguration.Builder.frameAnalysis.<get-frameAnalysis>|<get-frameAnalysis>(){}[0]
+            final fun <set-frameAnalysis>(kotlin/Boolean) // com.kashif.cameraK.state/CameraConfiguration.Builder.frameAnalysis.<set-frameAnalysis>|<set-frameAnalysis>(kotlin.Boolean){}[0]
+        final var imageFormat // com.kashif.cameraK.state/CameraConfiguration.Builder.imageFormat|{}imageFormat[0]
+            final fun <get-imageFormat>(): com.kashif.cameraK.enums/ImageFormat // com.kashif.cameraK.state/CameraConfiguration.Builder.imageFormat.<get-imageFormat>|<get-imageFormat>(){}[0]
+            final fun <set-imageFormat>(com.kashif.cameraK.enums/ImageFormat) // com.kashif.cameraK.state/CameraConfiguration.Builder.imageFormat.<set-imageFormat>|<set-imageFormat>(com.kashif.cameraK.enums.ImageFormat){}[0]
+        final var initialZoomRatio // com.kashif.cameraK.state/CameraConfiguration.Builder.initialZoomRatio|{}initialZoomRatio[0]
+            final fun <get-initialZoomRatio>(): kotlin/Float // com.kashif.cameraK.state/CameraConfiguration.Builder.initialZoomRatio.<get-initialZoomRatio>|<get-initialZoomRatio>(){}[0]
+            final fun <set-initialZoomRatio>(kotlin/Float) // com.kashif.cameraK.state/CameraConfiguration.Builder.initialZoomRatio.<set-initialZoomRatio>|<set-initialZoomRatio>(kotlin.Float){}[0]
+        final var mirrorFrontCamera // com.kashif.cameraK.state/CameraConfiguration.Builder.mirrorFrontCamera|{}mirrorFrontCamera[0]
+            final fun <get-mirrorFrontCamera>(): kotlin/Boolean // com.kashif.cameraK.state/CameraConfiguration.Builder.mirrorFrontCamera.<get-mirrorFrontCamera>|<get-mirrorFrontCamera>(){}[0]
+            final fun <set-mirrorFrontCamera>(kotlin/Boolean) // com.kashif.cameraK.state/CameraConfiguration.Builder.mirrorFrontCamera.<set-mirrorFrontCamera>|<set-mirrorFrontCamera>(kotlin.Boolean){}[0]
+        final var outputDirectory // com.kashif.cameraK.state/CameraConfiguration.Builder.outputDirectory|{}outputDirectory[0]
+            final fun <get-outputDirectory>(): kotlin/String? // com.kashif.cameraK.state/CameraConfiguration.Builder.outputDirectory.<get-outputDirectory>|<get-outputDirectory>(){}[0]
+            final fun <set-outputDirectory>(kotlin/String?) // com.kashif.cameraK.state/CameraConfiguration.Builder.outputDirectory.<set-outputDirectory>|<set-outputDirectory>(kotlin.String?){}[0]
+        final var qualityPrioritization // com.kashif.cameraK.state/CameraConfiguration.Builder.qualityPrioritization|{}qualityPrioritization[0]
+            final fun <get-qualityPrioritization>(): com.kashif.cameraK.enums/QualityPrioritization // com.kashif.cameraK.state/CameraConfiguration.Builder.qualityPrioritization.<get-qualityPrioritization>|<get-qualityPrioritization>(){}[0]
+            final fun <set-qualityPrioritization>(com.kashif.cameraK.enums/QualityPrioritization) // com.kashif.cameraK.state/CameraConfiguration.Builder.qualityPrioritization.<set-qualityPrioritization>|<set-qualityPrioritization>(com.kashif.cameraK.enums.QualityPrioritization){}[0]
+        final var targetOrientation // com.kashif.cameraK.state/CameraConfiguration.Builder.targetOrientation|{}targetOrientation[0]
+            final fun <get-targetOrientation>(): com.kashif.cameraK.enums/DeviceOrientation? // com.kashif.cameraK.state/CameraConfiguration.Builder.targetOrientation.<get-targetOrientation>|<get-targetOrientation>(){}[0]
+            final fun <set-targetOrientation>(com.kashif.cameraK.enums/DeviceOrientation?) // com.kashif.cameraK.state/CameraConfiguration.Builder.targetOrientation.<set-targetOrientation>|<set-targetOrientation>(com.kashif.cameraK.enums.DeviceOrientation?){}[0]
+        final var targetResolution // com.kashif.cameraK.state/CameraConfiguration.Builder.targetResolution|{}targetResolution[0]
+            final fun <get-targetResolution>(): com.kashif.cameraK.state/Resolution? // com.kashif.cameraK.state/CameraConfiguration.Builder.targetResolution.<get-targetResolution>|<get-targetResolution>(){}[0]
+            final fun <set-targetResolution>(com.kashif.cameraK.state/Resolution?) // com.kashif.cameraK.state/CameraConfiguration.Builder.targetResolution.<set-targetResolution>|<set-targetResolution>(com.kashif.cameraK.state.Resolution?){}[0]
+        final var torchMode // com.kashif.cameraK.state/CameraConfiguration.Builder.torchMode|{}torchMode[0]
+            final fun <get-torchMode>(): com.kashif.cameraK.enums/TorchMode // com.kashif.cameraK.state/CameraConfiguration.Builder.torchMode.<get-torchMode>|<get-torchMode>(){}[0]
+            final fun <set-torchMode>(com.kashif.cameraK.enums/TorchMode) // com.kashif.cameraK.state/CameraConfiguration.Builder.torchMode.<set-torchMode>|<set-torchMode>(com.kashif.cameraK.enums.TorchMode){}[0]
+    }
+}
+
+final class com.kashif.cameraK.state/CameraKStateHolder : kotlin/AutoCloseable { // com.kashif.cameraK.state/CameraKStateHolder|null[0]
+    constructor <init>(com.kashif.cameraK.state/CameraConfiguration, com.kashif.cameraK.engine/CameraEngineFactory, kotlin.collections/List<com.kashif.cameraK.state/CameraKPlugin> = ..., com.kashif.cameraK.engine/CameraKEnvironment = ...) // com.kashif.cameraK.state/CameraKStateHolder.<init>|<init>(com.kashif.cameraK.state.CameraConfiguration;com.kashif.cameraK.engine.CameraEngineFactory;kotlin.collections.List<com.kashif.cameraK.state.CameraKPlugin>;com.kashif.cameraK.engine.CameraKEnvironment){}[0]
+    constructor <init>(com.kashif.cameraK.state/CameraConfiguration, com.kashif.cameraK.engine/CameraEngineFactory, kotlin.collections/List<com.kashif.cameraK.state/CameraKPlugin>, com.kashif.cameraK.engine/CameraKEnvironment, kotlinx.coroutines/Job?) // com.kashif.cameraK.state/CameraKStateHolder.<init>|<init>(com.kashif.cameraK.state.CameraConfiguration;com.kashif.cameraK.engine.CameraEngineFactory;kotlin.collections.List<com.kashif.cameraK.state.CameraKPlugin>;com.kashif.cameraK.engine.CameraKEnvironment;kotlinx.coroutines.Job?){}[0]
+    constructor <init>(com.kashif.cameraK.state/CameraConfiguration, com.kashif.cameraK.platform/CameraKPlatformContext, kotlin.collections/List<com.kashif.cameraK.state/CameraKPlugin> = ...) // com.kashif.cameraK.state/CameraKStateHolder.<init>|<init>(com.kashif.cameraK.state.CameraConfiguration;com.kashif.cameraK.platform.CameraKPlatformContext;kotlin.collections.List<com.kashif.cameraK.state.CameraKPlugin>){}[0]
+    constructor <init>(com.kashif.cameraK.state/CameraConfiguration, com.kashif.cameraK.platform/CameraKPlatformContext, kotlin.collections/List<com.kashif.cameraK.state/CameraKPlugin>, kotlinx.coroutines/Job?) // com.kashif.cameraK.state/CameraKStateHolder.<init>|<init>(com.kashif.cameraK.state.CameraConfiguration;com.kashif.cameraK.platform.CameraKPlatformContext;kotlin.collections.List<com.kashif.cameraK.state.CameraKPlugin>;kotlinx.coroutines.Job?){}[0]
+
+    final val cameraState // com.kashif.cameraK.state/CameraKStateHolder.cameraState|{}cameraState[0]
+        final fun <get-cameraState>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.state/CameraKState> // com.kashif.cameraK.state/CameraKStateHolder.cameraState.<get-cameraState>|<get-cameraState>(){}[0]
+    final val capabilities // com.kashif.cameraK.state/CameraKStateHolder.capabilities|{}capabilities[0]
+        final fun <get-capabilities>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.capabilities/CameraCapabilities> // com.kashif.cameraK.state/CameraKStateHolder.capabilities.<get-capabilities>|<get-capabilities>(){}[0]
+    final val captures // com.kashif.cameraK.state/CameraKStateHolder.captures|{}captures[0]
+        final fun <get-captures>(): kotlinx.coroutines.flow/SharedFlow<com.kashif.cameraK.capture/CapturedImage> // com.kashif.cameraK.state/CameraKStateHolder.captures.<get-captures>|<get-captures>(){}[0]
+    final val closeCompletion // com.kashif.cameraK.state/CameraKStateHolder.closeCompletion|{}closeCompletion[0]
+        final fun <get-closeCompletion>(): kotlinx.coroutines/Job // com.kashif.cameraK.state/CameraKStateHolder.closeCompletion.<get-closeCompletion>|<get-closeCompletion>(){}[0]
+    final val deviceOrientation // com.kashif.cameraK.state/CameraKStateHolder.deviceOrientation|{}deviceOrientation[0]
+        final fun <get-deviceOrientation>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.enums/DeviceOrientation> // com.kashif.cameraK.state/CameraKStateHolder.deviceOrientation.<get-deviceOrientation>|<get-deviceOrientation>(){}[0]
+    final val events // com.kashif.cameraK.state/CameraKStateHolder.events|{}events[0]
+        final fun <get-events>(): kotlinx.coroutines.flow/SharedFlow<com.kashif.cameraK.state/CameraKEvent> // com.kashif.cameraK.state/CameraKStateHolder.events.<get-events>|<get-events>(){}[0]
+    final val frames // com.kashif.cameraK.state/CameraKStateHolder.frames|{}frames[0]
+        final fun <get-frames>(): com.kashif.cameraK.frames/FrameSource // com.kashif.cameraK.state/CameraKStateHolder.frames.<get-frames>|<get-frames>(){}[0]
+    final val previewSource // com.kashif.cameraK.state/CameraKStateHolder.previewSource|{}previewSource[0]
+        final fun <get-previewSource>(): com.kashif.cameraK.engine/PlatformPreviewSource // com.kashif.cameraK.state/CameraKStateHolder.previewSource.<get-previewSource>|<get-previewSource>(){}[0]
+    final val recordingState // com.kashif.cameraK.state/CameraKStateHolder.recordingState|{}recordingState[0]
+        final fun <get-recordingState>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.recording/RecordingState> // com.kashif.cameraK.state/CameraKStateHolder.recordingState.<get-recordingState>|<get-recordingState>(){}[0]
+    final val selectsPlatformDefault // com.kashif.cameraK.state/CameraKStateHolder.selectsPlatformDefault|{}selectsPlatformDefault[0]
+        final fun <get-selectsPlatformDefault>(): kotlinx.coroutines.flow/StateFlow<kotlin/Boolean> // com.kashif.cameraK.state/CameraKStateHolder.selectsPlatformDefault.<get-selectsPlatformDefault>|<get-selectsPlatformDefault>(){}[0]
+    final val uiState // com.kashif.cameraK.state/CameraKStateHolder.uiState|{}uiState[0]
+        final fun <get-uiState>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.state/CameraUIState> // com.kashif.cameraK.state/CameraKStateHolder.uiState.<get-uiState>|<get-uiState>(){}[0]
+    final val zoom // com.kashif.cameraK.state/CameraKStateHolder.zoom|{}zoom[0]
+        final fun <get-zoom>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.state/ZoomState> // com.kashif.cameraK.state/CameraKStateHolder.zoom.<get-zoom>|<get-zoom>(){}[0]
+
+    final fun attachPlugin(com.kashif.cameraK.state/CameraKPlugin) // com.kashif.cameraK.state/CameraKStateHolder.attachPlugin|attachPlugin(com.kashif.cameraK.state.CameraKPlugin){}[0]
+    final fun captureImage() // com.kashif.cameraK.state/CameraKStateHolder.captureImage|captureImage(){}[0]
+    final fun close() // com.kashif.cameraK.state/CameraKStateHolder.close|close(){}[0]
+    final fun detachPlugin(com.kashif.cameraK.state/CameraKPlugin) // com.kashif.cameraK.state/CameraKStateHolder.detachPlugin|detachPlugin(com.kashif.cameraK.state.CameraKPlugin){}[0]
+    final fun getCameraCapabilities(): com.kashif.cameraK.capabilities/CameraCapabilities // com.kashif.cameraK.state/CameraKStateHolder.getCameraCapabilities|getCameraCapabilities(){}[0]
+    final fun recheckPermission() // com.kashif.cameraK.state/CameraKStateHolder.recheckPermission|recheckPermission(){}[0]
+    final fun retry(): kotlin/Boolean // com.kashif.cameraK.state/CameraKStateHolder.retry|retry(){}[0]
+    final fun shutdown() // com.kashif.cameraK.state/CameraKStateHolder.shutdown|shutdown(){}[0]
+    final fun start() // com.kashif.cameraK.state/CameraKStateHolder.start|start(){}[0]
+    final fun stop() // com.kashif.cameraK.state/CameraKStateHolder.stop|stop(){}[0]
+    final fun toggleCameraLens() // com.kashif.cameraK.state/CameraKStateHolder.toggleCameraLens|toggleCameraLens(){}[0]
+    final fun toggleFlashMode() // com.kashif.cameraK.state/CameraKStateHolder.toggleFlashMode|toggleFlashMode(){}[0]
+    final fun toggleTorchMode() // com.kashif.cameraK.state/CameraKStateHolder.toggleTorchMode|toggleTorchMode(){}[0]
+    final suspend fun capture(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/CapturedImage> // com.kashif.cameraK.state/CameraKStateHolder.capture|capture(){}[0]
+    final suspend fun closeAndJoin() // com.kashif.cameraK.state/CameraKStateHolder.closeAndJoin|closeAndJoin(){}[0]
+    final suspend fun pauseRecording(): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.pauseRecording|pauseRecording(){}[0]
+    final suspend fun prepareRecording(com.kashif.cameraK.video/VideoConfiguration = ...): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.prepareRecording|prepareRecording(com.kashif.cameraK.video.VideoConfiguration){}[0]
+    final suspend fun resumeRecording(): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.resumeRecording|resumeRecording(){}[0]
+    final suspend fun selectCamera(com.kashif.cameraK.enums/CameraLens, com.kashif.cameraK.enums/CameraDeviceType = ...): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.state/CameraKStateHolder.selectCamera|selectCamera(com.kashif.cameraK.enums.CameraLens;com.kashif.cameraK.enums.CameraDeviceType){}[0]
+    final suspend fun selectCamera(kotlin/String): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.state/CameraKStateHolder.selectCamera|selectCamera(kotlin.String){}[0]
+    final suspend fun setFlashMode(com.kashif.cameraK.enums/FlashMode): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.enums/FlashMode> // com.kashif.cameraK.state/CameraKStateHolder.setFlashMode|setFlashMode(com.kashif.cameraK.enums.FlashMode){}[0]
+    final suspend fun setTargetOrientation(com.kashif.cameraK.enums/DeviceOrientation?): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.setTargetOrientation|setTargetOrientation(com.kashif.cameraK.enums.DeviceOrientation?){}[0]
+    final suspend fun setTorchMode(com.kashif.cameraK.enums/TorchMode): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.enums/TorchMode> // com.kashif.cameraK.state/CameraKStateHolder.setTorchMode|setTorchMode(com.kashif.cameraK.enums.TorchMode){}[0]
+    final suspend fun setZoom(kotlin/Float): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.state/ZoomState> // com.kashif.cameraK.state/CameraKStateHolder.setZoom|setZoom(kotlin.Float){}[0]
+    final suspend fun startRecording(com.kashif.cameraK.video/VideoConfiguration = ...): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.recording/RecordingState.Recording> // com.kashif.cameraK.state/CameraKStateHolder.startRecording|startRecording(com.kashif.cameraK.video.VideoConfiguration){}[0]
+    final suspend fun stopRecording(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/RecordedVideo> // com.kashif.cameraK.state/CameraKStateHolder.stopRecording|stopRecording(){}[0]
+}
+
+final class com.kashif.cameraK.state/CameraUIState { // com.kashif.cameraK.state/CameraUIState|null[0]
+    final val cameraDeviceType // com.kashif.cameraK.state/CameraUIState.cameraDeviceType|{}cameraDeviceType[0]
+        final fun <get-cameraDeviceType>(): com.kashif.cameraK.enums/CameraDeviceType // com.kashif.cameraK.state/CameraUIState.cameraDeviceType.<get-cameraDeviceType>|<get-cameraDeviceType>(){}[0]
+    final val cameraId // com.kashif.cameraK.state/CameraUIState.cameraId|{}cameraId[0]
+        final fun <get-cameraId>(): kotlin/String? // com.kashif.cameraK.state/CameraUIState.cameraId.<get-cameraId>|<get-cameraId>(){}[0]
+    final val cameraLens // com.kashif.cameraK.state/CameraUIState.cameraLens|{}cameraLens[0]
+        final fun <get-cameraLens>(): com.kashif.cameraK.enums/CameraLens? // com.kashif.cameraK.state/CameraUIState.cameraLens.<get-cameraLens>|<get-cameraLens>(){}[0]
+    final val flashMode // com.kashif.cameraK.state/CameraUIState.flashMode|{}flashMode[0]
+        final fun <get-flashMode>(): com.kashif.cameraK.enums/FlashMode? // com.kashif.cameraK.state/CameraUIState.flashMode.<get-flashMode>|<get-flashMode>(){}[0]
+    final val isCapturing // com.kashif.cameraK.state/CameraUIState.isCapturing|{}isCapturing[0]
+        final fun <get-isCapturing>(): kotlin/Boolean // com.kashif.cameraK.state/CameraUIState.isCapturing.<get-isCapturing>|<get-isCapturing>(){}[0]
+    final val pendingCaptures // com.kashif.cameraK.state/CameraUIState.pendingCaptures|{}pendingCaptures[0]
+        final fun <get-pendingCaptures>(): kotlin/Int // com.kashif.cameraK.state/CameraUIState.pendingCaptures.<get-pendingCaptures>|<get-pendingCaptures>(){}[0]
+    final val targetOrientation // com.kashif.cameraK.state/CameraUIState.targetOrientation|{}targetOrientation[0]
+        final fun <get-targetOrientation>(): com.kashif.cameraK.enums/DeviceOrientation? // com.kashif.cameraK.state/CameraUIState.targetOrientation.<get-targetOrientation>|<get-targetOrientation>(){}[0]
+    final val torchMode // com.kashif.cameraK.state/CameraUIState.torchMode|{}torchMode[0]
+        final fun <get-torchMode>(): com.kashif.cameraK.enums/TorchMode? // com.kashif.cameraK.state/CameraUIState.torchMode.<get-torchMode>|<get-torchMode>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.state/CameraUIState.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.state/CameraUIState.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.state/CameraUIState.toString|toString(){}[0]
+}
+
+final class com.kashif.cameraK.state/Resolution { // com.kashif.cameraK.state/Resolution|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int) // com.kashif.cameraK.state/Resolution.<init>|<init>(kotlin.Int;kotlin.Int){}[0]
+
+    final val height // com.kashif.cameraK.state/Resolution.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // com.kashif.cameraK.state/Resolution.height.<get-height>|<get-height>(){}[0]
+    final val width // com.kashif.cameraK.state/Resolution.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // com.kashif.cameraK.state/Resolution.width.<get-width>|<get-width>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.state/Resolution.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.state/Resolution.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.state/Resolution.toString|toString(){}[0]
+}
+
+final class com.kashif.cameraK.state/ZoomState { // com.kashif.cameraK.state/ZoomState|null[0]
+    constructor <init>(kotlin/Float, kotlin/Float, kotlin/Float) // com.kashif.cameraK.state/ZoomState.<init>|<init>(kotlin.Float;kotlin.Float;kotlin.Float){}[0]
+
+    final val maxRatio // com.kashif.cameraK.state/ZoomState.maxRatio|{}maxRatio[0]
+        final fun <get-maxRatio>(): kotlin/Float // com.kashif.cameraK.state/ZoomState.maxRatio.<get-maxRatio>|<get-maxRatio>(){}[0]
+    final val minRatio // com.kashif.cameraK.state/ZoomState.minRatio|{}minRatio[0]
+        final fun <get-minRatio>(): kotlin/Float // com.kashif.cameraK.state/ZoomState.minRatio.<get-minRatio>|<get-minRatio>(){}[0]
+    final val ratio // com.kashif.cameraK.state/ZoomState.ratio|{}ratio[0]
+        final fun <get-ratio>(): kotlin/Float // com.kashif.cameraK.state/ZoomState.ratio.<get-ratio>|<get-ratio>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.state/ZoomState.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.state/ZoomState.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.state/ZoomState.toString|toString(){}[0]
+}
+
+final class com.kashif.cameraK.video/VideoConfiguration { // com.kashif.cameraK.video/VideoConfiguration|null[0]
+    final val enableAudio // com.kashif.cameraK.video/VideoConfiguration.enableAudio|{}enableAudio[0]
+        final fun <get-enableAudio>(): kotlin/Boolean // com.kashif.cameraK.video/VideoConfiguration.enableAudio.<get-enableAudio>|<get-enableAudio>(){}[0]
+    final val filePrefix // com.kashif.cameraK.video/VideoConfiguration.filePrefix|{}filePrefix[0]
+        final fun <get-filePrefix>(): kotlin/String // com.kashif.cameraK.video/VideoConfiguration.filePrefix.<get-filePrefix>|<get-filePrefix>(){}[0]
+    final val maxDuration // com.kashif.cameraK.video/VideoConfiguration.maxDuration|{}maxDuration[0]
+        final fun <get-maxDuration>(): kotlin.time/Duration? // com.kashif.cameraK.video/VideoConfiguration.maxDuration.<get-maxDuration>|<get-maxDuration>(){}[0]
+    final val maxFileSizeBytes // com.kashif.cameraK.video/VideoConfiguration.maxFileSizeBytes|{}maxFileSizeBytes[0]
+        final fun <get-maxFileSizeBytes>(): kotlin/Long? // com.kashif.cameraK.video/VideoConfiguration.maxFileSizeBytes.<get-maxFileSizeBytes>|<get-maxFileSizeBytes>(){}[0]
+    final val outputDirectory // com.kashif.cameraK.video/VideoConfiguration.outputDirectory|{}outputDirectory[0]
+        final fun <get-outputDirectory>(): kotlin/String? // com.kashif.cameraK.video/VideoConfiguration.outputDirectory.<get-outputDirectory>|<get-outputDirectory>(){}[0]
+    final val quality // com.kashif.cameraK.video/VideoConfiguration.quality|{}quality[0]
+        final fun <get-quality>(): com.kashif.cameraK.video/VideoQuality // com.kashif.cameraK.video/VideoConfiguration.quality.<get-quality>|<get-quality>(){}[0]
+
+    final fun copy(kotlin/Function1<com.kashif.cameraK.video/VideoConfiguration.Builder, kotlin/Unit>): com.kashif.cameraK.video/VideoConfiguration // com.kashif.cameraK.video/VideoConfiguration.copy|copy(kotlin.Function1<com.kashif.cameraK.video.VideoConfiguration.Builder,kotlin.Unit>){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.video/VideoConfiguration.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.video/VideoConfiguration.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.video/VideoConfiguration.toString|toString(){}[0]
+
+    final class Builder { // com.kashif.cameraK.video/VideoConfiguration.Builder|null[0]
+        final var enableAudio // com.kashif.cameraK.video/VideoConfiguration.Builder.enableAudio|{}enableAudio[0]
+            final fun <get-enableAudio>(): kotlin/Boolean // com.kashif.cameraK.video/VideoConfiguration.Builder.enableAudio.<get-enableAudio>|<get-enableAudio>(){}[0]
+            final fun <set-enableAudio>(kotlin/Boolean) // com.kashif.cameraK.video/VideoConfiguration.Builder.enableAudio.<set-enableAudio>|<set-enableAudio>(kotlin.Boolean){}[0]
+        final var filePrefix // com.kashif.cameraK.video/VideoConfiguration.Builder.filePrefix|{}filePrefix[0]
+            final fun <get-filePrefix>(): kotlin/String // com.kashif.cameraK.video/VideoConfiguration.Builder.filePrefix.<get-filePrefix>|<get-filePrefix>(){}[0]
+            final fun <set-filePrefix>(kotlin/String) // com.kashif.cameraK.video/VideoConfiguration.Builder.filePrefix.<set-filePrefix>|<set-filePrefix>(kotlin.String){}[0]
+        final var maxDuration // com.kashif.cameraK.video/VideoConfiguration.Builder.maxDuration|{}maxDuration[0]
+            final fun <get-maxDuration>(): kotlin.time/Duration? // com.kashif.cameraK.video/VideoConfiguration.Builder.maxDuration.<get-maxDuration>|<get-maxDuration>(){}[0]
+            final fun <set-maxDuration>(kotlin.time/Duration?) // com.kashif.cameraK.video/VideoConfiguration.Builder.maxDuration.<set-maxDuration>|<set-maxDuration>(kotlin.time.Duration?){}[0]
+        final var maxFileSizeBytes // com.kashif.cameraK.video/VideoConfiguration.Builder.maxFileSizeBytes|{}maxFileSizeBytes[0]
+            final fun <get-maxFileSizeBytes>(): kotlin/Long? // com.kashif.cameraK.video/VideoConfiguration.Builder.maxFileSizeBytes.<get-maxFileSizeBytes>|<get-maxFileSizeBytes>(){}[0]
+            final fun <set-maxFileSizeBytes>(kotlin/Long?) // com.kashif.cameraK.video/VideoConfiguration.Builder.maxFileSizeBytes.<set-maxFileSizeBytes>|<set-maxFileSizeBytes>(kotlin.Long?){}[0]
+        final var outputDirectory // com.kashif.cameraK.video/VideoConfiguration.Builder.outputDirectory|{}outputDirectory[0]
+            final fun <get-outputDirectory>(): kotlin/String? // com.kashif.cameraK.video/VideoConfiguration.Builder.outputDirectory.<get-outputDirectory>|<get-outputDirectory>(){}[0]
+            final fun <set-outputDirectory>(kotlin/String?) // com.kashif.cameraK.video/VideoConfiguration.Builder.outputDirectory.<set-outputDirectory>|<set-outputDirectory>(kotlin.String?){}[0]
+        final var quality // com.kashif.cameraK.video/VideoConfiguration.Builder.quality|{}quality[0]
+            final fun <get-quality>(): com.kashif.cameraK.video/VideoQuality // com.kashif.cameraK.video/VideoConfiguration.Builder.quality.<get-quality>|<get-quality>(){}[0]
+            final fun <set-quality>(com.kashif.cameraK.video/VideoQuality) // com.kashif.cameraK.video/VideoConfiguration.Builder.quality.<set-quality>|<set-quality>(com.kashif.cameraK.video.VideoQuality){}[0]
+    }
+}
+
+final value class com.kashif.cameraK.error/CameraFeature { // com.kashif.cameraK.error/CameraFeature|null[0]
+    final val name // com.kashif.cameraK.error/CameraFeature.name|{}name[0]
+        final fun <get-name>(): kotlin/String // com.kashif.cameraK.error/CameraFeature.name.<get-name>|<get-name>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.error/CameraFeature.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.error/CameraFeature.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.error/CameraFeature.toString|toString(){}[0]
+
+    final object Companion { // com.kashif.cameraK.error/CameraFeature.Companion|null[0]
+        final val ANALYSIS_FORMAT // com.kashif.cameraK.error/CameraFeature.Companion.ANALYSIS_FORMAT|{}ANALYSIS_FORMAT[0]
+            final fun <get-ANALYSIS_FORMAT>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.ANALYSIS_FORMAT.<get-ANALYSIS_FORMAT>|<get-ANALYSIS_FORMAT>(){}[0]
+        final val ASPECT_RATIO // com.kashif.cameraK.error/CameraFeature.Companion.ASPECT_RATIO|{}ASPECT_RATIO[0]
+            final fun <get-ASPECT_RATIO>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.ASPECT_RATIO.<get-ASPECT_RATIO>|<get-ASPECT_RATIO>(){}[0]
+        final val AUDIO // com.kashif.cameraK.error/CameraFeature.Companion.AUDIO|{}AUDIO[0]
+            final fun <get-AUDIO>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.AUDIO.<get-AUDIO>|<get-AUDIO>(){}[0]
+        final val DEVICE_TYPE // com.kashif.cameraK.error/CameraFeature.Companion.DEVICE_TYPE|{}DEVICE_TYPE[0]
+            final fun <get-DEVICE_TYPE>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.DEVICE_TYPE.<get-DEVICE_TYPE>|<get-DEVICE_TYPE>(){}[0]
+        final val FLASH_AUTO // com.kashif.cameraK.error/CameraFeature.Companion.FLASH_AUTO|{}FLASH_AUTO[0]
+            final fun <get-FLASH_AUTO>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.FLASH_AUTO.<get-FLASH_AUTO>|<get-FLASH_AUTO>(){}[0]
+        final val FLASH_ON // com.kashif.cameraK.error/CameraFeature.Companion.FLASH_ON|{}FLASH_ON[0]
+            final fun <get-FLASH_ON>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.FLASH_ON.<get-FLASH_ON>|<get-FLASH_ON>(){}[0]
+        final val IMAGE_FORMAT // com.kashif.cameraK.error/CameraFeature.Companion.IMAGE_FORMAT|{}IMAGE_FORMAT[0]
+            final fun <get-IMAGE_FORMAT>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.IMAGE_FORMAT.<get-IMAGE_FORMAT>|<get-IMAGE_FORMAT>(){}[0]
+        final val LENS_SWITCH // com.kashif.cameraK.error/CameraFeature.Companion.LENS_SWITCH|{}LENS_SWITCH[0]
+            final fun <get-LENS_SWITCH>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.LENS_SWITCH.<get-LENS_SWITCH>|<get-LENS_SWITCH>(){}[0]
+        final val PAUSE_RESUME // com.kashif.cameraK.error/CameraFeature.Companion.PAUSE_RESUME|{}PAUSE_RESUME[0]
+            final fun <get-PAUSE_RESUME>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.PAUSE_RESUME.<get-PAUSE_RESUME>|<get-PAUSE_RESUME>(){}[0]
+        final val PLATFORM_VERSION // com.kashif.cameraK.error/CameraFeature.Companion.PLATFORM_VERSION|{}PLATFORM_VERSION[0]
+            final fun <get-PLATFORM_VERSION>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.PLATFORM_VERSION.<get-PLATFORM_VERSION>|<get-PLATFORM_VERSION>(){}[0]
+        final val TARGET_ORIENTATION // com.kashif.cameraK.error/CameraFeature.Companion.TARGET_ORIENTATION|{}TARGET_ORIENTATION[0]
+            final fun <get-TARGET_ORIENTATION>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.TARGET_ORIENTATION.<get-TARGET_ORIENTATION>|<get-TARGET_ORIENTATION>(){}[0]
+        final val TARGET_RESOLUTION // com.kashif.cameraK.error/CameraFeature.Companion.TARGET_RESOLUTION|{}TARGET_RESOLUTION[0]
+            final fun <get-TARGET_RESOLUTION>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.TARGET_RESOLUTION.<get-TARGET_RESOLUTION>|<get-TARGET_RESOLUTION>(){}[0]
+        final val TORCH // com.kashif.cameraK.error/CameraFeature.Companion.TORCH|{}TORCH[0]
+            final fun <get-TORCH>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.TORCH.<get-TORCH>|<get-TORCH>(){}[0]
+        final val VIDEO_BITRATE // com.kashif.cameraK.error/CameraFeature.Companion.VIDEO_BITRATE|{}VIDEO_BITRATE[0]
+            final fun <get-VIDEO_BITRATE>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.VIDEO_BITRATE.<get-VIDEO_BITRATE>|<get-VIDEO_BITRATE>(){}[0]
+        final val VIDEO_QUALITY // com.kashif.cameraK.error/CameraFeature.Companion.VIDEO_QUALITY|{}VIDEO_QUALITY[0]
+            final fun <get-VIDEO_QUALITY>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.VIDEO_QUALITY.<get-VIDEO_QUALITY>|<get-VIDEO_QUALITY>(){}[0]
+        final val ZOOM // com.kashif.cameraK.error/CameraFeature.Companion.ZOOM|{}ZOOM[0]
+            final fun <get-ZOOM>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.ZOOM.<get-ZOOM>|<get-ZOOM>(){}[0]
+    }
+}
+
+final value class com.kashif.cameraK.error/CameraOperation { // com.kashif.cameraK.error/CameraOperation|null[0]
+    final val name // com.kashif.cameraK.error/CameraOperation.name|{}name[0]
+        final fun <get-name>(): kotlin/String // com.kashif.cameraK.error/CameraOperation.name.<get-name>|<get-name>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.error/CameraOperation.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.error/CameraOperation.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.error/CameraOperation.toString|toString(){}[0]
+
+    final object Companion { // com.kashif.cameraK.error/CameraOperation.Companion|null[0]
+        final val CAPTURE // com.kashif.cameraK.error/CameraOperation.Companion.CAPTURE|{}CAPTURE[0]
+            final fun <get-CAPTURE>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.CAPTURE.<get-CAPTURE>|<get-CAPTURE>(){}[0]
+        final val DEVICE_TYPE // com.kashif.cameraK.error/CameraOperation.Companion.DEVICE_TYPE|{}DEVICE_TYPE[0]
+            final fun <get-DEVICE_TYPE>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.DEVICE_TYPE.<get-DEVICE_TYPE>|<get-DEVICE_TYPE>(){}[0]
+        final val FLASH // com.kashif.cameraK.error/CameraOperation.Companion.FLASH|{}FLASH[0]
+            final fun <get-FLASH>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.FLASH.<get-FLASH>|<get-FLASH>(){}[0]
+        final val LENS // com.kashif.cameraK.error/CameraOperation.Companion.LENS|{}LENS[0]
+            final fun <get-LENS>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.LENS.<get-LENS>|<get-LENS>(){}[0]
+        final val ORIENTATION // com.kashif.cameraK.error/CameraOperation.Companion.ORIENTATION|{}ORIENTATION[0]
+            final fun <get-ORIENTATION>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.ORIENTATION.<get-ORIENTATION>|<get-ORIENTATION>(){}[0]
+        final val RECORD_PAUSE // com.kashif.cameraK.error/CameraOperation.Companion.RECORD_PAUSE|{}RECORD_PAUSE[0]
+            final fun <get-RECORD_PAUSE>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.RECORD_PAUSE.<get-RECORD_PAUSE>|<get-RECORD_PAUSE>(){}[0]
+        final val RECORD_PREPARE // com.kashif.cameraK.error/CameraOperation.Companion.RECORD_PREPARE|{}RECORD_PREPARE[0]
+            final fun <get-RECORD_PREPARE>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.RECORD_PREPARE.<get-RECORD_PREPARE>|<get-RECORD_PREPARE>(){}[0]
+        final val RECORD_RESUME // com.kashif.cameraK.error/CameraOperation.Companion.RECORD_RESUME|{}RECORD_RESUME[0]
+            final fun <get-RECORD_RESUME>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.RECORD_RESUME.<get-RECORD_RESUME>|<get-RECORD_RESUME>(){}[0]
+        final val RECORD_START // com.kashif.cameraK.error/CameraOperation.Companion.RECORD_START|{}RECORD_START[0]
+            final fun <get-RECORD_START>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.RECORD_START.<get-RECORD_START>|<get-RECORD_START>(){}[0]
+        final val RECORD_STOP // com.kashif.cameraK.error/CameraOperation.Companion.RECORD_STOP|{}RECORD_STOP[0]
+            final fun <get-RECORD_STOP>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.RECORD_STOP.<get-RECORD_STOP>|<get-RECORD_STOP>(){}[0]
+        final val START // com.kashif.cameraK.error/CameraOperation.Companion.START|{}START[0]
+            final fun <get-START>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.START.<get-START>|<get-START>(){}[0]
+        final val TORCH // com.kashif.cameraK.error/CameraOperation.Companion.TORCH|{}TORCH[0]
+            final fun <get-TORCH>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.TORCH.<get-TORCH>|<get-TORCH>(){}[0]
+        final val ZOOM // com.kashif.cameraK.error/CameraOperation.Companion.ZOOM|{}ZOOM[0]
+            final fun <get-ZOOM>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.ZOOM.<get-ZOOM>|<get-ZOOM>(){}[0]
+    }
+}
+
+final value class com.kashif.cameraK.error/InterruptionReason { // com.kashif.cameraK.error/InterruptionReason|null[0]
+    final val name // com.kashif.cameraK.error/InterruptionReason.name|{}name[0]
+        final fun <get-name>(): kotlin/String // com.kashif.cameraK.error/InterruptionReason.name.<get-name>|<get-name>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.error/InterruptionReason.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.error/InterruptionReason.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.error/InterruptionReason.toString|toString(){}[0]
+
+    final object Companion { // com.kashif.cameraK.error/InterruptionReason.Companion|null[0]
+        final val APP_IN_BACKGROUND // com.kashif.cameraK.error/InterruptionReason.Companion.APP_IN_BACKGROUND|{}APP_IN_BACKGROUND[0]
+            final fun <get-APP_IN_BACKGROUND>(): com.kashif.cameraK.error/InterruptionReason // com.kashif.cameraK.error/InterruptionReason.Companion.APP_IN_BACKGROUND.<get-APP_IN_BACKGROUND>|<get-APP_IN_BACKGROUND>(){}[0]
+        final val AUDIO_IN_USE // com.kashif.cameraK.error/InterruptionReason.Companion.AUDIO_IN_USE|{}AUDIO_IN_USE[0]
+            final fun <get-AUDIO_IN_USE>(): com.kashif.cameraK.error/InterruptionReason // com.kashif.cameraK.error/InterruptionReason.Companion.AUDIO_IN_USE.<get-AUDIO_IN_USE>|<get-AUDIO_IN_USE>(){}[0]
+        final val IN_USE_BY_ANOTHER_CLIENT // com.kashif.cameraK.error/InterruptionReason.Companion.IN_USE_BY_ANOTHER_CLIENT|{}IN_USE_BY_ANOTHER_CLIENT[0]
+            final fun <get-IN_USE_BY_ANOTHER_CLIENT>(): com.kashif.cameraK.error/InterruptionReason // com.kashif.cameraK.error/InterruptionReason.Companion.IN_USE_BY_ANOTHER_CLIENT.<get-IN_USE_BY_ANOTHER_CLIENT>|<get-IN_USE_BY_ANOTHER_CLIENT>(){}[0]
+        final val MEDIA_SERVICES_RESET // com.kashif.cameraK.error/InterruptionReason.Companion.MEDIA_SERVICES_RESET|{}MEDIA_SERVICES_RESET[0]
+            final fun <get-MEDIA_SERVICES_RESET>(): com.kashif.cameraK.error/InterruptionReason // com.kashif.cameraK.error/InterruptionReason.Companion.MEDIA_SERVICES_RESET.<get-MEDIA_SERVICES_RESET>|<get-MEDIA_SERVICES_RESET>(){}[0]
+        final val MULTITASKING // com.kashif.cameraK.error/InterruptionReason.Companion.MULTITASKING|{}MULTITASKING[0]
+            final fun <get-MULTITASKING>(): com.kashif.cameraK.error/InterruptionReason // com.kashif.cameraK.error/InterruptionReason.Companion.MULTITASKING.<get-MULTITASKING>|<get-MULTITASKING>(){}[0]
+        final val OTHER // com.kashif.cameraK.error/InterruptionReason.Companion.OTHER|{}OTHER[0]
+            final fun <get-OTHER>(): com.kashif.cameraK.error/InterruptionReason // com.kashif.cameraK.error/InterruptionReason.Companion.OTHER.<get-OTHER>|<get-OTHER>(){}[0]
+        final val SYSTEM_PRESSURE // com.kashif.cameraK.error/InterruptionReason.Companion.SYSTEM_PRESSURE|{}SYSTEM_PRESSURE[0]
+            final fun <get-SYSTEM_PRESSURE>(): com.kashif.cameraK.error/InterruptionReason // com.kashif.cameraK.error/InterruptionReason.Companion.SYSTEM_PRESSURE.<get-SYSTEM_PRESSURE>|<get-SYSTEM_PRESSURE>(){}[0]
+    }
+}
+
+final value class com.kashif.cameraK.error/StorageFailure { // com.kashif.cameraK.error/StorageFailure|null[0]
+    final val name // com.kashif.cameraK.error/StorageFailure.name|{}name[0]
+        final fun <get-name>(): kotlin/String // com.kashif.cameraK.error/StorageFailure.name.<get-name>|<get-name>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.error/StorageFailure.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.error/StorageFailure.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.error/StorageFailure.toString|toString(){}[0]
+
+    final object Companion { // com.kashif.cameraK.error/StorageFailure.Companion|null[0]
+        final val FULL // com.kashif.cameraK.error/StorageFailure.Companion.FULL|{}FULL[0]
+            final fun <get-FULL>(): com.kashif.cameraK.error/StorageFailure // com.kashif.cameraK.error/StorageFailure.Companion.FULL.<get-FULL>|<get-FULL>(){}[0]
+        final val GALLERY_IMPORT_FAILED // com.kashif.cameraK.error/StorageFailure.Companion.GALLERY_IMPORT_FAILED|{}GALLERY_IMPORT_FAILED[0]
+            final fun <get-GALLERY_IMPORT_FAILED>(): com.kashif.cameraK.error/StorageFailure // com.kashif.cameraK.error/StorageFailure.Companion.GALLERY_IMPORT_FAILED.<get-GALLERY_IMPORT_FAILED>|<get-GALLERY_IMPORT_FAILED>(){}[0]
+        final val NOT_FOUND // com.kashif.cameraK.error/StorageFailure.Companion.NOT_FOUND|{}NOT_FOUND[0]
+            final fun <get-NOT_FOUND>(): com.kashif.cameraK.error/StorageFailure // com.kashif.cameraK.error/StorageFailure.Companion.NOT_FOUND.<get-NOT_FOUND>|<get-NOT_FOUND>(){}[0]
+        final val NOT_WRITABLE // com.kashif.cameraK.error/StorageFailure.Companion.NOT_WRITABLE|{}NOT_WRITABLE[0]
+            final fun <get-NOT_WRITABLE>(): com.kashif.cameraK.error/StorageFailure // com.kashif.cameraK.error/StorageFailure.Companion.NOT_WRITABLE.<get-NOT_WRITABLE>|<get-NOT_WRITABLE>(){}[0]
+    }
+}
+
+sealed class com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError|null[0]
+    abstract val isRetryable // com.kashif.cameraK.error/CameraKError.isRetryable|{}isRetryable[0]
+        abstract fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+    final val cause // com.kashif.cameraK.error/CameraKError.cause|{}cause[0]
+        final fun <get-cause>(): kotlin/Throwable? // com.kashif.cameraK.error/CameraKError.cause.<get-cause>|<get-cause>(){}[0]
+
+    final class Busy : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.Busy|null[0]
+        constructor <init>(com.kashif.cameraK.error/CameraOperation) // com.kashif.cameraK.error/CameraKError.Busy.<init>|<init>(com.kashif.cameraK.error.CameraOperation){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.Busy.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Busy.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+        final val operation // com.kashif.cameraK.error/CameraKError.Busy.operation|{}operation[0]
+            final fun <get-operation>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraKError.Busy.operation.<get-operation>|<get-operation>(){}[0]
+    }
+
+    final class CameraDisabled : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.CameraDisabled|null[0]
+        constructor <init>(kotlin/Throwable? = ...) // com.kashif.cameraK.error/CameraKError.CameraDisabled.<init>|<init>(kotlin.Throwable?){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.CameraDisabled.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.CameraDisabled.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+    }
+
+    final class CameraInUse : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.CameraInUse|null[0]
+        constructor <init>(kotlin/Throwable? = ...) // com.kashif.cameraK.error/CameraKError.CameraInUse.<init>|<init>(kotlin.Throwable?){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.CameraInUse.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.CameraInUse.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+    }
+
+    final class Disconnected : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.Disconnected|null[0]
+        constructor <init>(kotlin/Throwable? = ...) // com.kashif.cameraK.error/CameraKError.Disconnected.<init>|<init>(kotlin.Throwable?){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.Disconnected.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Disconnected.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+    }
+
+    final class Hardware : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.Hardware|null[0]
+        constructor <init>(kotlin/Int?, kotlin/Throwable? = ...) // com.kashif.cameraK.error/CameraKError.Hardware.<init>|<init>(kotlin.Int?;kotlin.Throwable?){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.Hardware.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Hardware.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+        final val platformCode // com.kashif.cameraK.error/CameraKError.Hardware.platformCode|{}platformCode[0]
+            final fun <get-platformCode>(): kotlin/Int? // com.kashif.cameraK.error/CameraKError.Hardware.platformCode.<get-platformCode>|<get-platformCode>(){}[0]
+    }
+
+    final class Internal : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.Internal|null[0]
+        constructor <init>(kotlin/Throwable?) // com.kashif.cameraK.error/CameraKError.Internal.<init>|<init>(kotlin.Throwable?){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.Internal.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Internal.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+    }
+
+    final class InvalidState : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.InvalidState|null[0]
+        constructor <init>(com.kashif.cameraK.error/CameraOperation) // com.kashif.cameraK.error/CameraKError.InvalidState.<init>|<init>(com.kashif.cameraK.error.CameraOperation){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.InvalidState.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.InvalidState.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+        final val operation // com.kashif.cameraK.error/CameraKError.InvalidState.operation|{}operation[0]
+            final fun <get-operation>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraKError.InvalidState.operation.<get-operation>|<get-operation>(){}[0]
+    }
+
+    final class NativeLibraryMissing : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.NativeLibraryMissing|null[0]
+        constructor <init>(kotlin/String, kotlin/Throwable? = ...) // com.kashif.cameraK.error/CameraKError.NativeLibraryMissing.<init>|<init>(kotlin.String;kotlin.Throwable?){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.NativeLibraryMissing.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.NativeLibraryMissing.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+        final val platform // com.kashif.cameraK.error/CameraKError.NativeLibraryMissing.platform|{}platform[0]
+            final fun <get-platform>(): kotlin/String // com.kashif.cameraK.error/CameraKError.NativeLibraryMissing.platform.<get-platform>|<get-platform>(){}[0]
+    }
+
+    final class NoCamera : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.NoCamera|null[0]
+        constructor <init>(com.kashif.cameraK.enums/CameraLens?, kotlin/Throwable? = ...) // com.kashif.cameraK.error/CameraKError.NoCamera.<init>|<init>(com.kashif.cameraK.enums.CameraLens?;kotlin.Throwable?){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.NoCamera.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.NoCamera.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+        final val lens // com.kashif.cameraK.error/CameraKError.NoCamera.lens|{}lens[0]
+            final fun <get-lens>(): com.kashif.cameraK.enums/CameraLens? // com.kashif.cameraK.error/CameraKError.NoCamera.lens.<get-lens>|<get-lens>(){}[0]
+    }
+
+    final class Permission : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.Permission|null[0]
+        constructor <init>(com.kashif.cameraK.permissions/CameraKPermission, com.kashif.cameraK.permissions/PermissionStatus, kotlin/Throwable? = ...) // com.kashif.cameraK.error/CameraKError.Permission.<init>|<init>(com.kashif.cameraK.permissions.CameraKPermission;com.kashif.cameraK.permissions.PermissionStatus;kotlin.Throwable?){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.Permission.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Permission.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+        final val needsSettings // com.kashif.cameraK.error/CameraKError.Permission.needsSettings|{}needsSettings[0]
+            final fun <get-needsSettings>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Permission.needsSettings.<get-needsSettings>|<get-needsSettings>(){}[0]
+        final val permission // com.kashif.cameraK.error/CameraKError.Permission.permission|{}permission[0]
+            final fun <get-permission>(): com.kashif.cameraK.permissions/CameraKPermission // com.kashif.cameraK.error/CameraKError.Permission.permission.<get-permission>|<get-permission>(){}[0]
+        final val status // com.kashif.cameraK.error/CameraKError.Permission.status|{}status[0]
+            final fun <get-status>(): com.kashif.cameraK.permissions/PermissionStatus // com.kashif.cameraK.error/CameraKError.Permission.status.<get-status>|<get-status>(){}[0]
+    }
+
+    final class Storage : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.Storage|null[0]
+        constructor <init>(com.kashif.cameraK.error/StorageFailure, kotlin/String? = ..., kotlin/Throwable? = ...) // com.kashif.cameraK.error/CameraKError.Storage.<init>|<init>(com.kashif.cameraK.error.StorageFailure;kotlin.String?;kotlin.Throwable?){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.Storage.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Storage.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+        final val keptFilePath // com.kashif.cameraK.error/CameraKError.Storage.keptFilePath|{}keptFilePath[0]
+            final fun <get-keptFilePath>(): kotlin/String? // com.kashif.cameraK.error/CameraKError.Storage.keptFilePath.<get-keptFilePath>|<get-keptFilePath>(){}[0]
+        final val kind // com.kashif.cameraK.error/CameraKError.Storage.kind|{}kind[0]
+            final fun <get-kind>(): com.kashif.cameraK.error/StorageFailure // com.kashif.cameraK.error/CameraKError.Storage.kind.<get-kind>|<get-kind>(){}[0]
+    }
+
+    final class Timeout : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.Timeout|null[0]
+        constructor <init>(com.kashif.cameraK.error/CameraOperation, kotlin/Throwable? = ...) // com.kashif.cameraK.error/CameraKError.Timeout.<init>|<init>(com.kashif.cameraK.error.CameraOperation;kotlin.Throwable?){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.Timeout.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Timeout.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+        final val operation // com.kashif.cameraK.error/CameraKError.Timeout.operation|{}operation[0]
+            final fun <get-operation>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraKError.Timeout.operation.<get-operation>|<get-operation>(){}[0]
+    }
+
+    final class Unsupported : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.Unsupported|null[0]
+        constructor <init>(com.kashif.cameraK.error/CameraFeature, kotlin/Throwable? = ...) // com.kashif.cameraK.error/CameraKError.Unsupported.<init>|<init>(com.kashif.cameraK.error.CameraFeature;kotlin.Throwable?){}[0]
+
+        final val feature // com.kashif.cameraK.error/CameraKError.Unsupported.feature|{}feature[0]
+            final fun <get-feature>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraKError.Unsupported.feature.<get-feature>|<get-feature>(){}[0]
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.Unsupported.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Unsupported.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+    }
+
+    final object Closed : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.Closed|null[0]
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.Closed.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Closed.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Closed.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.error/CameraKError.Closed.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.error/CameraKError.Closed.toString|toString(){}[0]
+    }
+
+    final object NotReady : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.NotReady|null[0]
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.NotReady.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.NotReady.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.NotReady.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.error/CameraKError.NotReady.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.error/CameraKError.NotReady.toString|toString(){}[0]
+    }
+}
+
+sealed class com.kashif.cameraK.result/ImageCaptureResult { // com.kashif.cameraK.result/ImageCaptureResult|null[0]
+    final class Error : com.kashif.cameraK.result/ImageCaptureResult { // com.kashif.cameraK.result/ImageCaptureResult.Error|null[0]
+        constructor <init>(kotlin/Exception) // com.kashif.cameraK.result/ImageCaptureResult.Error.<init>|<init>(kotlin.Exception){}[0]
+
+        final val exception // com.kashif.cameraK.result/ImageCaptureResult.Error.exception|{}exception[0]
+            final fun <get-exception>(): kotlin/Exception // com.kashif.cameraK.result/ImageCaptureResult.Error.exception.<get-exception>|<get-exception>(){}[0]
+
+        final fun component1(): kotlin/Exception // com.kashif.cameraK.result/ImageCaptureResult.Error.component1|component1(){}[0]
+        final fun copy(kotlin/Exception = ...): com.kashif.cameraK.result/ImageCaptureResult.Error // com.kashif.cameraK.result/ImageCaptureResult.Error.copy|copy(kotlin.Exception){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.result/ImageCaptureResult.Error.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.result/ImageCaptureResult.Error.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.result/ImageCaptureResult.Error.toString|toString(){}[0]
+    }
+
+    final class SuccessWithFile : com.kashif.cameraK.result/ImageCaptureResult { // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithFile|null[0]
+        constructor <init>(kotlin/String) // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithFile.<init>|<init>(kotlin.String){}[0]
+
+        final val filePath // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithFile.filePath|{}filePath[0]
+            final fun <get-filePath>(): kotlin/String // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithFile.filePath.<get-filePath>|<get-filePath>(){}[0]
+
+        final fun component1(): kotlin/String // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithFile.component1|component1(){}[0]
+        final fun copy(kotlin/String = ...): com.kashif.cameraK.result/ImageCaptureResult.SuccessWithFile // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithFile.copy|copy(kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithFile.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithFile.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithFile.toString|toString(){}[0]
+    }
+
+    final class SuccessWithUri : com.kashif.cameraK.result/ImageCaptureResult { // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithUri|null[0]
+        constructor <init>(kotlin/String) // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithUri.<init>|<init>(kotlin.String){}[0]
+
+        final val uri // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithUri.uri|{}uri[0]
+            final fun <get-uri>(): kotlin/String // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithUri.uri.<get-uri>|<get-uri>(){}[0]
+
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithUri.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithUri.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.result/ImageCaptureResult.SuccessWithUri.toString|toString(){}[0]
+    }
+}
+
+sealed class com.kashif.cameraK.video/VideoCaptureResult { // com.kashif.cameraK.video/VideoCaptureResult|null[0]
+    final class Error : com.kashif.cameraK.video/VideoCaptureResult { // com.kashif.cameraK.video/VideoCaptureResult.Error|null[0]
+        constructor <init>(kotlin/Exception) // com.kashif.cameraK.video/VideoCaptureResult.Error.<init>|<init>(kotlin.Exception){}[0]
+
+        final val exception // com.kashif.cameraK.video/VideoCaptureResult.Error.exception|{}exception[0]
+            final fun <get-exception>(): kotlin/Exception // com.kashif.cameraK.video/VideoCaptureResult.Error.exception.<get-exception>|<get-exception>(){}[0]
+
+        final fun component1(): kotlin/Exception // com.kashif.cameraK.video/VideoCaptureResult.Error.component1|component1(){}[0]
+        final fun copy(kotlin/Exception = ...): com.kashif.cameraK.video/VideoCaptureResult.Error // com.kashif.cameraK.video/VideoCaptureResult.Error.copy|copy(kotlin.Exception){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.video/VideoCaptureResult.Error.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.video/VideoCaptureResult.Error.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.video/VideoCaptureResult.Error.toString|toString(){}[0]
+    }
+
+    final class Success : com.kashif.cameraK.video/VideoCaptureResult { // com.kashif.cameraK.video/VideoCaptureResult.Success|null[0]
+        constructor <init>(kotlin/String, kotlin/Long) // com.kashif.cameraK.video/VideoCaptureResult.Success.<init>|<init>(kotlin.String;kotlin.Long){}[0]
+
+        final val durationMs // com.kashif.cameraK.video/VideoCaptureResult.Success.durationMs|{}durationMs[0]
+            final fun <get-durationMs>(): kotlin/Long // com.kashif.cameraK.video/VideoCaptureResult.Success.durationMs.<get-durationMs>|<get-durationMs>(){}[0]
+        final val filePath // com.kashif.cameraK.video/VideoCaptureResult.Success.filePath|{}filePath[0]
+            final fun <get-filePath>(): kotlin/String // com.kashif.cameraK.video/VideoCaptureResult.Success.filePath.<get-filePath>|<get-filePath>(){}[0]
+
+        final fun component1(): kotlin/String // com.kashif.cameraK.video/VideoCaptureResult.Success.component1|component1(){}[0]
+        final fun component2(): kotlin/Long // com.kashif.cameraK.video/VideoCaptureResult.Success.component2|component2(){}[0]
+        final fun copy(kotlin/String = ..., kotlin/Long = ...): com.kashif.cameraK.video/VideoCaptureResult.Success // com.kashif.cameraK.video/VideoCaptureResult.Success.copy|copy(kotlin.String;kotlin.Long){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.video/VideoCaptureResult.Success.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.kashif.cameraK.video/VideoCaptureResult.Success.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.kashif.cameraK.video/VideoCaptureResult.Success.toString|toString(){}[0]
+    }
+}
+
+final object com.kashif.cameraK.utils/CameraKLogger { // com.kashif.cameraK.utils/CameraKLogger|null[0]
+    final var enabled // com.kashif.cameraK.utils/CameraKLogger.enabled|{}enabled[0]
+        final fun <get-enabled>(): kotlin/Boolean // com.kashif.cameraK.utils/CameraKLogger.enabled.<get-enabled>|<get-enabled>(){}[0]
+        final fun <set-enabled>(kotlin/Boolean) // com.kashif.cameraK.utils/CameraKLogger.enabled.<set-enabled>|<set-enabled>(kotlin.Boolean){}[0]
+    final var sink // com.kashif.cameraK.utils/CameraKLogger.sink|{}sink[0]
+        final fun <get-sink>(): kotlin/Function4<com.kashif.cameraK.utils/CameraKLogger.Level, kotlin/String, kotlin/String, kotlin/Throwable?, kotlin/Unit>? // com.kashif.cameraK.utils/CameraKLogger.sink.<get-sink>|<get-sink>(){}[0]
+        final fun <set-sink>(kotlin/Function4<com.kashif.cameraK.utils/CameraKLogger.Level, kotlin/String, kotlin/String, kotlin/Throwable?, kotlin/Unit>?) // com.kashif.cameraK.utils/CameraKLogger.sink.<set-sink>|<set-sink>(kotlin.Function4<com.kashif.cameraK.utils.CameraKLogger.Level,kotlin.String,kotlin.String,kotlin.Throwable?,kotlin.Unit>?){}[0]
+
+    final fun d(kotlin/String, kotlin/String) // com.kashif.cameraK.utils/CameraKLogger.d|d(kotlin.String;kotlin.String){}[0]
+    final fun e(kotlin/String, kotlin/String, kotlin/Throwable? = ...) // com.kashif.cameraK.utils/CameraKLogger.e|e(kotlin.String;kotlin.String;kotlin.Throwable?){}[0]
+    final fun w(kotlin/String, kotlin/String, kotlin/Throwable? = ...) // com.kashif.cameraK.utils/CameraKLogger.w|w(kotlin.String;kotlin.String;kotlin.Throwable?){}[0]
+
+    final enum class Level : kotlin/Enum<com.kashif.cameraK.utils/CameraKLogger.Level> { // com.kashif.cameraK.utils/CameraKLogger.Level|null[0]
+        enum entry DEBUG // com.kashif.cameraK.utils/CameraKLogger.Level.DEBUG|null[0]
+        enum entry ERROR // com.kashif.cameraK.utils/CameraKLogger.Level.ERROR|null[0]
+        enum entry WARN // com.kashif.cameraK.utils/CameraKLogger.Level.WARN|null[0]
+
+        final val entries // com.kashif.cameraK.utils/CameraKLogger.Level.entries|#static{}entries[0]
+            final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.cameraK.utils/CameraKLogger.Level> // com.kashif.cameraK.utils/CameraKLogger.Level.entries.<get-entries>|<get-entries>#static(){}[0]
+
+        final fun valueOf(kotlin/String): com.kashif.cameraK.utils/CameraKLogger.Level // com.kashif.cameraK.utils/CameraKLogger.Level.valueOf|valueOf#static(kotlin.String){}[0]
+        final fun values(): kotlin/Array<com.kashif.cameraK.utils/CameraKLogger.Level> // com.kashif.cameraK.utils/CameraKLogger.Level.values|values#static(){}[0]
+    }
+}
+
+final val com.kashif.cameraK.capture/localIdentifier // com.kashif.cameraK.capture/localIdentifier|@com.kashif.cameraK.capture.GalleryAsset{}localIdentifier[0]
+    final fun (com.kashif.cameraK.capture/GalleryAsset).<get-localIdentifier>(): kotlin/String // com.kashif.cameraK.capture/localIdentifier.<get-localIdentifier>|<get-localIdentifier>@com.kashif.cameraK.capture.GalleryAsset(){}[0]
+final val com.kashif.cameraK.frames/pixelBuffer // com.kashif.cameraK.frames/pixelBuffer|@com.kashif.cameraK.frames.CameraFrame{}pixelBuffer[0]
+    final fun (com.kashif.cameraK.frames/CameraFrame).<get-pixelBuffer>(): kotlinx.cinterop/CPointer<cnames.structs/__CVBuffer>? // com.kashif.cameraK.frames/pixelBuffer.<get-pixelBuffer>|<get-pixelBuffer>@com.kashif.cameraK.frames.CameraFrame(){}[0]
+final val com.kashif.cameraK.result/errorOrNull // com.kashif.cameraK.result/errorOrNull|@com.kashif.cameraK.result.CameraKResult<*>{}errorOrNull[0]
+    final fun (com.kashif.cameraK.result/CameraKResult<*>).<get-errorOrNull>(): com.kashif.cameraK.error/CameraKError? // com.kashif.cameraK.result/errorOrNull.<get-errorOrNull>|<get-errorOrNull>@com.kashif.cameraK.result.CameraKResult<*>(){}[0]
+
+final fun (com.kashif.cameraK.engine/PlatformPreviewSource).com.kashif.cameraK.engine/layOutPreviewLayer(platform.AVFoundation/AVCaptureVideoPreviewLayer, kotlinx.cinterop/CValue<platform.CoreGraphics/CGRect>, kotlin/Long?) // com.kashif.cameraK.engine/layOutPreviewLayer|layOutPreviewLayer@com.kashif.cameraK.engine.PlatformPreviewSource(platform.AVFoundation.AVCaptureVideoPreviewLayer;kotlinx.cinterop.CValue<platform.CoreGraphics.CGRect>;kotlin.Long?){}[0]
+final fun (com.kashif.cameraK.enums/AspectRatio).com.kashif.cameraK.enums/previewAspectRatio(com.kashif.cameraK.enums/DeviceOrientation): kotlin/Float // com.kashif.cameraK.enums/previewAspectRatio|previewAspectRatio@com.kashif.cameraK.enums.AspectRatio(com.kashif.cameraK.enums.DeviceOrientation){}[0]
+final fun (com.kashif.cameraK.frames/CameraFrame).com.kashif.cameraK.frames/copyLuma(kotlin/ByteArray, kotlin/Int = ..., kotlin/ByteArray? = ...): kotlin/Int // com.kashif.cameraK.frames/copyLuma|copyLuma@com.kashif.cameraK.frames.CameraFrame(kotlin.ByteArray;kotlin.Int;kotlin.ByteArray?){}[0]
+final fun (com.kashif.cameraK.plugin/CameraKPluginContext).com.kashif.cameraK.plugin/launchPerSession(kotlin.coroutines/SuspendFunction1<kotlinx.coroutines/CoroutineScope, kotlin/Unit>): kotlinx.coroutines/Job // com.kashif.cameraK.plugin/launchPerSession|launchPerSession@com.kashif.cameraK.plugin.CameraKPluginContext(kotlin.coroutines.SuspendFunction1<kotlinx.coroutines.CoroutineScope,kotlin.Unit>){}[0]
+final fun (com.kashif.cameraK.recording/RecordingState).com.kashif.cameraK.recording/elapsed(): kotlin.time/Duration // com.kashif.cameraK.recording/elapsed|elapsed@com.kashif.cameraK.recording.RecordingState(){}[0]
+final fun (com.kashif.cameraK.state/CameraKStateHolder).com.kashif.cameraK.lifecycle/bindToLifecycle(androidx.lifecycle/Lifecycle): kotlin/AutoCloseable // com.kashif.cameraK.lifecycle/bindToLifecycle|bindToLifecycle@com.kashif.cameraK.state.CameraKStateHolder(androidx.lifecycle.Lifecycle){}[0]
+final fun (kotlin/ByteArray).com.kashif.cameraK.utils/toNSData(): platform.Foundation/NSData // com.kashif.cameraK.utils/toNSData|toNSData@kotlin.ByteArray(){}[0]
+final fun (kotlin/Throwable).com.kashif.cameraK.frames/isFatalAnalyzerFailure(): kotlin/Boolean // com.kashif.cameraK.frames/isFatalAnalyzerFailure|isFatalAnalyzerFailure@kotlin.Throwable(){}[0]
+final fun (platform.Foundation/NSData).com.kashif.cameraK.utils/toByteArray(): kotlin/ByteArray // com.kashif.cameraK.utils/toByteArray|toByteArray@platform.Foundation.NSData(){}[0]
+final fun (platform.Foundation/NSData).com.kashif.cameraK.utils/toByteArray(kotlin/ByteArray? = ...): kotlin/ByteArray // com.kashif.cameraK.utils/toByteArray|toByteArray@platform.Foundation.NSData(kotlin.ByteArray?){}[0]
+final fun <#A: kotlin/Any?> (com.kashif.cameraK.result/CameraKResult<#A>).com.kashif.cameraK.result/getOrNull(): #A? // com.kashif.cameraK.result/getOrNull|getOrNull@com.kashif.cameraK.result.CameraKResult<0:0>(){0§<kotlin.Any?>}[0]
+final fun com.kashif.cameraK.capture/GalleryAsset(kotlin/String, kotlin/String): com.kashif.cameraK.capture/GalleryAsset // com.kashif.cameraK.capture/GalleryAsset|GalleryAsset(kotlin.String;kotlin.String){}[0]
+final fun com.kashif.cameraK.permissions/platformPermissionStatus(com.kashif.cameraK.platform/CameraKPlatformContext, com.kashif.cameraK.permissions/CameraKPermission): com.kashif.cameraK.permissions/PermissionStatus // com.kashif.cameraK.permissions/platformPermissionStatus|platformPermissionStatus(com.kashif.cameraK.platform.CameraKPlatformContext;com.kashif.cameraK.permissions.CameraKPermission){}[0]
+final fun com.kashif.cameraK.permissions/requestPlatformPermissions(com.kashif.cameraK.platform/CameraKPlatformContext, kotlin.collections/List<com.kashif.cameraK.permissions/CameraKPermission>, kotlin/Function1<kotlin.collections/Map<com.kashif.cameraK.permissions/CameraKPermission, com.kashif.cameraK.permissions/PermissionStatus>, kotlin/Unit>) // com.kashif.cameraK.permissions/requestPlatformPermissions|requestPlatformPermissions(com.kashif.cameraK.platform.CameraKPlatformContext;kotlin.collections.List<com.kashif.cameraK.permissions.CameraKPermission>;kotlin.Function1<kotlin.collections.Map<com.kashif.cameraK.permissions.CameraKPermission,com.kashif.cameraK.permissions.PermissionStatus>,kotlin.Unit>){}[0]
+final fun com.kashif.cameraK.state/CameraConfiguration(com.kashif.cameraK.enums/FlashMode = ..., com.kashif.cameraK.enums/TorchMode = ..., com.kashif.cameraK.enums/CameraLens = ..., com.kashif.cameraK.enums/ImageFormat = ..., com.kashif.cameraK.enums/QualityPrioritization = ..., com.kashif.cameraK.enums/CameraDeviceType = ..., com.kashif.cameraK.enums/AspectRatio = ..., kotlin/Pair<kotlin/Int, kotlin/Int>? = ..., com.kashif.cameraK.enums/Directory = ..., kotlin/Boolean = ..., kotlin/String? = ..., kotlin/String? = ..., kotlin/Boolean = ..., com.kashif.cameraK.state/Resolution? = ..., com.kashif.cameraK.frames/FrameFormat = ...): com.kashif.cameraK.state/CameraConfiguration // com.kashif.cameraK.state/CameraConfiguration|CameraConfiguration(com.kashif.cameraK.enums.FlashMode;com.kashif.cameraK.enums.TorchMode;com.kashif.cameraK.enums.CameraLens;com.kashif.cameraK.enums.ImageFormat;com.kashif.cameraK.enums.QualityPrioritization;com.kashif.cameraK.enums.CameraDeviceType;com.kashif.cameraK.enums.AspectRatio;kotlin.Pair<kotlin.Int,kotlin.Int>?;com.kashif.cameraK.enums.Directory;kotlin.Boolean;kotlin.String?;kotlin.String?;kotlin.Boolean;com.kashif.cameraK.state.Resolution?;com.kashif.cameraK.frames.FrameFormat){}[0]
+final fun com.kashif.cameraK.state/CameraConfiguration(kotlin/Function1<com.kashif.cameraK.state/CameraConfiguration.Builder, kotlin/Unit> = ...): com.kashif.cameraK.state/CameraConfiguration // com.kashif.cameraK.state/CameraConfiguration|CameraConfiguration(kotlin.Function1<com.kashif.cameraK.state.CameraConfiguration.Builder,kotlin.Unit>){}[0]
+final fun com.kashif.cameraK.utils/captureFileName(kotlin/String, kotlin/String, kotlin.random/Random = ...): kotlin/String // com.kashif.cameraK.utils/captureFileName|captureFileName(kotlin.String;kotlin.String;kotlin.random.Random){}[0]
+final fun com.kashif.cameraK.video/VideoConfiguration(com.kashif.cameraK.video/VideoQuality = ..., kotlin/Boolean = ..., kotlin.time/Duration? = ..., kotlin/String? = ..., kotlin/String = ..., kotlin/Long? = ..., kotlin/Long = ...): com.kashif.cameraK.video/VideoConfiguration // com.kashif.cameraK.video/VideoConfiguration|VideoConfiguration(com.kashif.cameraK.video.VideoQuality;kotlin.Boolean;kotlin.time.Duration?;kotlin.String?;kotlin.String;kotlin.Long?;kotlin.Long){}[0]
+final fun com.kashif.cameraK.video/VideoConfiguration(kotlin/Function1<com.kashif.cameraK.video/VideoConfiguration.Builder, kotlin/Unit> = ...): com.kashif.cameraK.video/VideoConfiguration // com.kashif.cameraK.video/VideoConfiguration|VideoConfiguration(kotlin.Function1<com.kashif.cameraK.video.VideoConfiguration.Builder,kotlin.Unit>){}[0]
+final inline fun <#A: kotlin/Any?, #B: kotlin/Any?> (com.kashif.cameraK.result/CameraKResult<#A>).com.kashif.cameraK.result/fold(kotlin/Function1<#A, #B>, kotlin/Function1<com.kashif.cameraK.error/CameraKError, #B>): #B // com.kashif.cameraK.result/fold|fold@com.kashif.cameraK.result.CameraKResult<0:0>(kotlin.Function1<0:0,0:1>;kotlin.Function1<com.kashif.cameraK.error.CameraKError,0:1>){0§<kotlin.Any?>;1§<kotlin.Any?>}[0]
+final inline fun <#A: kotlin/Any?, #B: kotlin/Any?> (com.kashif.cameraK.result/CameraKResult<#A>).com.kashif.cameraK.result/map(kotlin/Function1<#A, #B>): com.kashif.cameraK.result/CameraKResult<#B> // com.kashif.cameraK.result/map|map@com.kashif.cameraK.result.CameraKResult<0:0>(kotlin.Function1<0:0,0:1>){0§<kotlin.Any?>;1§<kotlin.Any?>}[0]
+final inline fun <#A: kotlin/Any?> (com.kashif.cameraK.result/CameraKResult<#A>).com.kashif.cameraK.result/getOrElse(kotlin/Function1<com.kashif.cameraK.error/CameraKError, #A>): #A // com.kashif.cameraK.result/getOrElse|getOrElse@com.kashif.cameraK.result.CameraKResult<0:0>(kotlin.Function1<com.kashif.cameraK.error.CameraKError,0:0>){0§<kotlin.Any?>}[0]
+final inline fun <#A: kotlin/Any?> (com.kashif.cameraK.result/CameraKResult<#A>).com.kashif.cameraK.result/onFailure(kotlin/Function1<com.kashif.cameraK.error/CameraKError, kotlin/Unit>): com.kashif.cameraK.result/CameraKResult<#A> // com.kashif.cameraK.result/onFailure|onFailure@com.kashif.cameraK.result.CameraKResult<0:0>(kotlin.Function1<com.kashif.cameraK.error.CameraKError,kotlin.Unit>){0§<kotlin.Any?>}[0]
+final inline fun <#A: kotlin/Any?> (com.kashif.cameraK.result/CameraKResult<#A>).com.kashif.cameraK.result/onSuccess(kotlin/Function1<#A, kotlin/Unit>): com.kashif.cameraK.result/CameraKResult<#A> // com.kashif.cameraK.result/onSuccess|onSuccess@com.kashif.cameraK.result.CameraKResult<0:0>(kotlin.Function1<0:0,kotlin.Unit>){0§<kotlin.Any?>}[0]
+final suspend fun (com.kashif.cameraK.state/CameraKStateHolder).com.kashif.cameraK.controls/cycleFlashMode(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.enums/FlashMode> // com.kashif.cameraK.controls/cycleFlashMode|cycleFlashMode@com.kashif.cameraK.state.CameraKStateHolder(){}[0]
+final suspend fun (com.kashif.cameraK.state/CameraKStateHolder).com.kashif.cameraK.controls/toggleLens(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.controls/toggleLens|toggleLens@com.kashif.cameraK.state.CameraKStateHolder(){}[0]
+final suspend fun (com.kashif.cameraK.state/CameraKStateHolder).com.kashif.cameraK.controls/toggleTorch(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.enums/TorchMode> // com.kashif.cameraK.controls/toggleTorch|toggleTorch@com.kashif.cameraK.state.CameraKStateHolder(){}[0]

@@ -1,8 +1,11 @@
+@file:OptIn(InternalCameraKApi::class)
+
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.utils.toNSData
 import kotlin.test.AfterTest
 import kotlin.test.Test

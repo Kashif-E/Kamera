@@ -22,22 +22,25 @@ import kotlin.concurrent.Volatile
  *
  * @sample com.kashif.cameraK.samples.cameraKLoggerSample
  */
-object CameraKLogger {
-    enum class Level { DEBUG, WARN, ERROR }
+public object CameraKLogger {
+    /** Closed: the levels CameraK logs at. */
+    public enum class Level { DEBUG, WARN, ERROR }
 
     /** Master switch. When false (default) nothing is logged. */
     @Volatile
-    var enabled: Boolean = false
+    public var enabled: Boolean = false
 
     /** Optional custom sink. When null, [enabled] logs go to the platform console. */
     @Volatile
-    var sink: ((level: Level, tag: String, message: String, throwable: Throwable?) -> Unit)? = null
+    public var sink: ((level: Level, tag: String, message: String, throwable: Throwable?) -> Unit)? = null
 
-    fun d(tag: String, message: String) = log(Level.DEBUG, tag, message, null)
+    public fun d(tag: String, message: String): Unit = log(Level.DEBUG, tag, message, null)
 
-    fun w(tag: String, message: String, throwable: Throwable? = null) = log(Level.WARN, tag, message, throwable)
+    public fun w(tag: String, message: String, throwable: Throwable? = null): Unit =
+        log(Level.WARN, tag, message, throwable)
 
-    fun e(tag: String, message: String, throwable: Throwable? = null) = log(Level.ERROR, tag, message, throwable)
+    public fun e(tag: String, message: String, throwable: Throwable? = null): Unit =
+        log(Level.ERROR, tag, message, throwable)
 
     private fun log(level: Level, tag: String, message: String, throwable: Throwable?) {
         if (!enabled) return

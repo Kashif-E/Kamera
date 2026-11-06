@@ -1,0 +1,114 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <io.github.kashif-mehmood-km:ImageSaverPlugin>
+final enum class com.kashif.mediasaverplugin/GalleryDestination : kotlin/Enum<com.kashif.mediasaverplugin/GalleryDestination> { // com.kashif.mediasaverplugin/GalleryDestination|null[0]
+    enum entry DCIM // com.kashif.mediasaverplugin/GalleryDestination.DCIM|null[0]
+    enum entry DOCUMENTS // com.kashif.mediasaverplugin/GalleryDestination.DOCUMENTS|null[0]
+    enum entry PICTURES // com.kashif.mediasaverplugin/GalleryDestination.PICTURES|null[0]
+
+    final val entries // com.kashif.mediasaverplugin/GalleryDestination.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.kashif.mediasaverplugin/GalleryDestination> // com.kashif.mediasaverplugin/GalleryDestination.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.kashif.mediasaverplugin/GalleryDestination // com.kashif.mediasaverplugin/GalleryDestination.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.kashif.mediasaverplugin/GalleryDestination> // com.kashif.mediasaverplugin/GalleryDestination.values|values#static(){}[0]
+}
+
+final class com.kashif.mediasaverplugin/MediaSaverConfig { // com.kashif.mediasaverplugin/MediaSaverConfig|null[0]
+    final val autoSave // com.kashif.mediasaverplugin/MediaSaverConfig.autoSave|{}autoSave[0]
+        final fun <get-autoSave>(): kotlin/Boolean // com.kashif.mediasaverplugin/MediaSaverConfig.autoSave.<get-autoSave>|<get-autoSave>(){}[0]
+    final val destination // com.kashif.mediasaverplugin/MediaSaverConfig.destination|{}destination[0]
+        final fun <get-destination>(): com.kashif.mediasaverplugin/GalleryDestination // com.kashif.mediasaverplugin/MediaSaverConfig.destination.<get-destination>|<get-destination>(){}[0]
+    final val folderName // com.kashif.mediasaverplugin/MediaSaverConfig.folderName|{}folderName[0]
+        final fun <get-folderName>(): kotlin/String? // com.kashif.mediasaverplugin/MediaSaverConfig.folderName.<get-folderName>|<get-folderName>(){}[0]
+    final val imageFormat // com.kashif.mediasaverplugin/MediaSaverConfig.imageFormat|{}imageFormat[0]
+        final fun <get-imageFormat>(): com.kashif.cameraK.enums/ImageFormat // com.kashif.mediasaverplugin/MediaSaverConfig.imageFormat.<get-imageFormat>|<get-imageFormat>(){}[0]
+    final val prefix // com.kashif.mediasaverplugin/MediaSaverConfig.prefix|{}prefix[0]
+        final fun <get-prefix>(): kotlin/String? // com.kashif.mediasaverplugin/MediaSaverConfig.prefix.<get-prefix>|<get-prefix>(){}[0]
+
+    final fun copy(kotlin/Function1<com.kashif.mediasaverplugin/MediaSaverConfig.Builder, kotlin/Unit>): com.kashif.mediasaverplugin/MediaSaverConfig // com.kashif.mediasaverplugin/MediaSaverConfig.copy|copy(kotlin.Function1<com.kashif.mediasaverplugin.MediaSaverConfig.Builder,kotlin.Unit>){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.mediasaverplugin/MediaSaverConfig.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.mediasaverplugin/MediaSaverConfig.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.mediasaverplugin/MediaSaverConfig.toString|toString(){}[0]
+
+    final class Builder { // com.kashif.mediasaverplugin/MediaSaverConfig.Builder|null[0]
+        final var autoSave // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.autoSave|{}autoSave[0]
+            final fun <get-autoSave>(): kotlin/Boolean // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.autoSave.<get-autoSave>|<get-autoSave>(){}[0]
+            final fun <set-autoSave>(kotlin/Boolean) // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.autoSave.<set-autoSave>|<set-autoSave>(kotlin.Boolean){}[0]
+        final var destination // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.destination|{}destination[0]
+            final fun <get-destination>(): com.kashif.mediasaverplugin/GalleryDestination // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.destination.<get-destination>|<get-destination>(){}[0]
+            final fun <set-destination>(com.kashif.mediasaverplugin/GalleryDestination) // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.destination.<set-destination>|<set-destination>(com.kashif.mediasaverplugin.GalleryDestination){}[0]
+        final var folderName // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.folderName|{}folderName[0]
+            final fun <get-folderName>(): kotlin/String? // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.folderName.<get-folderName>|<get-folderName>(){}[0]
+            final fun <set-folderName>(kotlin/String?) // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.folderName.<set-folderName>|<set-folderName>(kotlin.String?){}[0]
+        final var imageFormat // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.imageFormat|{}imageFormat[0]
+            final fun <get-imageFormat>(): com.kashif.cameraK.enums/ImageFormat // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.imageFormat.<get-imageFormat>|<get-imageFormat>(){}[0]
+            final fun <set-imageFormat>(com.kashif.cameraK.enums/ImageFormat) // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.imageFormat.<set-imageFormat>|<set-imageFormat>(com.kashif.cameraK.enums.ImageFormat){}[0]
+        final var prefix // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.prefix|{}prefix[0]
+            final fun <get-prefix>(): kotlin/String? // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.prefix.<get-prefix>|<get-prefix>(){}[0]
+            final fun <set-prefix>(kotlin/String?) // com.kashif.mediasaverplugin/MediaSaverConfig.Builder.prefix.<set-prefix>|<set-prefix>(kotlin.String?){}[0]
+    }
+}
+
+final class com.kashif.mediasaverplugin/MediaSaverPlugin : com.kashif.cameraK.state/CameraKPlugin { // com.kashif.mediasaverplugin/MediaSaverPlugin|null[0]
+    constructor <init>(com.kashif.mediasaverplugin/MediaSaverConfig, com.kashif.cameraK.platform/CameraKPlatformContext) // com.kashif.mediasaverplugin/MediaSaverPlugin.<init>|<init>(com.kashif.mediasaverplugin.MediaSaverConfig;com.kashif.cameraK.platform.CameraKPlatformContext){}[0]
+
+    final val config // com.kashif.mediasaverplugin/MediaSaverPlugin.config|{}config[0]
+        final fun <get-config>(): com.kashif.mediasaverplugin/MediaSaverConfig // com.kashif.mediasaverplugin/MediaSaverPlugin.config.<get-config>|<get-config>(){}[0]
+    final val galleryPermission // com.kashif.mediasaverplugin/MediaSaverPlugin.galleryPermission|{}galleryPermission[0]
+        final fun <get-galleryPermission>(): com.kashif.cameraK.permissions/CameraKPermission? // com.kashif.mediasaverplugin/MediaSaverPlugin.galleryPermission.<get-galleryPermission>|<get-galleryPermission>(){}[0]
+    final val needsFrames // com.kashif.mediasaverplugin/MediaSaverPlugin.needsFrames|{}needsFrames[0]
+        final fun <get-needsFrames>(): kotlin/Boolean // com.kashif.mediasaverplugin/MediaSaverPlugin.needsFrames.<get-needsFrames>|<get-needsFrames>(){}[0]
+    final val results // com.kashif.mediasaverplugin/MediaSaverPlugin.results|{}results[0]
+        final fun <get-results>(): kotlinx.coroutines.flow/Flow<com.kashif.cameraK.result/CameraKResult<com.kashif.mediasaverplugin/SavedImage>> // com.kashif.mediasaverplugin/MediaSaverPlugin.results.<get-results>|<get-results>(){}[0]
+    final val status // com.kashif.mediasaverplugin/MediaSaverPlugin.status|{}status[0]
+        final fun <get-status>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.plugin/PluginStatus> // com.kashif.mediasaverplugin/MediaSaverPlugin.status.<get-status>|<get-status>(){}[0]
+
+    final fun getByteArrayFrom(kotlin/String): kotlin/ByteArray // com.kashif.mediasaverplugin/MediaSaverPlugin.getByteArrayFrom|getByteArrayFrom(kotlin.String){}[0]
+    final fun onAttach(com.kashif.cameraK.plugin/CameraKPluginContext) // com.kashif.mediasaverplugin/MediaSaverPlugin.onAttach|onAttach(com.kashif.cameraK.plugin.CameraKPluginContext){}[0]
+    final fun onDetach() // com.kashif.mediasaverplugin/MediaSaverPlugin.onDetach|onDetach(){}[0]
+    final suspend fun readBytes(com.kashif.mediasaverplugin/SavedImage): com.kashif.cameraK.result/CameraKResult<kotlin/ByteArray> // com.kashif.mediasaverplugin/MediaSaverPlugin.readBytes|readBytes(com.kashif.mediasaverplugin.SavedImage){}[0]
+    final suspend fun save(com.kashif.cameraK.capture/CapturedImage, kotlin/String? = ...): com.kashif.cameraK.result/CameraKResult<com.kashif.mediasaverplugin/SavedImage> // com.kashif.mediasaverplugin/MediaSaverPlugin.save|save(com.kashif.cameraK.capture.CapturedImage;kotlin.String?){}[0]
+    final suspend fun save(com.kashif.cameraK.capture/RecordedVideo, kotlin/String? = ...): com.kashif.cameraK.result/CameraKResult<com.kashif.mediasaverplugin/SavedVideo> // com.kashif.mediasaverplugin/MediaSaverPlugin.save|save(com.kashif.cameraK.capture.RecordedVideo;kotlin.String?){}[0]
+}
+
+final class com.kashif.mediasaverplugin/SavedImage { // com.kashif.mediasaverplugin/SavedImage|null[0]
+    final val asset // com.kashif.mediasaverplugin/SavedImage.asset|{}asset[0]
+        final fun <get-asset>(): com.kashif.cameraK.capture/GalleryAsset // com.kashif.mediasaverplugin/SavedImage.asset.<get-asset>|<get-asset>(){}[0]
+    final val displayName // com.kashif.mediasaverplugin/SavedImage.displayName|{}displayName[0]
+        final fun <get-displayName>(): kotlin/String // com.kashif.mediasaverplugin/SavedImage.displayName.<get-displayName>|<get-displayName>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.mediasaverplugin/SavedImage.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.mediasaverplugin/SavedImage.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.mediasaverplugin/SavedImage.toString|toString(){}[0]
+}
+
+final class com.kashif.mediasaverplugin/SavedVideo { // com.kashif.mediasaverplugin/SavedVideo|null[0]
+    final val asset // com.kashif.mediasaverplugin/SavedVideo.asset|{}asset[0]
+        final fun <get-asset>(): com.kashif.cameraK.capture/GalleryAsset // com.kashif.mediasaverplugin/SavedVideo.asset.<get-asset>|<get-asset>(){}[0]
+    final val displayName // com.kashif.mediasaverplugin/SavedVideo.displayName|{}displayName[0]
+        final fun <get-displayName>(): kotlin/String // com.kashif.mediasaverplugin/SavedVideo.displayName.<get-displayName>|<get-displayName>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.mediasaverplugin/SavedVideo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.mediasaverplugin/SavedVideo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.mediasaverplugin/SavedVideo.toString|toString(){}[0]
+}
+
+final val com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverConfig$stableprop // com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverConfig$stableprop|#static{}com_kashif_mediasaverplugin_MediaSaverConfig$stableprop[0]
+final val com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverConfig_Builder$stableprop // com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverConfig_Builder$stableprop|#static{}com_kashif_mediasaverplugin_MediaSaverConfig_Builder$stableprop[0]
+final val com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverPlugin$stableprop // com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverPlugin$stableprop|#static{}com_kashif_mediasaverplugin_MediaSaverPlugin$stableprop[0]
+final val com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_SavedImage$stableprop // com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_SavedImage$stableprop|#static{}com_kashif_mediasaverplugin_SavedImage$stableprop[0]
+final val com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_SavedVideo$stableprop // com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_SavedVideo$stableprop|#static{}com_kashif_mediasaverplugin_SavedVideo$stableprop[0]
+
+final fun com.kashif.imagesaverplugin/rememberImageSaverPlugin(com.kashif.mediasaverplugin/MediaSaverConfig, androidx.compose.runtime/Composer?, kotlin/Int): com.kashif.mediasaverplugin/MediaSaverPlugin // com.kashif.imagesaverplugin/rememberImageSaverPlugin|rememberImageSaverPlugin(com.kashif.mediasaverplugin.MediaSaverConfig;androidx.compose.runtime.Composer?;kotlin.Int){}[0]
+final fun com.kashif.mediasaverplugin/MediaSaverConfig(kotlin/Function1<com.kashif.mediasaverplugin/MediaSaverConfig.Builder, kotlin/Unit> = ...): com.kashif.mediasaverplugin/MediaSaverConfig // com.kashif.mediasaverplugin/MediaSaverConfig|MediaSaverConfig(kotlin.Function1<com.kashif.mediasaverplugin.MediaSaverConfig.Builder,kotlin.Unit>){}[0]
+final fun com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverConfig$stableprop_getter(): kotlin/Int // com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverConfig$stableprop_getter|com_kashif_mediasaverplugin_MediaSaverConfig$stableprop_getter(){}[0]
+final fun com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverConfig_Builder$stableprop_getter(): kotlin/Int // com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverConfig_Builder$stableprop_getter|com_kashif_mediasaverplugin_MediaSaverConfig_Builder$stableprop_getter(){}[0]
+final fun com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverPlugin$stableprop_getter(): kotlin/Int // com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_MediaSaverPlugin$stableprop_getter|com_kashif_mediasaverplugin_MediaSaverPlugin$stableprop_getter(){}[0]
+final fun com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_SavedImage$stableprop_getter(): kotlin/Int // com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_SavedImage$stableprop_getter|com_kashif_mediasaverplugin_SavedImage$stableprop_getter(){}[0]
+final fun com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_SavedVideo$stableprop_getter(): kotlin/Int // com.kashif.mediasaverplugin/com_kashif_mediasaverplugin_SavedVideo$stableprop_getter|com_kashif_mediasaverplugin_SavedVideo$stableprop_getter(){}[0]
+final fun com.kashif.mediasaverplugin/rememberMediaSaverPlugin(com.kashif.mediasaverplugin/MediaSaverConfig, com.kashif.cameraK.platform/CameraKPlatformContext?, androidx.compose.runtime/Composer?, kotlin/Int, kotlin/Int): com.kashif.mediasaverplugin/MediaSaverPlugin // com.kashif.mediasaverplugin/rememberMediaSaverPlugin|rememberMediaSaverPlugin(com.kashif.mediasaverplugin.MediaSaverConfig;com.kashif.cameraK.platform.CameraKPlatformContext?;androidx.compose.runtime.Composer?;kotlin.Int;kotlin.Int){}[0]

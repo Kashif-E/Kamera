@@ -11,4 +11,4 @@ package com.kashif.cameraK.utils
 // RUNTIME so that CameraK's own tests can read it through reflection; nothing reads it at run time.
 @Retention(AnnotationRetention.RUNTIME)
 @Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS, AnnotationTarget.PROPERTY, AnnotationTarget.CONSTRUCTOR)
-annotation class InternalCameraKApi
+public annotation class InternalCameraKApi

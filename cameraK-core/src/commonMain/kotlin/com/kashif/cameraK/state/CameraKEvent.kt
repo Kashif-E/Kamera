@@ -15,7 +15,7 @@ import com.kashif.cameraK.result.CameraKResult
  *
  * @sample com.kashif.cameraK.samples.cameraKEventSample
  */
-abstract class CameraKEvent internal constructor() {
+public abstract class CameraKEvent internal constructor() {
     /**
      * A recording the caller did not stop ended: a duration or size limit, an interruption, a
      * platform error, a host stop, or [CameraKStateHolder.close] (SHUTDOWN). The same outcome is in
@@ -26,10 +26,10 @@ abstract class CameraKEvent internal constructor() {
      * @property result The finished file, or why there is none.
      * @property reason Why it ended.
      */
-    class RecordingEnded internal constructor(
-        val recordingId: Long,
-        val result: CameraKResult<RecordedVideo>,
-        val reason: RecordingEndReason,
+    public class RecordingEnded internal constructor(
+        public val recordingId: Long,
+        public val result: CameraKResult<RecordedVideo>,
+        public val reason: RecordingEndReason,
     ) : CameraKEvent() {
         override fun toString(): String = "RecordingEnded(recordingId=$recordingId, reason=$reason)"
     }
@@ -43,7 +43,8 @@ abstract class CameraKEvent internal constructor() {
      *   default the plugin class's simple name.
      * @property error What failed.
      */
-    class PluginFailed internal constructor(val pluginId: String, val error: CameraKError) : CameraKEvent() {
+    public class PluginFailed internal constructor(public val pluginId: String, public val error: CameraKError) :
+        CameraKEvent() {
         override fun toString(): String = "PluginFailed(pluginId=$pluginId, error=${error::class.simpleName})"
     }
 }

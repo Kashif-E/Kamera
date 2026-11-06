@@ -13,7 +13,7 @@ package com.kashif.cameraK.video
     ReplaceWith("CameraKResult<RecordedVideo>", "com.kashif.cameraK.capture.RecordedVideo"),
     level = DeprecationLevel.ERROR,
 )
-sealed class VideoCaptureResult {
+public sealed class VideoCaptureResult {
 
     /**
      * Recording completed successfully.
@@ -21,12 +21,12 @@ sealed class VideoCaptureResult {
      * @property filePath Absolute path to the saved video file.
      * @property durationMs Actual recorded duration in milliseconds.
      */
-    data class Success(val filePath: String, val durationMs: Long) : VideoCaptureResult()
+    public data class Success(val filePath: String, val durationMs: Long) : VideoCaptureResult()
 
     /**
      * Recording failed or was cancelled.
      *
      * @property exception The underlying cause.
      */
-    data class Error(val exception: Exception) : VideoCaptureResult()
+    public data class Error(val exception: Exception) : VideoCaptureResult()
 }

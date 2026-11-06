@@ -1,0 +1,114 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <io.github.kashif-mehmood-km:ocrPlugin>
+final class com.kashif.ocrplugin/OcrConfig { // com.kashif.ocrplugin/OcrConfig|null[0]
+    final val level // com.kashif.ocrplugin/OcrConfig.level|{}level[0]
+        final fun <get-level>(): com.kashif.ocrplugin/OcrLevel // com.kashif.ocrplugin/OcrConfig.level.<get-level>|<get-level>(){}[0]
+    final val maxFps // com.kashif.ocrplugin/OcrConfig.maxFps|{}maxFps[0]
+        final fun <get-maxFps>(): kotlin/Float // com.kashif.ocrplugin/OcrConfig.maxFps.<get-maxFps>|<get-maxFps>(){}[0]
+    final val region // com.kashif.ocrplugin/OcrConfig.region|{}region[0]
+        final fun <get-region>(): com.kashif.cameraK.frames/FrameRect? // com.kashif.ocrplugin/OcrConfig.region.<get-region>|<get-region>(){}[0]
+    final val tessdataPath // com.kashif.ocrplugin/OcrConfig.tessdataPath|{}tessdataPath[0]
+        final fun <get-tessdataPath>(): kotlin/String? // com.kashif.ocrplugin/OcrConfig.tessdataPath.<get-tessdataPath>|<get-tessdataPath>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.ocrplugin/OcrConfig.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.ocrplugin/OcrConfig.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.ocrplugin/OcrConfig.toString|toString(){}[0]
+
+    final class Builder { // com.kashif.ocrplugin/OcrConfig.Builder|null[0]
+        final var level // com.kashif.ocrplugin/OcrConfig.Builder.level|{}level[0]
+            final fun <get-level>(): com.kashif.ocrplugin/OcrLevel // com.kashif.ocrplugin/OcrConfig.Builder.level.<get-level>|<get-level>(){}[0]
+            final fun <set-level>(com.kashif.ocrplugin/OcrLevel) // com.kashif.ocrplugin/OcrConfig.Builder.level.<set-level>|<set-level>(com.kashif.ocrplugin.OcrLevel){}[0]
+        final var maxFps // com.kashif.ocrplugin/OcrConfig.Builder.maxFps|{}maxFps[0]
+            final fun <get-maxFps>(): kotlin/Float // com.kashif.ocrplugin/OcrConfig.Builder.maxFps.<get-maxFps>|<get-maxFps>(){}[0]
+            final fun <set-maxFps>(kotlin/Float) // com.kashif.ocrplugin/OcrConfig.Builder.maxFps.<set-maxFps>|<set-maxFps>(kotlin.Float){}[0]
+        final var region // com.kashif.ocrplugin/OcrConfig.Builder.region|{}region[0]
+            final fun <get-region>(): com.kashif.cameraK.frames/FrameRect? // com.kashif.ocrplugin/OcrConfig.Builder.region.<get-region>|<get-region>(){}[0]
+            final fun <set-region>(com.kashif.cameraK.frames/FrameRect?) // com.kashif.ocrplugin/OcrConfig.Builder.region.<set-region>|<set-region>(com.kashif.cameraK.frames.FrameRect?){}[0]
+        final var tessdataPath // com.kashif.ocrplugin/OcrConfig.Builder.tessdataPath|{}tessdataPath[0]
+            final fun <get-tessdataPath>(): kotlin/String? // com.kashif.ocrplugin/OcrConfig.Builder.tessdataPath.<get-tessdataPath>|<get-tessdataPath>(){}[0]
+            final fun <set-tessdataPath>(kotlin/String?) // com.kashif.ocrplugin/OcrConfig.Builder.tessdataPath.<set-tessdataPath>|<set-tessdataPath>(kotlin.String?){}[0]
+    }
+}
+
+final class com.kashif.ocrplugin/OcrPlugin : com.kashif.cameraK.state/CameraKPlugin { // com.kashif.ocrplugin/OcrPlugin|null[0]
+    constructor <init>(com.kashif.ocrplugin/OcrConfig = ...) // com.kashif.ocrplugin/OcrPlugin.<init>|<init>(com.kashif.ocrplugin.OcrConfig){}[0]
+
+    final val config // com.kashif.ocrplugin/OcrPlugin.config|{}config[0]
+        final fun <get-config>(): com.kashif.ocrplugin/OcrConfig // com.kashif.ocrplugin/OcrPlugin.config.<get-config>|<get-config>(){}[0]
+    final val results // com.kashif.ocrplugin/OcrPlugin.results|{}results[0]
+        final fun <get-results>(): kotlinx.coroutines.flow/Flow<com.kashif.ocrplugin/RecognizedText> // com.kashif.ocrplugin/OcrPlugin.results.<get-results>|<get-results>(){}[0]
+    final val status // com.kashif.ocrplugin/OcrPlugin.status|{}status[0]
+        final fun <get-status>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.plugin/PluginStatus> // com.kashif.ocrplugin/OcrPlugin.status.<get-status>|<get-status>(){}[0]
+
+    final fun onAttach(com.kashif.cameraK.plugin/CameraKPluginContext) // com.kashif.ocrplugin/OcrPlugin.onAttach|onAttach(com.kashif.cameraK.plugin.CameraKPluginContext){}[0]
+    final fun onDetach() // com.kashif.ocrplugin/OcrPlugin.onDetach|onDetach(){}[0]
+    final fun pause() // com.kashif.ocrplugin/OcrPlugin.pause|pause(){}[0]
+    final fun resume() // com.kashif.ocrplugin/OcrPlugin.resume|resume(){}[0]
+    final suspend fun recognize(com.kashif.cameraK.capture/CapturedImage, com.kashif.ocrplugin/OcrLevel = ...): com.kashif.cameraK.result/CameraKResult<com.kashif.ocrplugin/RecognizedText> // com.kashif.ocrplugin/OcrPlugin.recognize|recognize(com.kashif.cameraK.capture.CapturedImage;com.kashif.ocrplugin.OcrLevel){}[0]
+}
+
+final class com.kashif.ocrplugin/RecognizedText { // com.kashif.ocrplugin/RecognizedText|null[0]
+    constructor <init>(kotlin/String, kotlin.collections/List<com.kashif.ocrplugin/TextBlock>, kotlin/Long) // com.kashif.ocrplugin/RecognizedText.<init>|<init>(kotlin.String;kotlin.collections.List<com.kashif.ocrplugin.TextBlock>;kotlin.Long){}[0]
+
+    final val blocks // com.kashif.ocrplugin/RecognizedText.blocks|{}blocks[0]
+        final fun <get-blocks>(): kotlin.collections/List<com.kashif.ocrplugin/TextBlock> // com.kashif.ocrplugin/RecognizedText.blocks.<get-blocks>|<get-blocks>(){}[0]
+    final val text // com.kashif.ocrplugin/RecognizedText.text|{}text[0]
+        final fun <get-text>(): kotlin/String // com.kashif.ocrplugin/RecognizedText.text.<get-text>|<get-text>(){}[0]
+    final val timestampNanos // com.kashif.ocrplugin/RecognizedText.timestampNanos|{}timestampNanos[0]
+        final fun <get-timestampNanos>(): kotlin/Long // com.kashif.ocrplugin/RecognizedText.timestampNanos.<get-timestampNanos>|<get-timestampNanos>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.ocrplugin/RecognizedText.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.ocrplugin/RecognizedText.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.ocrplugin/RecognizedText.toString|toString(){}[0]
+}
+
+final class com.kashif.ocrplugin/TextBlock { // com.kashif.ocrplugin/TextBlock|null[0]
+    constructor <init>(kotlin/String, com.kashif.cameraK.frames/FrameRect?, kotlin/Float?) // com.kashif.ocrplugin/TextBlock.<init>|<init>(kotlin.String;com.kashif.cameraK.frames.FrameRect?;kotlin.Float?){}[0]
+
+    final val bounds // com.kashif.ocrplugin/TextBlock.bounds|{}bounds[0]
+        final fun <get-bounds>(): com.kashif.cameraK.frames/FrameRect? // com.kashif.ocrplugin/TextBlock.bounds.<get-bounds>|<get-bounds>(){}[0]
+    final val confidence // com.kashif.ocrplugin/TextBlock.confidence|{}confidence[0]
+        final fun <get-confidence>(): kotlin/Float? // com.kashif.ocrplugin/TextBlock.confidence.<get-confidence>|<get-confidence>(){}[0]
+    final val text // com.kashif.ocrplugin/TextBlock.text|{}text[0]
+        final fun <get-text>(): kotlin/String // com.kashif.ocrplugin/TextBlock.text.<get-text>|<get-text>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.ocrplugin/TextBlock.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.ocrplugin/TextBlock.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.ocrplugin/TextBlock.toString|toString(){}[0]
+}
+
+final value class com.kashif.ocrplugin/OcrLevel { // com.kashif.ocrplugin/OcrLevel|null[0]
+    final val name // com.kashif.ocrplugin/OcrLevel.name|{}name[0]
+        final fun <get-name>(): kotlin/String // com.kashif.ocrplugin/OcrLevel.name.<get-name>|<get-name>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.ocrplugin/OcrLevel.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.ocrplugin/OcrLevel.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.ocrplugin/OcrLevel.toString|toString(){}[0]
+
+    final object Companion { // com.kashif.ocrplugin/OcrLevel.Companion|null[0]
+        final val ACCURATE // com.kashif.ocrplugin/OcrLevel.Companion.ACCURATE|{}ACCURATE[0]
+            final fun <get-ACCURATE>(): com.kashif.ocrplugin/OcrLevel // com.kashif.ocrplugin/OcrLevel.Companion.ACCURATE.<get-ACCURATE>|<get-ACCURATE>(){}[0]
+        final val FAST // com.kashif.ocrplugin/OcrLevel.Companion.FAST|{}FAST[0]
+            final fun <get-FAST>(): com.kashif.ocrplugin/OcrLevel // com.kashif.ocrplugin/OcrLevel.Companion.FAST.<get-FAST>|<get-FAST>(){}[0]
+    }
+}
+
+final val com.kashif.ocrplugin/com_kashif_ocrplugin_OcrConfig$stableprop // com.kashif.ocrplugin/com_kashif_ocrplugin_OcrConfig$stableprop|#static{}com_kashif_ocrplugin_OcrConfig$stableprop[0]
+final val com.kashif.ocrplugin/com_kashif_ocrplugin_OcrConfig_Builder$stableprop // com.kashif.ocrplugin/com_kashif_ocrplugin_OcrConfig_Builder$stableprop|#static{}com_kashif_ocrplugin_OcrConfig_Builder$stableprop[0]
+final val com.kashif.ocrplugin/com_kashif_ocrplugin_OcrPlugin$stableprop // com.kashif.ocrplugin/com_kashif_ocrplugin_OcrPlugin$stableprop|#static{}com_kashif_ocrplugin_OcrPlugin$stableprop[0]
+final val com.kashif.ocrplugin/com_kashif_ocrplugin_RecognizedText$stableprop // com.kashif.ocrplugin/com_kashif_ocrplugin_RecognizedText$stableprop|#static{}com_kashif_ocrplugin_RecognizedText$stableprop[0]
+final val com.kashif.ocrplugin/com_kashif_ocrplugin_TextBlock$stableprop // com.kashif.ocrplugin/com_kashif_ocrplugin_TextBlock$stableprop|#static{}com_kashif_ocrplugin_TextBlock$stableprop[0]
+
+final fun com.kashif.ocrplugin/OcrConfig(kotlin/Function1<com.kashif.ocrplugin/OcrConfig.Builder, kotlin/Unit> = ...): com.kashif.ocrplugin/OcrConfig // com.kashif.ocrplugin/OcrConfig|OcrConfig(kotlin.Function1<com.kashif.ocrplugin.OcrConfig.Builder,kotlin.Unit>){}[0]
+final fun com.kashif.ocrplugin/com_kashif_ocrplugin_OcrConfig$stableprop_getter(): kotlin/Int // com.kashif.ocrplugin/com_kashif_ocrplugin_OcrConfig$stableprop_getter|com_kashif_ocrplugin_OcrConfig$stableprop_getter(){}[0]
+final fun com.kashif.ocrplugin/com_kashif_ocrplugin_OcrConfig_Builder$stableprop_getter(): kotlin/Int // com.kashif.ocrplugin/com_kashif_ocrplugin_OcrConfig_Builder$stableprop_getter|com_kashif_ocrplugin_OcrConfig_Builder$stableprop_getter(){}[0]
+final fun com.kashif.ocrplugin/com_kashif_ocrplugin_OcrPlugin$stableprop_getter(): kotlin/Int // com.kashif.ocrplugin/com_kashif_ocrplugin_OcrPlugin$stableprop_getter|com_kashif_ocrplugin_OcrPlugin$stableprop_getter(){}[0]
+final fun com.kashif.ocrplugin/com_kashif_ocrplugin_RecognizedText$stableprop_getter(): kotlin/Int // com.kashif.ocrplugin/com_kashif_ocrplugin_RecognizedText$stableprop_getter|com_kashif_ocrplugin_RecognizedText$stableprop_getter(){}[0]
+final fun com.kashif.ocrplugin/com_kashif_ocrplugin_TextBlock$stableprop_getter(): kotlin/Int // com.kashif.ocrplugin/com_kashif_ocrplugin_TextBlock$stableprop_getter|com_kashif_ocrplugin_TextBlock$stableprop_getter(){}[0]
+final fun com.kashif.ocrplugin/rememberOcrPlugin(com.kashif.ocrplugin/OcrConfig?, androidx.compose.runtime/Composer?, kotlin/Int, kotlin/Int): com.kashif.ocrplugin/OcrPlugin // com.kashif.ocrplugin/rememberOcrPlugin|rememberOcrPlugin(com.kashif.ocrplugin.OcrConfig?;androidx.compose.runtime.Composer?;kotlin.Int;kotlin.Int){}[0]

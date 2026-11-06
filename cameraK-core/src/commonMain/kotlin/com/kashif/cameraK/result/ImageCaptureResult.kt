@@ -13,20 +13,20 @@ package com.kashif.cameraK.result
     ReplaceWith("CameraKResult<CapturedImage>", "com.kashif.cameraK.capture.CapturedImage"),
     level = DeprecationLevel.ERROR,
 )
-sealed class ImageCaptureResult {
+public sealed class ImageCaptureResult {
     /**
      * A capture written to an app-owned file.
      *
      * @param filePath The absolute path to the captured image file.
      */
-    data class SuccessWithFile(val filePath: String) : ImageCaptureResult()
+    public data class SuccessWithFile(val filePath: String) : ImageCaptureResult()
 
     /**
      * A capture published to the shared gallery, which has no file path the app can use.
      *
      * @param uri The gallery entry: a `content://` MediaStore URI on Android.
      */
-    class SuccessWithUri(val uri: String) : ImageCaptureResult() {
+    public class SuccessWithUri(public val uri: String) : ImageCaptureResult() {
         override fun equals(other: Any?): Boolean = other is SuccessWithUri && other.uri == uri
 
         override fun hashCode(): Int = uri.hashCode()
@@ -39,5 +39,5 @@ sealed class ImageCaptureResult {
      *
      * @param exception The exception that occurred during image capture.
      */
-    data class Error(val exception: Exception) : ImageCaptureResult()
+    public data class Error(val exception: Exception) : ImageCaptureResult()
 }

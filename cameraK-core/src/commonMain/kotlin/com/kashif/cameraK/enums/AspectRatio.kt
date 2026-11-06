@@ -1,14 +1,16 @@
 package com.kashif.cameraK.enums
 
+import com.kashif.cameraK.utils.InternalCameraKApi
+
 /**
- * Enum representing aspect ratios for camera preview and capture.
+ * Closed: aspect ratios for camera preview and capture. A new ratio waits for a major release.
  *
  * - RATIO_4_3: Standard 4:3 aspect ratio (default on most devices)
  * - RATIO_16_9: Widescreen 16:9 aspect ratio
  * - RATIO_9_16: Portrait 9:16 aspect ratio (useful for stories, full-screen vertical content)
  * - RATIO_1_1: Square 1:1 aspect ratio. Costly on Android, see [RATIO_1_1].
  */
-enum class AspectRatio {
+public enum class AspectRatio {
     RATIO_4_3,
     RATIO_16_9,
     RATIO_9_16,
@@ -35,7 +37,8 @@ enum class AspectRatio {
  * Note: cameras expose 4:3 or 16:9 sensor outputs only, so [AspectRatio.RATIO_9_16] resolves to the
  * same 16:9 magnitude as [AspectRatio.RATIO_16_9]; the [orientation] then decides portrait vs landscape.
  */
-fun AspectRatio.previewAspectRatio(orientation: DeviceOrientation): Float {
+@InternalCameraKApi
+public fun AspectRatio.previewAspectRatio(orientation: DeviceOrientation): Float {
     val landscapeRatio = when (this) {
         AspectRatio.RATIO_4_3 -> 4f / 3f
         AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 -> 16f / 9f

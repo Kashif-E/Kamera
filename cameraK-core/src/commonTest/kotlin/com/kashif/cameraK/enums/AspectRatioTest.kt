@@ -1,5 +1,8 @@
+@file:OptIn(InternalCameraKApi::class)
+
 package com.kashif.cameraK.enums
 
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

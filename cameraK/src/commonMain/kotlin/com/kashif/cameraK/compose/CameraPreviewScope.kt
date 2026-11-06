@@ -9,9 +9,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import com.kashif.cameraK.enums.DeviceOrientation
 
 @Stable
-interface CameraPreviewScope : BoxScope {
-    val deviceOrientation: DeviceOrientation
-    fun Modifier.keepUpright(): Modifier
+public interface CameraPreviewScope : BoxScope {
+    public val deviceOrientation: DeviceOrientation
+    public fun Modifier.keepUpright(): Modifier
 }
 
 /**

@@ -5,7 +5,7 @@ import com.kashif.cameraK.error.InterruptionReason
 import dev.drewhamilton.poko.Poko
 
 /**
- * The camera's lifecycle, as [CameraKStateHolder.cameraState] publishes it. Closed hierarchy: new
+ * Closed hierarchy: the camera's lifecycle, as [CameraKStateHolder.cameraState] publishes it. New
  * subtypes come only in a major release, so an exhaustive `when` over it is safe.
  *
  * @sample com.kashif.cameraK.samples.cameraKStateSample

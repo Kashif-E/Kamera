@@ -13,24 +13,24 @@ import com.kashif.cameraK.plugin.CameraKPluginContext
  *
  * @sample com.kashif.cameraK.samples.cameraKPluginSample
  */
-interface CameraKPlugin {
+public interface CameraKPlugin {
     /** Names this plugin in [CameraKEvent.PluginFailed]. Defaults to the class's simple name. */
-    val id: String get() = this::class.simpleName ?: "CameraKPlugin"
+    public val id: String get() = this::class.simpleName ?: "CameraKPlugin"
 
     /**
      * True for a plugin that registers frame analyzers. A holder created with such a plugin binds
      * frame analysis at start (`CameraConfiguration.frameAnalysis`), so the first registration
      * needs no rebind. A plugin that never reads frames returns false.
      */
-    val needsFrames: Boolean get() = true
+    public val needsFrames: Boolean get() = true
 
     /**
      * Called once per attachment, outside any lock, with a new [context]. Throwing here sets that
      * context's `failure` and emits [CameraKEvent.PluginFailed]; the camera and the other plugins
      * carry on.
      */
-    fun onAttach(context: CameraKPluginContext)
+    public fun onAttach(context: CameraKPluginContext)
 
     /** Called when the plugin is detached. Its context's scope is cancelled right after. */
-    fun onDetach()
+    public fun onDetach()
 }

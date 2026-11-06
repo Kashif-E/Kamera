@@ -1,6 +1,7 @@
 package com.kashif.cameraK.enums
 
-enum class TorchMode {
+/** Closed: the torch mode of the camera. A new mode waits for a major release. */
+public enum class TorchMode {
     ON,
     OFF,
     AUTO,

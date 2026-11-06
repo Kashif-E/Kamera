@@ -34,7 +34,7 @@ import kotlinx.coroutines.flow.combine
 )
 @Suppress("UNUSED_PARAMETER")
 @Composable
-fun rememberCameraKState(
+public fun rememberCameraKState(
     config: CameraConfiguration = CameraConfiguration(),
     setupPlugins: suspend (CameraKStateHolder) -> Unit = {},
 ): State<CameraKState> = throw UnsupportedOperationException(REMOVED_IN_2)
@@ -66,7 +66,7 @@ fun rememberCameraKState(
  * stops the holder.
  */
 @Composable
-fun rememberCameraKStateHolder(
+public fun rememberCameraKStateHolder(
     config: CameraConfiguration = CameraConfiguration(),
     plugins: List<CameraKPlugin> = emptyList(),
     lifecycleOwner: LifecycleOwner? = LocalLifecycleOwner.current,

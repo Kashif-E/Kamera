@@ -3,7 +3,7 @@ package com.kashif.cameraK.plugin
 import com.kashif.cameraK.error.CameraKError
 
 /**
- * A plugin's public status. Closed: a new status comes only in a major release.
+ * Closed: a plugin's public status. A new status comes only in a major release.
  *
  * A plugin owns [Idle], [Running] and [Paused], and publishes [Failed] with its context's
  * `failure` whenever that is non-null.

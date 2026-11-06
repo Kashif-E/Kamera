@@ -1,9 +1,9 @@
 package com.kashif.cameraK.enums
 
 /**
- * Enum representing the camera lens selection.
+ * Closed: the camera lens selection. A new lens waits for a major release.
  */
-enum class CameraLens {
+public enum class CameraLens {
     FRONT,
     BACK,
 }

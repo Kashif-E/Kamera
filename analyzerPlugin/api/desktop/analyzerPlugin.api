@@ -1,0 +1,58 @@
+public final class com/kashif/analyzerplugin/AnalyzerConfig {
+	public static final field $stable I
+	public final fun copy (Lkotlin/jvm/functions/Function1;)Lcom/kashif/analyzerplugin/AnalyzerConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getJpegQuality ()I
+	public final fun getMaxDimension ()Ljava/lang/Integer;
+	public final fun getMaxFps ()F
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/kashif/analyzerplugin/AnalyzerConfig$Builder {
+	public static final field $stable I
+	public final fun getJpegQuality ()I
+	public final fun getMaxDimension ()Ljava/lang/Integer;
+	public final fun getMaxFps ()F
+	public final fun setJpegQuality (I)V
+	public final fun setMaxDimension (Ljava/lang/Integer;)V
+	public final fun setMaxFps (F)V
+}
+
+public final class com/kashif/analyzerplugin/AnalyzerConfigKt {
+	public static final fun AnalyzerConfig (Lkotlin/jvm/functions/Function1;)Lcom/kashif/analyzerplugin/AnalyzerConfig;
+	public static synthetic fun AnalyzerConfig$default (Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/kashif/analyzerplugin/AnalyzerConfig;
+}
+
+public final class com/kashif/analyzerplugin/AnalyzerPlugin : com/kashif/cameraK/state/CameraKPlugin {
+	public static final field $stable I
+	public fun <init> (Lcom/kashif/analyzerplugin/AnalyzerConfig;)V
+	public synthetic fun <init> (Lcom/kashif/analyzerplugin/AnalyzerConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getConfig ()Lcom/kashif/analyzerplugin/AnalyzerConfig;
+	public fun getId ()Ljava/lang/String;
+	public fun getNeedsFrames ()Z
+	public final fun getResults ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getStatus ()Lkotlinx/coroutines/flow/StateFlow;
+	public fun onAttach (Lcom/kashif/cameraK/plugin/CameraKPluginContext;)V
+	public fun onDetach ()V
+	public final fun pause ()V
+	public final fun resume ()V
+}
+
+public final class com/kashif/analyzerplugin/AnalyzerPluginKt {
+	public static final fun rememberAnalyzerPlugin (Lcom/kashif/analyzerplugin/AnalyzerConfig;Landroidx/compose/runtime/Composer;II)Lcom/kashif/analyzerplugin/AnalyzerPlugin;
+}
+
+public final class com/kashif/analyzerplugin/EncodedFrame {
+	public static final field $stable I
+	public fun <init> ([BIIIJ)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBytes ()[B
+	public final fun getHeight ()I
+	public final fun getRotationDegrees ()I
+	public final fun getTimestampNanos ()J
+	public final fun getWidth ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+

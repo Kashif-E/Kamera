@@ -40,7 +40,7 @@ public class DesiredHardware(
     public val targetOrientation: DeviceOrientation?,
 )
 
-/** Which camera to open. Subtypes compare by value. */
+/** Closed hierarchy: which camera to open. Subtypes compare by value. */
 @CameraKEngineApi
 public sealed interface CameraSelection {
     @Poko
