@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 /**
  * Returns [name] if it is safe to use as one file or folder name: 1 to 64 characters from

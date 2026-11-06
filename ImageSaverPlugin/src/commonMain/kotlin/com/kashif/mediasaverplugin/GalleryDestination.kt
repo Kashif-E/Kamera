@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 /**
  * Closed: where the saver publishes. A new destination waits for a major release.

@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.GalleryAsset
 

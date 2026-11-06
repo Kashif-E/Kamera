@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import android.content.ContentUris
 import android.content.Context

@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.localIdentifier
 import com.kashif.cameraK.permissions.PermissionStatus
@@ -111,7 +111,7 @@ class IOSImageSaverPluginPhotosTest {
     }
 
     private fun plugin(photos: FakePhotoLibrary) =
-        ImageSaverPlugin(MediaSaverConfig(), AppleGalleryStore(photos), { PermissionStatus.Granted })
+        MediaSaverPlugin(MediaSaverConfig(), AppleGalleryStore(photos), { PermissionStatus.Granted })
 
     private companion object {
         const val ASSET_ID = FakePhotoLibrary.ASSET_ID

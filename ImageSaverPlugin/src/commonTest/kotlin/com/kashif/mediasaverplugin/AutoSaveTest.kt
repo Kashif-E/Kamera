@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.StorageFailure
@@ -31,7 +31,7 @@ class AutoSaveTest : SaverTest() {
         CameraKLogger.enabled = false
     }
 
-    private fun TestScope.collectResults(plugin: ImageSaverPlugin): List<CameraKResult<SavedImage>> {
+    private fun TestScope.collectResults(plugin: MediaSaverPlugin): List<CameraKResult<SavedImage>> {
         val results = mutableListOf<CameraKResult<SavedImage>>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { plugin.results.collect { results += it } }
         return results
@@ -151,6 +151,6 @@ class AutoSaveTest : SaverTest() {
 
         val failed = assertIs<PluginStatus.Failed>(plugin.status.value, "status after an escaping throw")
         assertSame(bug, failed.error.cause)
-        assertEquals("ImageSaverPlugin", s.events.filterIsInstance<CameraKEvent.PluginFailed>().single().pluginId)
+        assertEquals("MediaSaverPlugin", s.events.filterIsInstance<CameraKEvent.PluginFailed>().single().pluginId)
     }
 }

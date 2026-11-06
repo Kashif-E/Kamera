@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import android.content.Context
 import android.net.Uri
@@ -19,7 +19,7 @@ internal fun androidSaver(
     config: MediaSaverConfig = MediaSaverConfig(),
     io: CoroutineDispatcher = Dispatchers.IO,
     permission: GalleryPermissionRead = GalleryPermissionRead { PermissionStatus.Granted },
-): ImageSaverPlugin = ImageSaverPlugin(config, AndroidGalleryStore(context, config, io), permission)
+): MediaSaverPlugin = MediaSaverPlugin(config, AndroidGalleryStore(context, config, io), permission)
 
 /** A JPEG capture whose app-owned file holds [bytes], as CameraK's own captures are before a saver copies them. */
 internal fun captured(bytes: ByteArray): CapturedImage {

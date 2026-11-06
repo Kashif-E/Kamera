@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.path
 import com.kashif.cameraK.enums.ImageFormat
@@ -32,7 +32,7 @@ class JVMImageSaverPluginOutputTest {
 
     private fun plugin() = desktopSaver(home)
 
-    private suspend fun ImageSaverPlugin.saved(bytes: ByteArray, name: String?, format: ImageFormat): File {
+    private suspend fun MediaSaverPlugin.saved(bytes: ByteArray, name: String?, format: ImageFormat): File {
         val result = save(capturedImage(bytes, format), name)
         return File(assertIs<CameraKResult.Success<SavedImage>>(result, "save result: $result").value.asset.path)
     }

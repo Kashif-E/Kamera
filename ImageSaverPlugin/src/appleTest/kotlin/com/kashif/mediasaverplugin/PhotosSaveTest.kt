@@ -1,6 +1,6 @@
 @file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, CameraKPlatformApi::class)
 
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.localIdentifier
 import com.kashif.cameraK.error.CameraKError
@@ -51,7 +51,7 @@ class PhotosSaveTest {
 
     private fun file(extension: String = "jpg"): String = appOwnedFile(photoBytes, extension).also { files += it }
 
-    private fun saver(photos: FakePhotoLibrary) = ImageSaverPlugin(
+    private fun saver(photos: FakePhotoLibrary) = MediaSaverPlugin(
         MediaSaverConfig(),
         AppleGalleryStore(photos, importTimeout = 200.milliseconds),
         { PermissionStatus.Granted },
@@ -224,7 +224,7 @@ class PhotosSaveTest {
             if (level == CameraKLogger.Level.ERROR) errors.update { it + throwable }
         }
         val photos = FakePhotoLibrary(createdIdentifier = null, createError = photosError())
-        val plugin = ImageSaverPlugin(
+        val plugin = MediaSaverPlugin(
             MediaSaverConfig { autoSave = true },
             AppleGalleryStore(photos, importTimeout = 200.milliseconds),
             { PermissionStatus.Granted },

@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember

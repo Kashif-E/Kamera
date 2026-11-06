@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.path
 import com.kashif.cameraK.error.CameraKError
@@ -43,19 +43,19 @@ class JVMImageSaverPluginPathTest {
         folder.walkTopDown().filter { it.isFile }.map { it.relativeTo(sandbox).path }.toList()
 
     // The capture's own file is outside the sandbox, so every file under it is one the saver wrote.
-    private suspend fun assertRejected(sut: ImageSaverPlugin, imageName: String?) {
+    private suspend fun assertRejected(sut: MediaSaverPlugin, imageName: String?) {
         assertFailsWith<IllegalArgumentException>("the error for a rejected name") {
             sut.save(capturedImage(jpeg()), imageName)
         }
         assertEquals(emptyList(), filesUnder(sandbox), "files written for a rejected name")
     }
 
-    private suspend fun ImageSaverPlugin.savedFile(imageName: String?): File {
+    private suspend fun MediaSaverPlugin.savedFile(imageName: String?): File {
         val result = save(capturedImage(jpeg()), imageName)
         return File(assertIs<CameraKResult.Success<SavedImage>>(result, "save result: $result").value.asset.path)
     }
 
-    private suspend fun ImageSaverPlugin.assertRefusedAsStorage(imageName: String?, what: String) {
+    private suspend fun MediaSaverPlugin.assertRefusedAsStorage(imageName: String?, what: String) {
         val result = save(capturedImage(jpeg()), imageName)
         val error =
             assertIs<CameraKError.Storage>(assertIs<CameraKResult.Failure>(result, "save result for $what").error)

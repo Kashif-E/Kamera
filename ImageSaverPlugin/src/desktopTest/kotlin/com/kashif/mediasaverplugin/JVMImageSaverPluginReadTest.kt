@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.path
 import com.kashif.cameraK.error.CameraKError
@@ -30,7 +30,7 @@ class JVMImageSaverPluginReadTest {
         sandbox.deleteRecursively()
     }
 
-    private suspend fun ImageSaverPlugin.saved(bytes: ByteArray): SavedImage =
+    private suspend fun MediaSaverPlugin.saved(bytes: ByteArray): SavedImage =
         assertIs<CameraKResult.Success<SavedImage>>(save(capturedImage(bytes), "shot"), "save").value
 
     @Test

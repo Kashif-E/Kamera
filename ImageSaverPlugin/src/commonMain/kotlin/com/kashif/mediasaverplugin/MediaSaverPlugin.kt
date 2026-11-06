@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -40,7 +40,7 @@ import kotlin.time.Clock
  *
  * @property config What and where the saver publishes.
  */
-public class ImageSaverPlugin internal constructor(
+public class MediaSaverPlugin internal constructor(
     public val config: MediaSaverConfig,
     private val store: GalleryStore,
     private val permissionRead: GalleryPermissionRead,
@@ -183,7 +183,7 @@ public class ImageSaverPlugin internal constructor(
         throw UnsupportedOperationException("Removed in CameraK 2.0; see the migration guide")
 
     private companion object {
-        const val TAG = "ImageSaverPlugin"
+        const val TAG = "MediaSaver"
         const val RESULTS_BUFFER = 16
     }
 }
@@ -193,10 +193,10 @@ internal fun autoSaveImageName(prefix: String, epochMillis: Long): String = "${p
 
 /** The same configuration's saver across recompositions, over [platformContext]'s gallery. */
 @Composable
-public fun rememberImageSaverPlugin(
+public fun rememberMediaSaverPlugin(
     config: MediaSaverConfig,
     platformContext: CameraKPlatformContext = rememberCameraKPlatformContext(),
-): ImageSaverPlugin = remember(config, platformContext) { ImageSaverPlugin(config, platformContext) }
+): MediaSaverPlugin = remember(config, platformContext) { MediaSaverPlugin(config, platformContext) }
 
 /** This platform's [CameraKPlatformContext], remembered: the application context on Android. */
 @Composable

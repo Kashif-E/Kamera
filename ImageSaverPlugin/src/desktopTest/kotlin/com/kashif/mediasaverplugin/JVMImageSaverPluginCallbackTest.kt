@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.path
 import com.kashif.cameraK.error.CameraKError
@@ -69,7 +69,7 @@ class JVMImageSaverPluginCallbackTest {
         File(home, "Pictures").writeText("not a folder")
         val source = File(home, "capture.jpg").apply { writeBytes(jpeg()) }
         val config = MediaSaverConfig()
-        val sut = ImageSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
+        val sut = MediaSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
         val messages = CopyOnWriteArrayList<String>()
         val causes = CopyOnWriteArrayList<Throwable>()
         CameraKLogger.enabled = true
@@ -95,7 +95,7 @@ class JVMImageSaverPluginCallbackTest {
     @Test
     fun aFailedAutoSaveIsLoggedOnce() = runTest {
         val config = MediaSaverConfig { autoSave = true }
-        val plugin = ImageSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
+        val plugin = MediaSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
         val errors = CopyOnWriteArrayList<Throwable?>()
         CameraKLogger.enabled = true
         CameraKLogger.sink = { level, _, _, throwable -> if (level == CameraKLogger.Level.ERROR) errors += throwable }

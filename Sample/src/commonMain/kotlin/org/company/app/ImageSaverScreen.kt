@@ -2,13 +2,13 @@ package org.company.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import com.kashif.imagesaverplugin.GalleryDestination
-import com.kashif.imagesaverplugin.ImageSaverPlugin
-import com.kashif.imagesaverplugin.MediaSaverConfig
-import com.kashif.imagesaverplugin.rememberImageSaverPlugin
+import com.kashif.mediasaverplugin.GalleryDestination
+import com.kashif.mediasaverplugin.MediaSaverConfig
+import com.kashif.mediasaverplugin.MediaSaverPlugin
+import com.kashif.mediasaverplugin.rememberMediaSaverPlugin
 
 /** The Sample's image saver: every capture that reaches the holder's captures goes to the gallery. */
-internal class ImageSaverFeature(val plugin: ImageSaverPlugin)
+internal class ImageSaverFeature(val plugin: MediaSaverPlugin)
 
 @Composable
 internal fun rememberImageSaverFeature(): ImageSaverFeature {
@@ -20,6 +20,6 @@ internal fun rememberImageSaverFeature(): ImageSaverFeature {
             folderName = "CameraK"
         }
     }
-    val plugin = rememberImageSaverPlugin(config)
+    val plugin = rememberMediaSaverPlugin(config)
     return remember(plugin) { ImageSaverFeature(plugin) }
 }

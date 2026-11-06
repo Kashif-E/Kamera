@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.GalleryAsset
 import com.kashif.cameraK.capture.path
@@ -187,7 +187,7 @@ private fun defaultImageName(): String =
 private fun defaultUserHome(): File = File(System.getProperty("user.home") ?: System.getProperty("user.dir") ?: ".")
 
 private const val MAX_NAME_ATTEMPTS = 100
-private const val TAG = "ImageSaverPlugin"
+private const val TAG = "MediaSaver"
 
 // The folder the store writes to when no folder name is set; CameraK's desktop captures and the
 // Android saver use the same name.

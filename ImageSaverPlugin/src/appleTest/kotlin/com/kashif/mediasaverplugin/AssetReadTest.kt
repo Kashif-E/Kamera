@@ -1,6 +1,6 @@
 @file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.GalleryAsset
 import com.kashif.cameraK.permissions.PermissionStatus
@@ -49,7 +49,7 @@ class AssetReadTest {
     private fun saved() = SavedImage("IMG.jpg", GalleryAsset("IMG.jpg", localIdentifier = FakePhotoLibrary.ASSET_ID))
 
     private fun saver(photos: FakePhotoLibrary) =
-        ImageSaverPlugin(MediaSaverConfig(), AppleGalleryStore(photos), { PermissionStatus.Granted })
+        MediaSaverPlugin(MediaSaverConfig(), AppleGalleryStore(photos), { PermissionStatus.Granted })
 
     private fun setPermissions(path: String, mode: Int) {
         check(

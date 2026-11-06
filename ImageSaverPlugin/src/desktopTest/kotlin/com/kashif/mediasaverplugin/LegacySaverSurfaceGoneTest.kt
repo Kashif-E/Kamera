@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -25,14 +25,14 @@ class LegacySaverSurfaceGoneTest {
                     "rememberImageSaverPlugin(${it.parameterTypes.joinToString { type -> type.simpleName }})"
             }
 
-        ImageSaverPlugin::class.java.methods.forEach { method ->
+        MediaSaverPlugin::class.java.methods.forEach { method ->
             val parameters = method.parameterTypes.toList()
             when {
-                method.name == "saveImage" -> present += "ImageSaverPlugin.saveImage"
+                method.name == "saveImage" -> present += "MediaSaverPlugin.saveImage"
                 method.name == "save" && parameters.firstOrNull() == ByteArray::class.java ->
-                    present += "ImageSaverPlugin.save(ByteArray, String?)"
+                    present += "MediaSaverPlugin.save(ByteArray, String?)"
                 method.name == "readBytes" && parameters.firstOrNull() == String::class.java ->
-                    present += "ImageSaverPlugin.readBytes(String)"
+                    present += "MediaSaverPlugin.readBytes(String)"
             }
         }
 

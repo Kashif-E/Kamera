@@ -1,6 +1,6 @@
 @file:OptIn(CameraKPlatformApi::class)
 
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.path
 import com.kashif.cameraK.result.CameraKResult
@@ -34,7 +34,7 @@ class GalleryAssetPathTest {
     }
 
     private suspend fun savedUnder(config: MediaSaverConfig): File {
-        val sut = ImageSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
+        val sut = MediaSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
         val saved = assertIs<CameraKResult.Success<SavedImage>>(
             sut.save(FakeCaptures.image(path = capture.path), "shot"),
         ).value
@@ -83,7 +83,7 @@ class GalleryAssetPathTest {
     fun galleryPermissionIsNullAndNeverRead() = runTest {
         val config = MediaSaverConfig()
         var reads = 0
-        val sut = ImageSaverPlugin(config, DesktopGalleryStore(config, home), {
+        val sut = MediaSaverPlugin(config, DesktopGalleryStore(config, home), {
             reads++
             error("the desktop saver read a permission")
         })
@@ -99,7 +99,7 @@ class GalleryAssetPathTest {
     fun aVideoIsCopiedWithItsOwnExtension() = runTest {
         val video = File(home, "app/VID_0001.mp4").apply { writeBytes(byteArrayOf(0, 0, 0, 24)) }
         val config = MediaSaverConfig()
-        val sut = ImageSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
+        val sut = MediaSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
 
         val saved = assertIs<CameraKResult.Success<SavedVideo>>(
             sut.save(FakeCaptures.video(path = video.path), "clip"),
@@ -112,7 +112,7 @@ class GalleryAssetPathTest {
     @Test
     fun aSavedImageReadsBack() = runTest {
         val config = MediaSaverConfig()
-        val sut = ImageSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
+        val sut = MediaSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
         val saved = assertIs<CameraKResult.Success<SavedImage>>(sut.save(FakeCaptures.image(path = capture.path))).value
 
         assertContentEquals(capture.readBytes(), assertIs<CameraKResult.Success<ByteArray>>(sut.readBytes(saved)).value)

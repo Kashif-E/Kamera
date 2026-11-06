@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import android.content.ContentUris
 import android.content.Context
@@ -179,7 +179,7 @@ class AndroidImageSaverPluginDirectoryTest {
      * Runs two saves named "shot" at once, holding both inserts until each save has chosen its path,
      * and checks that each one's bytes are in the file its row names. Returns the two paths.
      */
-    private suspend fun CoroutineScope.saveConcurrently(plugin: ImageSaverPlugin): List<String> {
+    private suspend fun CoroutineScope.saveConcurrently(plugin: MediaSaverPlugin): List<String> {
         val bothChoseAPath = CyclicBarrier(2)
         mediaStore.beforeInsert = { bothChoseAPath.await(10, TimeUnit.SECONDS) }
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI

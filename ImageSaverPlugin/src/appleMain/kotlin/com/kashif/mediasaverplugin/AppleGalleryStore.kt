@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.GalleryAsset
 import com.kashif.cameraK.capture.localIdentifier
@@ -166,7 +166,7 @@ internal class FileManagerException(error: NSError?) :
 /** Photos did not finish an import within [timeout], as while its add-only prompt is unanswered. */
 internal class PhotosTimeout(timeout: Duration) : IOException("Photos did not finish the import within $timeout")
 
-private const val TAG = "ImageSaverPlugin"
+private const val TAG = "MediaSaver"
 
 // Photos holds an import while its add-only prompt is up; this leaves the user time to answer it.
 private val IMPORT_TIMEOUT = 60.seconds

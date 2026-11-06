@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import android.net.Uri
 import com.kashif.cameraK.capture.GalleryAsset

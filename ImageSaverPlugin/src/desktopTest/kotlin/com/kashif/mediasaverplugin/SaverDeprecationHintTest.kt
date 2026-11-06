@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import androidx.compose.ui.ImageComposeScene
 import com.kashif.cameraK.permissions.PermissionStatus
@@ -34,9 +34,9 @@ class SaverDeprecationHintTest {
         val home = Files.createTempDirectory("camerak-saver-hint").toFile()
         try {
             val config = MediaSaverConfig { }
-            val saver = ImageSaverPlugin(config, DesktopGalleryStore(config, home), { PermissionStatus.Granted })
+            val saver = MediaSaverPlugin(config, DesktopGalleryStore(config, home), { PermissionStatus.Granted })
             val hint = assertNotNull(
-                ImageSaverPlugin::class.java.methods.singleOrNull { it.name == "getByteArrayFrom" },
+                MediaSaverPlugin::class.java.methods.singleOrNull { it.name == "getByteArrayFrom" },
                 "getByteArrayFrom is the 1.x read's hint",
             )
 
@@ -74,7 +74,7 @@ class SaverDeprecationHintTest {
             val alias = facade.declaredMethods.singleOrNull { it.name == "$old\$annotations" }
             val deprecation = alias?.getAnnotation(Deprecated::class.java)
             val target = try {
-                Class.forName(replacement).kotlin
+                Class.forName(replacement)
             } catch (_: ClassNotFoundException) {
                 null
             }
@@ -87,7 +87,8 @@ class SaverDeprecationHintTest {
             }
             when {
                 target == null -> wrong += "$replacement does not exist"
-                expansions[old] !== target -> wrong += "$OLD_PACKAGE.$old is ${expansions[old]}, not $replacement"
+                // Without kotlin-reflect each KClass is a fresh wrapper, so the classes they wrap are compared.
+                expansions[old]?.java !== target -> wrong += "$OLD_PACKAGE.$old is ${expansions[old]}, not $replacement"
             }
         }
 

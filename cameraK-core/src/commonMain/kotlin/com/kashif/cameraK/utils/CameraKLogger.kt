@@ -26,7 +26,7 @@ import kotlin.concurrent.Volatile
  * - A platform throwable's own message may hold a path or URI, so a [sink] that forwards throwables off the
  *   device must scrub or drop that message.
  * - The tag is the published artifact's: `CameraK` for camerak-core and camerak, then `QRScanner`,
- *   `TextRecognition`, `ImageSaverPlugin` and `Analyzer` for the plugins.
+ *   `TextRecognition`, `MediaSaver` and `Analyzer` for the plugins.
  */
 object CameraKLogger {
     enum class Level { DEBUG, WARN, ERROR }

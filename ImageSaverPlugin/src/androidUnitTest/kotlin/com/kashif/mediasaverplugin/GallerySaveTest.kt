@@ -1,6 +1,6 @@
 @file:OptIn(CameraKEngineApi::class, CameraKPlatformApi::class)
 
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import android.content.ContentUris
 import android.content.Context
@@ -309,7 +309,7 @@ class GallerySaveTest {
     @Config(sdk = [28])
     fun belowApi29WithoutWriteExternalStorageIsPermissionNotDetermined() = runTest {
         val config = MediaSaverConfig { folderName = "NoPermission" }
-        val plugin = ImageSaverPlugin(config, CameraKPlatformContext(context))
+        val plugin = MediaSaverPlugin(config, CameraKPlatformContext(context))
 
         val result = plugin.save(image, "shot")
 

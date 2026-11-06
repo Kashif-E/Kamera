@@ -1,6 +1,6 @@
 @file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.permissions.CameraKPermission
@@ -35,7 +35,7 @@ class PhotosPermissionTest {
     }
 
     private fun save(photos: FakePhotoLibrary, permission: ScriptedPermission): CameraKResult<SavedImage> {
-        val sut = ImageSaverPlugin(MediaSaverConfig(), AppleGalleryStore(photos), permission)
+        val sut = MediaSaverPlugin(MediaSaverConfig(), AppleGalleryStore(photos), permission)
         val done = background.completesWithin(BOUND) { sut.save(FakeCaptures.image(path = path)) }
         return assertNotNull(done, "save did not return within $BOUND").value
     }

@@ -1,6 +1,6 @@
 @file:OptIn(CameraKEngineApi::class)
 
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.GalleryAsset
 import com.kashif.cameraK.enums.ImageFormat
@@ -71,7 +71,7 @@ internal fun saver(
     config: MediaSaverConfig = MediaSaverConfig(),
     store: GalleryStore = FakeGalleryStore(),
     permission: GalleryPermissionRead = ScriptedPermission(PermissionStatus.Granted),
-): ImageSaverPlugin = ImageSaverPlugin(config, store, permission) { FIXED_MILLIS }
+): MediaSaverPlugin = MediaSaverPlugin(config, store, permission) { FIXED_MILLIS }
 
 /** A holder over a fake engine with [plugin] attached at creation, the config its factory got, and its events. */
 internal class SaverSession(
@@ -81,7 +81,7 @@ internal class SaverSession(
     val engineConfig: () -> CameraConfiguration?,
 )
 
-internal fun TestScope.saverSession(plugin: ImageSaverPlugin): SaverSession {
+internal fun TestScope.saverSession(plugin: MediaSaverPlugin): SaverSession {
     val engine = FakeCameraEngine()
     var created: CameraConfiguration? = null
     val holder = CameraKStateHolder(

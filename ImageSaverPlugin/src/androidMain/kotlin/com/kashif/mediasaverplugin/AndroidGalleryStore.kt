@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import android.content.ContentResolver
 import android.content.ContentValues
@@ -171,7 +171,7 @@ internal class AndroidGalleryStore(
     }
 }
 
-private const val TAG = "ImageSaverPlugin"
+private const val TAG = "MediaSaver"
 private const val DEFAULT_FOLDER = "CameraK"
 
 /** The public directory a [kind] goes to for [destination], per the destination table of GalleryDestination. */

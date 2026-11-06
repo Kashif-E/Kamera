@@ -1,4 +1,4 @@
-package com.kashif.imagesaverplugin
+package com.kashif.mediasaverplugin
 
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.enums.ImageFormat
@@ -8,8 +8,8 @@ import java.io.File
 import java.nio.file.Files
 
 /** A saver over [home] for [config]; desktop needs no gallery permission. */
-internal fun desktopSaver(home: File, config: MediaSaverConfig = MediaSaverConfig()): ImageSaverPlugin =
-    ImageSaverPlugin(config, DesktopGalleryStore(config, home), { PermissionStatus.Granted })
+internal fun desktopSaver(home: File, config: MediaSaverConfig = MediaSaverConfig()): MediaSaverPlugin =
+    MediaSaverPlugin(config, DesktopGalleryStore(config, home), { PermissionStatus.Granted })
 
 /**
  * A capture whose app-owned file holds [bytes], in a folder of its own outside any saver's home, as
