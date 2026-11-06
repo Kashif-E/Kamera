@@ -96,7 +96,10 @@ android {
             libs.versions.android.minSdk
                 .get()
                 .toInt()
-        targetSdk = 34
+        targetSdk =
+            libs.versions.android.compileSdk
+                .get()
+                .toInt()
 
         applicationId = "org.company.app.androidApp"
         versionCode = 1
