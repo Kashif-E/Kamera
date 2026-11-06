@@ -1133,6 +1133,17 @@ def check_repository_links() -> List[str]:
     }
     if len(repository_link_problems("https://github.com/Owner/Repo", fixture)) != 3:
         raise CheckError("the repository-links rule misjudges its fixture")
+    # An included build counts as applied only when some build file applies one of its precompiled plugins.
+    included = {
+        "settings.gradle.kts": 'pluginManagement {\n    includeBuild("build-logic")\n}\n',
+        "build-logic/build.gradle.kts": "plugins {\n    `kotlin-dsl`\n}\n",
+        "build-logic/src/main/kotlin/camerak.x.gradle.kts": "plugins {\n}\n",
+    }
+    applied = dict(included, **{"lib/build.gradle.kts": 'plugins {\n    id("camerak.x")\n}\n'})
+    unapplied = dict(included, **{"lib/build.gradle.kts": 'plugins {\n    id("camerak.y")\n}\n'})
+    found = repository_link_problems("https://github.com/Owner/Repo", applied)
+    if found or len(repository_link_problems("https://github.com/Owner/Repo", unapplied)) != 1:
+        raise CheckError(f"the repository-links rule misjudges an included build of convention plugins: {found}")
     names = [path.relative_to(ROOT).as_posix() for path in tracked("*")]
     files = {
         name: (ROOT / name).read_text()
