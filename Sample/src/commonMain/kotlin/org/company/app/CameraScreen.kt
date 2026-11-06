@@ -276,6 +276,11 @@ private fun CameraScreen(
             },
         )
 
+        AnalyzerLabel(
+            analyzer = analyzer,
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 64.dp),
+        )
+
         if (isOCREnabled && recognizedText != null) {
             OcrBanner(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 220.dp),

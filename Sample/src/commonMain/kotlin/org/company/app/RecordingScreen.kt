@@ -136,7 +136,7 @@ internal class RecordingFeature(private val recorder: SampleRecorder) {
 
     private suspend fun start() {
         when (val started = recorder.startRecording(configuration)) {
-            is CameraKResult.Success -> println("Recording started")
+            is CameraKResult.Success -> CameraKLogger.d(TAG, "Recording started")
             is CameraKResult.Failure -> {
                 val error = started.error
                 CameraKLogger.w(TAG, "Starting a recording failed: ${error::class.simpleName}", error.cause)
@@ -157,7 +157,7 @@ internal class RecordingFeature(private val recorder: SampleRecorder) {
     private fun report(finished: RecordingState.Finished) {
         val notice = when (val result = finished.result) {
             is CameraKResult.Success -> {
-                println("Recording saved: ${result.value.path}")
+                CameraKLogger.d(TAG, "Recording saved")
                 when (finished.reason) {
                     RecordingEndReason.MAX_DURATION -> "Recording reached its time limit and was saved"
                     RecordingEndReason.MAX_FILE_SIZE -> "Recording reached its size limit and was saved"

@@ -9,25 +9,32 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.permissions.rememberCameraKPermissionState
+import kotlinx.coroutines.launch
 import org.company.app.theme.AppTheme
 
 @Composable
 fun App() = AppTheme {
-    // The camera, and the gallery the image saver publishes to; on Android 10 and later and on desktop
-    // the gallery needs no permission and reads Granted.
-    val permissions = rememberCameraKPermissionState(CameraKPermission.CAMERA, CameraKPermission.GALLERY_ADD) {
-        if (it[CameraKPermission.CAMERA] != PermissionStatus.Granted) println("Camera Permission Denied")
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val imageSaver = rememberImageSaverFeature()
+    val analyzer = rememberAnalyzerFeature()
+    val qrScanner = rememberQrScannerFeature()
+    val ocr = rememberOcrFeature()
+
+    val asked = remember(imageSaver) { samplePermissions(imageSaver.plugin.config.autoSave) }
+    val permissions = rememberCameraKPermissionState(*asked.toTypedArray()) { results ->
+        permissionNotice(results)?.let { scope.launch { snackbarHostState.showSnackbar(it) } }
     }
     // Asked once when the app opens, as the 1.x screen did.
     LaunchedEffect(permissions) {
         if (!permissions.allGranted) permissions.launchRequest()
     }
-    val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -36,11 +43,6 @@ fun App() = AppTheme {
         // letterbox bars) never flashes the default white surface.
         containerColor = Color.Black,
     ) {
-        val imageSaver = rememberImageSaverFeature()
-        val analyzer = rememberAnalyzerFeature()
-        val qrScanner = rememberQrScannerFeature()
-        val ocr = rememberOcrFeature()
-
         if (permissions.statuses[CameraKPermission.CAMERA] == PermissionStatus.Granted) {
             CameraContent(
                 analyzer = analyzer,
@@ -53,6 +55,19 @@ fun App() = AppTheme {
     }
 }
 
-internal fun samplePermissions(autoSave: Boolean): List<CameraKPermission> = TODO("x-sample red stub")
+/**
+ * What the Sample asks for when it opens: the camera, and the gallery only when the image saver puts
+ * every capture there. On Android 10 and later and on desktop the gallery needs no permission and reads
+ * Granted.
+ */
+internal fun samplePermissions(autoSave: Boolean): List<CameraKPermission> =
+    if (autoSave) listOf(CameraKPermission.CAMERA, CameraKPermission.GALLERY_ADD) else listOf(CameraKPermission.CAMERA)
 
-internal fun permissionNotice(results: Map<CameraKPermission, PermissionStatus>): String? = TODO("x-sample red stub")
+/** The line the screen shows when the camera was refused; a refused gallery only stops the saving. */
+internal fun permissionNotice(results: Map<CameraKPermission, PermissionStatus>): String? =
+    when (results[CameraKPermission.CAMERA]) {
+        null, PermissionStatus.Granted -> null
+        PermissionStatus.PermanentlyDenied -> "Allow camera access in Settings"
+        PermissionStatus.Restricted -> "Camera access is restricted on this device"
+        else -> "Camera access was denied"
+    }
