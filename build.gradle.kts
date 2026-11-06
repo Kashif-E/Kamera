@@ -1055,6 +1055,14 @@ fun atomicfuDumpProblems(dumps: Map<String, String>): List<String> =
         }
     }
 
+// camerax_api_scope_matches_abi_dump: camerak-core hands consumers, as api, exactly the CameraX artifacts
+// whose types its Android ABI dump names (§14 row 4). [apiArtifacts] are the "group:name" dependencies its
+// androidMain declares api; an artifact androidx.camera:camera-X owns the package androidx.camera.X.
+fun cameraxApiScopeProblems(
+    apiArtifacts: List<String>,
+    dump: String,
+): List<String> = emptyList()
+
 // The gate rules run against fixtures, and the gates checked to cover the modules the 2.0 split adds.
 tasks.register("checkBuildGateRules") {
     group = lintGroup
@@ -1092,6 +1100,15 @@ tasks.register("checkBuildGateRules") {
         }
     val apiSourceDirs = publishedModules.map { layout.projectDirectory.dir(it).asFile }
     val abiDumpDirs = publishedModules.associateWith { layout.projectDirectory.dir("$it/api").asFile }
+    val coreAndroidDump = layout.projectDirectory.file("cameraK-core/api/android/cameraK-core.api").asFile
+    val coreAndroidApi =
+        provider {
+            project(":cameraK-core")
+                .configurations
+                .getByName("androidMainApi")
+                .dependencies
+                .map { "${it.group}:${it.name}" }
+        }
     val abiValidation =
         provider {
             publishedModules.associateWith { abiCheckTask in project(":$it").tasks.names } to
@@ -1498,6 +1515,22 @@ tasks.register("checkBuildGateRules") {
                     ) +
                         dumps.filter { (_, text) -> text.isEmpty() }.map { (path, _) -> "$path holds no ABI dump" } +
                         atomicfuDumpProblems(dumps.toMap())
+                },
+                "camerax_api_scope_matches_abi_dump" to {
+                    val all =
+                        listOf("core", "camera2", "view", "lifecycle", "video").map { "androidx.camera:camera-$it" }
+                    val dump =
+                        "public final class com/kashif/cameraK/frames/CameraFrameKt {\n" +
+                            "\tpublic static final fun getImageProxy (Lcom/kashif/cameraK/frames/CameraFrame;)" +
+                            "Landroidx/camera/core/ImageProxy;\n}\n"
+                    val exact = cameraxApiScopeProblems(listOf("androidx.camera:camera-core"), dump)
+                    listOfNotNull(
+                        "every CameraX artifact as api, with a dump naming only camera-core, is accepted"
+                            .takeIf { cameraxApiScopeProblems(all, dump).size < 4 },
+                        "camera-core as api, with a dump naming it, is rejected: $exact".takeIf { exact.isNotEmpty() },
+                        "a dump naming camera-core with no CameraX api is accepted"
+                            .takeIf { cameraxApiScopeProblems(emptyList(), dump).isEmpty() },
+                    ) + cameraxApiScopeProblems(coreAndroidApi.get(), coreAndroidDump.readText())
                 },
                 "sample_target_runs_the_sample_tests" to {
                     // The Sample's own tests (its commonTest and desktopTest) run under the sample target,
