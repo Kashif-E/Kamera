@@ -34,7 +34,7 @@ start with `CameraKError.Unsupported(feature)`; `holder.capabilities` lists what
 | `initialZoomRatio` | `Float` | `1f` | Clamped into the camera's range |
 | `imageFormat` | `ImageFormat` | `JPEG` | `JPEG`, `PNG`, or `HEIC` where the iOS camera offers HEVC |
 | `qualityPrioritization` | `QualityPrioritization` | `BALANCED` | `QUALITY`, `SPEED`, `BALANCED` or `NONE` |
-| `aspectRatio` | `AspectRatio` | `RATIO_16_9` | `RATIO_4_3`, `RATIO_16_9` or `RATIO_1_1`; the device's orientation decides portrait or landscape (`RATIO_9_16` is deprecated: the same as `RATIO_16_9`) |
+| `aspectRatio` | `AspectRatio` | `RATIO_16_9` | `RATIO_4_3`, `RATIO_16_9` or `RATIO_1_1`; the device's orientation decides portrait or landscape (`RATIO_9_16` is deprecated in favour of `RATIO_16_9`, which it now equals) |
 | `targetResolution` | `Resolution?` | `null` | The capture size to aim for, e.g. `Resolution(1920, 1080)` |
 | `targetOrientation` | `DeviceOrientation?` | `null` | Fixes the orientation of captures and recordings; null follows the device |
 | `outputDirectory` | `String?` | `null` | Where captures (and by default recordings) are written; null is app-owned storage |
@@ -96,9 +96,10 @@ Give the files a file protection class too. CameraK writes them with the app's d
 enable the Data Protection capability, which sets the `com.apple.developer.default-data-protection`
 entitlement, to `NSFileProtectionComplete`. A file in that class cannot be read while the device is
 locked; an app that uploads captures in the background uses
-`NSFileProtectionCompleteUntilFirstUserAuthentication`. `Documents` is also shown in the Files app
-when `UIFileSharingEnabled` or `LSSupportsOpeningDocumentsInPlace` is set; such an app sets
-`outputDirectory` to a folder under Application Support.
+`NSFileProtectionCompleteUntilFirstUserAuthentication`. `UIFileSharingEnabled` exposes `Documents`
+through Finder's file sharing, and with `LSSupportsOpeningDocumentsInPlace` also set the Files app
+shows it too; an app that sets `UIFileSharingEnabled` sets `outputDirectory` to a folder under
+Application Support.
 
 **Android.** CameraK writes to `filesDir/CameraK`, which Auto Backup includes. Exclude it with
 `data-extraction-rules` (Android 12 and later) and `full-backup-content` (Android 11 and earlier),
