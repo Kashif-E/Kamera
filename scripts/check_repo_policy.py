@@ -1232,6 +1232,20 @@ def check_module_sources() -> List[str]:
     found = android_namespace_problems(planted_scripts, planted_packages)
     if len(found) != 1 or not found[0].startswith("ocrPlugin:"):
         raise CheckError(f"android_namespace_matches_package misjudges its fixture: {found}")
+    # com.kashif is a parent of every plugin's package, so only uniqueness rejects two modules on it.
+    shared_scripts = {
+        "ocrPlugin": 'android {\n    namespace = "com.kashif"\n}\n',
+        "qrScannerPlugin": 'android {\n    namespace = "com.kashif"\n}\n',
+        "analyzerPlugin": 'android {\n    namespace = "com.kashif.analyzerplugin"\n}\n',
+    }
+    shared_packages = {
+        "ocrPlugin": ["com.kashif.ocrplugin"],
+        "qrScannerPlugin": ["com.kashif.qrscannerplugin"],
+        "analyzerPlugin": ["com.kashif.analyzerplugin"],
+    }
+    found = android_namespace_problems(shared_scripts, shared_packages)
+    if len(found) != 1 or "ocrPlugin" not in found[0] or "qrScannerPlugin" not in found[0]:
+        raise CheckError(f"android_namespace_matches_package accepts two modules on one namespace: {found}")
     planted_logs = {
         "ocrPlugin/src/commonMain/kotlin/A.kt": 'CameraKLogger.e(TAG, "a failed", e)\nprivate const val TAG = "CameraK"\n',
         "ocrPlugin/src/desktopMain/kotlin/B.kt": 'CameraKLogger.w(\n    "OcrPlugin",\n    "b",\n)\n',
