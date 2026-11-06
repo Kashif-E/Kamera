@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.android) apply false
     alias(libs.plugins.paparazzi) apply false
     alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.test) apply false
     alias(libs.plugins.dokka) apply false
     alias(libs.plugins.poko) apply false
     alias(libs.plugins.spotless)
@@ -2483,6 +2484,9 @@ fun verifyTaskPaths(
                 ":Sample:linkDebugFrameworkIosSimulatorArm64",
                 // The non-debuggable, profileable build the release gate's Macrobenchmark measures.
                 ":Sample:assembleBenchmark",
+                // The Macrobenchmark itself. It builds against the Sample app, so it is built here and
+                // stays out of androidModules; only the maintainer runs it, on a device.
+                ":benchmark:assembleBenchmark",
             )
     }
     return paths
