@@ -99,6 +99,11 @@ actual class CameraController(
     // Video recording
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
+
+    // Identifies the current recording. Set before start() and cleared by stopRecording()/cleanup(), so a
+    // Finalize can tell a requested stop from a recording that ended on its own, even one arriving before
+    // start() has returned.
+    private var activeRecordingToken: Any? = null
     private var recordingOutputFile: File? = null
     private val recordingFinalizeChannel = Channel<VideoCaptureResult>(Channel.CONFLATED)
 
@@ -836,7 +841,9 @@ actual class CameraController(
                 }
             }
 
-            activeRecording = pendingRecording.start(
+            val token = Any()
+            activeRecordingToken = token
+            val recording = pendingRecording.start(
                 ContextCompat.getMainExecutor(context),
             ) { event ->
                 when (event) {
@@ -859,18 +866,40 @@ actual class CameraController(
                             )
                         }
                         recordingOutputFile = null
-                        // Clear here too: a recording can finalize on error without stopRecording()
-                        // being called, and a stale non-null activeRecording would permanently block
-                        // ViewPort rebinds on rotation.
-                        activeRecording = null
-                        // Apply any rotation flip that was deferred while recording was in progress.
-                        if (pendingViewPortRebind) {
+                        // stopRecording() and cleanup() clear the token before stopping, so if it is still
+                        // this recording's, it ended on its own (app backgrounded, incoming call, storage
+                        // full). Clear activeRecording too, or a stale non-null one would permanently
+                        // block ViewPort rebinds on rotation.
+                        val endedOnItsOwn = activeRecordingToken === token
+                        if (endedOnItsOwn) {
+                            activeRecordingToken = null
+                            activeRecording = null
+                        }
+                        if (endedOnItsOwn && includeVideoUseCase) {
+                            // No stopRecording() will come to drop VideoCapture, so do it here or every
+                            // later photo keeps the reduced field of view (#136). The rebind also
+                            // rebuilds the ViewPort, covering a deferred rotation. Skip it when the use
+                            // cases are already gone (session stopped, lifecycle destroyed).
+                            includeVideoUseCase = false
+                            pendingViewPortRebind = false
+                            val vc = videoCapture
+                            // Cleared now, not in the async rebind, so a startRecording() before that
+                            // rebind runs binds a new VideoCapture instead of reusing this one.
+                            videoCapture = null
+                            val pv = previewView
+                            if (vc != null && pv != null && cameraProvider?.isBound(vc) == true) {
+                                bindCamera(pv)
+                            }
+                        } else if (pendingViewPortRebind) {
+                            // Apply any rotation flip that was deferred while recording was in progress.
                             pendingViewPortRebind = false
                             rebindIfViewPortOrientationChanged()
                         }
                     }
                 }
             }
+            // Skip if it already finalized (start failed immediately): don't keep a dead handle.
+            if (activeRecordingToken === token) activeRecording = recording
 
             cont.resume(outputFile.absolutePath)
         }
@@ -883,8 +912,10 @@ actual class CameraController(
         // timed-out stop) can still be buffered. Drain it so receive() below corresponds to THIS stop.
         while (recordingFinalizeChannel.tryReceive().isSuccess) { /* discard stale finalize */ }
 
-        recording.stop()
+        // Clear before stop() so the Finalize handler sees this stop as requested.
+        activeRecordingToken = null
         activeRecording = null
+        recording.stop()
         // Don't wait forever: if the CameraX finalize event never arrives (already finalized,
         // dropped, etc.) this would hang the caller and leave isRecording stuck true. Also guard
         // against cleanup() closing the channel mid-stop (receive() would throw).
@@ -1046,8 +1077,12 @@ actual class CameraController(
         orientationEventListener?.disable()
         orientationEventListener = null
         orientationChangedCallback = null
-        activeRecording?.stop()
+        // Clear the recording state before stop() so its late Finalize doesn't rebind the camera.
+        val recording = activeRecording
+        activeRecordingToken = null
         activeRecording = null
+        pendingViewPortRebind = false
+        recording?.stop()
         registeredAnalyzers.clear()
         recordingFinalizeChannel.close()
         imageProcessingExecutor.shutdown()
