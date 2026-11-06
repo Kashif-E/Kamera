@@ -1,7 +1,5 @@
 package org.company.app
 
-import kotlinx.coroutines.CoroutineScope
-
 /**
  * Multiplatform-safe alternative to `String.format` for simple numeric formatting.
  *
@@ -90,5 +88,3 @@ private fun Double.pow(n: Int): Double {
     }
     return result
 }
-
-expect fun getTFliteRunner(): (ByteArray.(CoroutineScope) -> Unit)?

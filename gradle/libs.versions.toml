@@ -39,7 +39,6 @@ textRecognition = "16.0.1"
 # (Decision 15). Apps that ship JNA get the real status; without it the status reads as not determined.
 jna = "5.14.0"
 
-kflite = "1.1.40"
 vanniktech-publish = "0.37.0"
 # equals, hashCode and toString for camerak-core's public value classes, which are not data classes.
 # Poko is tied to a Kotlin compiler version: 0.23.2 is the release for Kotlin 2.4.0 and later.
@@ -100,7 +99,6 @@ leptonica = { module = "org.bytedeco:leptonica", version.ref = "leptonica" }
 text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "textRecognition" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 
-kflite = {module = "io.github.shadmanadman:kflite", version.ref = "kflite"}
 
 junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }

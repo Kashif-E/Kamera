@@ -35,8 +35,6 @@ kotlin {
             resources.srcDir(rootProject.file("ocrPlugin/model"))
         }
 
-        val mobileMain by creating
-
         commonMain.dependencies {
             implementation(compose.runtime)
             implementation(compose.foundation)
@@ -52,15 +50,7 @@ kotlin {
             implementation(libs.lucide.icons.cmp)
         }
 
-        mobileMain.dependsOn(commonMain.get())
-
-        mobileMain.dependencies {
-            implementation(libs.kflite)
-            implementation(libs.atomicfu)
-        }
-
         androidMain {
-            dependsOn(mobileMain)
             dependencies {
                 implementation(compose.uiTooling)
                 implementation(libs.androidx.activityCompose)
@@ -69,11 +59,8 @@ kotlin {
                 implementation(libs.camera.lifecycle)
                 implementation(libs.androidx.camera.view)
                 implementation(libs.androidx.tracing)
+                implementation(libs.atomicfu)
             }
-        }
-
-        iosMain {
-            dependsOn(mobileMain)
         }
 
         commonTest.dependencies {
@@ -105,8 +92,10 @@ android {
             .toInt()
 
     defaultConfig {
-        // kflite, a Sample-only dependency, needs 24; the libraries need android-minSdk.
-        minSdk = 24
+        minSdk =
+            libs.versions.android.minSdk
+                .get()
+                .toInt()
         targetSdk = 34
 
         applicationId = "org.company.app.androidApp"

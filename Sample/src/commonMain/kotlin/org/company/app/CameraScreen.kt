@@ -73,7 +73,6 @@ internal fun CameraContent(
     ocr: OcrFeature,
     snackbarHostState: SnackbarHostState,
 ) {
-    val latestFrame = rememberLatestFrame(analyzer)
     val qrCodes = rememberQrCodes(qrScanner)
     val recognizedText = rememberRecognizedText(ocr)
 
@@ -111,7 +110,6 @@ internal fun CameraContent(
             snackbarHostState = snackbarHostState,
             qrCodes = qrCodes,
             recognizedText = recognizedText,
-            latestFrame = latestFrame,
             aspectRatio = settings.aspectRatio,
             onAspectRatioChange = { settings = settings.copy(aspectRatio = it) },
             resolution = settings.resolution,
@@ -186,7 +184,6 @@ private fun CameraScreen(
     snackbarHostState: SnackbarHostState,
     qrCodes: List<String>,
     recognizedText: String?,
-    latestFrame: ByteArray?,
     // Config-level settings hoisted to the caller (changing one re-initializes the camera).
     aspectRatio: AspectRatio,
     onAspectRatioChange: (AspectRatio) -> Unit,
@@ -232,8 +229,6 @@ private fun CameraScreen(
     }
     val shownDurationMs = rememberShownRecordingDurationMs(holder, recordingState)
 
-    var isDetectionEnabled by remember { mutableStateOf(true) }
-
     var showSettings by remember { mutableStateOf(false) }
 
     // A holder kept across a rotation still has the lock; one built after process death does not.
@@ -247,14 +242,10 @@ private fun CameraScreen(
 
     OcrRecognitionEffect(ocr, isOCREnabled)
 
-    AnalyzerEffect(analyzer, isDetectionEnabled)
-
     // Latest wins in the holder, and the engine clamps into the camera's range.
     fun setCameraZoom(newLevel: Float) {
         scope.launch { holder.setZoom(newLevel) }
     }
-
-    ObjectDetectionEffect(latestFrame, scope)
 
     Box(
         modifier = Modifier
