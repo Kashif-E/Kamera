@@ -2481,6 +2481,8 @@ fun verifyTaskPaths(
                 ":Sample:lintDebug",
                 // The framework the iOS app embeds; linking it is where Kotlin/Native runs out of heap.
                 ":Sample:linkDebugFrameworkIosSimulatorArm64",
+                // The non-debuggable, profileable build the release gate's Macrobenchmark measures.
+                ":Sample:assembleBenchmark",
             )
     }
     return paths

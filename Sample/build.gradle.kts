@@ -64,6 +64,11 @@ kotlin {
             dependencies {
                 implementation(compose.uiTooling)
                 implementation(libs.androidx.activityCompose)
+                // BareCameraXActivity, the release gate's bare-CameraX baseline, and its trace section.
+                implementation(libs.camera.camera2)
+                implementation(libs.camera.lifecycle)
+                implementation(libs.androidx.camera.view)
+                implementation(libs.androidx.tracing)
             }
         }
 
@@ -109,6 +114,17 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        // What :benchmark measures. Macrobenchmark refuses a debuggable app, so this is release,
+        // signed with the debug key so it installs, and profileable from the shell (the manifest).
+        create("benchmark") {
+            initWith(getByName("release"))
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
     }
 }
 
