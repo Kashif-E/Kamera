@@ -3,14 +3,7 @@ package com.kashif.cameraK.video
 import kotlin.time.Duration
 
 /**
- * Immutable configuration for video recording sessions, built with the DSL:
- *
- * ```kotlin
- * val video = VideoConfiguration {
- *     quality = VideoQuality.HD
- *     maxDuration = 30.seconds
- * }
- * ```
+ * Immutable configuration for video recording sessions, built with the `VideoConfiguration { }` DSL.
  *
  * Every field the block leaves unset takes its default; [copy] builds a changed copy.
  *
@@ -34,6 +27,8 @@ import kotlin.time.Duration
  *                           the recording when the file reaches it and keeps the file.
  * @throws IllegalArgumentException from the builder if [maxDuration] or [maxFileSizeBytes] is
  *   negative, or [filePrefix] is not a valid prefix.
+ *
+ * @sample com.kashif.cameraK.samples.videoConfigurationSample
  */
 public class VideoConfiguration private constructor(builder: Builder) {
     public val quality: VideoQuality = builder.quality

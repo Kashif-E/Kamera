@@ -34,17 +34,7 @@ import com.kashif.cameraK.state.CameraKStateHolder
  * @param error Shown when the camera failed, with the error and a retry.
  * @param content Drawn over the preview, with [CameraPreviewScope] for orientation-aware overlays.
  *
- * @example
- * ```kotlin
- * val holder = rememberCameraKStateHolder()
- * CameraKScreen(
- *     holder = holder,
- *     loading = { CircularProgressIndicator() },
- *     error = { error, retry -> CameraErrorMessage(error, onRetry = retry) },
- * ) {
- *     CaptureButton(holder, Modifier.align(Alignment.BottomCenter).keepUpright())
- * }
- * ```
+ * @sample com.kashif.cameraK.samples.CameraKScreenSample
  */
 @Composable
 fun CameraKScreen(

@@ -13,16 +13,7 @@ import com.kashif.cameraK.state.CameraKStateHolder
  * the holder. A stop while a recording is live keeps the camera open for two seconds first, so a
  * rotation's stop and start carry on with the recording (see [CameraKStateHolder.stop]).
  *
- * @example
- * ```kotlin
- * class CameraViewModel(application: Application) : AndroidViewModel(application) {
- *     val holder = CameraKStateHolder(CameraConfiguration(), CameraKPlatformContext(application))
- *         .also { addCloseable(it) }
- * }
- *
- * // In the Activity or Fragment:
- * val binding = viewModel.holder.bindToLifecycle(lifecycle)
- * ```
+ * @sample com.kashif.cameraK.samples.bindToLifecycleSample
  */
 public fun CameraKStateHolder.bindToLifecycle(lifecycle: Lifecycle): AutoCloseable {
     val holder = this

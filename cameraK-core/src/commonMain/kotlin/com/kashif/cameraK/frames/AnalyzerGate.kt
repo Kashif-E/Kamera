@@ -7,13 +7,8 @@ import kotlinx.atomicfu.locks.synchronized
 
 /**
  * Admission for one analyzer (one registration), shared by every platform frame source. Pure:
- * it holds no frame and starts no thread. A source asks it before touching a frame:
- *
- * ```kotlin
- * val lease = gate.tryEnter(onReleased = { slot.release() }) ?: return  // skip: busy, throttled or at maxRetained
- * val frame = copyInto(slot, lease)                                     // the frame's retain() calls lease.retain(), and
- * lease.deliver { analyzer.analyze(frame) }                             //   that RetainedFrame's close() its handle's release()
- * ```
+ * it holds no frame and starts no thread. A source asks it before touching a frame, as the sample
+ * shows.
  *
  * - **Busy skips, nothing queues.** While the analyzer runs, [tryEnter] returns null; the frame is
  *   skipped, never kept for later. Frames are latest-wins.
@@ -31,6 +26,8 @@ import kotlinx.atomicfu.locks.synchronized
  *
  * [nanoTime] is a monotonic clock in nanoseconds. Thread-safe: a source calls [tryEnter] on its
  * producer thread while the analyzer releases on its own.
+ *
+ * @sample com.kashif.cameraK.samples.analyzerGateSample
  */
 internal class AnalyzerGate(maxFps: Float?, private val nanoTime: () -> Long, maxRetained: Int = 1) {
     init {

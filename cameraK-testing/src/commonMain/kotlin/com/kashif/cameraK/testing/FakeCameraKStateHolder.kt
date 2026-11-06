@@ -14,18 +14,7 @@ import kotlinx.coroutines.test.TestScope
  * opt-in. [fake] checks [config] on start, as a platform would. The holder is cancelled when the
  * test body ends; close it to test closing.
  *
- * @example
- * ```kotlin
- * @Test
- * fun showsTheCamera() = runTest {
- *     val fake = FakeCameraEngine().apply { autoOpen = false }
- *     val holder = fakeCameraKStateHolder(fake = fake)
- *     holder.start()
- *     fake.deliverOpen()
- *     runCurrent()
- *     assertIs<CameraKState.Ready>(holder.cameraState.value)
- * }
- * ```
+ * @sample com.kashif.cameraK.samples.fakeCameraKStateHolderSample
  */
 public fun TestScope.fakeCameraKStateHolder(
     config: CameraConfiguration = CameraConfiguration(),

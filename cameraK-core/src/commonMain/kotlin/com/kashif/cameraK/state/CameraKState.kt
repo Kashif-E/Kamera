@@ -8,15 +8,7 @@ import dev.drewhamilton.poko.Poko
  * The camera's lifecycle, as [CameraKStateHolder.cameraState] publishes it. Closed hierarchy: new
  * subtypes come only in a major release, so an exhaustive `when` over it is safe.
  *
- * @example
- * ```kotlin
- * when (val state = holder.cameraState.collectAsState().value) {
- *     CameraKState.Idle, CameraKState.Starting -> LoadingIndicator()
- *     CameraKState.Ready, is CameraKState.Interrupted -> CameraControls(holder)
- *     is CameraKState.Error -> ErrorMessage(state.error, onRetry = { holder.retry() })
- *     CameraKState.Closed -> Unit
- * }
- * ```
+ * @sample com.kashif.cameraK.samples.cameraKStateSample
  */
 public sealed interface CameraKState {
     /** Not started, or stopped because the host left STARTED. The camera is closed. */

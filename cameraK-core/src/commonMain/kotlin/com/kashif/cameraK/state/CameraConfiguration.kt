@@ -12,16 +12,7 @@ import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.frames.FrameFormat
 
 /**
- * Configuration for camera initialization, built with the DSL:
- *
- * ```kotlin
- * val config = CameraConfiguration {
- *     flashMode = FlashMode.AUTO
- *     cameraLens = CameraLens.BACK
- *     qualityPrioritization = QualityPrioritization.QUALITY
- * }
- * val holder = rememberCameraKStateHolder(config)
- * ```
+ * Configuration for camera initialization, built with the `CameraConfiguration { }` DSL.
  *
  * Immutable; [copy] builds a changed copy. Every field the block leaves unset takes its default, so
  * `CameraConfiguration()` is the default configuration. A new configuration builds a new holder.
@@ -60,6 +51,8 @@ import com.kashif.cameraK.frames.FrameFormat
  * @property analysisFormat The pixel format analysis frames arrive in, applied at bind.
  * @throws IllegalArgumentException from the builder when [targetResolution] or [analysisResolution]
  *   has a zero or negative width or height.
+ *
+ * @sample com.kashif.cameraK.samples.cameraConfigurationSample
  */
 public class CameraConfiguration private constructor(builder: Builder) {
     public val cameraLens: CameraLens? = builder.cameraLens

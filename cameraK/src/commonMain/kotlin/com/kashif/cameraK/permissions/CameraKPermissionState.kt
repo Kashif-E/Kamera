@@ -59,15 +59,7 @@ public interface CameraKPermissionState {
  *
  * @param onResult Called on the main thread with every status after each [CameraKPermissionState.launchRequest].
  *
- * @example
- * ```kotlin
- * val permissions = rememberCameraKPermissionState(CameraKPermission.CAMERA)
- * if (permissions.allGranted) {
- *     CameraKScreen(holder)
- * } else {
- *     Button(onClick = permissions::launchRequest) { Text("Allow camera") }
- * }
- * ```
+ * @sample com.kashif.cameraK.samples.RememberCameraKPermissionStateSample
  */
 @Composable
 public expect fun rememberCameraKPermissionState(

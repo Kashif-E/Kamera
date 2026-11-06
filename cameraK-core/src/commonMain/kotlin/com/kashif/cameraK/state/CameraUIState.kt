@@ -27,22 +27,8 @@ import dev.drewhamilton.poko.Poko
  * @property cameraId The bound camera's `LensInfo.id`; null before the first bind.
  * @property targetOrientation The orientation outputs are fixed to; null follows the device.
  *
- * @example
- * ```kotlin
- * val holder = rememberCameraKStateHolder()
- * val uiState by holder.uiState.collectAsState()
- * val scope = rememberCoroutineScope()
- * IconButton(onClick = { scope.launch { holder.cycleFlashMode() } }, enabled = !uiState.isCapturing) {
- *     Icon(
- *         imageVector = when (uiState.flashMode) {
- *             FlashMode.ON -> Icons.Default.FlashOn
- *             FlashMode.AUTO -> Icons.Default.FlashAuto
- *             else -> Icons.Default.FlashOff
- *         },
- *         contentDescription = "Flash",
- *     )
- * }
- * ```
+ * @sample com.kashif.cameraK.samples.cameraUIStateSample
+ * @sample com.kashif.cameraK.samples.cameraUIStateFlashButtonSample
  */
 @Poko
 public class CameraUIState internal constructor(

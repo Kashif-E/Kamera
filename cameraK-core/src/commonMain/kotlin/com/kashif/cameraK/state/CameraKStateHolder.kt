@@ -77,21 +77,7 @@ import kotlin.time.Duration
  * is not granted. While it shows that error, [recheckPermission] starts the camera once the
  * permission is granted, without a [retry].
  *
- * @example
- * ```kotlin
- * val holder = CameraKStateHolder(CameraConfiguration(), CameraKPlatformContext(context))
- * holder.start()
- * holder.cameraState.collect { state ->
- *     when (state) {
- *         CameraKState.Idle, CameraKState.Starting -> showLoading()
- *         CameraKState.Ready, is CameraKState.Interrupted -> showCamera()
- *         is CameraKState.Error -> showError(state.error)
- *         CameraKState.Closed -> Unit
- *     }
- * }
- * // When the screen goes away:
- * holder.close()
- * ```
+ * @sample com.kashif.cameraK.samples.cameraKStateHolderSample
  */
 public class CameraKStateHolder @CameraKEngineApi constructor(
     config: CameraConfiguration,

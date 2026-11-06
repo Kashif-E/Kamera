@@ -11,19 +11,7 @@ import com.kashif.cameraK.plugin.CameraKPluginContext
  * frame source and its own failure. The context has no commands; a plugin cannot shut the camera
  * down or write the holder's state.
  *
- * @example
- * ```kotlin
- * class LumaPlugin : CameraKPlugin {
- *     override fun onAttach(context: CameraKPluginContext) {
- *         context.launchPerSession {
- *             context.frames.register(FrameSpec(maxFps = 5f)) { frame -> measure(frame) }
- *                 .use { awaitCancellation() }
- *         }
- *     }
- *
- *     override fun onDetach() = Unit
- * }
- * ```
+ * @sample com.kashif.cameraK.samples.cameraKPluginSample
  */
 interface CameraKPlugin {
     /** Names this plugin in [CameraKEvent.PluginFailed]. Defaults to the class's simple name. */

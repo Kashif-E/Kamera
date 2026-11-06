@@ -20,11 +20,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * @param tick How often the value moves while recording; positive. One second suits a mm:ss timer.
  *
- * @example
- * ```kotlin
- * val elapsed by rememberRecordingElapsed(holder)
- * Text("${elapsed.inWholeSeconds} s")
- * ```
+ * @sample com.kashif.cameraK.samples.RememberRecordingElapsedSample
  */
 @Composable
 public fun rememberRecordingElapsed(holder: CameraKStateHolder, tick: Duration = 1.seconds): State<Duration> {

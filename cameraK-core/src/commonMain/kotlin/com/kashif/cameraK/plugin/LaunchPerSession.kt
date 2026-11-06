@@ -14,14 +14,7 @@ import kotlinx.coroutines.launch
  * the camera leaves Ready, and again at the next Ready. This replaces collecting `cameraState`
  * for Ready values in every plugin.
  *
- * @example
- * ```kotlin
- * override fun onAttach(context: CameraKPluginContext) {
- *     context.launchPerSession {
- *         context.frames.register(FrameSpec(maxFps = 10f), ::decode).use { awaitCancellation() }
- *     }
- * }
- * ```
+ * @sample com.kashif.cameraK.samples.launchPerSessionSample
  */
 public fun CameraKPluginContext.launchPerSession(block: suspend CoroutineScope.() -> Unit): Job = scope.launch {
     cameraState.map { it is CameraKState.Ready }.distinctUntilChanged().collectLatest { ready ->

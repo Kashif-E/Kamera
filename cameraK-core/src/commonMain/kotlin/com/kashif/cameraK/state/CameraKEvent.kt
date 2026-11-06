@@ -13,17 +13,7 @@ import com.kashif.cameraK.result.CameraKResult
  * Open: new event classes can be added in a minor release, so a `when` over an event needs an
  * `else` branch. Only CameraK creates events.
  *
- * @example
- * ```kotlin
- * LaunchedEffect(holder) {
- *     holder.events.collect { event ->
- *         when (event) {
- *             is CameraKEvent.PluginFailed -> showPluginError(event.pluginId)
- *             else -> Unit
- *         }
- *     }
- * }
- * ```
+ * @sample com.kashif.cameraK.samples.cameraKEventSample
  */
 abstract class CameraKEvent internal constructor() {
     /**
