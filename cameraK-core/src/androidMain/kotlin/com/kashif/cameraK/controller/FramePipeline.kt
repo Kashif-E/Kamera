@@ -27,8 +27,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.nio.ByteBuffer
 import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 
 private const val TAG = "CameraK"
 
@@ -55,7 +53,7 @@ internal class FramePipeline(
     private val registrations = atomic(emptyList<Registration>())
     private val pool = FramePool()
     internal val multiplexer = MultiplexingAnalyzer({ registrations.value }, sessionFormat, pool)
-    private val workerCount = AtomicInteger()
+    private val workerCount = atomic(0)
 
     /**
      * Runs when a registration comes or goes, on the registering thread. The engine sets it to bind
@@ -184,31 +182,31 @@ internal class FramePipeline(
         private val worker: WorkerDispatcher? =
             if (synchronous || rejection != null) null else newWorker("CameraK-frames-${workerCount.incrementAndGet()}")
         private val executor: Executor? = worker?.dispatcher?.asExecutor()
-        private val closed = AtomicBoolean(false)
+        private val closed = atomic(false)
 
         private val _active = MutableStateFlow(false)
         override val active: StateFlow<Boolean> = _active.asStateFlow()
 
         fun publishActive(outputBound: Boolean) {
-            _active.value = outputBound && rejection == null && !closed.get()
+            _active.value = outputBound && rejection == null && !closed.value
         }
 
         override fun deliverSynchronously(proxy: ImageProxy, meta: FrameMeta) {
-            if (closed.get()) return
+            if (closed.value) return
             val lease = gate.tryEnter() ?: return
             val frame = ProxyFrame(SynchronousImageProxy(proxy), meta, lease)
             lease.deliver { analyzer.analyze(frame) }
         }
 
         override fun tryEnter(onReleased: () -> Unit): AnalyzerLease? =
-            if (closed.get()) null else gate.tryEnter(onReleased)
+            if (closed.value) null else gate.tryEnter(onReleased)
 
         override fun dispatch(slot: FrameSlot, lease: AnalyzerLease) {
             val target = executor ?: return lease.release()
             val frame = SlotFrame(slot, lease)
             try {
                 target.execute {
-                    if (closed.get()) lease.release() else lease.deliver { analyzer.analyze(frame) }
+                    if (closed.value) lease.release() else lease.deliver { analyzer.analyze(frame) }
                 }
             } catch (e: RejectedExecutionException) {
                 CameraKLogger.w(TAG, "A frame analyzer's worker refused a frame; the frame is released", e)

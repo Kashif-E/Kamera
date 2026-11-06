@@ -4,6 +4,7 @@ import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.engine.WorkerDispatcher
 import com.kashif.cameraK.state.removedIn2
 import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.atomicfu.AtomicLong
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -18,7 +19,6 @@ import org.bytedeco.javacv.FrameGrabber
 import java.awt.image.BufferedImage
 import java.io.File
 import java.util.WeakHashMap
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The single producer of desktop camera frames. One grab loop, on its own thread, is the only code
@@ -41,7 +41,7 @@ public class CameraGrabber internal constructor(private val nanoClock: () -> Lon
     @Volatile private var isHorizontallyFlipped = false
 
     /** How many analysis frames the grab loops converted to YUV_420. */
-    internal val yuvConversions = AtomicLong()
+    internal val yuvConversions: AtomicLong = atomic(0L)
 
     @Volatile private var converterInUse: FrameConverter? = null
 

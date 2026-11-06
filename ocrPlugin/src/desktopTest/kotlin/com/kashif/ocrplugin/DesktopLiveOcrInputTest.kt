@@ -5,7 +5,6 @@ import kotlinx.coroutines.test.runTest
 import org.bytedeco.tesseract.global.tesseract.OEM_DEFAULT
 import org.bytedeco.tesseract.global.tesseract.OEM_LSTM_ONLY
 import org.bytedeco.tesseract.global.tesseract.OEM_TESSERACT_ONLY
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -51,7 +50,7 @@ class DesktopLiveOcrInputTest {
         CameraKLogger.enabled = true
         CameraKLogger.sink = { level, _, message, _ -> if (level == CameraKLogger.Level.WARN) warnings += message }
         val tesseract = FakeTesseract(legacyInitResult = -1)
-        val logged = AtomicBoolean(false)
+        val logged = LoggedOnce()
 
         repeat(2) { OCRProcessor(tesseract, "tessdata", OcrLevel.FAST, logged).close() }
 

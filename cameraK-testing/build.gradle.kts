@@ -24,6 +24,8 @@ kotlin {
             // module from test source sets, where coroutines-test belongs (checkTestOnlyDependencies,
             // testingModuleMayExportCoroutinesTest).
             api(libs.kotlinx.coroutines.test)
+            // FakePermissionChecker's statuses. Never api: no public signature names an atomicfu type.
+            implementation(libs.atomicfu)
         }
 
         commonTest.dependencies {

@@ -2,10 +2,11 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.atomicfu.AtomicLong
+import kotlinx.atomicfu.atomic
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Converts grabbed frames into a pool of owned `TYPE_3BYTE_BGR` slots ([LeasedFrame]), blitting
@@ -21,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
  * back from any thread.
  */
 internal class FrameConverter(
-    private val yuvConversions: AtomicLong = AtomicLong(),
+    private val yuvConversions: AtomicLong = atomic(0L),
     private val capacity: () -> Int = { framePoolSize(retainLimits = 0, analyzers = 0) },
 ) {
     private val converter = Java2DFrameConverter()

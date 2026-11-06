@@ -5,7 +5,7 @@ import androidx.camera.core.ImageProxy
 import com.kashif.cameraK.frames.AnalyzerLease
 import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.utils.CameraKLogger
-import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.atomicfu.atomic
 
 private const val TAG = "CameraK"
 
@@ -79,10 +79,10 @@ internal class MultiplexingAnalyzer(
     private class SharedSlot(private val pool: FramePool) {
         @Volatile
         private var slot: FrameSlot? = null
-        private val holders = AtomicInteger()
+        private val holders = atomic(0)
 
         fun attach(slot: FrameSlot, holders: Int) {
-            this.holders.set(holders)
+            this.holders.value = holders
             this.slot = slot
         }
 

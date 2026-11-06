@@ -9,7 +9,7 @@ import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewAttachment
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.utils.CameraKEngineApi
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.atomicfu.atomic
 
 /**
  * The engine's preview leaf. The Preview use case is bound with the engine's other use cases, with no
@@ -50,7 +50,7 @@ internal class EnginePreviewSource(
     }
 
     private inner class Attachment(val provider: Preview.SurfaceProvider, val display: Display?) : PreviewAttachment {
-        private val closed = AtomicBoolean(false)
+        private val closed = atomic(false)
 
         override fun close() {
             if (!closed.compareAndSet(false, true)) return

@@ -41,6 +41,7 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -64,7 +65,6 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import java.awt.image.BufferedImage
 import java.io.File
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -460,10 +460,10 @@ internal class DesktopCameraEngine(
         session.watchdog?.cancel()
         session.watchdog = scope.launch {
             while (true) {
-                val seen = session.frames.get()
+                val seen = session.frames.value
                 delay(NO_FRAME_TIMEOUT)
                 // A switch waiting for its device's first frame has its own bound (selectCamera).
-                if (session.frames.get() == seen && !session.switchPending) {
+                if (session.frames.value == seen && !session.switchPending) {
                     synchronized(lock) {
                         if (isCurrent(session) && _state.value == EngineState.Open) {
                             CameraKLogger.w(TAG, "The desktop camera delivered no frame in time; reopening it")
@@ -857,7 +857,7 @@ internal class DesktopCameraEngine(
     /** One start: a generation (§2.3 rule 2). */
     private class Session(val desired: DesiredHardware) {
         val outcome = CompletableDeferred<CameraKResult<Unit>>()
-        val frames = AtomicLong()
+        val frames = atomic(0L)
         var device: LensInfo? = null
         var run: Run? = null
         var watchdog: Job? = null

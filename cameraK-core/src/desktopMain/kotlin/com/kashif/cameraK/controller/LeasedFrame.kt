@@ -3,14 +3,14 @@ package com.kashif.cameraK.controller
 import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FramePlane
 import com.kashif.cameraK.state.Resolution
+import kotlinx.atomicfu.AtomicLong
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.channels.Channel
 import java.awt.AlphaComposite
 import java.awt.Graphics2D
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.awt.image.DataBufferByte
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * One slot of the producer's frame pool (§8 desktop): an owned `TYPE_3BYTE_BGR` [image], already
@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicLong
 internal class LeasedFrame internal constructor(
     val width: Int,
     val height: Int,
-    private val yuvConversions: AtomicLong = AtomicLong(),
+    private val yuvConversions: AtomicLong = atomic(0L),
 ) {
     val image = BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR)
 
@@ -35,7 +35,7 @@ internal class LeasedFrame internal constructor(
 
     // TYPE_3BYTE_BGR stores B, G, R per pixel, rows of width * 3 bytes.
     private val bgr: ByteArray = (image.raster.dataBuffer as DataBufferByte).data
-    private val leases = AtomicInteger(0)
+    private val leases = atomic(0)
 
     /** When the camera delivered the frame in the slot, on the engine's clock. */
     @Volatile var captureNanos: Long = 0L
@@ -49,7 +49,7 @@ internal class LeasedFrame internal constructor(
     private var planes: List<FramePlane> = emptyList()
 
     /** The leases held on the frame in this slot; 0 when the slot is free. */
-    val leaseCount: Int get() = leases.get()
+    val leaseCount: Int get() = leases.value
 
     /** Takes the free slot for a new frame, with the producer's lease. Producer thread only. */
     internal fun begin(nanos: Long) {
@@ -61,7 +61,7 @@ internal class LeasedFrame internal constructor(
     /** One more lease on a frame already leased; returns this frame. */
     fun retain(): LeasedFrame {
         while (true) {
-            val held = leases.get()
+            val held = leases.value
             check(held > 0) { "retain() on a frame with no lease" }
             if (leases.compareAndSet(held, held + 1)) return this
         }
@@ -70,7 +70,7 @@ internal class LeasedFrame internal constructor(
     /** Gives one lease back; the slot is free when the last one is. */
     fun release() {
         while (true) {
-            val held = leases.get()
+            val held = leases.value
             check(held > 0) { "release() on a frame with no lease" }
             if (leases.compareAndSet(held, held - 1)) return
         }

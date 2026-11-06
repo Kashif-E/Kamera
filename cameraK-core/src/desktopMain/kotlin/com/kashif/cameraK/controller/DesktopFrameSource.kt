@@ -17,11 +17,11 @@ import com.kashif.cameraK.frames.FrameSpec
 import com.kashif.cameraK.frames.RetainedFrame
 import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.EmptyCoroutineContext
 
 /** How a leased frame becomes the analysis planes of [format] at [size]; [LeasedFrame.analysisPlanes] unless a test fails it. */
@@ -139,7 +139,7 @@ internal class DesktopFrameSource(
         val retainLimit: Int = spec.maxRetained.coerceAtLeast(1)
 
         // Frames handed to the analyzer and not yet given back: an entry or a retain still holds them.
-        private val outstanding = AtomicInteger(0)
+        private val outstanding = atomic(0)
 
         fun handed() {
             outstanding.incrementAndGet()
@@ -172,7 +172,7 @@ internal class DesktopFrameSource(
             open = false
             _active.value = false
             if (registrations.remove(this)) worker?.close()
-            if (outstanding.get() == 0) leavePool(this)
+            if (outstanding.value == 0) leavePool(this)
         }
     }
 

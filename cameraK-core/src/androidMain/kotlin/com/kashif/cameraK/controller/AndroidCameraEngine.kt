@@ -77,8 +77,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadFactory
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 import kotlin.time.Duration
@@ -259,7 +257,7 @@ internal class AndroidCameraEngine(
     private var pendingViewPortRebind = false
 
     private var teardown: Job? = null
-    private val awaitingFirstFrame = AtomicBoolean(false)
+    private val awaitingFirstFrame = atomic(false)
 
     // A late bind of the ImageAnalysis a registration asked for is queued. Main thread.
     private var analysisBindPending = false
@@ -306,7 +304,7 @@ internal class AndroidCameraEngine(
         scope.launch { files.ensureDirectory(files.defaultDirectory) }
         live.startTrace = tracer.beginInterval(TraceNames.START)
         live.firstFrameTrace = tracer.beginInterval(TraceNames.FIRST_FRAME)
-        awaitingFirstFrame.set(true)
+        awaitingFirstFrame.value = true
         applyDesired(desired)
         try {
             // A stop or a close completes `opened` while the start waits, which ends the wait.
@@ -853,7 +851,7 @@ internal class AndroidCameraEngine(
         live.firstFrameTrace?.close()
         live.startTrace = null
         live.firstFrameTrace = null
-        awaitingFirstFrame.set(false)
+        awaitingFirstFrame.value = false
         orientation.stop()
         binder.stopListeningForDisplayChanges()
         if (registry.currentState.isAtLeast(Lifecycle.State.STARTED)) {
@@ -1040,7 +1038,7 @@ internal class AndroidCameraEngine(
         }
 
         fun cameraKThreads(name: String): ThreadFactory {
-            val count = AtomicInteger()
+            val count = atomic(0)
             return ThreadFactory { runnable ->
                 Thread(runnable, "$name-${count.incrementAndGet()}").apply { isDaemon = true }
             }

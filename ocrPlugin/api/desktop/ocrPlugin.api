@@ -2,7 +2,7 @@ public final class com/kashif/ocrplugin/OCRProcessor {
 	public static final field $stable I
 	public fun <init> (Lcom/kashif/ocrplugin/OcrConfig;)V
 	public synthetic fun <init> (Lcom/kashif/ocrplugin/OcrConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (Lcom/kashif/ocrplugin/TesseractLibrary;Ljava/lang/String;Ljava/lang/String;Ljava/util/concurrent/atomic/AtomicBoolean;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Lcom/kashif/ocrplugin/TesseractLibrary;Ljava/lang/String;Ljava/lang/String;Lcom/kashif/ocrplugin/LoggedOnce;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun close ()V
 	public final fun scanImage (Ljava/awt/image/BufferedImage;)Ljava/lang/String;
 }

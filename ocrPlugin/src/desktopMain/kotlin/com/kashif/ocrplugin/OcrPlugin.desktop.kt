@@ -1,6 +1,7 @@
 package com.kashif.ocrplugin
 
 import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.ReentrantLock
 import org.bytedeco.tesseract.global.tesseract.OEM_DEFAULT
 import org.bytedeco.tesseract.global.tesseract.OEM_LSTM_ONLY
@@ -11,7 +12,6 @@ import java.awt.image.ComponentSampleModel
 import java.awt.image.DataBufferByte
 import java.io.File
 import java.io.IOException
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
 
 /**
@@ -26,7 +26,7 @@ public class OCRProcessor internal constructor(
     private val library: TesseractLibrary,
     tessdataDir: String?,
     level: OcrLevel = OcrLevel.ACCURATE,
-    private val noLegacyEngineLogged: AtomicBoolean = NoLegacyEngineLogged,
+    private val noLegacyEngineLogged: LoggedOnce = NoLegacyEngineLogged,
 ) {
     /**
      * Loads `eng.traineddata` from the first source [config] and the process offer (see [OcrConfig])
@@ -78,7 +78,7 @@ public class OCRProcessor internal constructor(
             return
         }
         if (api.init(tessdataDir, LANGUAGE, OEM_TESSERACT_ONLY) == 0) return
-        if (noLegacyEngineLogged.compareAndSet(false, true)) {
+        if (noLegacyEngineLogged.claim()) {
             CameraKLogger.w(
                 TAG,
                 "OcrPlugin: the language data has no legacy Tesseract engine, so FAST runs the default engine, as ACCURATE does",
@@ -170,7 +170,7 @@ public class OCRProcessor internal constructor(
 
     private companion object {
         const val LANGUAGE = "eng"
-        val NoLegacyEngineLogged = AtomicBoolean(false)
+        val NoLegacyEngineLogged = LoggedOnce()
     }
 }
 
@@ -246,3 +246,10 @@ internal fun LumaImage.rotateInto(destination: ByteArray): Pair<Int, Int> {
 
 private const val TAG = "CameraK"
 private const val FULL_TURN = 360
+
+/** A message logged at most once: [claim] is true for the first caller only. */
+internal class LoggedOnce {
+    private val logged = atomic(false)
+
+    fun claim(): Boolean = logged.compareAndSet(false, true)
+}

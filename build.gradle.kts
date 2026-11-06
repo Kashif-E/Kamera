@@ -1048,7 +1048,12 @@ val abiCheckTask = "checkKotlinAbi"
 // abi_dump_names_no_atomicfu_type: no committed ABI dump (JVM .api or klib .klib.api; dump path to its
 // text) names an atomicfu type. atomicfu is an implementation detail with no compiler plugin applied, so
 // one of its types in a public signature would tie consumers to the library (§14 row 2).
-fun atomicfuDumpProblems(dumps: Map<String, String>): List<String> = emptyList()
+fun atomicfuDumpProblems(dumps: Map<String, String>): List<String> =
+    dumps.flatMap { (path, text) ->
+        text.lines().mapIndexedNotNull { index, line ->
+            "$path:${index + 1}: ${line.trim()}".takeIf { "kotlinx.atomicfu" in line || "kotlinx/atomicfu" in line }
+        }
+    }
 
 // The gate rules run against fixtures, and the gates checked to cover the modules the 2.0 split adds.
 tasks.register("checkBuildGateRules") {

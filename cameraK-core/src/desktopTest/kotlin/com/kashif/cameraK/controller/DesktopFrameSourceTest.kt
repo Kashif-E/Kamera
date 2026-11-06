@@ -40,7 +40,7 @@ class DesktopFrameSourceTest {
             repeat(3) { steps.frameAt(1_000L + it * 40) }
 
             assertEquals(nanos(1_080).single(), sut.preview.frames.value?.timestampNanos, "the preview's last frame")
-            assertEquals(0L, sut.grabber.yuvConversions.get(), "YUV conversions with no registration")
+            assertEquals(0L, sut.grabber.yuvConversions.value, "YUV conversions with no registration")
         } finally {
             sut.close()
             rig.settle()
@@ -55,7 +55,7 @@ class DesktopFrameSourceTest {
         val sut = rig.engine()
         try {
             steps.open(sut)
-            assertEquals(0L, sut.grabber.yuvConversions.get(), "YUV conversions before the registration")
+            assertEquals(0L, sut.grabber.yuvConversions.value, "YUV conversions before the registration")
 
             val seen = CopyOnWriteArrayList<String>()
             val registration = sut.frames.register(FrameSpec()) { frame ->
@@ -72,14 +72,14 @@ class DesktopFrameSourceTest {
             steps.frameAt(1_000)
 
             assertEquals(listOf("YUV_420 64x36 y=[100] uv=[128, 128]"), seen.toList(), "the analyzed frame")
-            assertEquals(1L, sut.grabber.yuvConversions.get(), "YUV conversions with one registration")
+            assertEquals(1L, sut.grabber.yuvConversions.value, "YUV conversions with one registration")
 
             registration.close()
             assertFalse(registration.active.value, "a closed registration is active")
             repeat(2) { steps.frameAt(1_040L + it * 40) }
 
             assertEquals(1, seen.size, "frames after the registration closed")
-            assertEquals(1L, sut.grabber.yuvConversions.get(), "YUV conversions after the registration closed")
+            assertEquals(1L, sut.grabber.yuvConversions.value, "YUV conversions after the registration closed")
             assertEquals(1, rig.camera.startCount, "registering or unregistering restarted the camera")
             assertEquals(0, rig.camera.releaseCount, "registering or unregistering released the camera")
         } finally {

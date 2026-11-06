@@ -2,7 +2,7 @@ package com.kashif.cameraK.controller
 
 import androidx.tracing.Trace
 import com.kashif.cameraK.engine.Tracer
-import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.atomicfu.atomic
 
 /**
  * The engine's trace sections, through androidx.tracing. An interval is an async section, because
@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * empty section.
  */
 internal object AndroidTracer : Tracer {
-    private val cookies = AtomicInteger()
+    private val cookies = atomic(0)
 
     override fun beginInterval(name: String): AutoCloseable {
         val cookie = cookies.incrementAndGet()
