@@ -51,7 +51,9 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
   release-gate       The release gate's device harness is built (design §12.4 B1): settings include
                      :benchmark, verify.sh's android target compiles cameraK-core's instrumented
                      sources, its sample target builds :benchmark against the Sample app, and the
-                     benchmark sources declare every RELEASE_GATE_BENCHMARKS method. Nothing in it
+                     benchmark sources declare every RELEASE_GATE_BENCHMARKS method. cameraK-core's
+                     instrumented sources declare the contract test, and the Sample declares and
+                     registers BareCameraXActivity and is profileable from the shell. Nothing in it
                      runs on a device; the maintainer runs it at release.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
@@ -1370,6 +1372,22 @@ def release_gate_problems(
                 declared = True
         if not declared:
             problems.append(f"no source under {BENCHMARK_SOURCES} declares {benchmark}")
+    if not any(re.search(r"\bclass\s+\w+\s*:\s*CameraEngineContractTest\s*\(", text) for text in instrumented.values()):
+        problems.append(
+            f"no source under {INSTRUMENTED_SOURCES} declares a contract test (a CameraEngineContractTest subclass), "
+            "so the device run has nothing to run"
+        )
+    if not any(re.search(r"\bclass\s+BareCameraXActivity\b", text) for text in sample_sources.values()):
+        problems.append(f"no source under {SAMPLE_ANDROID_SOURCES} declares BareCameraXActivity, TimeToFirstFrameBenchmark's baseline")
+    application = re.search(r"<application\b.*?</application>", manifest or "", re.DOTALL)
+    body = application.group(0) if application else ""
+    if manifest is not None and not re.search(r'<activity\b[^>]*android:name="(?:org\.company\.app)?\.BareCameraXActivity"', body):
+        problems.append(f"{SAMPLE_MANIFEST} does not register BareCameraXActivity, which :benchmark launches by component")
+    if not re.search(r'<profileable\b[^>]*android:shell="true"', body):
+        problems.append(
+            f"{SAMPLE_MANIFEST} {'has no' if manifest is not None else 'is missing, so it has no'} "
+            '<profileable android:shell="true"> in <application>; Macrobenchmark cannot trace the benchmark build'
+        )
     return problems
 
 

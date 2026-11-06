@@ -1880,8 +1880,8 @@ registerRepoPolicyCheck(
 registerRepoPolicyCheck(
     "checkReleaseGateHarness",
     "release-gate",
-    "Fails unless the release gate's Macrobenchmark module and device contract subset are built and compiled " +
-        "by verify.sh",
+    "Fails unless the release gate's Macrobenchmark module, device contract subset, bare-CameraX baseline and " +
+        "profileable benchmark build are in the repository and compiled by verify.sh",
 )
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
