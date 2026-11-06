@@ -78,6 +78,7 @@ nav:
     - Android: examples/android.md
   - Migrating to 2.0: migration/2.0.md
   - Troubleshooting: troubleshooting.md
+  - Device Checklist: device-checklist.md
   - Contributing: contributing.md
   - License: license.md
 
