@@ -189,6 +189,7 @@ fun AndroidCameraScreen() {
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }
+                                is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
                             }
                         }
                     },

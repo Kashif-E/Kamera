@@ -385,6 +385,7 @@ fun FullFeaturedCamera() {
                             is ImageCaptureResult.Error -> {
                                 // Show error
                             }
+                            is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
                         }
                     }
                 },

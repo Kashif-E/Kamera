@@ -146,6 +146,7 @@ Follow [Kotlin coding conventions](https://kotlinlang.org/docs/coding-convention
  * when (val result = controller.takePictureToFile()) {
  *     is ImageCaptureResult.SuccessWithFile -> println("Saved: ${result.filePath}")
  *     is ImageCaptureResult.Error -> println("Error: ${result.exception.message}")
+ *     is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
  * }
  * ```
  */

@@ -32,6 +32,7 @@ fun CameraScreen() {
                                 is ImageCaptureResult.Error -> {
                                     println("Capture failed: ${result.exception.message}")
                                 }
+                                is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
                             }
                         }
                     },
@@ -141,6 +142,7 @@ when (val result = controller.takePictureToFile()) {
     is ImageCaptureResult.Error -> {
         // result.exception contains the error
     }
+    is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
 }
 ```
 

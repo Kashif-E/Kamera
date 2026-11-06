@@ -40,6 +40,7 @@ scope.launch {
         is ImageCaptureResult.Error -> {
             println("Error: ${result.exception.message}")
         }
+        is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
     }
 }
 ```
@@ -376,6 +377,7 @@ fun CompleteControllerExample() {
                                 is ImageCaptureResult.Error -> {
                                     println("Error: ${result.exception.message}")
                                 }
+                                is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
                             }
                         }
                     },

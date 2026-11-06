@@ -23,6 +23,7 @@ fun CaptureExample() {
                         is ImageCaptureResult.Error -> {
                             println("Error: ${result.exception.message}")
                         }
+                        is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
                     }
                 }
             }) {
@@ -68,6 +69,7 @@ scope.launch {
             is ImageCaptureResult.Error -> {
                 showError("Capture failed: ${result.exception.message}")
             }
+            is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
         }
     } catch (e: CancellationException) {
         println("Capture was cancelled")
@@ -140,6 +142,7 @@ fun CaptureWithFeedback() {
                                 is ImageCaptureResult.Error -> {
                                     println("Error: ${result.exception.message}")
                                 }
+                                is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
                             }
                             isCapturing = false
                         }
@@ -200,6 +203,7 @@ fun captureBurst(controller: CameraController, count: Int) {
                     println("Burst failed at ${index + 1}: ${result.exception.message}")
                     return@launch
                 }
+                is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
             }
 
             // Small delay between captures
@@ -239,6 +243,7 @@ Button(onClick = {
             is ImageCaptureResult.Error -> {
                 println("Error: ${result.exception.message}")
             }
+            is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
         }
     }
 }) {
@@ -300,6 +305,7 @@ scope.launch {
                 }
             }
         }
+        is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
     }
 }
 ```

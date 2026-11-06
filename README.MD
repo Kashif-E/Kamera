@@ -93,9 +93,13 @@ dependencies {
 <string>Camera access required for taking photos</string>
 <key>NSPhotoLibraryAddUsageDescription</key>
 <string>Photo library access required for saving images</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Photo library access required for reading and saving photos</string>
 <key>NSMicrophoneUsageDescription</key>
 <string>Microphone access required for video recording</string>
 ```
+
+`NSPhotoLibraryUsageDescription` is required by `RequestStoragePermission()` and `ImageSaverPlugin.getByteArrayFrom()`; iOS terminates the app if it is missing when they run.
 
 ## Quick Start
 
@@ -153,6 +157,7 @@ fun CameraScreen() {
                             is ImageCaptureResult.Error -> {
                                 println("Error: ${result.exception.message}")
                             }
+                            is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
                         }
                     }
                 },
@@ -381,6 +386,10 @@ when (cameraState) {
                     // Already auto-saved by plugin
                     println("File saved: ${result.filePath}")
                 }
+                is ImageCaptureResult.Error -> {
+                    println("Error: ${result.exception.message}")
+                }
+                is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
             }
         }
     }
@@ -407,6 +416,7 @@ when (cameraState) {
                     )
                 }
                 is ImageCaptureResult.Error -> { /* handle error */ }
+                is ImageCaptureResult.Success -> Unit // not returned by takePictureToFile()
             }
         }
     }
