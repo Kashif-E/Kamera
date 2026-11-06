@@ -22,7 +22,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.RejectedExecutionException
@@ -32,8 +31,7 @@ private const val TAG = "CameraK"
 
 /**
  * The ImageCapture use case and every still taken through it: one continuation per request, written
- * to a file in app-owned storage and nowhere else (Decision 10), and the capture listeners each saved
- * image is delivered to. CameraX's file output always writes JPEG; a PNG configuration gets a real
+ * to a file in app-owned storage and nowhere else (Decision 10). CameraX's file output always writes JPEG; a PNG configuration gets a real
  * PNG, transcoded on [imageProcessingExecutor] ([PngTranscoder]). The holder counts captures in
  * flight; nothing here limits them.
  */
@@ -53,10 +51,6 @@ internal class StillCapturer(
     /** The ImageCapture use case of the current bind, or null before the first one. */
     var imageCapture: ImageCapture? = null
         private set
-
-    // Added and removed on any thread (plugins), iterated on imageProcessingExecutor: copy-on-write,
-    // so every iteration is a consistent snapshot and concurrent registrations are never lost.
-    private val listeners = CopyOnWriteArrayList<(ByteArray) -> Unit>()
 
     // Captures whose CameraX callback has not arrived yet. Whoever removes a continuation (the
     // callback or failInFlight()) is the one that resumes it.
@@ -88,7 +82,7 @@ internal class StillCapturer(
     /**
      * Takes one still into a new app-owned file and returns that file, a PNG for a PNG
      * configuration. Main thread. A caller that leaves before CameraX is asked sends nothing; one that
-     * leaves later does not stop CameraX, whose file still reaches the capture listeners.
+     * leaves later does not stop CameraX, which still writes the file.
      */
     suspend fun capture(): CameraKResult<File> {
         if (isReleased()) return CameraKResult.Failure(CameraKError.Closed)
@@ -127,11 +121,11 @@ internal class StillCapturer(
                 return
             }
             if (format != ImageFormat.PNG) {
-                finish(CameraKResult.Success(file))
+                resume(CameraKResult.Success(file))
                 return
             }
             onImageProcessing {
-                finish(
+                resume(
                     try {
                         transcoded(file)
                     } catch (e: Exception) {
@@ -163,13 +157,6 @@ internal class StillCapturer(
             return CameraKResult.Success(png)
         }
 
-        private fun finish(result: CameraKResult<File>) {
-            if (result is CameraKResult.Success && listeners.isNotEmpty()) {
-                onImageProcessing { deliverToListeners(result.value) }
-            }
-            resume(result)
-        }
-
         private fun resume(result: CameraKResult<File>) {
             if (inFlight.remove(continuation)) continuation.resume(result)
         }
@@ -191,44 +178,6 @@ internal class StillCapturer(
             CameraKLogger.w(TAG, "Image processing has shut down; finishing the capture on the calling thread", e)
             block()
         }
-    }
-
-    /**
-     * Runs on [imageProcessingExecutor]. Nothing may escape: an exception here reaches the thread's
-     * uncaught handler and kills the host process. Each listener is isolated from the others.
-     */
-    private fun deliverToListeners(file: File) {
-        val bytes = try {
-            file.readBytes()
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Reading the captured image for capture listeners failed", e)
-            return
-        } catch (e: OutOfMemoryError) {
-            CameraKLogger.e(TAG, "Reading the captured image for capture listeners ran out of memory", e)
-            return
-        }
-        for (listener in listeners) {
-            try {
-                listener(bytes)
-            } catch (e: Exception) {
-                CameraKLogger.e(TAG, "Image capture listener failed", e)
-            }
-        }
-    }
-
-    /** Adds a listener for captured images. Safe to call from any thread. */
-    fun addListener(listener: (ByteArray) -> Unit) {
-        listeners.add(listener)
-    }
-
-    /** Removes a listener added with [addListener]. Safe to call from any thread. */
-    fun removeListener(listener: (ByteArray) -> Unit) {
-        listeners.remove(listener)
-    }
-
-    /** Drops every capture listener. */
-    fun clearListeners() {
-        listeners.clear()
     }
 
     /** Fails every capture still waiting for a CameraX callback, which is now ignored. */

@@ -1001,7 +1001,6 @@ internal class AndroidCameraEngine(
         }
         releaseStep("Unbinding use cases on release") { binder.unbindOwnUseCases() }
         releaseStep("Dropping the frame consumers") { framePipeline.clearConsumers() }
-        releaseStep("Dropping the capture listeners") { stillCapturer.clearListeners() }
         // A capture still in flight would otherwise wait for a callback that is now ignored.
         releaseStep("Failing the captures in flight") { stillCapturer.failInFlight() }
         releaseStep("Shutting down the image-processing executor") { imageProcessingExecutor.shutdown() }
