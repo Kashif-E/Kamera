@@ -12,11 +12,26 @@ Build the Sample app from the release candidate's commit for every run.
 The `:benchmark` module (Macrobenchmark) runs against the Sample's `benchmark` build type on the
 Pixel 7. Record each result.
 
-- `BindCountBenchmark.exactlyOneBindToFirstFrame` `<B1p command>`
-- `BindCountBenchmark.zeroRebindsOnAnalyzerRegisterAndUnregister` `<B1p command>`
-- `TimeToFirstFrameBenchmark.againstBareCameraX` `<B1p command>`
-- `SquareCaptureBenchmark.shutterToFileWithAndWithoutTheSquareViewPort` `<B1p command>`
-- `VideoBindBenchmark.videoBindMainThreadTime` `<B1p command>`
+Each line below runs one benchmark. With the Pixel 7 the only device `adb devices` lists, run
+`./gradlew :benchmark:connectedBenchmarkAndroidTest` with the argument shown; with no argument it runs
+all five. The results are under `benchmark/build/outputs/connected_android_test_additional_output/`.
+
+- `BindCountBenchmark.exactlyOneBindToFirstFrame`:
+  `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.BindCountBenchmark#exactlyOneBindToFirstFrame`
+- `BindCountBenchmark.zeroRebindsOnAnalyzerRegisterAndUnregister`:
+  `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.BindCountBenchmark#zeroRebindsOnAnalyzerRegisterAndUnregister`
+- `TimeToFirstFrameBenchmark.againstBareCameraX`:
+  `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.TimeToFirstFrameBenchmark#againstBareCameraX`
+- `SquareCaptureBenchmark.shutterToFileWithAndWithoutTheSquareViewPort` (runs at 4:3, then 1:1):
+  `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.SquareCaptureBenchmark`
+- `VideoBindBenchmark.videoBindMainThreadTime`:
+  `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.VideoBindBenchmark#videoBindMainThreadTime`
+
+The benchmarks drive these Sample controls, by their labels: the camera screen's `Flip Camera` button
+(the camera is Ready once it shows), the unlabelled shutter midway between `Flip Camera` and
+`Settings`, the settings panel's `QR Scanner` switch (off unregisters the QR plugin's analyzer, on
+registers it), the top bar's aspect-ratio chip (`4:3`, `16:9`, `9:16`, `1:1`), and the `VIDEO` mode.
+`TimeToFirstFrameBenchmark` also launches the Sample's `BareCameraXActivity`, which uses no CameraK.
 
 `exactlyOneBindToFirstFrame` and `zeroRebindsOnAnalyzerRegisterAndUnregister` pass or fail.
 `againstBareCameraX` is recorded against the bare-CameraX activity; the budget comes in 2.1.
@@ -42,6 +57,17 @@ the main thread.
 - [ ] **Playable probe.** A recording CameraX ends on its own (a `maxDuration` of a few seconds) is
       kept only when it plays; a recording stopped at once, before any frame, leaves no file and
       reports a failure.
+- [ ] **Engine contract over real CameraX.** The device subset of the engine contract passes:
+      ```
+      ./gradlew :cameraK-core:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=\
+      com.kashif.cameraK.engine.AndroidCameraEngineDeviceContractTest#stateIsOpenOrInterruptedWhenStartReturnsSuccess,\
+      com.kashif.cameraK.engine.AndroidCameraEngineDeviceContractTest#callsAfterCloseReturnClosed,\
+      com.kashif.cameraK.engine.AndroidCameraEngineDeviceContractTest#closeIsIdempotentAndReleasesOnce,\
+      com.kashif.cameraK.engine.AndroidCameraEngineDeviceContractTest#reportedCameraIsTheOneTheEngineOpenedOn,\
+      com.kashif.cameraK.engine.AndroidCameraEngineDeviceContractTest#desiredHardwareReappliedAfterRestartAndCameraSwitch
+      ```
+      Run without the class filter, the other cases report as skipped: each needs a fault hook or a
+      sub-interface the device driver does not have.
 - [ ] **VideoCapture bind on Main.** Record the `CameraK.videoBind` time from the benchmark above,
       and check that the preview does not stall when recording starts.
 
@@ -59,8 +85,14 @@ the main thread.
 - [ ] **Vision barcodes.** The QR plugin reads QR codes and EAN-13 at Vision's default request
       revision, with bounding boxes on the code.
 - [ ] **Lens-switch signpost.** Record the `CameraK.lensSwitch` interval (subsystem
-      `io.github.kashif-mehmood-km.camerak`, category `CameraK`) while switching lenses in the Sample:
-      `<B1p command>`. Discard a switch that logged `CameraK.lensSwitch.failed` or `.noFrame`.
+      `io.github.kashif-mehmood-km.camerak`, category `CameraK`) while switching lenses in the Sample.
+      With the Sample open on the iPhone (its UDID from `xcrun xctrace list devices`), record a
+      minute of switching, then export the signpost intervals:
+      ```
+      xcrun xctrace record --template Logging --device <UDID> --attach "Compose Multiplatform Camera App" --time-limit 60s --output lens-switch.trace
+      xcrun xctrace export --input lens-switch.trace --xpath '/trace-toc/run[@number="1"]/data/table[@schema="OSSignpostIntervals"]'
+      ```
+      Discard a switch that logged `CameraK.lensSwitch.failed` or `.noFrame`.
 - [ ] **Engine contract, by hand.** In the Sample:
     - the preview runs and the Sample reports Ready after opening;
     - after a lens switch, the preview and the reported lens are the other camera;

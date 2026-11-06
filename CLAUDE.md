@@ -36,6 +36,8 @@ Tests live in each module's `commonTest` (e.g. `cameraK-core/src/commonTest`). T
 - **camerak-bom/** - Bill of materials (`camerak-bom`)
 - **relocations/** - Relocation POMs from the 1.x plugin artifact ids to the 2.0 ones
 - **Sample/** - Multiplatform demo app (Android, iOS, Desktop)
+- **cameraKScreenshotTests/** - Paparazzi screenshot tests of the Compose UI on Android; not published
+- **benchmark/** - The release gate's Macrobenchmark (`com.android.test`) against the Sample's `benchmark` build; built by verify.sh, run by the maintainer on a device; not published
 - **iosApp/** - iOS Xcode project for Swift integration
 
 All published library modules target: `androidTarget`, `jvm("desktop")`, `iosArm64()`, `iosSimulatorArm64()`. There is no Intel-simulator target since 2.0.
