@@ -93,6 +93,14 @@ actual class CameraController(
     private var videoRecordingDelegate: VideoRecordingDelegate? = null
     private var videoOutputFilePath: String? = null
 
+    // True from startRecording() until the recording ends, including the moment before the movie
+    // output reports isRecording().
+    @Volatile
+    private var recordingActive = false
+
+    // Mic input added for a recording; removed again when that recording ends.
+    private var addedAudioInput: AVCaptureDeviceInput? = null
+
     private val memoryManager = MemoryManager
     private val pendingCaptures = atomic(0)
     private val maxConcurrentCaptures = 3
@@ -434,6 +442,11 @@ actual class CameraController(
     actual fun getMaxZoom(): Float = customCameraController.getMaxZoom()
 
     actual fun toggleCameraLens() {
+        // Refused while recording, as on Android: swapping the camera input can end the recording.
+        if (isRecordingInProgress()) {
+            CameraKLogger.w("CameraK", "Ignoring lens switch while recording")
+            return
+        }
         memoryManager.updateMemoryStatus()
 
         if (memoryManager.isUnderMemoryPressure()) {
@@ -455,10 +468,21 @@ actual class CameraController(
     actual fun getPreferredCameraDeviceType(): CameraDeviceType = cameraDeviceType
 
     actual fun setPreferredCameraDeviceType(deviceType: CameraDeviceType) {
-        if (cameraDeviceType == deviceType) return // avoid a redundant AVCaptureSession input swap
-        cameraDeviceType = deviceType
-        customCameraController.switchToDeviceType(deviceType)
+        // Refused while recording, like the lens switch above.
+        if (isRecordingInProgress()) {
+            CameraKLogger.w("CameraK", "Ignoring device type change while recording")
+            return
+        }
+        // No equality guard: the preference is shared by both positions, so after a lens switch it can
+        // name a type the bound camera isn't. switchToDeviceType is a no-op when the device is already
+        // bound. Once a session exists, the preference is only recorded if the switch succeeded, so a
+        // failed switch can be retried (#170).
+        if (customCameraController.captureSession == null || customCameraController.switchToDeviceType(deviceType)) {
+            cameraDeviceType = deviceType
+        }
     }
+
+    private fun isRecordingInProgress(): Boolean = recordingActive || movieFileOutput?.isRecording() == true
 
     actual fun getCameraCapabilities(): CameraCapabilities =
         CameraCapabilities(customCameraController.getCameraCapabilities())
@@ -492,6 +516,8 @@ actual class CameraController(
         orientationChangedCallback = null
         movieFileOutput = null
         videoRecordingDelegate = null
+        recordingActive = false
+        addedAudioInput = null
         customCameraController.cleanupSession()
         memoryManager.clearBufferPools()
     }
@@ -508,8 +534,11 @@ actual class CameraController(
             return@suspendCancellableCoroutine
         }
 
+        // The movie output records every connected input, so drop a leftover mic when audio is off.
         if (configuration.enableAudio) {
             addAudioInputIfNeeded()
+        } else {
+            removeAddedAudioInput()
         }
 
         val filePath = createVideoTempFile(configuration)
@@ -520,7 +549,20 @@ actual class CameraController(
         NSFileManager.defaultManager.removeItemAtPath(filePath, null)
 
         val delegate = VideoRecordingDelegate()
+        delegate.savesToCustomDirectory = configuration.outputDirectory != null
+        delegate.onRecordingEnded = {
+            // Queued on main before stopRecording() resumes (it resumes on main too), so the mic is
+            // gone by the time the caller can start another recording.
+            dispatch_async(dispatch_get_main_queue()) {
+                // A late callback must not touch a recording that has started since.
+                if (videoRecordingDelegate === delegate) {
+                    recordingActive = false
+                    removeAddedAudioInput()
+                }
+            }
+        }
         videoRecordingDelegate = delegate
+        recordingActive = true
 
         // Set video orientation on the movie file output connection. Use the effective
         // orientation so a locked orientation (setTargetOrientation) is honored for recording.
@@ -547,12 +589,15 @@ actual class CameraController(
         }
 
         delegate.onFinished = { result ->
-            if (result is VideoCaptureResult.Success) {
+            val finalResult = if (result is VideoCaptureResult.Success) {
                 // Save to Photos library when using default directory (PICTURES/DCIM)
-                val savedResult = saveVideoToPhotosLibrary(result)
-                cont.resume(savedResult)
+                saveVideoToPhotosLibrary(result, delegate.savesToCustomDirectory)
             } else {
-                cont.resume(result)
+                result
+            }
+            // Resume on main, after the mic removal that onRecordingEnded queued there.
+            dispatch_async(dispatch_get_main_queue()) {
+                cont.resume(finalResult)
             }
         }
 
@@ -580,15 +625,28 @@ actual class CameraController(
             val deviceInput = input as? AVCaptureDeviceInput
             deviceInput?.device?.hasMediaType(AVMediaTypeAudio) == true
         }
-        if (hasAudioInput) return
+        if (hasAudioInput || addedAudioInput != null) return
 
         val audioDevice = platform.AVFoundation.AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeAudio)
             ?: return
         val audioInput = AVCaptureDeviceInput.deviceInputWithDevice(audioDevice, null) ?: return
 
+        // Tracked before the change is applied so a removal queued right after still undoes it.
+        addedAudioInput = audioInput
         customCameraController.queueConfigurationChange {
             if (session.canAddInput(audioInput)) {
                 session.addInput(audioInput)
+            }
+        }
+    }
+
+    private fun removeAddedAudioInput() {
+        val audioInput = addedAudioInput ?: return
+        addedAudioInput = null
+        customCameraController.queueConfigurationChange {
+            val session = customCameraController.captureSession ?: return@queueConfigurationChange
+            if (session.inputs.contains(audioInput)) {
+                session.removeInput(audioInput)
             }
         }
     }
@@ -687,10 +745,13 @@ actual class CameraController(
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    private fun saveVideoToPhotosLibrary(result: VideoCaptureResult.Success): VideoCaptureResult {
+    private fun saveVideoToPhotosLibrary(
+        result: VideoCaptureResult.Success,
+        savesToCustomDirectory: Boolean,
+    ): VideoCaptureResult {
         // Only save to Photos if no custom output directory was specified
         // and directory is PICTURES or DCIM (not DOCUMENTS)
-        if (directory == Directory.DOCUMENTS) return result
+        if (directory == Directory.DOCUMENTS || savesToCustomDirectory) return result
 
         val filePath = result.filePath
         var savedAssetId: String? = null

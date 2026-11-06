@@ -4,9 +4,12 @@ import androidx.compose.runtime.Stable
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.controller.CameraController
 import com.kashif.cameraK.enums.DeviceOrientation
+import com.kashif.cameraK.result.ImageCaptureResult
 import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -145,6 +148,9 @@ class CameraKStateHolder(
     private var recordingTimerJob: Job? = null
     private var recordingFilePath: String? = null
 
+    // Set by whichever stop (manual or max-duration) claims the active recording first.
+    private val stopInProgress = atomic(false)
+
     // ═══════════════════════════════════════════════════════════════
     // Lifecycle Management
     // ═══════════════════════════════════════════════════════════════
@@ -195,6 +201,12 @@ class CameraKStateHolder(
                 )
         } catch (e: Exception) {
             synchronized(pluginLock) { isInitialized = false }
+            // shutdown() skips an uninitialized holder, so release a controller created before the failure.
+            controller?.let { failed ->
+                runCatching { failed.stopSession() }
+                runCatching { failed.cleanup() }
+            }
+            controller = null
             _cameraState.value =
                 CameraKState.Error(
                     exception = e,
@@ -357,7 +369,16 @@ class CameraKStateHolder(
 
                 val result = currentController.takePictureToFile()
 
-                _events.emit(CameraKEvent.ImageCaptured(result))
+                // Platforms report capture failures as a result, not an exception
+                if (result is ImageCaptureResult.Error) {
+                    _events.emit(CameraKEvent.CaptureFailed(result.exception))
+                    _uiState.value =
+                        _uiState.value.copy(
+                            lastError = "Capture failed: ${result.exception.message}",
+                        )
+                } else {
+                    _events.emit(CameraKEvent.ImageCaptured(result))
+                }
             } catch (e: Exception) {
                 _events.emit(CameraKEvent.CaptureFailed(e))
                 _uiState.value =
@@ -465,8 +486,8 @@ class CameraKStateHolder(
     // Video Recording Operations
     // ═══════════════════════════════════════════════════════════════
 
-    private fun resetRecordingState() {
-        recordingTimerJob?.cancel()
+    private fun resetRecordingState(cancelTimer: Boolean = true) {
+        if (cancelTimer) recordingTimerJob?.cancel()
         recordingTimerJob = null
         recordingFilePath = null
         _uiState.value =
@@ -475,6 +496,8 @@ class CameraKStateHolder(
                 isPaused = false,
                 recordingDurationMs = 0L,
             )
+        // Only after isRecording is false, so a late stopRecording() can't claim a second stop.
+        stopInProgress.value = false
     }
 
     /**
@@ -512,6 +535,7 @@ class CameraKStateHolder(
             try {
                 val path = currentController.startRecording(configuration)
                 recordingFilePath = path
+                stopInProgress.value = false
                 _uiState.value =
                     _uiState.value.copy(
                         isRecording = true,
@@ -540,12 +564,13 @@ class CameraKStateHolder(
                         _uiState.value = _uiState.value.copy(recordingDurationMs = elapsed)
 
                         if (configuration.maxDurationMs > 0 && elapsed >= configuration.maxDurationMs) {
-                            // Auto-stop — guard against race with manual stopRecording()
-                            if (!_uiState.value.isRecording) break
-                            val result = currentController.stopRecording()
-                            resetRecordingState()
-                            _events.emit(CameraKEvent.RecordingMaxDurationReached(path, elapsed))
-                            _events.emit(CameraKEvent.RecordingStopped(result))
+                            // Auto-stop, unless a manual stopRecording() already claimed the stop.
+                            if (_uiState.value.isRecording && stopInProgress.compareAndSet(false, true)) {
+                                finishRecording(
+                                    currentController,
+                                    CameraKEvent.RecordingMaxDurationReached(path, elapsed),
+                                )
+                            }
                             break
                         }
                     }
@@ -566,25 +591,49 @@ class CameraKStateHolder(
      * Emits [CameraKEvent.RecordingStopped] with the result.
      */
     fun stopRecording() {
-        if (!_uiState.value.isRecording) return
-        val currentController = controller ?: return
+        // Claim the stop before launching so a double stop, or one racing the auto-stop, runs only once.
+        if (!stopInProgress.compareAndSet(false, true)) return
+        val currentController = controller
+        if (!_uiState.value.isRecording || currentController == null) {
+            stopInProgress.value = false
+            return
+        }
 
         coroutineScope.launch {
-            try {
-                // Cancel timer first to prevent auto-stop race
-                recordingTimerJob?.cancel()
-                recordingTimerJob = null
-                val result = currentController.stopRecording()
-                resetRecordingState()
-                _events.emit(CameraKEvent.RecordingStopped(result))
-            } catch (e: Exception) {
-                resetRecordingState()
-                _uiState.value =
-                    _uiState.value.copy(
-                        lastError = "Stop recording failed: ${e.message}",
-                    )
-                _events.emit(CameraKEvent.RecordingFailed(e))
-            }
+            // Cancel the timer so it can't auto-stop as well
+            recordingTimerJob?.cancel()
+            recordingTimerJob = null
+            finishRecording(currentController)
+        }
+    }
+
+    /**
+     * Stop path shared by [stopRecording] and the max-duration auto-stop.
+     * The caller must have claimed [stopInProgress] first.
+     */
+    private suspend fun finishRecording(
+        controller: CameraController,
+        maxDurationEvent: CameraKEvent.RecordingMaxDurationReached? = null,
+    ) {
+        // The auto-stop runs inside the timer job, so it must not cancel that job before emitting.
+        // The job stays tracked until here, so shutdown() can still cancel a stop in progress.
+        val cancelTimer = maxDurationEvent == null
+        try {
+            val result = controller.stopRecording()
+            resetRecordingState(cancelTimer)
+            maxDurationEvent?.let { _events.emit(it) }
+            _events.emit(CameraKEvent.RecordingStopped(result))
+        } catch (e: CancellationException) {
+            // Release the claim so the stop can be retried.
+            stopInProgress.value = false
+            throw e
+        } catch (e: Exception) {
+            resetRecordingState(cancelTimer)
+            _uiState.value =
+                _uiState.value.copy(
+                    lastError = "Stop recording failed: ${e.message}",
+                )
+            _events.emit(CameraKEvent.RecordingFailed(e))
         }
     }
 

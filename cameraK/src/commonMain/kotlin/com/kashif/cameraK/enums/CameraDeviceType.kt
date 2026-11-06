@@ -40,6 +40,8 @@ enum class CameraDeviceType {
     /**
      * Default/automatic camera selection.
      * Platform will choose the most appropriate camera.
+     * On iOS this is the wide-angle camera on the back. On the front it is the ultra-wide when the
+     * device has one (the Center Stage front camera of the iPhone 17 family), otherwise the wide-angle.
      */
     DEFAULT,
 }

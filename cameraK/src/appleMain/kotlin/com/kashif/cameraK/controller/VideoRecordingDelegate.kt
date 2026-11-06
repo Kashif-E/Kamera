@@ -19,6 +19,12 @@ class VideoRecordingDelegate :
     AVCaptureFileOutputRecordingDelegateProtocol {
 
     var onFinished: ((VideoCaptureResult) -> Unit)? = null
+
+    // Called for every finished recording, including ones that end without stopRecording().
+    internal var onRecordingEnded: (() -> Unit)? = null
+
+    // Set per recording, so a late finish callback can't pick up the next recording's setting.
+    internal var savesToCustomDirectory = false
     private var startTimeMs: Long = 0L
 
     override fun captureOutput(
@@ -35,6 +41,7 @@ class VideoRecordingDelegate :
         fromConnections: List<*>,
         error: NSError?,
     ) {
+        onRecordingEnded?.invoke()
         val filePath = didFinishRecordingToOutputFileAtURL.path ?: ""
         val durationMs = (NSDate().timeIntervalSince1970 * 1000).toLong() - startTimeMs
 

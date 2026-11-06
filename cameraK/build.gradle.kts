@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "com.kashif.camera_compose"
-version = "1.2"
+version = "1.2.1"
 
 kotlin {
     jvmToolchain(17)
@@ -86,7 +86,7 @@ android {
     ndkVersion = "26.3.11579264" // NDK r26b+ uses 16KB page size defaults for native binaries
 
     defaultConfig {
-        minSdk = 21
+        minSdk = 23
     }
 
     packaging {
@@ -118,7 +118,7 @@ mavenPublishing {
     coordinates(
         groupId = "io.github.kashif-mehmood-km",
         artifactId = "camerak",
-        version = "1.2",
+        version = "1.2.1",
     )
 
     pom {

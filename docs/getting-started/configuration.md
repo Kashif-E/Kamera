@@ -45,7 +45,7 @@ config = CameraConfiguration(
 ```
 
 **Options:**
-- `CameraDeviceType.DEFAULT` -- Standard wide-angle (default)
+- `CameraDeviceType.DEFAULT` -- Standard wide-angle (default). On iOS the front camera uses the ultra-wide when the device has one (the iPhone 17 family's Center Stage camera)
 - `CameraDeviceType.ULTRA_WIDE` -- Ultra-wide lens (0.5x zoom)
 - `CameraDeviceType.TELEPHOTO` -- Telephoto lens (2x-3x zoom)
 - `CameraDeviceType.WIDE_ANGLE` -- Wide-angle lens
@@ -98,6 +98,8 @@ config = CameraConfiguration(
 
 **Note:** If device doesn't support exact resolution, closest match is used.
 
+**iOS:** the aspect ratio always wins. AVFoundation's size presets are all 16:9, so `targetResolution` only applies with `RATIO_16_9` or `RATIO_9_16`; with `RATIO_4_3` or `RATIO_1_1` it is ignored (a warning is logged) and the ratio's own preset is used.
+
 ## Flash Mode
 
 Control flash behavior:
@@ -139,6 +141,8 @@ config = CameraConfiguration(
 | `JPEG` | Lossy | Smaller | Web, sharing (default) |
 | `PNG` | Lossless | Larger | Transparency, archival |
 
+**Android:** `PNG` is not supported by `takePictureToFile()`. CameraX encodes stills as JPEG, so the file gets a `.png` name but contains JPEG data. Use `JPEG` on Android and convert in app code if you need PNG. iOS and Desktop write real PNG files.
+
 **Example:**
 
 ```kotlin
@@ -164,7 +168,9 @@ config = CameraConfiguration(
 |-----------|--------------|----------|
 | `PICTURES` | `Environment.DIRECTORY_PICTURES` | Photo Library (default) |
 | `DCIM` | `Environment.DIRECTORY_DCIM` | Photo Library |
-| `DOCUMENTS` | `getExternalFilesDir(DOCUMENTS)` | Documents folder |
+| `DOCUMENTS` | `getExternalFilesDir(null)/CameraK` | `Documents/CameraK` |
+
+`DOCUMENTS` is app-private: captures are not added to Photos or announced to Android's media scanner. Both platforms back this storage up by default: iOS includes `Documents/` in iCloud backup, and Android Auto Backup includes `getExternalFilesDir()`. If captures must not leave the device, exclude the `CameraK` folder: on iOS set `NSURLIsExcludedFromBackupKey` on it, and on Android add it to your backup rules (`dataExtractionRules` / `fullBackupContent`).
 
 **Example:**
 

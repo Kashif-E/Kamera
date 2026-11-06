@@ -231,7 +231,8 @@ sealed class CameraKEvent {
  * @property flashMode Initial flash mode.
  * @property torchMode Initial torch mode.
  * @property cameraLens Initial camera lens.
- * @property imageFormat Image format for captures.
+ * @property imageFormat Image format for captures. [ImageFormat.PNG] is not honored on Android, where
+ *   `takePictureToFile()` always writes JPEG data; see [ImageFormat].
  * @property qualityPrioritization Quality vs performance trade-off.
  * @property cameraDeviceType Preferred camera device type.
  * @property aspectRatio Aspect ratio for preview and capture.

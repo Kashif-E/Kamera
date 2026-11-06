@@ -2,6 +2,7 @@ package com.kashif.cameraK.controller
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Environment
 import android.util.Rational
 import android.util.Size
@@ -99,6 +100,11 @@ actual class CameraController(
     // Video recording
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
+
+    // Identifies the current recording. Set before start() and cleared by stopRecording()/cleanup(), so a
+    // Finalize can tell a requested stop from a recording that ended on its own, even one arriving before
+    // start() has returned.
+    private var activeRecordingToken: Any? = null
     private var recordingOutputFile: File? = null
     private val recordingFinalizeChannel = Channel<VideoCaptureResult>(Channel.CONFLATED)
 
@@ -131,6 +137,18 @@ actual class CameraController(
     // configureCaptureUseCase and rebuildMultiplexedAnalyzer.
     private var pinnedPhysicalId: String? = null
 
+    init {
+        if (imageFormat == ImageFormat.PNG) {
+            // CameraX's OutputFileOptions always encodes stills as JPEG, and re-encoding to PNG would
+            // cost the full-bitmap decode takePictureToFile() exists to avoid (#159).
+            CameraKLogger.w(
+                "CameraK",
+                "ImageFormat.PNG is not supported by takePictureToFile() on Android: the file gets a .png " +
+                    "name but contains JPEG data. Use ImageFormat.JPEG and convert in app code if PNG is needed.",
+            )
+        }
+    }
+
     internal fun lensSnapshot(): List<AndroidLensDescriptor> =
         cachedLensSnapshot ?: LensEnumerator.snapshot(context).also {
             // Don't cache an empty result: a transient camera-service failure on the first call
@@ -138,9 +156,9 @@ actual class CameraController(
             if (it.isNotEmpty()) cachedLensSnapshot = it
         }
 
-    // Portrait/landscape category of the display rotation used to build the current ViewPort. The
-    // ViewPort is immutable once bound, so when the display flips category we must rebind to rebuild
-    // it — otherwise the capture crop stays at the old orientation (reintroduces #136 after rotation).
+    // Portrait/landscape orientation used to build the current ViewPort. The ViewPort is immutable
+    // once bound, so when the UI flips orientation we must rebind to rebuild it — otherwise the
+    // capture crop stays at the old orientation (reintroduces #136 after rotation).
     private var lastViewPortPortrait: Boolean? = null
 
     // Set when a portrait↔landscape flip is detected during recording (when rebinding would tear
@@ -252,16 +270,16 @@ actual class CameraController(
     /**
      * Builds a [ViewPort] matching the configured aspect ratio so every use case (preview, capture,
      * analyzer) is cropped to the same field of view. The [Rational] is expressed as width:height in
-     * the display's CURRENT orientation (the convention `PreviewView.getViewPort()` uses), so it is
+     * the UI's CURRENT orientation (the convention `PreviewView.getViewPort()` uses), so it is
      * flipped for portrait — e.g. `RATIO_4_3` is `3:4` in portrait and `4:3` in landscape.
      */
     private fun buildViewPort(previewView: PreviewView): ViewPort? {
         val rotation = currentDisplayRotation(previewView)
-        // The ViewPort Rational is width:height in the display's CURRENT orientation. In portrait a
+        // The ViewPort Rational is width:height in the UI's CURRENT orientation. In portrait a
         // "4:3" capture is taller than wide (3:4); only in landscape is it 4:3. Hard-coding the
         // landscape Rational forced a landscape crop in portrait — preview and photo came out 4:3
         // when 3:4 was expected (#136). Flip width/height for portrait.
-        val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
+        val portrait = isPortrait(previewView)
         lastViewPortPortrait = portrait
         val rational = when (aspectRatio) {
             AspectRatio.RATIO_16_9, AspectRatio.RATIO_9_16 ->
@@ -276,15 +294,14 @@ actual class CameraController(
     }
 
     /**
-     * Rebinds the camera when the display rotation flips between portrait and landscape, so the
-     * (immutable) ViewPort is rebuilt with the matching Rational. Gated on the *display* rotation —
-     * an activity locked to one orientation never rotates the display, so it never needlessly
-     * rebinds, while an unlocked one keeps capture cropped to what's actually on screen.
+     * Rebinds the camera when the UI flips between portrait and landscape, so the (immutable)
+     * ViewPort is rebuilt with the matching Rational. Gated on the UI orientation, not the sensor —
+     * an activity locked to one orientation never flips, so it never needlessly rebinds, while an
+     * unlocked one keeps capture cropped to what's actually on screen.
      */
     private fun rebindIfViewPortOrientationChanged() {
         val pv = previewView ?: return
-        val rotation = currentDisplayRotation(pv)
-        val portrait = rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180
+        val portrait = isPortrait(pv)
         if (lastViewPortPortrait == null || portrait == lastViewPortPortrait) return
 
         if (activeRecording != null) {
@@ -294,6 +311,28 @@ actual class CameraController(
             return
         }
         bindCamera(pv)
+    }
+
+    /**
+     * Whether the UI is portrait, read from the same source that sizes the preview box (the
+     * configuration orientation). The display rotation can't tell on its own: ROTATION_0 is
+     * landscape on landscape-natural devices (tablets, Chromebooks) and in some multi-window cases.
+     */
+    private fun isPortrait(previewView: PreviewView): Boolean = when (previewView.resources.configuration.orientation) {
+        Configuration.ORIENTATION_PORTRAIT -> true
+        Configuration.ORIENTATION_LANDSCAPE -> false
+        else -> currentDisplayRotation(previewView).let { it == Surface.ROTATION_0 || it == Surface.ROTATION_180 }
+    }
+
+    /**
+     * Called by the preview when the configuration orientation changes. The accelerometer listener
+     * can fire before the display has actually rotated, and activities that handle rotation
+     * themselves are never recreated, so capture rotation and the ViewPort are re-checked here.
+     */
+    internal fun onDisplayConfigurationChanged() {
+        val pv = previewView ?: return
+        applyCaptureRotation(pv)
+        rebindIfViewPortOrientationChanged()
     }
 
     /**
@@ -700,11 +739,24 @@ actual class CameraController(
     private fun createFinalOutputFile(): File = createTempFile()
 
     /**
+     * Whether this file lives in the app's own storage (`getExternalFilesDir` / `filesDir`), which is
+     * where [Directory.DOCUMENTS] captures go. Those files are private to the app, so they are not
+     * announced to the media scanner and can't surface in gallery apps (#158).
+     */
+    private fun File.isInAppSpecificStorage(): Boolean {
+        val path = canonicalPath
+        return listOfNotNull(context.getExternalFilesDir(null), context.filesDir)
+            .any { root -> path.startsWith(root.canonicalPath + File.separator) }
+    }
+
+    /**
      * Notifies Android's MediaStore about a new image file so it appears in Gallery.
      * Uses MediaScannerConnection for compatibility across Android versions.
+     * Files in app-specific storage are skipped, see [isInAppSpecificStorage].
      */
     private fun notifyMediaStore(file: File) {
         try {
+            if (file.isInAppSpecificStorage()) return
             android.media.MediaScannerConnection.scanFile(
                 context,
                 arrayOf(file.absolutePath),
@@ -811,7 +863,9 @@ actual class CameraController(
                 }
             }
 
-            activeRecording = pendingRecording.start(
+            val token = Any()
+            activeRecordingToken = token
+            val recording = pendingRecording.start(
                 ContextCompat.getMainExecutor(context),
             ) { event ->
                 when (event) {
@@ -834,18 +888,40 @@ actual class CameraController(
                             )
                         }
                         recordingOutputFile = null
-                        // Clear here too: a recording can finalize on error without stopRecording()
-                        // being called, and a stale non-null activeRecording would permanently block
-                        // ViewPort rebinds on rotation.
-                        activeRecording = null
-                        // Apply any rotation flip that was deferred while recording was in progress.
-                        if (pendingViewPortRebind) {
+                        // stopRecording() and cleanup() clear the token before stopping, so if it is still
+                        // this recording's, it ended on its own (app backgrounded, incoming call, storage
+                        // full). Clear activeRecording too, or a stale non-null one would permanently
+                        // block ViewPort rebinds on rotation.
+                        val endedOnItsOwn = activeRecordingToken === token
+                        if (endedOnItsOwn) {
+                            activeRecordingToken = null
+                            activeRecording = null
+                        }
+                        if (endedOnItsOwn && includeVideoUseCase) {
+                            // No stopRecording() will come to drop VideoCapture, so do it here or every
+                            // later photo keeps the reduced field of view (#136). The rebind also
+                            // rebuilds the ViewPort, covering a deferred rotation. Skip it when the use
+                            // cases are already gone (session stopped, lifecycle destroyed).
+                            includeVideoUseCase = false
+                            pendingViewPortRebind = false
+                            val vc = videoCapture
+                            // Cleared now, not in the async rebind, so a startRecording() before that
+                            // rebind runs binds a new VideoCapture instead of reusing this one.
+                            videoCapture = null
+                            val pv = previewView
+                            if (vc != null && pv != null && cameraProvider?.isBound(vc) == true) {
+                                bindCamera(pv)
+                            }
+                        } else if (pendingViewPortRebind) {
+                            // Apply any rotation flip that was deferred while recording was in progress.
                             pendingViewPortRebind = false
                             rebindIfViewPortOrientationChanged()
                         }
                     }
                 }
             }
+            // Skip if it already finalized (start failed immediately): don't keep a dead handle.
+            if (activeRecordingToken === token) activeRecording = recording
 
             cont.resume(outputFile.absolutePath)
         }
@@ -858,8 +934,10 @@ actual class CameraController(
         // timed-out stop) can still be buffered. Drain it so receive() below corresponds to THIS stop.
         while (recordingFinalizeChannel.tryReceive().isSuccess) { /* discard stale finalize */ }
 
-        recording.stop()
+        // Clear before stop() so the Finalize handler sees this stop as requested.
+        activeRecordingToken = null
         activeRecording = null
+        recording.stop()
         // Don't wait forever: if the CameraX finalize event never arrives (already finalized,
         // dropped, etc.) this would hang the caller and leave isRecording stuck true. Also guard
         // against cleanup() closing the channel mid-stop (receive() would throw).
@@ -910,6 +988,7 @@ actual class CameraController(
 
     private fun notifyMediaStoreVideo(file: File) {
         try {
+            if (file.isInAppSpecificStorage()) return
             android.media.MediaScannerConnection.scanFile(
                 context,
                 arrayOf(file.absolutePath),
@@ -1020,8 +1099,12 @@ actual class CameraController(
         orientationEventListener?.disable()
         orientationEventListener = null
         orientationChangedCallback = null
-        activeRecording?.stop()
+        // Clear the recording state before stop() so its late Finalize doesn't rebind the camera.
+        val recording = activeRecording
+        activeRecordingToken = null
         activeRecording = null
+        pendingViewPortRebind = false
+        recording?.stop()
         registeredAnalyzers.clear()
         recordingFinalizeChannel.close()
         imageProcessingExecutor.shutdown()

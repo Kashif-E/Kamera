@@ -4,7 +4,7 @@ Setup Kamera for Android applications.
 
 ## Requirements
 
-- **Minimum SDK**: API 21 (Android 5.0 Lollipop)
+- **Minimum SDK**: API 23 (Android 6.0 Marshmallow)
 - **Target SDK**: API 34+ recommended
 - **Kotlin**: 1.9.0+
 - **Gradle**: 8.0+

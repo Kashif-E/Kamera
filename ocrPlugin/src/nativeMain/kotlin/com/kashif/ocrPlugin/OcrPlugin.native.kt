@@ -269,6 +269,7 @@ class VideoDataDelegate(private val onText: (String) -> Unit) :
 actual fun startRecognition(cameraController: CameraController, onText: (String) -> Unit): RecognitionHandle {
     // Idempotency/teardown is owned by the plugin (it stops the prior handle before re-starting),
     // so no module-global dedup is needed here.
+    val delegate = VideoDataDelegate(onText)
     val videoDataOutput =
         AVCaptureVideoDataOutput().apply {
             setVideoSettings(
@@ -278,7 +279,7 @@ actual fun startRecognition(cameraController: CameraController, onText: (String)
             )
             setAlwaysDiscardsLateVideoFrames(true)
             setSampleBufferDelegate(
-                VideoDataDelegate(onText),
+                delegate,
                 dispatch_queue_create("com.kashif.ocrPlugin.videoQueue", null),
             )
         }
@@ -299,8 +300,13 @@ actual fun startRecognition(cameraController: CameraController, onText: (String)
         }
     }
 
-    return RecognitionHandle {
-        videoDataOutput.setSampleBufferDelegate(null, null)
-        cameraController.safeRemoveOutput(videoDataOutput)
+    return object : RecognitionHandle {
+        // Keeps the delegate alive for as long as the output is attached.
+        private val retainedDelegate = delegate
+
+        override fun stop() {
+            videoDataOutput.setSampleBufferDelegate(null, null)
+            cameraController.safeRemoveOutput(videoDataOutput)
+        }
     }
 }

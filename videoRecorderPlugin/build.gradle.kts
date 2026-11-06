@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "com.kashif.video_recorder_plugin"
-version = "1.2"
+version = "1.2.1"
 
 kotlin {
     jvmToolchain(17)
@@ -50,7 +50,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        minSdk = 21
+        minSdk = 23
     }
 
     publishing {
@@ -68,7 +68,7 @@ mavenPublishing {
     coordinates(
         groupId = "io.github.kashif-mehmood-km",
         artifactId = "video_recorder_plugin",
-        version = "1.2",
+        version = "1.2.1",
     )
 
     pom {

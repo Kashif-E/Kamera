@@ -202,7 +202,7 @@ sealed class CameraKState {
 
 | Platform | Min Version | Backend |
 |----------|-------------|---------|
-| Android | API 21+ | CameraX |
+| Android | API 23+ | CameraX |
 | iOS | iOS 13.0+ | AVFoundation |
 | Desktop | JDK 17+ | JavaCV |
 

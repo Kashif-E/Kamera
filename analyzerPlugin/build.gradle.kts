@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "com.kashif.analyzer_plugin"
-version = "1.2"
+version = "1.2.1"
 
 kotlin {
     jvmToolchain(17)
@@ -63,7 +63,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        minSdk = 21
+        minSdk = 23
     }
 
     publishing {
@@ -83,7 +83,7 @@ mavenPublishing {
     coordinates(
         groupId = "io.github.kashif-mehmood-km",
         artifactId = "analyzer_plugin",
-        version = "1.2",
+        version = "1.2.1",
     )
 
     pom {
