@@ -66,6 +66,19 @@ tasks.named("spotlessCheck") { group = lintGroup }
 
 val bomModule = "camerak-bom"
 
+// The 1.x artifact ids 2.0 renamed (design §9.4), each to the module whose POM_ARTIFACT_ID is its 2.0
+// id. Each old id is a POM-only project under relocations/ whose POM relocates it there, so a build
+// that still names the old id resolves the new one. video_recorder_plugin has no 2.0 successor.
+val relocatedArtifacts =
+    mapOf(
+        "qr_scanner_plugin" to "qrScannerPlugin",
+        "ocr_plugin" to "ocrPlugin",
+        "analyzer_plugin" to "analyzerPlugin",
+        "image_saver_plugin" to "ImageSaverPlugin",
+    )
+
+fun relocationProject(oldId: String) = findProject(":relocations:$oldId")
+
 // The libraries ship only bytedeco's Java bindings. Whatever runs them here (desktop tests, the
 // Sample) adds the natives for this machine, under JavaCPP's platform name, as
 // compose.desktop.currentOs does for Skiko. Modules read it as rootProject.extra["javacppPlatform"].
@@ -554,6 +567,18 @@ fun stabilityConfigProblems(
             }
         }
 
+// What is wrong with the relocation POMs of the renamed artifacts. [expected] maps each old id to its new
+// id, [poms] each old id to the POM text its relocation project generates (null when there is none), and
+// [moduleMetadata] holds the old ids whose Gradle module metadata is still generated, which Gradle would
+// read instead of the POM and so never see the relocation.
+fun relocationPomProblems(
+    expected: Map<String, String>,
+    group: String,
+    version: String,
+    poms: Map<String, String?>,
+    moduleMetadata: Set<String>,
+): List<String> = TODO("C1'b: relocationPomProblems")
+
 // The class, interface, object and typealias declarations in one Kotlin [source], by fully qualified
 // name (a nested declaration under its enclosing one, by indentation), with their @Deprecated level.
 fun kotlinTypeDeclarations(source: String): Map<String, DeprecationLevel?> {
@@ -639,6 +664,44 @@ tasks.register("checkBuildGateRules") {
     val sampleXcodeProject = layout.projectDirectory.file("iosApp/iosApp.xcodeproj/project.pbxproj").asFile
     val versionCatalog = layout.projectDirectory.file("gradle/libs.versions.toml").asFile
     val publishedModuleDirs = libraryModules.map { layout.projectDirectory.dir(it).asFile }
+    relocatedArtifacts.keys.mapNotNull(::relocationProject).forEach {
+        dependsOn("${it.path}:generatePomFileForMavenPublication")
+    }
+    val relocationTargets =
+        relocatedArtifacts.mapValues { (_, module) ->
+            java.util
+                .Properties()
+                .apply {
+                    layout.projectDirectory
+                        .file("$module/gradle.properties")
+                        .asFile
+                        .reader()
+                        .use(::load)
+                }.getProperty("POM_ARTIFACT_ID")
+                .orEmpty()
+        }
+    val relocationPoms =
+        provider {
+            relocatedArtifacts.keys.associateWith { oldId ->
+                relocationProject(oldId)
+                    ?.layout
+                    ?.buildDirectory
+                    ?.file("publications/maven/pom-default.xml")
+                    ?.get()
+                    ?.asFile
+                    ?.takeIf { it.isFile }
+                    ?.readText()
+            }
+        }
+    val relocationModuleMetadata =
+        provider {
+            relocatedArtifacts.keys
+                .filter { oldId ->
+                    relocationProject(oldId)?.tasks?.withType<GenerateModuleMetadata>()?.any { it.enabled } == true
+                }.toSet()
+        }
+    val releaseGroup = providers.gradleProperty("GROUP")
+    val releaseVersion = providers.gradleProperty("VERSION_NAME")
     doLast {
         fun graphs(vararg entries: Pair<String, List<String>>) =
             publishedGraphs.associateWith { emptyList<String>() } + entries
@@ -856,6 +919,70 @@ tasks.register("checkBuildGateRules") {
                     ) +
                         stabilityConfigProblems(stabilityConfig.readLines(), declaredTypes)
                             .map { "${stabilityConfig.relativeTo(rootDir)}: $it" }
+                },
+                "old_artifact_ids_publish_relocation_poms" to {
+                    fun relocationTo(
+                        artifactId: String,
+                        version: String = "2.0",
+                        group: String = "g",
+                    ) = "<groupId>$group</groupId><artifactId>$artifactId</artifactId><version>$version</version>"
+
+                    fun pom(
+                        relocation: String? = relocationTo("new-id"),
+                        packaging: String = "pom",
+                    ) = listOfNotNull(
+                        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                        "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">",
+                        "<modelVersion>4.0.0</modelVersion><groupId>g</groupId><artifactId>old_id</artifactId>",
+                        "<version>2.0</version><packaging>$packaging</packaging><name>old_id</name>",
+                        "<description>Relocated to g:new-id</description><url>https://example.org</url>",
+                        "<licenses><license><name>L</name></license></licenses>",
+                        "<developers><developer><id>d</id></developer></developers>",
+                        "<scm><url>https://example.org</url></scm>",
+                        relocation?.let { "<distributionManagement><relocation>$it</relocation>" },
+                        relocation?.let { "</distributionManagement>" },
+                        "</project>",
+                    ).joinToString("\n")
+
+                    fun judged(
+                        pom: String?,
+                        metadata: Set<String> = emptySet(),
+                        expected: Map<String, String> = mapOf("old_id" to "new-id"),
+                    ) = relocationPomProblems(expected, "g", "2.0", mapOf("old_id" to pom), metadata)
+                    val correct = judged(pom())
+                    listOfNotNull(
+                        "a correct relocation POM is rejected: $correct".takeIf { correct.isNotEmpty() },
+                        "a POM with no <relocation> is accepted".takeIf { judged(pom(relocation = null)).isEmpty() },
+                        "a POM relocating to the old id is accepted"
+                            .takeIf { judged(pom(relocationTo("old_id"))).isEmpty() },
+                        "a POM relocating to another version is accepted"
+                            .takeIf { judged(pom(relocationTo("new-id", version = "1.2"))).isEmpty() },
+                        "a POM relocating to another group is accepted"
+                            .takeIf { judged(pom(relocationTo("new-id", group = "h"))).isEmpty() },
+                        "a jar-packaged POM is accepted".takeIf { judged(pom(packaging = "jar")).isEmpty() },
+                        "a POM with module metadata on is accepted".takeIf { judged(pom(), setOf("old_id")).isEmpty() },
+                        "an expected id with no POM is accepted".takeIf { judged(null).isEmpty() },
+                        "a POM without its licence is accepted"
+                            .takeIf { judged(pom().replace(Regex("<licenses>.*</licenses>"), "")).isEmpty() },
+                        "an old id expected to relocate to itself is accepted".takeIf {
+                            judged(pom(relocationTo("old_id")), expected = mapOf("old_id" to "old_id")).isEmpty()
+                        },
+                    ) +
+                        listOfNotNull(
+                            "relocatedArtifacts relocates ${relocatedArtifacts.keys}, not the four 1.x plugin ids"
+                                .takeIf {
+                                    relocatedArtifacts.keys !=
+                                        setOf("qr_scanner_plugin", "ocr_plugin", "analyzer_plugin") +
+                                        "image_saver_plugin"
+                                },
+                        ) +
+                        relocationPomProblems(
+                            relocationTargets,
+                            releaseGroup.get(),
+                            releaseVersion.get(),
+                            relocationPoms.get(),
+                            relocationModuleMetadata.get(),
+                        )
                 },
                 "stability_config_lists_every_stripped_type" to {
                     if (!stabilityConfig.isFile) {
