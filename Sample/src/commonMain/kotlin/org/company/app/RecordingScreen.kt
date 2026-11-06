@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.compose.rememberRecordingElapsed
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.recording.RecordingState
@@ -90,7 +91,7 @@ internal fun RecordingState.shownDurationMs(holderElapsed: Duration): Long =
  */
 @Composable
 internal fun rememberShownRecordingDurationMs(holder: CameraKStateHolder, recordingState: RecordingState): Long =
-    TODO("C1'a moves CameraScreen's wiring here")
+    recordingState.shownDurationMs(rememberRecordingElapsed(holder).value)
 
 /**
  * The Sample's video recording on the holder: Full HD with audio, up to five minutes.

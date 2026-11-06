@@ -40,7 +40,6 @@ import com.composables.icons.lucide.X
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.compose.CameraKScreen
 import com.kashif.cameraK.compose.rememberCameraKStateHolder
-import com.kashif.cameraK.compose.rememberRecordingElapsed
 import com.kashif.cameraK.controls.cycleFlashMode
 import com.kashif.cameraK.controls.toggleLens
 import com.kashif.cameraK.controls.toggleTorch
@@ -102,12 +101,9 @@ internal fun CameraContent(
         },
         plugins = plugins,
     )
-    val cameraState by holder.cameraState.collectAsState()
-
     CameraKScreen(
-        cameraState = cameraState,
-        showPreview = true,
-        loadingContent = {
+        holder = holder,
+        loading = {
             Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black),
                 contentAlignment = Alignment.Center,
@@ -119,7 +115,7 @@ internal fun CameraContent(
                 )
             }
         },
-        errorContent = { error ->
+        error = { error, _ ->
             Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black),
                 contentAlignment = Alignment.Center,
@@ -136,7 +132,7 @@ internal fun CameraContent(
                         modifier = Modifier.size(48.dp),
                     )
                     Text(
-                        error.error.displayText(),
+                        error.displayText(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
                         textAlign = TextAlign.Center,
@@ -144,7 +140,7 @@ internal fun CameraContent(
                 }
             }
         },
-    ) { _ ->
+    ) {
         CameraScreen(
             holder = holder,
             imageSaver = imageSaver,
@@ -226,7 +222,7 @@ private fun CameraScreen(
     LaunchedEffect(recording) {
         recording.notices.collect { snackbarHostState.showSnackbar(it) }
     }
-    val recordingElapsed by rememberRecordingElapsed(holder)
+    val shownDurationMs = rememberShownRecordingDurationMs(holder, recordingState)
 
     var isDetectionEnabled by remember { mutableStateOf(true) }
 
@@ -269,7 +265,7 @@ private fun CameraScreen(
             torchMode = uiState.torchMode ?: TorchMode.OFF,
             aspectRatio = aspectRatio,
             isRecording = isRecording,
-            recordingDurationMs = recordingState.shownDurationMs(recordingElapsed),
+            recordingDurationMs = shownDurationMs,
             onFlashToggle = { scope.launch { holder.cycleFlashMode() } },
             onTorchToggle = { scope.launch { holder.toggleTorch() } },
             onAspectRatioCycle = {

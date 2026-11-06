@@ -7,18 +7,26 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import com.kashif.cameraK.permissions.Permissions
-import com.kashif.cameraK.permissions.providePermissions
+import com.kashif.cameraK.permissions.CameraKPermission
+import com.kashif.cameraK.permissions.PermissionStatus
+import com.kashif.cameraK.permissions.rememberCameraKPermissionState
 import org.company.app.theme.AppTheme
 
 @Composable
 fun App() = AppTheme {
-    val permissions: Permissions = providePermissions()
+    // The camera, and the gallery the image saver publishes to; on Android 10 and later and on desktop
+    // the gallery needs no permission and reads Granted.
+    val permissions = rememberCameraKPermissionState(CameraKPermission.CAMERA, CameraKPermission.GALLERY_ADD) {
+        if (it[CameraKPermission.CAMERA] != PermissionStatus.Granted) println("Camera Permission Denied")
+    }
+    // Asked once when the app opens, as the 1.x screen did.
+    LaunchedEffect(permissions) {
+        if (!permissions.allGranted) permissions.launchRequest()
+    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
@@ -28,21 +36,12 @@ fun App() = AppTheme {
         // letterbox bars) never flashes the default white surface.
         containerColor = Color.Black,
     ) {
-        val cameraPermissionState = remember { mutableStateOf(permissions.hasCameraPermission()) }
-        val storagePermissionState = remember { mutableStateOf(permissions.hasStoragePermission()) }
-
         val imageSaver = rememberImageSaverFeature()
         val analyzer = rememberAnalyzerFeature()
         val qrScanner = rememberQrScannerFeature()
         val ocr = rememberOcrFeature()
 
-        PermissionsHandler(
-            permissions = permissions,
-            cameraPermissionState = cameraPermissionState,
-            storagePermissionState = storagePermissionState,
-        )
-
-        if (cameraPermissionState.value && storagePermissionState.value) {
+        if (permissions.statuses[CameraKPermission.CAMERA] == PermissionStatus.Granted) {
             CameraContent(
                 analyzer = analyzer,
                 imageSaver = imageSaver,
@@ -51,26 +50,5 @@ fun App() = AppTheme {
                 snackbarHostState = snackbarHostState,
             )
         }
-    }
-}
-
-@Composable
-private fun PermissionsHandler(
-    permissions: Permissions,
-    cameraPermissionState: MutableState<Boolean>,
-    storagePermissionState: MutableState<Boolean>,
-) {
-    if (!cameraPermissionState.value) {
-        permissions.RequestCameraPermission(
-            onGranted = { cameraPermissionState.value = true },
-            onDenied = { println("Camera Permission Denied") },
-        )
-    }
-
-    if (!storagePermissionState.value) {
-        permissions.RequestStoragePermission(
-            onGranted = { storagePermissionState.value = true },
-            onDenied = { println("Storage Permission Denied") },
-        )
     }
 }
