@@ -144,6 +144,7 @@ internal class FakeAndroidPlatform(
         val id = when (resolved) {
             is ResolvedCamera.FacingDefault -> lenses.first { it.lens == resolved.lens }.id
             is ResolvedCamera.TopLevel -> resolved.cameraId
+            is ResolvedCamera.External -> resolved.cameraId
             is ResolvedCamera.PhysicalLens -> resolved.physicalId
         }
         val lens = lenses.first { it.id == id }

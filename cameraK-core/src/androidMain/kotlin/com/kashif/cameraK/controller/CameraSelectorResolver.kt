@@ -25,6 +25,12 @@ internal sealed interface ResolvedCamera {
     /** A physical lens inside the logical multi-camera [parentLogicalId], pinned through Camera2Interop. */
     data class PhysicalLens(override val lens: CameraLens, val physicalId: String, val parentLogicalId: String?) :
         ResolvedCamera
+
+    /**
+     * An external (USB) camera, selected by its id alone: it faces neither way, and CameraX's facing
+     * filter drops it. [lens] is the one its `LensInfo` reports.
+     */
+    data class External(override val lens: CameraLens, val cameraId: String) : ResolvedCamera
 }
 
 /**
@@ -76,10 +82,10 @@ internal class CameraSelectorResolver(private val enumerate: () -> List<AndroidL
     fun resolveId(id: String): ResolvedCamera? {
         val descriptor = lensSnapshot().firstOrNull { it.info.id == id } ?: return null
         val lens = descriptor.info.lens
-        return if (descriptor.isPhysicalChild) {
-            ResolvedCamera.PhysicalLens(lens, id, descriptor.parentLogicalId)
-        } else {
-            ResolvedCamera.TopLevel(lens, id)
+        return when {
+            descriptor.info.isExternal -> ResolvedCamera.External(lens, id)
+            descriptor.isPhysicalChild -> ResolvedCamera.PhysicalLens(lens, id, descriptor.parentLogicalId)
+            else -> ResolvedCamera.TopLevel(lens, id)
         }
     }
 }
@@ -91,10 +97,16 @@ internal class CameraSelectorResolver(private val enumerate: () -> List<AndroidL
  */
 internal val ResolvedCamera.pinnedPhysicalId: String? get() = (this as? ResolvedCamera.PhysicalLens)?.physicalId
 
-/** The CameraX selector for this camera; the use-case builders apply the Camera2Interop half of a pin. */
+/**
+ * The CameraX selector for this camera; the use-case builders apply the Camera2Interop half of a pin.
+ *
+ * CameraX hands each filter an unmodifiable view and trims the filter's result in place, so a
+ * fallback returns a copy, never the view it was given.
+ */
 @OptIn(ExperimentalCamera2Interop::class)
 internal fun ResolvedCamera.toCameraSelector(): CameraSelector {
-    val builder = CameraSelector.Builder().requireLensFacing(lens.toCameraXLensFacing())
+    val builder = CameraSelector.Builder()
+    if (this !is ResolvedCamera.External) builder.requireLensFacing(lens.toCameraXLensFacing())
     return when (this) {
         is ResolvedCamera.FacingDefault -> builder.build()
         // setPhysicalCameraId ALONE does not influence which logical camera CameraSelector
@@ -108,13 +120,20 @@ internal fun ResolvedCamera.toCameraSelector(): CameraSelector {
         is ResolvedCamera.PhysicalLens -> builder.setPhysicalCameraId(physicalId)
             .addCameraFilter { cameraInfos ->
                 cameraInfos.filter { Camera2CameraInfo.from(it).cameraId == parentLogicalId }
-                    .ifEmpty { cameraInfos }
+                    .ifEmpty { cameraInfos.toList() }
             }.build()
         is ResolvedCamera.TopLevel -> builder.addCameraFilter { cameraInfos ->
             cameraInfos.filter { Camera2CameraInfo.from(it).cameraId == cameraId }
                 .ifEmpty {
                     CameraKLogger.w(TAG, "Camera $cameraId not offered by CameraX, using default")
-                    cameraInfos
+                    cameraInfos.toList()
+                }
+        }.build()
+        is ResolvedCamera.External -> builder.addCameraFilter { cameraInfos ->
+            cameraInfos.filter { Camera2CameraInfo.from(it).cameraId == cameraId }
+                .ifEmpty {
+                    CameraKLogger.w(TAG, "External camera $cameraId not offered by CameraX, using the back camera")
+                    cameraInfos.filter { it.lensFacing == CameraSelector.LENS_FACING_BACK }
                 }
         }.build()
     }
