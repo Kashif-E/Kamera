@@ -533,6 +533,61 @@ val addedStableTypes =
         "com.kashif.cameraK.result.CameraKResult.*",
     )
 
+// What is wrong with cameraK/compose-stability.conf's [confLines] given the Kotlin types the published
+// modules' main sources declare ([declaredTypes]: fully qualified name to its @Deprecated level, null
+// when not deprecated). Every entry must name a declared type (for "X.*", the type X) that is not
+// deprecated at ERROR or HIDDEN: a stability entry for a removed or hint-only type is dead weight.
+fun stabilityConfigProblems(
+    confLines: List<String>,
+    declaredTypes: Map<String, DeprecationLevel?>,
+): List<String> = emptyList()
+
+// The class, interface, object and typealias declarations in one Kotlin [source], by fully qualified
+// name (a nested declaration under its enclosing one, by indentation), with their @Deprecated level.
+fun kotlinTypeDeclarations(source: String): Map<String, DeprecationLevel?> {
+    val packageName = Regex("""(?m)^package\s+([\w.]+)""").find(source)?.groupValues?.get(1)
+    val declaration =
+        Regex(
+            """^(\s*)(?:@\S+\s+)*(?:(?:public|internal|private|protected|expect|actual|data|sealed|enum|""" +
+                """annotation|value|inline|abstract|open|final|fun|inner)\s+)*""" +
+                """(class|interface|object|typealias)\s+([A-Za-z_][A-Za-z0-9_]*)""",
+        )
+    val declared = linkedMapOf<String, DeprecationLevel?>()
+    val enclosing = ArrayDeque<Pair<Int, String>>()
+    val annotations = StringBuilder()
+    var openParens = 0
+    source.lines().forEach { line ->
+        val trimmed = line.trim()
+        val match = declaration.find(line)
+        when {
+            trimmed.isEmpty() || trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*") -> Unit
+            match != null && openParens == 0 -> {
+                val indent = match.groupValues[1].length
+                while (enclosing.isNotEmpty() && enclosing.last().first >= indent) enclosing.removeLast()
+                val name =
+                    (listOfNotNull(packageName) + enclosing.map { it.second } + match.groupValues[3])
+                        .joinToString(".")
+                val text = annotations.toString() + line
+                declared[name] =
+                    when {
+                        "@Deprecated" !in text -> null
+                        "DeprecationLevel.HIDDEN" in text -> DeprecationLevel.HIDDEN
+                        "DeprecationLevel.ERROR" in text -> DeprecationLevel.ERROR
+                        else -> DeprecationLevel.WARNING
+                    }
+                enclosing.addLast(indent to match.groupValues[3])
+                annotations.clear()
+            }
+            trimmed.startsWith("@") || openParens > 0 -> {
+                annotations.append(line).append('\n')
+                openParens += line.count { it == '(' } - line.count { it == ')' }
+            }
+            else -> annotations.clear()
+        }
+    }
+    return declared
+}
+
 // The gate rules run against fixtures, and the gates checked to cover the modules the 2.0 split adds.
 tasks.register("checkBuildGateRules") {
     group = lintGroup
@@ -571,6 +626,7 @@ tasks.register("checkBuildGateRules") {
     val stabilityConfig = layout.projectDirectory.file("cameraK/compose-stability.conf").asFile
     val sampleXcodeProject = layout.projectDirectory.file("iosApp/iosApp.xcodeproj/project.pbxproj").asFile
     val versionCatalog = layout.projectDirectory.file("gradle/libs.versions.toml").asFile
+    val publishedModuleDirs = libraryModules.map { layout.projectDirectory.dir(it).asFile }
     doLast {
         fun graphs(vararg entries: Pair<String, List<String>>) =
             publishedGraphs.associateWith { emptyList<String>() } + entries
@@ -749,6 +805,46 @@ tasks.register("checkBuildGateRules") {
                         cameraComposeVersionProblems(versionCatalog.readText())
                             .map { "${versionCatalog.relativeTo(rootDir)}: $it" }
                 },
+                "stability_config_lists_no_deleted_type" to {
+                    val fixtureTypes =
+                        mapOf(
+                            "a.Live" to null,
+                            "a.Warned" to DeprecationLevel.WARNING,
+                            "a.Hint" to DeprecationLevel.ERROR,
+                            "a.Hidden" to DeprecationLevel.HIDDEN,
+                        )
+
+                    fun judged(vararg lines: String) = stabilityConfigProblems(lines.toList(), fixtureTypes)
+                    val declaredTypes =
+                        publishedModuleDirs
+                            .flatMap { module ->
+                                module
+                                    .resolve("src")
+                                    .listFiles()
+                                    .orEmpty()
+                                    .filter { it.name.endsWith("Main") }
+                            }.flatMap { sourceSet ->
+                                sourceSet.walkTopDown().filter { it.isFile && it.extension == "kt" }
+                            }.map { kotlinTypeDeclarations(it.readText()) }
+                            .fold(emptyMap<String, DeprecationLevel?>()) { all, file -> all + file }
+                    listOfNotNull(
+                        "a type no module declares is accepted".takeIf { judged("a.Gone").isEmpty() },
+                        "an ERROR-deprecated type is accepted".takeIf { judged("a.Hint").isEmpty() },
+                        "a wildcard over an ERROR-deprecated type is accepted".takeIf { judged("a.Hint.*").isEmpty() },
+                        "a HIDDEN type is accepted".takeIf { judged("a.Hidden").isEmpty() },
+                        "live and WARNING-deprecated types are rejected: ${judged(
+                            "a.Live",
+                            "a.Warned",
+                            "// a.Gone",
+                            "",
+                        )}"
+                            .takeIf { judged("a.Live", "a.Warned", "// a.Gone", "").isNotEmpty() },
+                        "a wildcard over a live type is rejected".takeIf { judged("a.Live.*").isNotEmpty() },
+                        "the published sources declare no type".takeIf { declaredTypes.isEmpty() },
+                    ) +
+                        stabilityConfigProblems(stabilityConfig.readLines(), declaredTypes)
+                            .map { "${stabilityConfig.relativeTo(rootDir)}: $it" }
+                },
                 "stability_config_lists_every_stripped_type" to {
                     if (!stabilityConfig.isFile) {
                         listOf("${stabilityConfig.relativeTo(rootDir)} does not exist")
@@ -901,7 +997,8 @@ registerRepoPolicyCheck(
 registerRepoPolicyCheck(
     "checkModuleSources",
     "module-sources",
-    "Fails if a tracked Kotlin source file lies outside every module settings.gradle.kts includes",
+    "Fails if a tracked Kotlin source file lies outside every module settings.gradle.kts includes, " +
+        "or the iOS engine's internals are public",
 )
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────

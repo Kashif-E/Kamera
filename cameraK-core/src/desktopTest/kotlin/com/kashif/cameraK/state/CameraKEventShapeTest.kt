@@ -57,11 +57,12 @@ class CameraKEventShapeTest {
         }
     }
 
+    // Only CameraK builds the event: from H2' its plugins did, behind @InternalCameraKApi; since P1
+    // only core's plugin host does, so the constructor is internal (design §10.4).
     @Test
-    fun pluginFailedConstructorIsInternalCameraKApi() {
+    fun pluginFailedConstructorIsInternal() {
         val constructor = assertNotNull(CameraKEvent.PluginFailed::class.primaryConstructor)
-        val names = constructor.annotations.map { it.annotationClass.qualifiedName }
-        assertTrue(INTERNAL_API in names, "PluginFailed's constructor annotations: $names")
+        assertEquals(KVisibility.INTERNAL, constructor.visibility, "PluginFailed's constructor")
     }
 
     @Test
@@ -90,9 +91,5 @@ class CameraKEventShapeTest {
         val reported = failures.single()
         assertEquals("pluginScope", reported.pluginId)
         assertSame(failure, assertIs<CameraKError.Internal>(reported.error).cause)
-    }
-
-    private companion object {
-        const val INTERNAL_API = "com.kashif.cameraK.utils.InternalCameraKApi"
     }
 }

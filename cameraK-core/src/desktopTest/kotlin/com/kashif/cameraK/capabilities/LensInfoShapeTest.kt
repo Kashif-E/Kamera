@@ -1,10 +1,15 @@
+@file:OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.capabilities
 
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.utils.CameraKEngineApi
+import kotlin.reflect.full.primaryConstructor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -34,5 +39,15 @@ class LensInfoShapeTest {
         assertNotEquals(lens(), lens(id = "1"))
         assertNotEquals(lens(), lens(isExternal = true))
         assertTrue("isExternal=false" in lens().toString(), "toString names every field: ${lens()}")
+    }
+
+    @Test
+    fun constructorRequiresEngineApiOptIn() {
+        val constructor = assertNotNull(LensInfo::class.primaryConstructor)
+        val annotations = constructor.annotations.map { it.annotationClass.qualifiedName }
+        assertTrue(
+            annotations.contains(CameraKEngineApi::class.qualifiedName),
+            "LensInfo's constructor annotations: $annotations",
+        )
     }
 }
