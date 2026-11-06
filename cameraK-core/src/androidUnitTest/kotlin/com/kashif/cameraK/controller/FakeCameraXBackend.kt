@@ -350,6 +350,12 @@ internal class FakeCameraBinding : CameraBinding {
     /** When set, makes the camera a bind returns for the camera it asks for, in place of [newCamera]. */
     var cameraFor: ((ResolvedCamera) -> FakeCamera)? = null
 
+    /**
+     * Whether CameraX has a camera that [ResolvedCamera]'s selector selects. A bind of one it has not
+     * is refused with IllegalArgumentException before anything binds, as `CameraSelector.select` is.
+     */
+    var selects: (ResolvedCamera) -> Boolean = { true }
+
     /** The next camera to open stays OPENING until the test reports it open. */
     var holdNextOpen = false
 
@@ -401,6 +407,7 @@ internal class FakeCameraBinding : CameraBinding {
         require(owner.lifecycle.currentState != Lifecycle.State.DESTROYED) {
             "Trying to create use case mediator with destroyed lifecycle."
         }
+        require(selects(resolved)) { "No available camera can be found." }
         bindCalls++
         requested += resolved
         bindThreads += Thread.currentThread()

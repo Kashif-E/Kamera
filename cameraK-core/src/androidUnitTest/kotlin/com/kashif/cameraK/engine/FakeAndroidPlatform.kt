@@ -3,7 +3,12 @@
 package com.kashif.cameraK.engine
 
 import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.os.Looper
+import androidx.camera.camera2.internal.Camera2CameraInfoImpl
+import androidx.camera.camera2.internal.compat.CameraManagerCompat
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraState
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
@@ -14,6 +19,7 @@ import com.kashif.cameraK.controller.AndroidCameraEngine
 import com.kashif.cameraK.controller.FakeCamera
 import com.kashif.cameraK.controller.FakeCameraXBackend
 import com.kashif.cameraK.controller.ResolvedCamera
+import com.kashif.cameraK.controller.toCameraSelector
 import com.kashif.cameraK.coroutines.CameraKDispatchers
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -25,6 +31,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadow.api.Shadow
+import org.robolectric.shadows.ShadowCameraCharacteristics
 import java.util.concurrent.ExecutorService
 
 /**
@@ -35,11 +43,16 @@ import java.util.concurrent.ExecutorService
  * With [holdReports], each camera records the torch and zoom requests it accepts and reports a
  * change only when the test does. [flashUnitOf] is what each camera's CameraInfo.hasFlashUnit says;
  * by default the lens's own hasFlash, which the enumerator read from the same characteristic.
+ *
+ * With [offeredByCameraX], CameraX offers only those cameras, which may differ from what the
+ * enumeration listed (a USB camera unplugged since): each camera a bind asks for is selected by its
+ * real CameraX selector over them, and a bind that selects none is refused as CameraX refuses it.
  */
 internal class FakeAndroidPlatform(
     val lenses: List<LensInfo> = TWO_FIXED_CAMERAS,
     private val holdReports: Boolean = false,
     private val flashUnitOf: (LensInfo) -> Boolean = { it.hasFlash },
+    private val offeredByCameraX: List<LensInfo>? = null,
 ) {
     val context: Context = ApplicationProvider.getApplicationContext()
     val backend = FakeCameraXBackend()
@@ -49,6 +62,11 @@ internal class FakeAndroidPlatform(
 
     init {
         backend.binding.cameraFor = { resolved -> cameraFor(resolved) }
+        if (offeredByCameraX != null) {
+            val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            offeredByCameraX.forEach { shadowOf(manager).addCamera(it.id, characteristicsOf(it)) }
+            backend.binding.selects = { resolved -> selectedIds(resolved).isNotEmpty() }
+        }
     }
 
     /** The camera the latest bind returned, or null before the first. */
@@ -140,12 +158,41 @@ internal class FakeAndroidPlatform(
     /** The Preview use case currently bound. */
     fun boundPreview(): Preview = backend.binding.bound.filterIsInstance<Preview>().single()
 
+    // The ids of the offered cameras [resolved]'s selector keeps, in CameraX's order.
+    private fun selectedIds(resolved: ResolvedCamera): List<String> {
+        val offered = checkNotNull(offeredByCameraX)
+        val cameraManager = CameraManagerCompat.from(context)
+        val infos = offered.map { Camera2CameraInfoImpl(it.id, cameraManager) }
+        return resolved.toCameraSelector().filter(infos).map { Camera2CameraInfo.from(it).cameraId }
+    }
+
+    private fun characteristicsOf(lens: LensInfo): CameraCharacteristics {
+        val facing = when {
+            lens.isExternal -> CameraCharacteristics.LENS_FACING_EXTERNAL
+            lens.lens == CameraLens.FRONT -> CameraCharacteristics.LENS_FACING_FRONT
+            else -> CameraCharacteristics.LENS_FACING_BACK
+        }
+        val characteristics = ShadowCameraCharacteristics.newCameraCharacteristics()
+        Shadow.extract<ShadowCameraCharacteristics>(characteristics).apply {
+            set(CameraCharacteristics.LENS_FACING, facing)
+            set(
+                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES,
+                intArrayOf(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE),
+            )
+        }
+        return characteristics
+    }
+
     private fun cameraFor(resolved: ResolvedCamera): FakeCamera {
-        val id = when (resolved) {
-            is ResolvedCamera.FacingDefault -> lenses.first { it.lens == resolved.lens }.id
-            is ResolvedCamera.TopLevel -> resolved.cameraId
-            is ResolvedCamera.External -> resolved.cameraId
-            is ResolvedCamera.PhysicalLens -> resolved.physicalId
+        val id = if (offeredByCameraX != null) {
+            selectedIds(resolved).first()
+        } else {
+            when (resolved) {
+                is ResolvedCamera.FacingDefault -> lenses.first { it.lens == resolved.lens }.id
+                is ResolvedCamera.TopLevel -> resolved.cameraId
+                is ResolvedCamera.External -> resolved.cameraId
+                is ResolvedCamera.PhysicalLens -> resolved.physicalId
+            }
         }
         val lens = lenses.first { it.id == id }
         return FakeCamera(
