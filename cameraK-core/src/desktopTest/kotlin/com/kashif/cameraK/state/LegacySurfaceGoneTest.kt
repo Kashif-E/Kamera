@@ -1,5 +1,6 @@
 package com.kashif.cameraK.state
 
+import kotlin.reflect.KVisibility
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -53,6 +54,33 @@ class LegacySurfaceGoneTest {
             .filter { it.parameterCount == 1 && it.parameterTypes.single() == List::class.java }
             .forEach { present += "CameraCapabilities' one-argument constructor" }
 
+        val grabber = Class.forName("com.kashif.cameraK.controller.CameraGrabber")
+        grabber.methods
+            .filter { method -> method.parameterTypes.any { it.name == "org.bytedeco.javacv.FrameGrabber" } }
+            .forEach { present += "CameraGrabber.${it.name}, which takes the 1.x customGrabber" }
+        // CameraGrabber stays public only so a 1.x call of the grabCurrentFrame hint resolves (design §10.4).
+        grabber.kotlin.constructors
+            .filter { it.visibility == KVisibility.PUBLIC }
+            .forEach { present += "CameraGrabber's public constructor $it" }
+        grabber.kotlin.members
+            .filter { it.visibility == KVisibility.PUBLIC && it.name !in KEPT_GRABBER_MEMBERS }
+            .forEach { present += "CameraGrabber.${it.name}" }
+
+        // The desktop converter's 1.x convert(Frame) and its two-frame hold; the grab loop is its only user.
+        val converter = Class.forName("com.kashif.cameraK.controller.FrameConverter")
+        if (converter.kotlin.visibility == KVisibility.PUBLIC) present += "FrameConverter is public"
+        converter.declaredMethods
+            .filter { method -> method.name == "convert" && method.parameterTypes.any { it.name == "org.bytedeco.javacv.Frame" } }
+            .forEach { present += "FrameConverter.convert(Frame)" }
+        converter.declaredFields
+            .filter { it.name == "legacyHeld" }
+            .forEach { present += "FrameConverter.legacyHeld" }
+
+        // Only internal declarations of core's desktop code use it (design §12.4 Z1).
+        if (Class.forName("com.kashif.cameraK.controller.OperatingSystem").kotlin.visibility == KVisibility.PUBLIC) {
+            present += "OperatingSystem is public"
+        }
+
         assertTrue(present.isEmpty(), "1.x symbols still present:\n${present.joinToString("\n")}")
     }
 
@@ -85,6 +113,9 @@ class LegacySurfaceGoneTest {
             "getPluginScope",
             "updateUIState",
         )
+
+        // Kotlin reflection lists Any's members with the class's own.
+        val KEPT_GRABBER_MEMBERS = setOf("grabCurrentFrame", "equals", "hashCode", "toString")
 
         val REMOVED_UI_STATE_GETTERS = setOf(
             "getLastError",
