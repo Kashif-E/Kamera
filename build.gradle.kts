@@ -1700,7 +1700,8 @@ registerRepoPolicyCheck(
 registerRepoPolicyCheck(
     "checkBuildIntegrity",
     "build-integrity",
-    "Fails if the wrapper, actions or docs requirements are unpinned, or Dependabot does not cover them",
+    "Fails if the wrapper, actions or docs requirements are unpinned, Dependabot does not cover them, " +
+        "or Gradle does not verify every dependency's sha256",
 )
 registerRepoPolicyCheck(
     "checkCatalogHygiene",
