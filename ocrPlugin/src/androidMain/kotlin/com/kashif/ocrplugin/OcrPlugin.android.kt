@@ -160,7 +160,7 @@ private fun <T> Task<T>.awaitBlocking(timeoutMillis: Long): T {
     return result
 }
 
-private const val TAG = "CameraK"
+private const val TAG = "TextRecognition"
 
 private const val NEUTRAL_CHROMA: Byte = 128.toByte()
 

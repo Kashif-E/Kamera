@@ -194,7 +194,7 @@ internal class CoreImageFrameEncoder(
     }
 
     private companion object {
-        const val TAG = "AnalyzerPlugin"
+        const val TAG = "Analyzer"
         const val MAX_PLANES = 3
         const val MAX_QUALITY = 100.0
         const val BYTES_PER_PIXEL = 4

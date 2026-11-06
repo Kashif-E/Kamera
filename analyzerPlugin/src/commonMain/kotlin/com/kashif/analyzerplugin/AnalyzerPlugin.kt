@@ -135,7 +135,7 @@ public class AnalyzerPlugin internal constructor(
     }
 
     internal companion object {
-        private const val TAG = "AnalyzerPlugin"
+        private const val TAG = "Analyzer"
 
         /** The analyzer converts either session format to colour itself. */
         val ENCODED_FORMATS: Set<FrameFormat> = setOf(FrameFormat.YUV_420, FrameFormat.RGBA_8888)

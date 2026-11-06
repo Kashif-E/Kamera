@@ -47,7 +47,7 @@ internal const val LEGACY_BUNDLED_MODEL_RESOURCE = "/com/kashif/ocrPlugin/tessda
 internal const val BUNDLED_MODEL_SHA256 = "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047"
 
 private const val MODEL_FILE = "eng.traineddata"
-private const val TAG = "CameraK"
+private const val TAG = "TextRecognition"
 
 /** The sources this process offers for [config]. */
 internal fun processTessdataSources(config: OcrConfig): TessdataSources = TessdataSources(

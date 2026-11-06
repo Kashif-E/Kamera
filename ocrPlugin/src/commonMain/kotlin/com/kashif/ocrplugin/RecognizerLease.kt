@@ -57,6 +57,6 @@ internal class RecognizerLease(private val recognizer: LiveTextRecognizer) {
     }
 
     private companion object {
-        const val TAG = "CameraK"
+        const val TAG = "TextRecognition"
     }
 }

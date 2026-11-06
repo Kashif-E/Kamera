@@ -244,7 +244,7 @@ internal fun LumaImage.rotateInto(destination: ByteArray): Pair<Int, Int> {
     return if (rotationDegrees == 90 || rotationDegrees == 270) h to w else w to h
 }
 
-private const val TAG = "CameraK"
+private const val TAG = "TextRecognition"
 private const val FULL_TURN = 360
 
 /** A message logged at most once: [claim] is true for the first caller only. */

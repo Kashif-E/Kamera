@@ -221,7 +221,7 @@ public class OcrPlugin internal constructor(
         RecognizedText(blocks.joinToString("\n") { it.text }, blocks, timestampNanos)
 
     private companion object {
-        const val TAG = "CameraK"
+        const val TAG = "TextRecognition"
         const val RESULTS_BUFFER = 16
     }
 }
