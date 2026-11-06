@@ -108,6 +108,8 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
         override fun cameraIdOf(camera: Camera): String =
             binding.cameraIdOf((camera as? RecordingCamera)?.real ?: camera)
 
+        override fun hasCamera(camera: ResolvedCamera): Boolean = binding.hasCamera(camera)
+
         // Main thread, where CameraX binds.
         private fun record(owner: LifecycleOwner, useCases: List<UseCase>, bound: Camera): Camera {
             val id = binding.cameraIdOf(bound)

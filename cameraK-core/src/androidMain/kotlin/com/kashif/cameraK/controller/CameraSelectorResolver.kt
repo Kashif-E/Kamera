@@ -28,7 +28,9 @@ internal sealed interface ResolvedCamera {
 
     /**
      * An external (USB) camera, selected by its id alone: it faces neither way, and CameraX's facing
-     * filter drops it. [lens] is the one its `LensInfo` reports.
+     * filter drops it. [lens] is the one its `LensInfo` reports. When CameraX no longer offers it
+     * (unplugged since the enumeration), the engine binds the back camera in its place, or reports
+     * `NoCamera` when there is none, before anything unbinds.
      */
     data class External(override val lens: CameraLens, val cameraId: String) : ResolvedCamera
 }
@@ -131,10 +133,6 @@ internal fun ResolvedCamera.toCameraSelector(): CameraSelector {
         }.build()
         is ResolvedCamera.External -> builder.addCameraFilter { cameraInfos ->
             cameraInfos.filter { Camera2CameraInfo.from(it).cameraId == cameraId }
-                .ifEmpty {
-                    CameraKLogger.w(TAG, "External camera $cameraId not offered by CameraX, using the back camera")
-                    cameraInfos.filter { it.lensFacing == CameraSelector.LENS_FACING_BACK }
-                }
         }.build()
     }
 }

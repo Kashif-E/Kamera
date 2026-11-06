@@ -317,7 +317,10 @@ internal class AndroidCameraEngine(
             if (resolved != boundCamera || stale) {
                 val bindProvider = awaitUnlessEnded(live, providerAsync()) ?: return live.opened.await()
                 val error = bindProvider.fold(
-                    onSuccess = { bind(resolved, it) },
+                    onSuccess = { binding ->
+                        val camera = offered(resolved, binding)
+                        if (camera == null) CameraKError.NoCamera(lensOf(desired.selection)) else bind(camera, binding)
+                    },
                     onFailure = {
                         CameraKLogger.e(TAG, "Obtaining the camera provider failed", it)
                         CameraKError.Internal(it)
@@ -375,9 +378,14 @@ internal class AndroidCameraEngine(
         val resolved = resolve(selection)
             ?: return CameraKResult.Failure(CameraKError.NoCamera(lensOf(selection)))
         if (resolved != boundCamera) {
-            val error = bind(resolved, checkNotNull(provider) { "a live session has its provider" })
-            if (error != null) {
-                return fail(live, error)
+            val binding = checkNotNull(provider) { "a live session has its provider" }
+            val camera = offered(resolved, binding)
+                ?: return CameraKResult.Failure(CameraKError.NoCamera(lensOf(selection)))
+            if (camera != boundCamera) {
+                val error = bind(camera, binding)
+                if (error != null) {
+                    return fail(live, error)
+                }
             }
         }
         val camera = _hardware.value.camera ?: return CameraKResult.Failure(
@@ -595,6 +603,22 @@ internal class AndroidCameraEngine(
         is CameraSelection.ByLens -> selectorResolver.resolveFacing(selection.lens, selection.deviceType)
         is CameraSelection.ById -> selectorResolver.resolveId(selection.id)
         is CameraSelection.Default -> selectorResolver.resolveFacing(CameraLens.BACK, selection.deviceType)
+    }
+
+    /**
+     * [resolved], or what stands in for it: an external camera the enumeration listed that CameraX no
+     * longer offers (unplugged since) is replaced by the back camera, and with no back camera either
+     * this is null, decided before anything unbinds.
+     */
+    private fun offered(resolved: ResolvedCamera, binding: CameraBinding): ResolvedCamera? {
+        if (resolved !is ResolvedCamera.External || binding.hasCamera(resolved)) return resolved
+        val back = ResolvedCamera.FacingDefault(CameraLens.BACK)
+        if (!binding.hasCamera(back)) {
+            CameraKLogger.w(TAG, "External camera ${resolved.cameraId} not offered by CameraX, and no back camera")
+            return null
+        }
+        CameraKLogger.w(TAG, "External camera ${resolved.cameraId} not offered by CameraX, using the back camera")
+        return back
     }
 
     private fun lensOf(selection: CameraSelection): CameraLens? = when (selection) {

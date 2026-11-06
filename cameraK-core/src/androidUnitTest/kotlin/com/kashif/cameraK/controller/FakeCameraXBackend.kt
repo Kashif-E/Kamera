@@ -397,6 +397,8 @@ internal class FakeCameraBinding : CameraBinding {
 
     override fun cameraIdOf(camera: Camera): String = cameras.last { it.camera === camera }.id
 
+    override fun hasCamera(camera: ResolvedCamera): Boolean = selects(camera)
+
     // CameraX 1.5.3 throws off the main thread (design §2.4), so a test fails where a device would.
     private fun checkMainThread(call: String) {
         check(Looper.myLooper() == Looper.getMainLooper()) { "$call must be called on the main thread" }

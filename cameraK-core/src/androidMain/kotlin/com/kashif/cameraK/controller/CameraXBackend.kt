@@ -11,6 +11,7 @@ import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraInfo
+import androidx.camera.core.CameraInfoUnavailableException
 import androidx.camera.core.DynamicRange
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -26,9 +27,12 @@ import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.lifecycle.LifecycleOwner
+import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoQuality
 import java.io.File
 import java.util.concurrent.Executor
+
+private const val TAG = "CameraK"
 
 /**
  * The slice of [ProcessCameraProvider] that [AndroidCameraEngine] binds through. The provider is shared
@@ -41,6 +45,9 @@ internal interface CameraBinding {
     fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, useCaseGroup: UseCaseGroup): Camera
 
     fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, vararg useCases: UseCase): Camera
+
+    /** Whether CameraX offers a camera that [camera]'s selector selects, so a bind of it can succeed. */
+    fun hasCamera(camera: ResolvedCamera): Boolean
 
     /** The camera id of [camera], one a bind returned. */
     fun cameraIdOf(camera: Camera): String
@@ -243,6 +250,14 @@ private class ProcessCameraBinding(private val provider: ProcessCameraProvider) 
 
     override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, vararg useCases: UseCase): Camera =
         provider.bindToLifecycle(owner, camera.toCameraSelector(), *useCases)
+
+    // A camera whose info cannot be read is left to the bind, which reports what CameraX refuses.
+    override fun hasCamera(camera: ResolvedCamera): Boolean = try {
+        provider.hasCamera(camera.toCameraSelector())
+    } catch (e: CameraInfoUnavailableException) {
+        CameraKLogger.e(TAG, "Reading which cameras CameraX offers failed", e)
+        true
+    }
 
     @OptIn(ExperimentalCamera2Interop::class)
     override fun cameraIdOf(camera: Camera): String = Camera2CameraInfo.from(camera.cameraInfo).cameraId
