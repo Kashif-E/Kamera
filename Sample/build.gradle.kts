@@ -121,8 +121,9 @@ android {
 }
 
 // The libraries ship only bytedeco's Java bindings, so the Sample adds the natives for the machine
-// building it: JavaCPP's JNI glue, FFmpeg (camera and recording), Tesseract and Leptonica (OCR), and
-// on Windows videoInput (camera capture).
+// building it: JavaCPP's JNI glue, FFmpeg (camera capture, through dshow on Windows, and recording),
+// Tesseract and Leptonica (OCR), and on Windows videoInput, the alternative Windows capture backend
+// the desktop engine keeps behind its seam.
 dependencies {
     val javacppPlatform = rootProject.extra["javacppPlatform"] as String
     val desktopRuntimeOnly = kotlin.sourceSets.getByName("desktopMain").runtimeOnlyConfigurationName
