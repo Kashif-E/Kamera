@@ -73,18 +73,58 @@ class MkdocsNavTest {
               social:
                 - icon: fontawesome/brands/github
                   link: https://github.com/kashif-e/Kamera
-            """.trimIndent()
+        """.trimIndent()
     }
 }
 
 /** What mkdocs.yml's `nav` and `not_in_nav` say about the pages under docs/. */
 internal object MkdocsNav {
     /** The pages the `nav` names, by path from docs/, in order; links to other sites are left out. */
-    fun pages(mkdocs: String): List<String> = emptyList()
+    fun pages(mkdocs: String): List<String> = block(mkdocs, "nav").mapNotNull { line ->
+        NAV_ENTRY.matchEntire(line)?.groupValues?.get(1)?.trim('"', '\'')
+    }.filterNot { "://" in it }
 
     /**
      * Each nav entry with no page among [pages] (by path from docs/), and each page that is in
      * neither the nav nor `not_in_nav`.
      */
-    fun findings(mkdocs: String, pages: Set<String>): List<String> = emptyList()
+    fun findings(mkdocs: String, pages: Set<String>): List<String> {
+        val nav = pages(mkdocs)
+        val excluded = block(mkdocs, "not_in_nav").map(String::trim).filter { it.isNotEmpty() && !it.startsWith("#") }
+        val missing = nav.filterNot { it in pages }.map { "mkdocs.yml's nav names $it, which is not under docs/" }
+        val unlisted = pages.sorted()
+            .filterNot { page -> page in nav || excluded.any { matches(it, page) } }
+            .map { "docs/$it is in neither mkdocs.yml's nav nor its not_in_nav" }
+        return missing + unlisted
+    }
+
+    /** The indented lines under the top-level [key], up to the next top-level key. */
+    private fun block(mkdocs: String, key: String): List<String> {
+        val lines = mkdocs.lines()
+        val from = lines.indexOfFirst { Regex("""^${Regex.escape(key)}:.*""").matches(it) }
+        if (from < 0) return emptyList()
+        return lines.drop(from + 1).takeWhile { it.isBlank() || it.first().isWhitespace() || it.startsWith("-") }
+    }
+
+    /**
+     * Whether the `not_in_nav` [pattern] matches [page], as mkdocs reads it (gitignore style): `*`
+     * within one directory, `**` across them, a trailing `/` for everything below, and a leading `/`
+     * anchoring at docs/, without which a pattern with no `/` matches a file name at any depth.
+     */
+    private fun matches(pattern: String, page: String): Boolean {
+        val anchored = pattern.startsWith("/")
+        val path = pattern.removePrefix("/").let { if (it.endsWith("/")) "$it**" else it }
+        val regex = Regex(
+            path.split("**").joinToString(".*") { part ->
+                part.split("*").joinToString("[^/]*") { if (it.isEmpty()) "" else Regex.escape(it) }
+            },
+        )
+        return regex.matches(page) || (!anchored && '/' !in path && regex.matches(page.substringAfterLast('/')))
+    }
+
+    /**
+     * One nav line: `- Title: page.md` or a bare `- page.md`. A section title (`- Guides:`) ends in
+     * its colon and has no value.
+     */
+    private val NAV_ENTRY = Regex("""^\s*-\s+(?:[^:]+:\s+)?(\S*[^\s:])\s*$""")
 }
