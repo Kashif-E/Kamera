@@ -25,12 +25,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCREENSHOT_MODULE = "cameraKScreenshotTests"
+# The sample target runs the Sample app's own tests; they count as that target, not as desktop.
+SAMPLE_MODULE = "Sample"
 TASK_TARGETS = {
     "desktopTest": "desktop",
     "testDebugUnitTest": "android",
     "iosSimulatorArm64Test": "ios",
 }
-TEST_TARGETS = ("desktop", "android", "ios", "screenshots")
+TEST_TARGETS = ("desktop", "android", "ios", "screenshots", "sample")
 # The lint checks are every task in the build's "camerak lint" group. verifyAll writes their paths
 # here once its task graph is known, so neither this script nor the build lists them by name.
 LINT_CHECKS_FILE = ROOT / "build" / "verify" / "lint-checks.txt"
@@ -92,6 +94,8 @@ def first_line(text: str | None) -> str:
 def target_for(module: str, task_dir: str, classname: str) -> str | None:
     if module == SCREENSHOT_MODULE:
         return "screenshots"
+    if module == SAMPLE_MODULE:
+        return "sample" if task_dir in TASK_TARGETS else None
     target = TASK_TARGETS.get(task_dir)
     if target == "desktop" and ".screenshots." in f".{classname}.":
         return "screenshots"
@@ -277,7 +281,11 @@ def main() -> int:
     gradle_exit = run.get("gradle_exit")
     record = bool(run.get("record"))
 
-    scanned = modules + ([SCREENSHOT_MODULE] if "cameraK" in modules else [])
+    scanned = (
+        modules
+        + ([SCREENSHOT_MODULE] if "cameraK" in modules else [])
+        + ([SAMPLE_MODULE] if "sample" in targets else [])
+    )
     report = Report()
     parse_results(scanned, start, report)
 
@@ -289,6 +297,8 @@ def main() -> int:
                 expected.append((module, target))
     if "screenshots" in targets and "cameraK" in modules:
         expected += [("cameraK", "screenshots"), (SCREENSHOT_MODULE, "screenshots")]
+    if "sample" in targets:
+        expected.append((SAMPLE_MODULE, "sample"))
     for key in expected:
         report.cell(*key)
 

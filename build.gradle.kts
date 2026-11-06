@@ -2012,6 +2012,8 @@ fun verifyTaskPaths(
     if ("sample" in targets) {
         paths +=
             listOf(
+                // The Sample's commonTest and desktopTest; the summary counts them under the sample target.
+                ":Sample:desktopTest",
                 ":Sample:compileKotlinDesktop",
                 ":Sample:assembleDebug",
                 ":Sample:compileKotlinIosSimulatorArm64",
