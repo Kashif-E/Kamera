@@ -44,8 +44,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      reads visibility, so the declarations a test cannot check are checked here.
                      No two packages, and no resource directory and a package, differ only in
                      letter case, which a case-insensitive disk would merge into one directory.
-                     Each published module's Android namespace is one of its main sources'
-                     packages or a parent of one, and no main source imports the JDK's or the
+                     Each published module's Android namespace is its own and one of its main
+                     sources' packages or a parent of one, and no main source imports the JDK's or the
                      standard library's atomics: atomics are AtomicFU's. Every CameraKLogger call
                      in a published module's main sources passes that artifact's one tag.
   release-gate       The release gate's device harness is built (design §12.4 B1): settings include
@@ -1124,9 +1124,17 @@ ANDROID_NAMESPACE = re.compile(r'^\s*namespace\s*=\s*"([^"]+)"', re.MULTILINE)
 
 def android_namespace_problems(scripts: Dict[str, str], packages: Dict[str, List[str]]) -> List[str]:
     """android_namespace_matches_package: each module's Android namespace, which names its generated R
-    class and its manifest's package, is one of the packages its main sources declare or a parent of one.
+    class and its manifest's package, is one of the packages its main sources declare or a parent of one,
+    and no two modules share one (an app that merges both would get two R classes of one name).
     [scripts] maps a module to its build script, [packages] to the packages of its main sources."""
     problems = []
+    owners: Dict[str, List[str]] = {}
+    for module, script in sorted(scripts.items()):
+        for namespace in ANDROID_NAMESPACE.findall(script):
+            owners.setdefault(namespace, []).append(module)
+    for namespace, modules in sorted(owners.items()):
+        if len(modules) > 1:
+            problems.append(f"{', '.join(modules)} share the Android namespace {namespace}; each module needs its own")
     for module, script in sorted(scripts.items()):
         declared = ANDROID_NAMESPACE.findall(script)
         if len(declared) != 1:
