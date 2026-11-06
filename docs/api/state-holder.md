@@ -232,14 +232,13 @@ LaunchedEffect(Unit) {
     stateHolder.events.collect { event ->
         when (event) {
             is CameraKEvent.ImageCaptured -> {
-                when (val result = event.result) {
-                    is ImageCaptureResult.SuccessWithFile -> {
-                        println("Saved: ${result.filePath}")
-                    }
-                    is ImageCaptureResult.Error -> {
-                        println("Error: ${result.exception.message}")
-                    }
+                val result = event.result
+                if (result is ImageCaptureResult.SuccessWithFile) {
+                    println("Saved: ${result.filePath}")
                 }
+            }
+            is CameraKEvent.CaptureFailed -> {
+                println("Error: ${event.exception.message}")
             }
         }
     }
