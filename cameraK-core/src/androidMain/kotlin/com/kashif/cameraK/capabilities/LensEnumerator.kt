@@ -52,7 +52,7 @@ internal object LensEnumerator {
         val cameraIds = try {
             reader.cameraIds()
         } catch (e: Exception) {
-            CameraKLogger.w("CameraK", "Lens enumeration failed to list cameras: ${e.message}")
+            CameraKLogger.w("CameraK", "Lens enumeration failed to list the cameras; reporting none", e)
             emptyArray()
         }
 
@@ -160,7 +160,7 @@ internal object LensEnumerator {
         val characteristics = try {
             reader.characteristics(id)
         } catch (e: Exception) {
-            CameraKLogger.w("CameraK", "Lens enumeration failed on camera $id: ${e.message}")
+            CameraKLogger.w("CameraK", "Lens enumeration failed to read camera $id; leaving it out", e)
             null
         } ?: return null
 
@@ -183,6 +183,11 @@ internal object LensEnumerator {
         val physicalIds = try {
             reader.physicalCameraIds(characteristics)
         } catch (e: Exception) {
+            CameraKLogger.w(
+                "CameraK",
+                "Lens enumeration failed to read camera $id's physical lenses; listing it as one lens",
+                e,
+            )
             emptySet()
         }
 
