@@ -2,6 +2,7 @@ package com.kashif.cameraK.docs
 
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -38,7 +39,27 @@ class DocsApiTest {
         assertTrue(missing.isEmpty(), "${DocsSources.README} does not install $missing")
     }
 
+    /**
+     * The README and the installation guide install CameraK with the same Gradle block, compared as
+     * text. Neither includes the other: GitHub renders the README and runs no include.
+     */
+    @Test
+    fun readmeAndGuideShareOneInstallSnippet() {
+        val readme = DocsSources.firstFenceAfter(DocsSources.README, README_INSTALL_HEADING)
+        val guide = DocsSources.firstFenceAfter(DocsSources.INSTALLATION_GUIDE, GUIDE_INSTALL_HEADING)
+        fun normalized(block: String) = block.lines().map(String::trimEnd).joinToString("\n").trim()
+        assertEquals(
+            normalized(readme),
+            normalized(guide),
+            "the install block under '$README_INSTALL_HEADING' in ${DocsSources.README} and under " +
+                "'$GUIDE_INSTALL_HEADING' in ${DocsSources.INSTALLATION_GUIDE} differ",
+        )
+    }
+
     private companion object {
+        const val README_INSTALL_HEADING = "## Installation"
+        const val GUIDE_INSTALL_HEADING = "## Step 1: Add Dependencies"
+
         const val MIGRATION_GUIDE = "docs/migration/2.0.md"
 
         val COORDINATE = Regex("""io\.github\.kashif-mehmood-km:([A-Za-z0-9_.-]+)""")
