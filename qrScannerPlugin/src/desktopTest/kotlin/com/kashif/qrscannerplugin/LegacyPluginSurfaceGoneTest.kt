@@ -53,7 +53,12 @@ class LegacyPluginSurfaceGoneTest {
 
     private companion object {
         val REMOVED_MEMBERS = setOf(
-            "getQrCodeFlow startScanning stopScanning attachToStateHolder startScanner stopScanner",
+            "getQrCodeFlow",
+            "startScanning",
+            "stopScanning",
+            "attachToStateHolder",
+            "startScanner",
+            "stopScanner",
         )
 
         val REMOVED_PARAMETER_TYPES = setOf(

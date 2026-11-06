@@ -53,7 +53,10 @@ class LegacyPluginSurfaceGoneTest {
 
     private companion object {
         val REMOVED_MEMBERS = setOf(
-            "getAnalyzerFlow startAnalyzer stopAnalyzer attachToStateHolder",
+            "getAnalyzerFlow",
+            "startAnalyzer",
+            "stopAnalyzer",
+            "attachToStateHolder",
         )
 
         val REMOVED_PARAMETER_TYPES = setOf(

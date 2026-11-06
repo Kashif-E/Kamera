@@ -48,7 +48,14 @@ class LegacyPluginSurfaceGoneTest {
 
     private companion object {
         val REMOVED_MEMBERS = setOf(
-            "getTextFlow getOcrFlow textFlow ocrFlow extractTextFromBitmap startRecognition stopRecognition attachToStateHolder",
+            "getTextFlow",
+            "getOcrFlow",
+            "textFlow",
+            "ocrFlow",
+            "extractTextFromBitmap",
+            "startRecognition",
+            "stopRecognition",
+            "attachToStateHolder",
         )
 
         val REMOVED_PARAMETER_TYPES = setOf(
