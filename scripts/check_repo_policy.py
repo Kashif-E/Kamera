@@ -32,6 +32,11 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      apply third-party plugins only through [plugins] aliases (no buildscript
                      classpath, no versionless id("...")), and libraries declare Compose by explicit
                      coordinates rather than the compose.* accessors or the compose() function.
+                     Every published build file takes its shared setup from build-logic's convention
+                     plugins: a library applies camerak.kmp-library and camerak.publish, the BOM
+                     camerak.publish and each relocation camerak.relocation, and none of them sets
+                     jvmToolchain, compileSdk, minSdk or a Kotlin target, or applies the publish
+                     plugin itself.
   native-settings    A module with no native code (no cpp/jni sources, CMake or ndk-build file, or
                      .so) sets no NDK version and no jniLibs packaging option, which would have no
                      effect on its artifact and would make contributors install an NDK.
@@ -930,6 +935,57 @@ def catalog_problems(catalog_text: str, scripts: Dict[str, str]) -> List[str]:
     return problems
 
 
+# module_build_files_use_convention_plugins: the library setup lives once, in build-logic's convention
+# plugins (ENGINEERING-BAR.md "Build configuration"), so no published build file repeats it.
+LIBRARY_CONVENTIONS = ("camerak.kmp-library", "camerak.publish")
+BOM_MODULE = "camerak-bom"
+BOM_CONVENTIONS = ("camerak.publish",)
+RELOCATION_CONVENTIONS = ("camerak.relocation",)
+RELOCATION_SCRIPT = re.compile(r"^relocations/[A-Za-z0-9_-]+/build\.gradle\.kts$")
+PLUGIN_ID = re.compile(r'\bid\(\s*"([A-Za-z0-9_.-]+)"\s*\)')
+KOTLIN_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
+CONVENTION_SETTINGS = [
+    ("jvmToolchain", re.compile(r"\bjvmToolchain\s*\(")),
+    ("compileSdk", re.compile(r"\bcompileSdk(?:Version)?\b\s*[=(]")),
+    ("minSdk", re.compile(r"\bminSdk(?:Version)?\b\s*[=(]")),
+    (
+        "a Kotlin target",
+        re.compile(
+            r"(?<![\w.])(?:androidTarget|jvm|js|wasmJs|wasmWasi|ios[A-Z]\w*|macos[A-Z]\w*|tvos[A-Z]\w*"
+            r"|watchos[A-Z]\w*|linux[A-Z]\w*|mingw[A-Z]\w*|androidNative[A-Z]\w*)\s*[({]"
+        ),
+    ),
+    (
+        "the publish plugin",
+        re.compile(r'\balias\(libs\.plugins\.vanniktech\.publish\)|\bid\(\s*"com\.vanniktech\.maven\.publish"\s*\)'),
+    ),
+]
+
+
+def convention_plugin_problems(scripts: Dict[str, str], libraries: List[str] = LIBRARY_MODULES) -> List[str]:
+    """module_build_files_use_convention_plugins: [scripts] maps each tracked build file to its text. A
+    published library's applies camerak.kmp-library and camerak.publish, the BOM's camerak.publish and a
+    relocation project's camerak.relocation; none sets what those plugins set."""
+    expected: Dict[str, tuple] = {f"{module}/build.gradle.kts": LIBRARY_CONVENTIONS for module in libraries}
+    expected[f"{BOM_MODULE}/build.gradle.kts"] = BOM_CONVENTIONS
+    expected.update({name: RELOCATION_CONVENTIONS for name in scripts if RELOCATION_SCRIPT.match(name)})
+    problems = []
+    for name, conventions in sorted(expected.items()):
+        if name not in scripts:
+            problems.append(f"{name} is missing; a published module needs a build file")
+            continue
+        code = KOTLIN_COMMENT.sub("", scripts[name])
+        applied = set(PLUGIN_ID.findall(code))
+        for plugin in conventions:
+            if plugin not in applied:
+                problems.append(f'{name} does not apply id("{plugin}")')
+        for what, setting in CONVENTION_SETTINGS:
+            for match in setting.finditer(code):
+                line = code.count("\n", 0, match.start()) + 1
+                problems.append(f"{name}:{line} sets {what} itself; the convention plugins own it")
+    return problems
+
+
 def check_catalog() -> List[str]:
     fixture_catalog = (
         '[versions]\na = "1"\nb = "1"\ndead = "2"\n[libraries]\n'
@@ -961,6 +1017,45 @@ def check_catalog() -> List[str]:
             "catalog_policy_scans_every_library_build_file: the unlisted-module rule finds "
             f"{unlisted} in a fixture that includes cameraK-core and cameraK-testing unlisted"
         )
+    conventional = (
+        "plugins {\n    id(\"camerak.kmp-library\")\n    id(\"camerak.publish\")\n}\n\n"
+        "kotlin {\n    sourceSets {\n        val jvmMain by getting\n    }\n    applyDefaultHierarchyTemplate {\n"
+        "        common { group(\"jvm\") { withAndroidTarget()\n withJvm() } }\n    }\n}\n"
+        "// jvmToolchain(17) and the targets come from camerak.kmp-library\n"
+        "android {\n    namespace = \"com.kashif.a\"\n}\n"
+    )
+    repeated = (
+        "plugins {\n    alias(libs.plugins.multiplatform)\n    alias(libs.plugins.vanniktech.publish)\n}\n"
+        "kotlin {\n    jvmToolchain(17)\n    androidTarget {\n    }\n    jvm(\"desktop\")\n    iosArm64()\n"
+        "    iosSimulatorArm64()\n}\n"
+        "android {\n    compileSdk =\n        36\n    defaultConfig {\n        minSdk = 23\n    }\n}\n"
+    )
+    fixture = {
+        "a/build.gradle.kts": conventional,
+        "b/build.gradle.kts": repeated,
+        "camerak-bom/build.gradle.kts": 'plugins {\n    `java-platform`\n    id("com.vanniktech.maven.publish")\n}\n',
+        "relocations/old_a/build.gradle.kts": 'plugins {\n    id("camerak.relocation")\n}\n',
+        "relocations/old_b/build.gradle.kts": "plugins {\n    `java-platform`\n}\n",
+    }
+    found = convention_plugin_problems(fixture, ["a", "b", "c"])
+    wanted = [
+        'b/build.gradle.kts does not apply id("camerak.kmp-library")',
+        'b/build.gradle.kts does not apply id("camerak.publish")',
+        "b/build.gradle.kts:6 sets jvmToolchain itself; the convention plugins own it",
+        "b/build.gradle.kts:14 sets compileSdk itself; the convention plugins own it",
+        "b/build.gradle.kts:17 sets minSdk itself; the convention plugins own it",
+        "b/build.gradle.kts:7 sets a Kotlin target itself; the convention plugins own it",
+        "b/build.gradle.kts:9 sets a Kotlin target itself; the convention plugins own it",
+        "b/build.gradle.kts:10 sets a Kotlin target itself; the convention plugins own it",
+        "b/build.gradle.kts:11 sets a Kotlin target itself; the convention plugins own it",
+        "b/build.gradle.kts:3 sets the publish plugin itself; the convention plugins own it",
+        'c/build.gradle.kts is missing; a published module needs a build file',
+        'camerak-bom/build.gradle.kts does not apply id("camerak.publish")',
+        "camerak-bom/build.gradle.kts:3 sets the publish plugin itself; the convention plugins own it",
+        'relocations/old_b/build.gradle.kts does not apply id("camerak.relocation")',
+    ]
+    if sorted(found) != sorted(wanted):
+        raise CheckError(f"module_build_files_use_convention_plugins misjudges its fixture: {found}")
     scripts = {
         path.relative_to(ROOT).as_posix(): path.read_text()
         for path in tracked("*.gradle.kts")
@@ -970,7 +1065,11 @@ def check_catalog() -> List[str]:
         "so its build file is never checked for compose.* accessors"
         for module in unlisted_library_modules((ROOT / "settings.gradle.kts").read_text(), scripts)
     ]
-    return unlisted + catalog_problems((ROOT / CATALOG).read_text(), scripts)
+    return (
+        unlisted
+        + catalog_problems((ROOT / CATALOG).read_text(), scripts)
+        + convention_plugin_problems(scripts)
+    )
 
 
 # ─── native-settings ────────────────────────────────────────────────────────────────────────────
