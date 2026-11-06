@@ -1,0 +1,5 @@
+/* Make the logo circular */
+.md-header__button.md-logo img,
+.md-logo img {
+    border-radius: 50%;
+}

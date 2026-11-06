@@ -1,0 +1,1949 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kotlin Multiplatform Camera SDK">
+      
+      
+        <meta name="author" content="Kashif-E">
+      
+      
+        <link rel="canonical" href="https://kashif-e.github.io/Kamera/superpowers/plans/2026-07-16-lens-capabilities/">
+      
+      
+      
+      
+      <link rel="icon" href="../../../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.5.3, mkdocs-material-9.5.18">
+    
+    
+      
+        <title>Lens Capabilities + Real Ultra-Wide/Telephoto Selection Implementation Plan - Kamera</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.66ac8b77.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#lens-capabilities-real-ultra-widetelephoto-selection-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Kamera" class="md-header__button md-logo" aria-label="Kamera" data-md-component="logo">
+      
+  <img src="../../../assets/cameraklogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Kamera
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Lens Capabilities + Real Ultra-Wide/Telephoto Selection Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/kashif-e/Kamera" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kashif-e/Kamera
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Kamera" class="md-nav__button md-logo" aria-label="Kamera" data-md-component="logo">
+      
+  <img src="../../../assets/cameraklogo.png" alt="logo">
+
+    </a>
+    Kamera
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/kashif-e/Kamera" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    kashif-e/Kamera
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting Started
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Installation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quick-start/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Quick Start
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Guides
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Guides
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/camera-capture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Camera Capture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/flash-and-torch/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Flash and Torch
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/zoom-control/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Zoom Control
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/camera-switching/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Camera Switching
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/video-recording/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Video Recording
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/plugins/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugins
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    API Reference
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/state-holder/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraKStateHolder
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/controller/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraController
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/camera-k-screen/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CameraKScreen
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Examples
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Examples
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/android/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Android
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../troubleshooting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../license/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    License
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#global-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      Global Constraints
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Global Constraints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-1-common-capabilities-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      Task 1: Common capabilities model
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-2-lens-classification-math-commonmain-internal" class="md-nav__link">
+    <span class="md-ellipsis">
+      Task 2: Lens classification math (commonMain, internal)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-3-expect-declaration-stateholder-delegation-desktop-placeholder-actuals" class="md-nav__link">
+    <span class="md-ellipsis">
+      Task 3: expect declaration, StateHolder delegation, desktop + placeholder actuals
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-4-android-lens-enumerator-real-capabilities-actual" class="md-nav__link">
+    <span class="md-ellipsis">
+      Task 4: Android lens enumerator + real capabilities actual
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-5-android-selector-rewrite-id-based-selection-physical-pinning" class="md-nav__link">
+    <span class="md-ellipsis">
+      Task 5: Android selector rewrite — id-based selection + physical pinning
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-6-ios-extract-discovery-helper-real-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      Task 6: iOS — extract discovery helper + real capabilities
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-7-docs-full-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      Task 7: Docs + full gate
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="lens-capabilities-real-ultra-widetelephoto-selection-implementation-plan">Lens Capabilities + Real Ultra-Wide/Telephoto Selection Implementation Plan<a class="headerlink" href="#lens-capabilities-real-ultra-widetelephoto-selection-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Public <code>getCameraCapabilities()</code> on all platforms, and Android <code>setPreferredCameraDeviceType(ULTRA_WIDE/TELEPHOTO)</code> that actually binds those lenses — including physical sub-lenses of logical multi-cameras.</p>
+<p><strong>Architecture:</strong> Pure classification math (35mm-equivalent focal length) lives in commonMain (unit-testable via <code>desktopTest</code>). Android enumerates cameras via <code>CameraManager</code> including <code>physicalCameraIds</code> expansion, and binds physical sub-lenses via <code>CameraSelector.setPhysicalCameraId</code> + <code>Camera2Interop.Extender.setPhysicalCameraId</code> on every use-case builder (both are required together — verified on real hardware). iOS wraps its existing <code>AVCaptureDeviceDiscoverySession</code> pattern into <code>LensInfo</code>s. Spec: <code>docs/superpowers/specs/2026-07-16-lens-capabilities-design.md</code>.</p>
+<p><strong>Tech Stack:</strong> Kotlin Multiplatform, CameraX 1.5.1 (already the project version — do not bump), AVFoundation, kotlin.test.</p>
+<h2 id="global-constraints">Global Constraints<a class="headerlink" href="#global-constraints" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Package: new public API in <code>com.kashif.cameraK.capabilities</code>.</li>
+<li>Android minSdk 21: <code>physicalCameraIds</code> (API 28) and <code>CONTROL_ZOOM_RATIO_RANGE</code> (API 30) MUST be behind <code>Build.VERSION.SDK_INT</code> checks — <code>NoSuchMethodError</code>/<code>NoSuchFieldError</code> are Errors, not Exceptions; try/catch does not save you.</li>
+<li>No breaking API changes: <code>setPreferredCameraDeviceType</code> signature unchanged.</li>
+<li>Formatting: run <code>./gradlew spotlessApply</code> before every commit.</li>
+<li>Test loop: <code>./gradlew cameraK:desktopTest</code> (fast); full gate is <code>./gradlew check</code>.</li>
+<li>Logger: <code>com.kashif.cameraK.utils.CameraKLogger</code> (object; <code>CameraKLogger.w("CameraK", "msg")</code>).</li>
+<li>Every step's commit messages end with <code>Co-Authored-By: Claude Fable 5 &lt;noreply@anthropic.com&gt;</code>.</li>
+</ul>
+<hr />
+<h3 id="task-1-common-capabilities-model">Task 1: Common capabilities model<a class="headerlink" href="#task-1-common-capabilities-model" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>cameraK/src/commonMain/kotlin/com/kashif/cameraK/capabilities/LensInfo.kt</code>
+- Test: <code>cameraK/src/commonTest/kotlin/com/kashif/cameraK/capabilities/CameraCapabilitiesTest.kt</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: existing <code>CameraDeviceType</code>, <code>CameraLens</code> enums.
+- Produces: <code>LensInfo(id: String, deviceType: CameraDeviceType, lens: CameraLens, minZoom: Float, maxZoom: Float, hasFlash: Boolean, isLogical: Boolean)</code>; <code>CameraCapabilities(allLenses: List&lt;LensInfo&gt;)</code> with <code>lenses(lens: CameraLens): List&lt;LensInfo&gt;</code>, <code>availableDeviceTypes(lens: CameraLens): Set&lt;CameraDeviceType&gt;</code>, and <code>CameraCapabilities.EMPTY</code>. All later tasks use these exact names.</p>
+<ul>
+<li>[ ] <strong>Step 1: Write the failing test</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">package</span><span class="w"> </span><span class="nn">com.kashif.cameraK.capabilities</span>
+
+<span class="k">import</span><span class="w"> </span><span class="nn">com.kashif.cameraK.enums.CameraDeviceType</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">com.kashif.cameraK.enums.CameraLens</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">kotlin.test.Test</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">kotlin.test.assertEquals</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">kotlin.test.assertTrue</span>
+
+<span class="kd">class</span><span class="w"> </span><span class="nc">CameraCapabilitiesTest</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">lens</span><span class="p">(</span>
+<span class="w">        </span><span class="n">id</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">,</span>
+<span class="w">        </span><span class="n">type</span><span class="p">:</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">,</span>
+<span class="w">        </span><span class="n">facing</span><span class="p">:</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LensInfo</span><span class="p">(</span>
+<span class="w">        </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">id</span><span class="p">,</span>
+<span class="w">        </span><span class="n">deviceType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">type</span><span class="p">,</span>
+<span class="w">        </span><span class="n">lens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">facing</span><span class="p">,</span>
+<span class="w">        </span><span class="n">minZoom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">1f</span><span class="p">,</span>
+<span class="w">        </span><span class="n">maxZoom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">4f</span><span class="p">,</span>
+<span class="w">        </span><span class="n">hasFlash</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">        </span><span class="n">isLogical</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span>
+
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">val</span><span class="w"> </span><span class="nv">caps</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="p">(</span>
+<span class="w">        </span><span class="n">listOf</span><span class="p">(</span>
+<span class="w">            </span><span class="n">lens</span><span class="p">(</span><span class="s">"0"</span><span class="p">,</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span><span class="p">,</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span><span class="p">),</span>
+<span class="w">            </span><span class="n">lens</span><span class="p">(</span><span class="s">"2"</span><span class="p">,</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">ULTRA_WIDE</span><span class="p">,</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span><span class="p">),</span>
+<span class="w">            </span><span class="n">lens</span><span class="p">(</span><span class="s">"1"</span><span class="p">,</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span><span class="p">,</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">.</span><span class="na">FRONT</span><span class="p">),</span>
+<span class="w">        </span><span class="p">),</span>
+<span class="w">    </span><span class="p">)</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">lenses_filtersByFacing</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">listOf</span><span class="p">(</span><span class="s">"0"</span><span class="p">,</span><span class="w"> </span><span class="s">"2"</span><span class="p">),</span><span class="w"> </span><span class="n">caps</span><span class="p">.</span><span class="na">lenses</span><span class="p">(</span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span><span class="p">).</span><span class="na">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">id</span><span class="w"> </span><span class="p">})</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">listOf</span><span class="p">(</span><span class="s">"1"</span><span class="p">),</span><span class="w"> </span><span class="n">caps</span><span class="p">.</span><span class="na">lenses</span><span class="p">(</span><span class="n">CameraLens</span><span class="p">.</span><span class="na">FRONT</span><span class="p">).</span><span class="na">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">id</span><span class="w"> </span><span class="p">})</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">availableDeviceTypes_isSetPerFacing</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span>
+<span class="w">            </span><span class="n">setOf</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span><span class="p">,</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">ULTRA_WIDE</span><span class="p">),</span>
+<span class="w">            </span><span class="n">caps</span><span class="p">.</span><span class="na">availableDeviceTypes</span><span class="p">(</span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span><span class="p">),</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">setOf</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span><span class="p">),</span><span class="w"> </span><span class="n">caps</span><span class="p">.</span><span class="na">availableDeviceTypes</span><span class="p">(</span><span class="n">CameraLens</span><span class="p">.</span><span class="na">FRONT</span><span class="p">))</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">empty_hasNoLenses</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">assertTrue</span><span class="p">(</span><span class="n">CameraCapabilities</span><span class="p">.</span><span class="na">EMPTY</span><span class="p">.</span><span class="na">allLenses</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span>
+<span class="w">        </span><span class="n">assertTrue</span><span class="p">(</span><span class="n">CameraCapabilities</span><span class="p">.</span><span class="na">EMPTY</span><span class="p">.</span><span class="na">lenses</span><span class="p">(</span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span><span class="p">).</span><span class="na">isEmpty</span><span class="p">())</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Run test to verify it fails</strong></li>
+</ul>
+<p>Run: <code>./gradlew cameraK:desktopTest --tests "com.kashif.cameraK.capabilities.CameraCapabilitiesTest"</code>
+Expected: compilation FAILURE — <code>LensInfo</code>/<code>CameraCapabilities</code> unresolved.</p>
+<ul>
+<li>[ ] <strong>Step 3: Write the implementation</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">package</span><span class="w"> </span><span class="nn">com.kashif.cameraK.capabilities</span>
+
+<span class="k">import</span><span class="w"> </span><span class="nn">androidx.compose.runtime.Immutable</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">com.kashif.cameraK.enums.CameraDeviceType</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">com.kashif.cameraK.enums.CameraLens</span>
+
+<span class="cm">/**</span>
+<span class="cm"> * Describes one physical (or logical) camera lens on the device.</span>
+<span class="cm"> *</span>
+<span class="cm"> * @property id Platform camera id (Camera2 id on Android, AVCaptureDevice.uniqueID on iOS, "" on Desktop).</span>
+<span class="cm"> * @property deviceType Classified lens type. Unclassifiable lenses report [CameraDeviceType.DEFAULT].</span>
+<span class="cm"> * @property lens Which side of the device the lens faces.</span>
+<span class="cm"> * @property minZoom Minimum zoom ratio (can be &lt; 1.0 on logical multi-cameras that reach ultra-wide via zoom-out).</span>
+<span class="cm"> * @property maxZoom Maximum zoom ratio.</span>
+<span class="cm"> * @property hasFlash Whether this lens has a flash unit.</span>
+<span class="cm"> * @property isLogical Android logical multi-camera (merges several physical lenses behind one id); false elsewhere.</span>
+<span class="cm"> */</span>
+<span class="nd">@Immutable</span>
+<span class="kd">data</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nc">LensInfo</span><span class="p">(</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">id</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">deviceType</span><span class="p">:</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">lens</span><span class="p">:</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">minZoom</span><span class="p">:</span><span class="w"> </span><span class="kt">Float</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">maxZoom</span><span class="p">:</span><span class="w"> </span><span class="kt">Float</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">hasFlash</span><span class="p">:</span><span class="w"> </span><span class="kt">Boolean</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">isLogical</span><span class="p">:</span><span class="w"> </span><span class="kt">Boolean</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="cm">/**</span>
+<span class="cm"> * Snapshot of the device's camera hardware. Obtain via `CameraController.getCameraCapabilities()`</span>
+<span class="cm"> * or `CameraKStateHolder.getCameraCapabilities()`.</span>
+<span class="cm"> */</span>
+<span class="nd">@Immutable</span>
+<span class="kd">class</span><span class="w"> </span><span class="nc">CameraCapabilities</span><span class="p">(</span><span class="kd">val</span><span class="w"> </span><span class="nv">allLenses</span><span class="p">:</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">LensInfo</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="cm">/** Lenses facing [lens], in enumeration order. */</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">lenses</span><span class="p">(</span><span class="n">lens</span><span class="p">:</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">):</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">LensInfo</span><span class="o">&gt;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">allLenses</span><span class="p">.</span><span class="na">filter</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">lens</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">lens</span><span class="w"> </span><span class="p">}</span>
+
+<span class="w">    </span><span class="cm">/** Device types selectable via `setPreferredCameraDeviceType` for [lens]. */</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">availableDeviceTypes</span><span class="p">(</span><span class="n">lens</span><span class="p">:</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">):</span><span class="w"> </span><span class="n">Set</span><span class="o">&lt;</span><span class="n">CameraDeviceType</span><span class="o">&gt;</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">lenses</span><span class="p">(</span><span class="n">lens</span><span class="p">).</span><span class="na">mapTo</span><span class="p">(</span><span class="n">mutableSetOf</span><span class="p">())</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">deviceType</span><span class="w"> </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kd">companion</span><span class="w"> </span><span class="kd">object</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">EMPTY</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="p">(</span><span class="n">emptyList</span><span class="p">())</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 4: Run test to verify it passes</strong></li>
+</ul>
+<p>Run: <code>./gradlew cameraK:desktopTest --tests "com.kashif.cameraK.capabilities.CameraCapabilitiesTest"</code>
+Expected: BUILD SUCCESSFUL, 3 tests pass.</p>
+<ul>
+<li>[ ] <strong>Step 5: Format and commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code>./gradlew<span class="w"> </span>spotlessApply
+git<span class="w"> </span>add<span class="w"> </span>cameraK/src/commonMain/kotlin/com/kashif/cameraK/capabilities/LensInfo.kt<span class="w"> </span>cameraK/src/commonTest/kotlin/com/kashif/cameraK/capabilities/CameraCapabilitiesTest.kt
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"feat: add LensInfo + CameraCapabilities model</span>
+
+<span class="s2">Co-Authored-By: Claude Fable 5 &lt;noreply@anthropic.com&gt;"</span>
+</code></pre></div>
+<hr />
+<h3 id="task-2-lens-classification-math-commonmain-internal">Task 2: Lens classification math (commonMain, internal)<a class="headerlink" href="#task-2-lens-classification-math-commonmain-internal" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>cameraK/src/commonMain/kotlin/com/kashif/cameraK/capabilities/LensClassification.kt</code>
+- Test: <code>cameraK/src/commonTest/kotlin/com/kashif/cameraK/capabilities/LensClassificationTest.kt</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>CameraDeviceType</code> (Task 1's file only for package co-location).
+- Produces (internal, used by Task 4's Android enumerator):
+  - <code>internal class RawLensFocalInfo(val id: String, val focalLengthsMm: List&lt;Float&gt;, val physicalSizeWidthMm: Float?, val isLogical: Boolean)</code>
+  - <code>internal fun equivalentFocalLengthMm(focalLengthMm: Float, physicalSizeWidthMm: Float?): Float</code>
+  - <code>internal fun deriveLensDeviceTypes(lenses: List&lt;RawLensFocalInfo&gt;): Map&lt;String, CameraDeviceType&gt;</code>
+  - <code>internal fun dedupeOpticallyDistinctLenses(physicals: List&lt;RawLensFocalInfo&gt;): List&lt;RawLensFocalInfo&gt;</code></p>
+<ul>
+<li>[ ] <strong>Step 1: Write the failing tests</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">package</span><span class="w"> </span><span class="nn">com.kashif.cameraK.capabilities</span>
+
+<span class="k">import</span><span class="w"> </span><span class="nn">com.kashif.cameraK.enums.CameraDeviceType</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">kotlin.test.Test</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">kotlin.test.assertEquals</span>
+
+<span class="kd">class</span><span class="w"> </span><span class="nc">LensClassificationTest</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">raw</span><span class="p">(</span>
+<span class="w">        </span><span class="n">id</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">,</span>
+<span class="w">        </span><span class="n">focals</span><span class="p">:</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="kt">Float</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">        </span><span class="n">sensorWidth</span><span class="p">:</span><span class="w"> </span><span class="kt">Float?</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">6.4f</span><span class="p">,</span>
+<span class="w">        </span><span class="n">isLogical</span><span class="p">:</span><span class="w"> </span><span class="kt">Boolean</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RawLensFocalInfo</span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">focals</span><span class="p">,</span><span class="w"> </span><span class="n">sensorWidth</span><span class="p">,</span><span class="w"> </span><span class="n">isLogical</span><span class="p">)</span>
+
+<span class="w">    </span><span class="c1">// ── equivalentFocalLengthMm ──────────────────────────────────────</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">equivalent_normalizesTo35mm</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// 4.38mm lens on a 6.4mm-wide sensor → 4.38 * 36 / 6.4 = 24.64mm equiv</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="m">24.6375f</span><span class="p">,</span><span class="w"> </span><span class="n">equivalentFocalLengthMm</span><span class="p">(</span><span class="m">4.38f</span><span class="p">,</span><span class="w"> </span><span class="m">6.4f</span><span class="p">),</span><span class="w"> </span><span class="m">0.001f</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">equivalent_fallsBackToRawWhenSensorUnknown</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="m">4.38f</span><span class="p">,</span><span class="w"> </span><span class="n">equivalentFocalLengthMm</span><span class="p">(</span><span class="m">4.38f</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">),</span><span class="w"> </span><span class="m">0.001f</span><span class="p">)</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="m">4.38f</span><span class="p">,</span><span class="w"> </span><span class="n">equivalentFocalLengthMm</span><span class="p">(</span><span class="m">4.38f</span><span class="p">,</span><span class="w"> </span><span class="m">0f</span><span class="p">),</span><span class="w"> </span><span class="m">0.001f</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// ── deriveLensDeviceTypes ────────────────────────────────────────</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">pixel7Case_noFabricatedTelephoto</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Pixel 7 back physicals: 6.81mm on 9.79mm sensor (≈25mm equiv, wide)</span>
+<span class="w">        </span><span class="c1">// + 2.35mm on 5.04mm sensor (≈16.8mm equiv, ultra-wide). No telephoto glass.</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">kinds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">deriveLensDeviceTypes</span><span class="p">(</span>
+<span class="w">            </span><span class="n">listOf</span><span class="p">(</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"2"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">6.81f</span><span class="p">),</span><span class="w"> </span><span class="m">9.79f</span><span class="p">),</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"3"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">2.35f</span><span class="p">),</span><span class="w"> </span><span class="m">5.04f</span><span class="p">),</span>
+<span class="w">            </span><span class="p">),</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span><span class="p">,</span><span class="w"> </span><span class="n">kinds</span><span class="o">[</span><span class="s">"2"</span><span class="o">]</span><span class="p">)</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">ULTRA_WIDE</span><span class="p">,</span><span class="w"> </span><span class="n">kinds</span><span class="o">[</span><span class="s">"3"</span><span class="o">]</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">telephotoThreshold</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// 13.0mm on 6.4mm sensor → 73.1mm equiv → TELEPHOTO</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">kinds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">deriveLensDeviceTypes</span><span class="p">(</span>
+<span class="w">            </span><span class="n">listOf</span><span class="p">(</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"0"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">4.38f</span><span class="p">)),</span><span class="w">          </span><span class="c1">// 24.6mm equiv → WIDE</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"1"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">13.0f</span><span class="p">)),</span><span class="w">          </span><span class="c1">// 73.1mm equiv → TELE</span>
+<span class="w">            </span><span class="p">),</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span><span class="p">,</span><span class="w"> </span><span class="n">kinds</span><span class="o">[</span><span class="s">"0"</span><span class="o">]</span><span class="p">)</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">TELEPHOTO</span><span class="p">,</span><span class="w"> </span><span class="n">kinds</span><span class="o">[</span><span class="s">"1"</span><span class="o">]</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">logicalMultiFocal_isWideAngle</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Logical camera reporting merged focal lengths must never be tagged ULTRA_WIDE</span>
+<span class="w">        </span><span class="c1">// just because one merged focal length is short — it opens at 1.0x (wide).</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">kinds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">deriveLensDeviceTypes</span><span class="p">(</span>
+<span class="w">            </span><span class="n">listOf</span><span class="p">(</span><span class="n">raw</span><span class="p">(</span><span class="s">"0"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">2.35f</span><span class="p">,</span><span class="w"> </span><span class="m">6.81f</span><span class="p">),</span><span class="w"> </span><span class="n">isLogical</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">)),</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span><span class="p">,</span><span class="w"> </span><span class="n">kinds</span><span class="o">[</span><span class="s">"0"</span><span class="o">]</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">singleLens_isWideAngleUnconditionally</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// A 2.0mm focal on tiny front sensor would classify ULTRA_WIDE by threshold,</span>
+<span class="w">        </span><span class="c1">// but a facing's only camera is in practice the primary lens.</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">kinds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">deriveLensDeviceTypes</span><span class="p">(</span><span class="n">listOf</span><span class="p">(</span><span class="n">raw</span><span class="p">(</span><span class="s">"1"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">2.0f</span><span class="p">),</span><span class="w"> </span><span class="m">3.6f</span><span class="p">)))</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span><span class="p">,</span><span class="w"> </span><span class="n">kinds</span><span class="o">[</span><span class="s">"1"</span><span class="o">]</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">unreadableFocal_isDefaultAndExcludedFromOrdering</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">kinds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">deriveLensDeviceTypes</span><span class="p">(</span>
+<span class="w">            </span><span class="n">listOf</span><span class="p">(</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"0"</span><span class="p">,</span><span class="w"> </span><span class="n">emptyList</span><span class="p">()),</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"1"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">4.38f</span><span class="p">)),</span>
+<span class="w">            </span><span class="p">),</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">DEFAULT</span><span class="p">,</span><span class="w"> </span><span class="n">kinds</span><span class="o">[</span><span class="s">"0"</span><span class="o">]</span><span class="p">)</span>
+<span class="w">        </span><span class="c1">// "1" is the only classifiable lens → single-lens rule applies → WIDE_ANGLE</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span><span class="p">,</span><span class="w"> </span><span class="n">kinds</span><span class="o">[</span><span class="s">"1"</span><span class="o">]</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// ── dedupeOpticallyDistinctLenses ────────────────────────────────</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">pixel7CropPseudoLens_isDropped</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// id4 shares id2's exact 6.81mm optics on a smaller (4.90mm) readout — a digital</span>
+<span class="w">        </span><span class="c1">// crop, not real telephoto glass. Keep the largest-sensor entry per focal group.</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">survivors</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dedupeOpticallyDistinctLenses</span><span class="p">(</span>
+<span class="w">            </span><span class="n">listOf</span><span class="p">(</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"2"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">6.81f</span><span class="p">),</span><span class="w"> </span><span class="m">9.79f</span><span class="p">),</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"3"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">2.35f</span><span class="p">),</span><span class="w"> </span><span class="m">5.04f</span><span class="p">),</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"4"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">6.81f</span><span class="p">),</span><span class="w"> </span><span class="m">4.90f</span><span class="p">),</span>
+<span class="w">            </span><span class="p">),</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">listOf</span><span class="p">(</span><span class="s">"2"</span><span class="p">,</span><span class="w"> </span><span class="s">"3"</span><span class="p">),</span><span class="w"> </span><span class="n">survivors</span><span class="p">.</span><span class="na">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">id</span><span class="w"> </span><span class="p">})</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Test</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">unreadableFocal_survivesAsSingleton</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">survivors</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dedupeOpticallyDistinctLenses</span><span class="p">(</span>
+<span class="w">            </span><span class="n">listOf</span><span class="p">(</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"2"</span><span class="p">,</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="m">6.81f</span><span class="p">),</span><span class="w"> </span><span class="m">9.79f</span><span class="p">),</span>
+<span class="w">                </span><span class="n">raw</span><span class="p">(</span><span class="s">"9"</span><span class="p">,</span><span class="w"> </span><span class="n">emptyList</span><span class="p">(),</span><span class="w"> </span><span class="kc">null</span><span class="p">),</span>
+<span class="w">            </span><span class="p">),</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">        </span><span class="n">assertEquals</span><span class="p">(</span><span class="n">listOf</span><span class="p">(</span><span class="s">"2"</span><span class="p">,</span><span class="w"> </span><span class="s">"9"</span><span class="p">),</span><span class="w"> </span><span class="n">survivors</span><span class="p">.</span><span class="na">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">id</span><span class="w"> </span><span class="p">})</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+</ul>
+<p>Run: <code>./gradlew cameraK:desktopTest --tests "com.kashif.cameraK.capabilities.LensClassificationTest"</code>
+Expected: compilation FAILURE — <code>RawLensFocalInfo</code> etc. unresolved.</p>
+<ul>
+<li>[ ] <strong>Step 3: Write the implementation</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">package</span><span class="w"> </span><span class="nn">com.kashif.cameraK.capabilities</span>
+
+<span class="k">import</span><span class="w"> </span><span class="nn">com.kashif.cameraK.enums.CameraDeviceType</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">kotlin.math.roundToInt</span>
+
+<span class="cm">/**</span>
+<span class="cm"> * Raw per-camera focal data used to classify a lens — platform-independent so the</span>
+<span class="cm"> * classification math is unit-testable in desktopTest without Camera2/AVFoundation.</span>
+<span class="cm"> * [focalLengthsMm] is LENS_INFO_AVAILABLE_FOCAL_LENGTHS verbatim (a logical multi-camera</span>
+<span class="cm"> * reports the union of its physical cameras' focal lengths). [physicalSizeWidthMm] is</span>
+<span class="cm"> * SENSOR_INFO_PHYSICAL_SIZE width, used to normalize to 35mm-equivalent — comparing raw mm</span>
+<span class="cm"> * across different sensor sizes misclassifies (the bug this replaces). Null when unreadable.</span>
+<span class="cm"> */</span>
+<span class="kd">internal</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nc">RawLensFocalInfo</span><span class="p">(</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">id</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">focalLengthsMm</span><span class="p">:</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="kt">Float</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">physicalSizeWidthMm</span><span class="p">:</span><span class="w"> </span><span class="kt">Float?</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">isLogical</span><span class="p">:</span><span class="w"> </span><span class="kt">Boolean</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1">// Absolute-ish 35mm-equivalent boundaries. Phone ultra-wides sit ~13-18mm equiv and phone</span>
+<span class="c1">// telephotos start ~48mm equiv and up, so these leave a safety margin on both sides.</span>
+<span class="kd">private</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="kd">val</span><span class="w"> </span><span class="nv">ULTRA_WIDE_MAX_EQUIV_MM</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">20f</span>
+<span class="kd">private</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="kd">val</span><span class="w"> </span><span class="nv">TELEPHOTO_MIN_EQUIV_MM</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">70f</span>
+
+<span class="c1">// Two physical sub-lenses whose raw focal lengths match within this tolerance share the</span>
+<span class="c1">// same optics (one is a crop readout of the other).</span>
+<span class="kd">private</span><span class="w"> </span><span class="kd">const</span><span class="w"> </span><span class="kd">val</span><span class="w"> </span><span class="nv">FOCAL_LENGTH_GROUPING_TOLERANCE_MM</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">0.05f</span>
+
+<span class="cm">/**</span>
+<span class="cm"> * Standard 35mm ("full-frame") equivalent focal length: actual focal length scaled by</span>
+<span class="cm"> * 36mm (full-frame sensor width) over this sensor's own width. Falls back to the raw</span>
+<span class="cm"> * focal length when the sensor size is unreadable.</span>
+<span class="cm"> */</span>
+<span class="kd">internal</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">equivalentFocalLengthMm</span><span class="p">(</span>
+<span class="w">    </span><span class="n">focalLengthMm</span><span class="p">:</span><span class="w"> </span><span class="kt">Float</span><span class="p">,</span>
+<span class="w">    </span><span class="n">physicalSizeWidthMm</span><span class="p">:</span><span class="w"> </span><span class="kt">Float?</span><span class="p">,</span>
+<span class="p">):</span><span class="w"> </span><span class="kt">Float</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">physicalSizeWidthMm</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">physicalSizeWidthMm</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="m">0f</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">focalLengthMm</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="p">(</span><span class="m">36f</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">physicalSizeWidthMm</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">focalLengthMm</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="cm">/**</span>
+<span class="cm"> * Classifies each camera of ONE facing by 35mm-equivalent focal length against absolute</span>
+<span class="cm"> * thresholds — never by ordinal rank within the set (rank fabricates a TELEPHOTO on</span>
+<span class="cm"> * 2-lens {ultra-wide, wide} devices like the Pixel 7). Rules:</span>
+<span class="cm"> * - unreadable focal data → [CameraDeviceType.DEFAULT], excluded from siblings' comparison</span>
+<span class="cm"> * - logical camera reporting multiple focal lengths → [CameraDeviceType.WIDE_ANGLE]</span>
+<span class="cm"> *   (it opens at 1.0x, which resolves to the wide lens on current hardware)</span>
+<span class="cm"> * - a facing's single classifiable camera → [CameraDeviceType.WIDE_ANGLE] unconditionally</span>
+<span class="cm"> * - otherwise: equiv ≤ 20mm → ULTRA_WIDE, equiv ≥ 70mm → TELEPHOTO, else WIDE_ANGLE</span>
+<span class="cm"> */</span>
+<span class="kd">internal</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">deriveLensDeviceTypes</span><span class="p">(</span><span class="n">lenses</span><span class="p">:</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">RawLensFocalInfo</span><span class="o">&gt;</span><span class="p">):</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="kt">String</span><span class="p">,</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">types</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mutableMapOf</span><span class="o">&lt;</span><span class="kt">String</span><span class="p">,</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="o">&gt;</span><span class="p">()</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">toClassify</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mutableListOf</span><span class="o">&lt;</span><span class="n">Pair</span><span class="o">&lt;</span><span class="kt">String</span><span class="p">,</span><span class="w"> </span><span class="kt">Float</span><span class="o">&gt;&gt;</span><span class="p">()</span>
+
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">lens</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">lenses</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">when</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">lens</span><span class="p">.</span><span class="na">focalLengthsMm</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">types</span><span class="o">[</span><span class="n">lens</span><span class="p">.</span><span class="na">id</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">DEFAULT</span>
+<span class="w">            </span><span class="n">lens</span><span class="p">.</span><span class="na">isLogical</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">lens</span><span class="p">.</span><span class="na">focalLengthsMm</span><span class="p">.</span><span class="na">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">types</span><span class="o">[</span><span class="n">lens</span><span class="p">.</span><span class="na">id</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span>
+<span class="w">            </span><span class="k">else</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">toClassify</span><span class="p">.</span><span class="na">add</span><span class="p">(</span>
+<span class="w">                </span><span class="n">lens</span><span class="p">.</span><span class="na">id</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">equivalentFocalLengthMm</span><span class="p">(</span><span class="n">lens</span><span class="p">.</span><span class="na">focalLengthsMm</span><span class="p">.</span><span class="na">first</span><span class="p">(),</span><span class="w"> </span><span class="n">lens</span><span class="p">.</span><span class="na">physicalSizeWidthMm</span><span class="p">),</span>
+<span class="w">            </span><span class="p">)</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">when</span><span class="w"> </span><span class="p">(</span><span class="n">toClassify</span><span class="p">.</span><span class="na">size</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="m">0</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="kt">Unit</span>
+<span class="w">        </span><span class="m">1</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">types</span><span class="o">[</span><span class="n">toClassify</span><span class="p">.</span><span class="na">single</span><span class="p">().</span><span class="na">first</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span>
+<span class="w">        </span><span class="k">else</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="p">((</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">equivMm</span><span class="p">)</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">toClassify</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">types</span><span class="o">[</span><span class="n">id</span><span class="o">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">when</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">equivMm</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">ULTRA_WIDE_MAX_EQUIV_MM</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">ULTRA_WIDE</span>
+<span class="w">                </span><span class="n">equivMm</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="n">TELEPHOTO_MIN_EQUIV_MM</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">TELEPHOTO</span>
+<span class="w">                </span><span class="k">else</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">types</span>
+<span class="p">}</span>
+
+<span class="cm">/**</span>
+<span class="cm"> * Dedupes a logical camera's physical sub-lenses down to genuinely-distinct optics.</span>
+<span class="cm"> * The HAL over-enumerates: some physical ids are crop pseudo-lenses sharing another</span>
+<span class="cm"> * id's exact focal length on a smaller readout (Pixel 7's "telephoto" is a 2x crop of</span>
+<span class="cm"> * the wide). Groups by raw focal length (±[FOCAL_LENGTH_GROUPING_TOLERANCE_MM]) and keeps</span>
+<span class="cm"> * the largest-sensor entry per group. Unreadable-focal lenses survive as singletons.</span>
+<span class="cm"> */</span>
+<span class="kd">internal</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">dedupeOpticallyDistinctLenses</span><span class="p">(</span><span class="n">physicals</span><span class="p">:</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">RawLensFocalInfo</span><span class="o">&gt;</span><span class="p">):</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">RawLensFocalInfo</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">groups</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LinkedHashMap</span><span class="o">&lt;</span><span class="kt">Any</span><span class="p">,</span><span class="w"> </span><span class="n">MutableList</span><span class="o">&lt;</span><span class="n">RawLensFocalInfo</span><span class="o">&gt;&gt;</span><span class="p">()</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">lens</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">physicals</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">focal</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">lens</span><span class="p">.</span><span class="na">focalLengthsMm</span><span class="p">.</span><span class="na">firstOrNull</span><span class="p">()</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">key</span><span class="p">:</span><span class="w"> </span><span class="kt">Any</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">focal</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="n">roundToGroupingStep</span><span class="p">(</span><span class="n">focal</span><span class="p">)</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="n">lens</span><span class="p">.</span><span class="na">id</span>
+<span class="w">        </span><span class="n">groups</span><span class="p">.</span><span class="na">getOrPut</span><span class="p">(</span><span class="n">key</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">mutableListOf</span><span class="p">()</span><span class="w"> </span><span class="p">}.</span><span class="na">add</span><span class="p">(</span><span class="n">lens</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">groups</span><span class="p">.</span><span class="na">values</span><span class="p">.</span><span class="na">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">group</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">group</span><span class="p">.</span><span class="na">maxByOrNull</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">physicalSizeWidthMm</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="o">-</span><span class="m">1f</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="n">group</span><span class="p">.</span><span class="na">first</span><span class="p">()</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="kd">private</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">roundToGroupingStep</span><span class="p">(</span><span class="n">focalLengthMm</span><span class="p">:</span><span class="w"> </span><span class="kt">Float</span><span class="p">):</span><span class="w"> </span><span class="kt">Float</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="p">(</span><span class="n">focalLengthMm</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">FOCAL_LENGTH_GROUPING_TOLERANCE_MM</span><span class="p">).</span><span class="na">roundToInt</span><span class="p">()</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">FOCAL_LENGTH_GROUPING_TOLERANCE_MM</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 4: Run tests to verify they pass</strong></li>
+</ul>
+<p>Run: <code>./gradlew cameraK:desktopTest --tests "com.kashif.cameraK.capabilities.LensClassificationTest"</code>
+Expected: BUILD SUCCESSFUL, 8 tests pass.</p>
+<ul>
+<li>[ ] <strong>Step 5: Format and commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code>./gradlew<span class="w"> </span>spotlessApply
+git<span class="w"> </span>add<span class="w"> </span>cameraK/src/commonMain/kotlin/com/kashif/cameraK/capabilities/LensClassification.kt<span class="w"> </span>cameraK/src/commonTest/kotlin/com/kashif/cameraK/capabilities/LensClassificationTest.kt
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"feat: 35mm-equivalent lens classification + crop-lens dedup</span>
+
+<span class="s2">Co-Authored-By: Claude Fable 5 &lt;noreply@anthropic.com&gt;"</span>
+</code></pre></div>
+<hr />
+<h3 id="task-3-expect-declaration-stateholder-delegation-desktop-placeholder-actuals">Task 3: expect declaration, StateHolder delegation, desktop + placeholder actuals<a class="headerlink" href="#task-3-expect-declaration-stateholder-delegation-desktop-placeholder-actuals" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>cameraK/src/commonMain/kotlin/com/kashif/cameraK/controller/CameraController.kt</code> (after <code>setPreferredCameraDeviceType</code>, ~line 125)
+- Modify: <code>cameraK/src/commonMain/kotlin/com/kashif/cameraK/state/CameraKStateHolder.kt</code> (near the other controller delegations, ~line 378)
+- Modify: <code>cameraK/src/desktopMain/kotlin/com/kashif/cameraK/controller/CameraController.desktop.kt</code> (after <code>setPreferredCameraDeviceType</code>, ~line 180)
+- Modify: <code>cameraK/src/androidMain/kotlin/com/kashif/cameraK/controller/CameraController.android.kt</code> (near <code>getPreferredCameraDeviceType</code>, ~line 596)
+- Modify: <code>cameraK/src/appleMain/kotlin/com/kashif/cameraK/controller/CameraController.apple.kt</code> (near <code>getMaxZoom</code>, ~line 433)</p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>CameraCapabilities</code>, <code>LensInfo</code>, <code>CameraCapabilities.EMPTY</code> (Task 1); <code>CameraDeviceType</code>, <code>CameraLens</code>.
+- Produces: <code>CameraController.getCameraCapabilities(): CameraCapabilities</code> (expect + all actuals compile on every target); <code>CameraKStateHolder.getCameraCapabilities(): CameraCapabilities</code>. Android/iOS actuals are placeholders returning <code>EMPTY</code>, replaced in Tasks 4/6 — the desktop actual is final here.</p>
+<ul>
+<li>[ ] <strong>Step 1: Add the expect declaration</strong></li>
+</ul>
+<p>In <code>CameraController.kt</code>, after <code>setPreferredCameraDeviceType</code> (import <code>com.kashif.cameraK.capabilities.CameraCapabilities</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="cm">/**</span>
+<span class="cm">     * Returns a snapshot of the device's camera hardware: every lens with its</span>
+<span class="cm">     * classified type (ultra-wide / wide / telephoto / macro), facing, zoom range</span>
+<span class="cm">     * and flash availability.</span>
+<span class="cm">     *</span>
+<span class="cm">     * Use [CameraCapabilities.availableDeviceTypes] to know which values of</span>
+<span class="cm">     * [setPreferredCameraDeviceType] will actually switch lenses on this device.</span>
+<span class="cm">     *</span>
+<span class="cm">     * Platform notes:</span>
+<span class="cm">     * - Android: enumerated via Camera2, including physical sub-lenses of logical</span>
+<span class="cm">     *   multi-cameras. Cached after the first call.</span>
+<span class="cm">     * - iOS: enumerated via AVCaptureDeviceDiscoverySession.</span>
+<span class="cm">     * - Desktop: reports a single DEFAULT lens.</span>
+<span class="cm">     */</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">getCameraCapabilities</span><span class="p">():</span><span class="w"> </span><span class="n">CameraCapabilities</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Add all platform actuals</strong></li>
+</ul>
+<p>Desktop (<code>CameraController.desktop.kt</code>, final implementation — import <code>com.kashif.cameraK.capabilities.CameraCapabilities</code> and <code>com.kashif.cameraK.capabilities.LensInfo</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="kd">actual</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">getCameraCapabilities</span><span class="p">():</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="p">(</span>
+<span class="w">        </span><span class="n">listOf</span><span class="p">(</span>
+<span class="w">            </span><span class="n">LensInfo</span><span class="p">(</span>
+<span class="w">                </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">""</span><span class="p">,</span>
+<span class="w">                </span><span class="n">deviceType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">DEFAULT</span><span class="p">,</span>
+<span class="w">                </span><span class="n">lens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span><span class="p">,</span>
+<span class="w">                </span><span class="n">minZoom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">1f</span><span class="p">,</span>
+<span class="w">                </span><span class="n">maxZoom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">1f</span><span class="p">,</span>
+<span class="w">                </span><span class="n">hasFlash</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">                </span><span class="n">isLogical</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">            </span><span class="p">),</span>
+<span class="w">        </span><span class="p">),</span>
+<span class="w">    </span><span class="p">)</span>
+</code></pre></div>
+<p>Android (<code>CameraController.android.kt</code>, placeholder — replaced in Task 4):</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="kd">actual</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">getCameraCapabilities</span><span class="p">():</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="p">.</span><span class="na">EMPTY</span>
+</code></pre></div>
+<p>iOS (<code>CameraController.apple.kt</code>, placeholder — replaced in Task 6):</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="kd">actual</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">getCameraCapabilities</span><span class="p">():</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="p">.</span><span class="na">EMPTY</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 3: Add StateHolder delegation</strong></li>
+</ul>
+<p>In <code>CameraKStateHolder.kt</code>, next to the other controller-delegating functions (import <code>com.kashif.cameraK.capabilities.CameraCapabilities</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="cm">/**</span>
+<span class="cm">     * Returns the device's camera hardware capabilities, or [CameraCapabilities.EMPTY]</span>
+<span class="cm">     * while the camera is not yet initialized.</span>
+<span class="cm">     */</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">getCameraCapabilities</span><span class="p">():</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">controller</span><span class="o">?.</span><span class="na">getCameraCapabilities</span><span class="p">()</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="p">.</span><span class="na">EMPTY</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 4: Verify all targets compile</strong></li>
+</ul>
+<p>Run: <code>./gradlew cameraK:compileKotlinDesktop cameraK:compileDebugKotlinAndroid cameraK:compileKotlinIosSimulatorArm64</code>
+Expected: BUILD SUCCESSFUL for all three.</p>
+<ul>
+<li>[ ] <strong>Step 5: Format and commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code>./gradlew<span class="w"> </span>spotlessApply
+git<span class="w"> </span>add<span class="w"> </span>-u
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"feat: getCameraCapabilities() expect/actual + StateHolder delegation</span>
+
+<span class="s2">Co-Authored-By: Claude Fable 5 &lt;noreply@anthropic.com&gt;"</span>
+</code></pre></div>
+<hr />
+<h3 id="task-4-android-lens-enumerator-real-capabilities-actual">Task 4: Android lens enumerator + real capabilities actual<a class="headerlink" href="#task-4-android-lens-enumerator-real-capabilities-actual" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>cameraK/src/androidMain/kotlin/com/kashif/cameraK/capabilities/LensEnumerator.kt</code>
+- Modify: <code>cameraK/src/androidMain/kotlin/com/kashif/cameraK/controller/CameraController.android.kt</code> (replace Task 3's placeholder actual)</p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>RawLensFocalInfo</code>, <code>deriveLensDeviceTypes</code>, <code>dedupeOpticallyDistinctLenses</code> (Task 2); <code>LensInfo</code>, <code>CameraCapabilities</code> (Task 1).
+- Produces: <code>internal class AndroidLensDescriptor(val info: LensInfo, val isPhysicalChild: Boolean, val parentLogicalId: String?)</code>; <code>internal object LensEnumerator { fun snapshot(context: Context): List&lt;AndroidLensDescriptor&gt; }</code>; <code>CameraController.lensSnapshot(): List&lt;AndroidLensDescriptor&gt;</code> (internal, cached) — Task 5 selects lenses from it.</p>
+<ul>
+<li>[ ] <strong>Step 1: Write the enumerator</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">package</span><span class="w"> </span><span class="nn">com.kashif.cameraK.capabilities</span>
+
+<span class="k">import</span><span class="w"> </span><span class="nn">android.content.Context</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">android.hardware.camera2.CameraCharacteristics</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">android.hardware.camera2.CameraManager</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">android.os.Build</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">com.kashif.cameraK.enums.CameraDeviceType</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">com.kashif.cameraK.enums.CameraLens</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">com.kashif.cameraK.utils.CameraKLogger</span>
+
+<span class="cm">/** [LensInfo] plus the Android-only binding facts Task 5's selector needs. */</span>
+<span class="kd">internal</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nc">AndroidLensDescriptor</span><span class="p">(</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">info</span><span class="p">:</span><span class="w"> </span><span class="n">LensInfo</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">isPhysicalChild</span><span class="p">:</span><span class="w"> </span><span class="kt">Boolean</span><span class="p">,</span>
+<span class="w">    </span><span class="kd">val</span><span class="w"> </span><span class="nv">parentLogicalId</span><span class="p">:</span><span class="w"> </span><span class="kt">String?</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="cm">/**</span>
+<span class="cm"> * Camera2 snapshot of every lens on the device. Top-level ids come from</span>
+<span class="cm"> * [CameraManager.cameraIdList]; a logical multi-camera's physical sub-lenses (which are</span>
+<span class="cm"> * NOT in that list) are expanded via physicalCameraIds and read directly with</span>
+<span class="cm"> * getCameraCharacteristics(physicalId) — Camera2 supports that since API 28. Crop</span>
+<span class="cm"> * pseudo-lenses the HAL over-enumerates are dropped via [dedupeOpticallyDistinctLenses].</span>
+<span class="cm"> */</span>
+<span class="kd">internal</span><span class="w"> </span><span class="kd">object</span><span class="w"> </span><span class="nc">LensEnumerator</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">snapshot</span><span class="p">(</span><span class="n">context</span><span class="p">:</span><span class="w"> </span><span class="n">Context</span><span class="p">):</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">AndroidLensDescriptor</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">manager</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">context</span><span class="p">.</span><span class="na">getSystemService</span><span class="p">(</span><span class="n">Context</span><span class="p">.</span><span class="na">CAMERA_SERVICE</span><span class="p">)</span><span class="w"> </span><span class="k">as?</span><span class="w"> </span><span class="n">CameraManager</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">cameraIds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">manager</span><span class="o">?.</span><span class="na">cameraIdList</span><span class="p">.</span><span class="na">orEmpty</span><span class="p">()</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">e</span><span class="p">:</span><span class="w"> </span><span class="n">Exception</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">CameraKLogger</span><span class="p">.</span><span class="na">w</span><span class="p">(</span><span class="s">"CameraK"</span><span class="p">,</span><span class="w"> </span><span class="s">"Lens enumeration failed to list cameras: </span><span class="si">${</span><span class="n">e</span><span class="p">.</span><span class="na">message</span><span class="si">}</span><span class="s">"</span><span class="p">)</span>
+<span class="w">            </span><span class="n">emptyArray</span><span class="p">()</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">rawByFacing</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mutableMapOf</span><span class="o">&lt;</span><span class="n">CameraLens</span><span class="p">,</span><span class="w"> </span><span class="n">MutableList</span><span class="o">&lt;</span><span class="n">RawCamera</span><span class="o">&gt;&gt;</span><span class="p">()</span>
+<span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">cameraIds</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="kd">val</span><span class="w"> </span><span class="nv">raw</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">describe</span><span class="p">(</span><span class="n">manager</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">isPhysicalChild</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="n">parentLogicalId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="k">continue</span>
+<span class="w">            </span><span class="n">rawByFacing</span><span class="p">.</span><span class="na">getOrPut</span><span class="p">(</span><span class="n">raw</span><span class="p">.</span><span class="na">facing</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">mutableListOf</span><span class="p">()</span><span class="w"> </span><span class="p">}.</span><span class="na">add</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">raw</span><span class="p">.</span><span class="na">isLogical</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">physicalId</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">raw</span><span class="p">.</span><span class="na">physicalCameraIds</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="kd">val</span><span class="w"> </span><span class="nv">child</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">describe</span><span class="p">(</span><span class="n">manager</span><span class="p">,</span><span class="w"> </span><span class="n">physicalId</span><span class="p">,</span><span class="w"> </span><span class="n">isPhysicalChild</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="n">parentLogicalId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="k">continue</span>
+<span class="w">                    </span><span class="n">rawByFacing</span><span class="p">.</span><span class="na">getOrPut</span><span class="p">(</span><span class="n">child</span><span class="p">.</span><span class="na">facing</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">mutableListOf</span><span class="p">()</span><span class="w"> </span><span class="p">}.</span><span class="na">add</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mutableListOf</span><span class="o">&lt;</span><span class="n">AndroidLensDescriptor</span><span class="o">&gt;</span><span class="p">()</span>
+<span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="p">((</span><span class="n">facing</span><span class="p">,</span><span class="w"> </span><span class="n">allRaw</span><span class="p">)</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">rawByFacing</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="kd">val</span><span class="w"> </span><span class="nv">rawCameras</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dedupeCropSiblings</span><span class="p">(</span><span class="n">allRaw</span><span class="p">)</span>
+<span class="w">            </span><span class="kd">val</span><span class="w"> </span><span class="nv">types</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">deriveLensDeviceTypes</span><span class="p">(</span>
+<span class="w">                </span><span class="n">rawCameras</span><span class="p">.</span><span class="na">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">RawLensFocalInfo</span><span class="p">(</span><span class="nb">it</span><span class="p">.</span><span class="na">id</span><span class="p">,</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">focalLengthsMm</span><span class="p">,</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">physicalSizeWidthMm</span><span class="p">,</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">isLogical</span><span class="p">)</span><span class="w"> </span><span class="p">},</span>
+<span class="w">            </span><span class="p">)</span>
+<span class="w">            </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">raw</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">rawCameras</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="c1">// Focal length can't detect macro; keep the pre-existing min-focus-distance rule</span>
+<span class="w">                </span><span class="c1">// for top-level ids (matches the old createCameraSelector MACRO filter).</span>
+<span class="w">                </span><span class="kd">val</span><span class="w"> </span><span class="nv">deviceType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">raw</span><span class="p">.</span><span class="na">isPhysicalChild</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">raw</span><span class="p">.</span><span class="na">minFocusDistance</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">MACRO_FOCUS_RANGE</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">MACRO</span>
+<span class="w">                </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">types</span><span class="o">[</span><span class="n">raw</span><span class="p">.</span><span class="na">id</span><span class="o">]</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">DEFAULT</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">                </span><span class="n">result</span><span class="p">.</span><span class="na">add</span><span class="p">(</span>
+<span class="w">                    </span><span class="n">AndroidLensDescriptor</span><span class="p">(</span>
+<span class="w">                        </span><span class="n">info</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LensInfo</span><span class="p">(</span>
+<span class="w">                            </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">raw</span><span class="p">.</span><span class="na">id</span><span class="p">,</span>
+<span class="w">                            </span><span class="n">deviceType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">deviceType</span><span class="p">,</span>
+<span class="w">                            </span><span class="n">lens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">facing</span><span class="p">,</span>
+<span class="w">                            </span><span class="n">minZoom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">raw</span><span class="p">.</span><span class="na">minZoomRatio</span><span class="p">,</span>
+<span class="w">                            </span><span class="n">maxZoom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">raw</span><span class="p">.</span><span class="na">maxZoomRatio</span><span class="p">,</span>
+<span class="w">                            </span><span class="n">hasFlash</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">raw</span><span class="p">.</span><span class="na">hasFlash</span><span class="p">,</span>
+<span class="w">                            </span><span class="n">isLogical</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">raw</span><span class="p">.</span><span class="na">isLogical</span><span class="p">,</span>
+<span class="w">                        </span><span class="p">),</span>
+<span class="w">                        </span><span class="n">isPhysicalChild</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">raw</span><span class="p">.</span><span class="na">isPhysicalChild</span><span class="p">,</span>
+<span class="w">                        </span><span class="n">parentLogicalId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">raw</span><span class="p">.</span><span class="na">parentLogicalId</span><span class="p">,</span>
+<span class="w">                    </span><span class="p">),</span>
+<span class="w">                </span><span class="p">)</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">result</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">val</span><span class="w"> </span><span class="nv">MACRO_FOCUS_RANGE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">0.001f</span><span class="p">..</span><span class="m">0.2f</span>
+
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">dedupeCropSiblings</span><span class="p">(</span><span class="n">rawCameras</span><span class="p">:</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">RawCamera</span><span class="o">&gt;</span><span class="p">):</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">RawCamera</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="p">(</span><span class="nv">children</span><span class="p">,</span><span class="w"> </span><span class="nv">topLevel</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rawCameras</span><span class="p">.</span><span class="na">partition</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">isPhysicalChild</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">surviving</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dedupeOpticallyDistinctLenses</span><span class="p">(</span>
+<span class="w">            </span><span class="n">children</span><span class="p">.</span><span class="na">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">RawLensFocalInfo</span><span class="p">(</span><span class="nb">it</span><span class="p">.</span><span class="na">id</span><span class="p">,</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">focalLengthsMm</span><span class="p">,</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">physicalSizeWidthMm</span><span class="p">,</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">isLogical</span><span class="p">)</span><span class="w"> </span><span class="p">},</span>
+<span class="w">        </span><span class="p">).</span><span class="na">mapTo</span><span class="p">(</span><span class="n">mutableSetOf</span><span class="p">())</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">id</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">topLevel</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">children</span><span class="p">.</span><span class="na">filter</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">id</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">surviving</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">class</span><span class="w"> </span><span class="nc">RawCamera</span><span class="p">(</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">id</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">facing</span><span class="p">:</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">minZoomRatio</span><span class="p">:</span><span class="w"> </span><span class="kt">Float</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">maxZoomRatio</span><span class="p">:</span><span class="w"> </span><span class="kt">Float</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">hasFlash</span><span class="p">:</span><span class="w"> </span><span class="kt">Boolean</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">isLogical</span><span class="p">:</span><span class="w"> </span><span class="kt">Boolean</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">isPhysicalChild</span><span class="p">:</span><span class="w"> </span><span class="kt">Boolean</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">parentLogicalId</span><span class="p">:</span><span class="w"> </span><span class="kt">String?</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">focalLengthsMm</span><span class="p">:</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="kt">Float</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">physicalSizeWidthMm</span><span class="p">:</span><span class="w"> </span><span class="kt">Float?</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">physicalCameraIds</span><span class="p">:</span><span class="w"> </span><span class="n">Set</span><span class="o">&lt;</span><span class="kt">String</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">minFocusDistance</span><span class="p">:</span><span class="w"> </span><span class="kt">Float</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span>
+
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">describe</span><span class="p">(</span>
+<span class="w">        </span><span class="n">manager</span><span class="p">:</span><span class="w"> </span><span class="n">CameraManager?</span><span class="p">,</span>
+<span class="w">        </span><span class="n">id</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">,</span>
+<span class="w">        </span><span class="n">isPhysicalChild</span><span class="p">:</span><span class="w"> </span><span class="kt">Boolean</span><span class="p">,</span>
+<span class="w">        </span><span class="n">parentLogicalId</span><span class="p">:</span><span class="w"> </span><span class="kt">String?</span><span class="p">,</span>
+<span class="w">    </span><span class="p">):</span><span class="w"> </span><span class="n">RawCamera?</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">characteristics</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">manager</span><span class="o">?.</span><span class="na">getCameraCharacteristics</span><span class="p">(</span><span class="n">id</span><span class="p">)</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">e</span><span class="p">:</span><span class="w"> </span><span class="n">Exception</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">CameraKLogger</span><span class="p">.</span><span class="na">w</span><span class="p">(</span><span class="s">"CameraK"</span><span class="p">,</span><span class="w"> </span><span class="s">"Lens enumeration failed on camera </span><span class="si">$</span><span class="n">id</span><span class="s">: </span><span class="si">${</span><span class="n">e</span><span class="p">.</span><span class="na">message</span><span class="si">}</span><span class="s">"</span><span class="p">)</span>
+<span class="w">            </span><span class="kc">null</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="kc">null</span>
+
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">facing</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">when</span><span class="w"> </span><span class="p">(</span><span class="n">characteristics</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">CameraCharacteristics</span><span class="p">.</span><span class="na">LENS_FACING</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">CameraCharacteristics</span><span class="p">.</span><span class="na">LENS_FACING_FRONT</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">.</span><span class="na">FRONT</span>
+<span class="w">            </span><span class="k">else</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="c1">// CONTROL_ZOOM_RATIO_RANGE is an API 30+ Key FIELD — referencing it below 30 throws</span>
+<span class="w">        </span><span class="c1">// NoSuchFieldError (an Error, uncatchable by catch(Exception)). Guard by SDK level.</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="p">(</span><span class="nv">minZoom</span><span class="p">,</span><span class="w"> </span><span class="nv">maxZoom</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Build</span><span class="p">.</span><span class="na">VERSION</span><span class="p">.</span><span class="na">SDK_INT</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="n">Build</span><span class="p">.</span><span class="na">VERSION_CODES</span><span class="p">.</span><span class="na">R</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="kd">val</span><span class="w"> </span><span class="nv">range</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">characteristics</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">CameraCharacteristics</span><span class="p">.</span><span class="na">CONTROL_ZOOM_RATIO_RANGE</span><span class="p">)</span>
+<span class="w">            </span><span class="p">(</span><span class="n">range</span><span class="o">?.</span><span class="na">lower</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="m">1.0f</span><span class="p">)</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="p">(</span><span class="n">range</span><span class="o">?.</span><span class="na">upper</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="m">1.0f</span><span class="p">)</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="kd">val</span><span class="w"> </span><span class="nv">maxDigital</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">characteristics</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">CameraCharacteristics</span><span class="p">.</span><span class="na">SCALER_AVAILABLE_MAX_DIGITAL_ZOOM</span><span class="p">)</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="m">1.0f</span>
+<span class="w">            </span><span class="m">1.0f</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="n">maxDigital</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="c1">// physicalCameraIds is API 28+ — same NoSuchMethodError trap, same guard.</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">physicalIds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Build</span><span class="p">.</span><span class="na">VERSION</span><span class="p">.</span><span class="na">SDK_INT</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="n">Build</span><span class="p">.</span><span class="na">VERSION_CODES</span><span class="p">.</span><span class="na">P</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">characteristics</span><span class="p">.</span><span class="na">physicalCameraIds</span>
+<span class="w">            </span><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">e</span><span class="p">:</span><span class="w"> </span><span class="n">Exception</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">emptySet</span><span class="p">()</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">emptySet</span><span class="p">()</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">RawCamera</span><span class="p">(</span>
+<span class="w">            </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">id</span><span class="p">,</span>
+<span class="w">            </span><span class="n">facing</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">facing</span><span class="p">,</span>
+<span class="w">            </span><span class="n">minZoomRatio</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">minZoom</span><span class="p">,</span>
+<span class="w">            </span><span class="n">maxZoomRatio</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">maxZoom</span><span class="p">,</span>
+<span class="w">            </span><span class="n">hasFlash</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">characteristics</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">CameraCharacteristics</span><span class="p">.</span><span class="na">FLASH_INFO_AVAILABLE</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">            </span><span class="n">isLogical</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">physicalIds</span><span class="p">.</span><span class="na">isNotEmpty</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">isPhysicalChild</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">isPhysicalChild</span><span class="p">,</span>
+<span class="w">            </span><span class="n">parentLogicalId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">parentLogicalId</span><span class="p">,</span>
+<span class="w">            </span><span class="n">focalLengthsMm</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">characteristics</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">CameraCharacteristics</span><span class="p">.</span><span class="na">LENS_INFO_AVAILABLE_FOCAL_LENGTHS</span><span class="p">)</span><span class="o">?.</span><span class="na">toList</span><span class="p">().</span><span class="na">orEmpty</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">physicalSizeWidthMm</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">characteristics</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">CameraCharacteristics</span><span class="p">.</span><span class="na">SENSOR_INFO_PHYSICAL_SIZE</span><span class="p">)</span><span class="o">?.</span><span class="na">width</span><span class="p">,</span>
+<span class="w">            </span><span class="n">physicalCameraIds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">physicalIds</span><span class="p">,</span>
+<span class="w">            </span><span class="n">minFocusDistance</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">characteristics</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="n">CameraCharacteristics</span><span class="p">.</span><span class="na">LENS_INFO_MINIMUM_FOCUS_DISTANCE</span><span class="p">)</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="m">0f</span><span class="p">,</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Wire the cached snapshot into the controller</strong></li>
+</ul>
+<p>In <code>CameraController.android.kt</code> — add imports <code>com.kashif.cameraK.capabilities.AndroidLensDescriptor</code>, <code>com.kashif.cameraK.capabilities.CameraCapabilities</code>, <code>com.kashif.cameraK.capabilities.LensEnumerator</code>; add a field next to the other private fields (~line 111):</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="c1">// Hardware doesn't change at runtime; enumerate once.</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">var</span><span class="w"> </span><span class="nv">cachedLensSnapshot</span><span class="p">:</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">AndroidLensDescriptor</span><span class="o">&gt;?</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">null</span>
+
+<span class="w">    </span><span class="kd">internal</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">lensSnapshot</span><span class="p">():</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">AndroidLensDescriptor</span><span class="o">&gt;</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">cachedLensSnapshot</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="n">LensEnumerator</span><span class="p">.</span><span class="na">snapshot</span><span class="p">(</span><span class="n">context</span><span class="p">).</span><span class="na">also</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">cachedLensSnapshot</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">it</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p>Replace the Task 3 placeholder actual:</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="kd">actual</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">getCameraCapabilities</span><span class="p">():</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="p">(</span><span class="n">lensSnapshot</span><span class="p">().</span><span class="na">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">info</span><span class="w"> </span><span class="p">})</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 3: Verify compile + existing tests still green</strong></li>
+</ul>
+<p>Run: <code>./gradlew cameraK:compileDebugKotlinAndroid cameraK:desktopTest</code>
+Expected: BUILD SUCCESSFUL.</p>
+<ul>
+<li>[ ] <strong>Step 4: Format and commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code>./gradlew<span class="w"> </span>spotlessApply
+git<span class="w"> </span>add<span class="w"> </span>-u<span class="w"> </span>cameraK/src/androidMain
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"feat(android): Camera2 lens enumeration with physical sub-lens expansion</span>
+
+<span class="s2">Co-Authored-By: Claude Fable 5 &lt;noreply@anthropic.com&gt;"</span>
+</code></pre></div>
+<hr />
+<h3 id="task-5-android-selector-rewrite-id-based-selection-physical-pinning">Task 5: Android selector rewrite — id-based selection + physical pinning<a class="headerlink" href="#task-5-android-selector-rewrite-id-based-selection-physical-pinning" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>cameraK/src/androidMain/kotlin/com/kashif/cameraK/controller/CameraController.android.kt</code>:
+  - <code>createCameraSelector()</code> (~lines 291-357, full replacement)
+  - <code>bindCamera()</code> (~lines 142-151: selector must be created BEFORE the Preview builder)
+  - <code>configureCaptureUseCase()</code> (~line 364)
+  - <code>rebuildMultiplexedAnalyzer()</code> (~line 428)
+  - <code>setPreferredCameraDeviceType</code> / <code>toggleCameraLens</code>: no changes (they already rebind)</p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>lensSnapshot(): List&lt;AndroidLensDescriptor&gt;</code> (Task 4).
+- Produces: private <code>pinnedPhysicalId: String?</code> field consulted by all use-case builders. No public API change.</p>
+<ul>
+<li>[ ] <strong>Step 1: Replace createCameraSelector</strong></li>
+</ul>
+<p>Add the field next to <code>cachedLensSnapshot</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="c1">// Set by createCameraSelector when the requested device type is a physical sub-lens of a</span>
+<span class="w">    </span><span class="c1">// logical multi-camera. CameraSelector.setPhysicalCameraId ALONE silently no-ops on real</span>
+<span class="w">    </span><span class="c1">// hardware — it must be paired with Camera2Interop.Extender.setPhysicalCameraId on EVERY</span>
+<span class="w">    </span><span class="c1">// use-case builder (verified on real hardware). Consulted by bindCamera,</span>
+<span class="w">    </span><span class="c1">// configureCaptureUseCase and rebuildMultiplexedAnalyzer.</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">var</span><span class="w"> </span><span class="nv">pinnedPhysicalId</span><span class="p">:</span><span class="w"> </span><span class="kt">String?</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">null</span>
+</code></pre></div>
+<p>Replace the whole <code>createCameraSelector()</code> (delete the old focal-length filters):</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="cm">/**</span>
+<span class="cm">     * Creates a camera selector for the current facing + requested device type, resolved</span>
+<span class="cm">     * against the real lens snapshot (35mm-equivalent classification) instead of raw</span>
+<span class="cm">     * focal-length thresholds.</span>
+<span class="cm">     *</span>
+<span class="cm">     * - WIDE_ANGLE/DEFAULT: no filter (the default logical camera opens wide).</span>
+<span class="cm">     * - Requested type maps to a top-level camera id: exact-id filter.</span>
+<span class="cm">     * - Requested type maps to a physical sub-lens: physical-camera pin (selector half;</span>
+<span class="cm">     *   the use-case builders apply the Camera2Interop half via [pinnedPhysicalId]).</span>
+<span class="cm">     * - Type unavailable on this facing: warn and fall back to the default camera.</span>
+<span class="cm">     */</span>
+<span class="w">    </span><span class="nd">@OptIn</span><span class="p">(</span><span class="n">ExperimentalCamera2Interop</span><span class="o">::</span><span class="n">class</span><span class="p">)</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">createCameraSelector</span><span class="p">():</span><span class="w"> </span><span class="n">CameraSelector</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">pinnedPhysicalId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">null</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">builder</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraSelector</span><span class="p">.</span><span class="na">Builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">requireLensFacing</span><span class="p">(</span><span class="n">cameraLens</span><span class="p">.</span><span class="na">toCameraXLensFacing</span><span class="p">())</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">cameraDeviceType</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">DEFAULT</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">cameraDeviceType</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">builder</span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">target</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">lensSnapshot</span><span class="p">().</span><span class="na">firstOrNull</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nb">it</span><span class="p">.</span><span class="na">info</span><span class="p">.</span><span class="na">lens</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">cameraLens</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">it</span><span class="p">.</span><span class="na">info</span><span class="p">.</span><span class="na">deviceType</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">cameraDeviceType</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">target</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">CameraKLogger</span><span class="p">.</span><span class="na">w</span><span class="p">(</span><span class="s">"CameraK"</span><span class="p">,</span><span class="w"> </span><span class="s">"</span><span class="si">$</span><span class="n">cameraDeviceType</span><span class="s"> not available for </span><span class="si">$</span><span class="n">cameraLens</span><span class="s">, using default camera"</span><span class="p">)</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">builder</span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">target</span><span class="p">.</span><span class="na">isPhysicalChild</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">pinnedPhysicalId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">target</span><span class="p">.</span><span class="na">info</span><span class="p">.</span><span class="na">id</span>
+<span class="w">            </span><span class="n">builder</span><span class="p">.</span><span class="na">setPhysicalCameraId</span><span class="p">(</span><span class="n">target</span><span class="p">.</span><span class="na">info</span><span class="p">.</span><span class="na">id</span><span class="p">).</span><span class="na">build</span><span class="p">()</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">builder</span><span class="p">.</span><span class="na">addCameraFilter</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">cameraInfos</span><span class="w"> </span><span class="o">-&gt;</span>
+<span class="w">                </span><span class="n">cameraInfos</span><span class="p">.</span><span class="na">filter</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Camera2CameraInfo</span><span class="p">.</span><span class="na">from</span><span class="p">(</span><span class="nb">it</span><span class="p">).</span><span class="na">cameraId</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">target</span><span class="p">.</span><span class="na">info</span><span class="p">.</span><span class="na">id</span><span class="w"> </span><span class="p">}</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">ifEmpty</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="n">CameraKLogger</span><span class="p">.</span><span class="na">w</span><span class="p">(</span><span class="s">"CameraK"</span><span class="p">,</span><span class="w"> </span><span class="s">"Camera </span><span class="si">${</span><span class="n">target</span><span class="p">.</span><span class="na">info</span><span class="p">.</span><span class="na">id</span><span class="si">}</span><span class="s"> not offered by CameraX, using default"</span><span class="p">)</span>
+<span class="w">                        </span><span class="n">cameraInfos</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}.</span><span class="na">build</span><span class="p">()</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Reorder bindCamera and pin the Preview builder</strong></li>
+</ul>
+<p>In <code>bindCamera()</code>, the selector is currently created AFTER the Preview builder — <code>pinnedPhysicalId</code> must be set first. Change lines ~142-151 from:</p>
+<div class="highlight"><pre><span></span><code><span class="w">                </span><span class="kd">val</span><span class="w"> </span><span class="nv">resolutionSelector</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">createResolutionSelector</span><span class="p">()</span>
+
+<span class="w">                </span><span class="n">preview</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Preview</span><span class="p">.</span><span class="na">Builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">setResolutionSelector</span><span class="p">(</span><span class="n">resolutionSelector</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">also</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nb">it</span><span class="p">.</span><span class="na">setSurfaceProvider</span><span class="p">(</span><span class="n">previewView</span><span class="p">.</span><span class="na">surfaceProvider</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">}</span>
+
+<span class="w">                </span><span class="kd">val</span><span class="w"> </span><span class="nv">cameraSelector</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">createCameraSelector</span><span class="p">()</span>
+</code></pre></div>
+<p>to:</p>
+<div class="highlight"><pre><span></span><code><span class="w">                </span><span class="kd">val</span><span class="w"> </span><span class="nv">resolutionSelector</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">createResolutionSelector</span><span class="p">()</span>
+<span class="w">                </span><span class="c1">// Must run before any use-case builder: it decides pinnedPhysicalId.</span>
+<span class="w">                </span><span class="kd">val</span><span class="w"> </span><span class="nv">cameraSelector</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">createCameraSelector</span><span class="p">()</span>
+
+<span class="w">                </span><span class="n">preview</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Preview</span><span class="p">.</span><span class="na">Builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">setResolutionSelector</span><span class="p">(</span><span class="n">resolutionSelector</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">apply</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">pinnedPhysicalId</span><span class="o">?.</span><span class="na">let</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Camera2Interop</span><span class="p">.</span><span class="na">Extender</span><span class="p">(</span><span class="k">this</span><span class="p">).</span><span class="na">setPhysicalCameraId</span><span class="p">(</span><span class="nb">it</span><span class="p">)</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">also</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nb">it</span><span class="p">.</span><span class="na">setSurfaceProvider</span><span class="p">(</span><span class="n">previewView</span><span class="p">.</span><span class="na">surfaceProvider</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">}</span>
+</code></pre></div>
+<p>Add import <code>androidx.camera.camera2.interop.Camera2Interop</code> and, if not already present on <code>bindCamera</code>'s containing declarations, keep the <code>@OptIn(ExperimentalCamera2Interop::class)</code> annotation on the modified functions (bindCamera, configureCaptureUseCase, rebuildMultiplexedAnalyzer).</p>
+<ul>
+<li>[ ] <strong>Step 3: Pin ImageCapture and ImageAnalysis builders</strong></li>
+</ul>
+<p><code>configureCaptureUseCase()</code> (~line 364) — add the same apply to the builder chain:</p>
+<div class="highlight"><pre><span></span><code><span class="w">        </span><span class="n">imageCapture</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ImageCapture</span><span class="p">.</span><span class="na">Builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">setFlashMode</span><span class="p">(</span><span class="n">flashMode</span><span class="p">.</span><span class="na">toCameraXFlashMode</span><span class="p">())</span>
+<span class="w">            </span><span class="p">.</span><span class="na">setCaptureMode</span><span class="p">(</span>
+<span class="w">                </span><span class="cm">/* existing when-block unchanged */</span>
+<span class="w">            </span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">setResolutionSelector</span><span class="p">(</span><span class="n">resolutionSelector</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">apply</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">pinnedPhysicalId</span><span class="o">?.</span><span class="na">let</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Camera2Interop</span><span class="p">.</span><span class="na">Extender</span><span class="p">(</span><span class="k">this</span><span class="p">).</span><span class="na">setPhysicalCameraId</span><span class="p">(</span><span class="nb">it</span><span class="p">)</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+</code></pre></div>
+<p><code>rebuildMultiplexedAnalyzer()</code> (~line 428) — same on <code>ImageAnalysis.Builder()</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="w">        </span><span class="n">imageAnalyzer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ImageAnalysis</span><span class="p">.</span><span class="na">Builder</span><span class="p">()</span>
+<span class="w">            </span><span class="cm">/* existing configuration unchanged */</span>
+<span class="w">            </span><span class="p">.</span><span class="na">apply</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">pinnedPhysicalId</span><span class="o">?.</span><span class="na">let</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Camera2Interop</span><span class="p">.</span><span class="na">Extender</span><span class="p">(</span><span class="k">this</span><span class="p">).</span><span class="na">setPhysicalCameraId</span><span class="p">(</span><span class="nb">it</span><span class="p">)</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+</code></pre></div>
+<p>Note: <code>VideoCapture.Builder</code> has no Camera2Interop extender — video recording on a pinned physical lens records whatever the logical camera resolves to. Known ceiling; acceptable (photo/preview/analysis are the pinned paths).</p>
+<ul>
+<li>[ ] <strong>Step 4: Verify compile + tests</strong></li>
+</ul>
+<p>Run: <code>./gradlew cameraK:compileDebugKotlinAndroid cameraK:desktopTest</code>
+Expected: BUILD SUCCESSFUL.</p>
+<ul>
+<li>[ ] <strong>Step 5: Build the Sample APK as an integration smoke check</strong></li>
+</ul>
+<p>Run: <code>./gradlew Sample:assembleDebug</code>
+Expected: BUILD SUCCESSFUL. (On-device verification: switch to ULTRA_WIDE in the Sample and confirm a visibly wider field of view — manual step, note it in the PR description.)</p>
+<ul>
+<li>[ ] <strong>Step 6: Format and commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code>./gradlew<span class="w"> </span>spotlessApply
+git<span class="w"> </span>add<span class="w"> </span>-u<span class="w"> </span>cameraK/src/androidMain
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"feat(android): bind ultra-wide/tele lenses via snapshot ids + physical-camera pinning</span>
+
+<span class="s2">Co-Authored-By: Claude Fable 5 &lt;noreply@anthropic.com&gt;"</span>
+</code></pre></div>
+<hr />
+<h3 id="task-6-ios-extract-discovery-helper-real-capabilities">Task 6: iOS — extract discovery helper + real capabilities<a class="headerlink" href="#task-6-ios-extract-discovery-helper-real-capabilities" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>cameraK/src/appleMain/kotlin/com/kashif/cameraK/controller/CustomCameraController.kt</code>:
+  - Add <code>discoverDevices(...)</code> helper; use it in <code>setupInputs</code> (~line 176) and <code>switchToDeviceType</code> (~lines 531-545)
+  - Add <code>getCameraCapabilities(): List&lt;LensInfo&gt;</code>
+- Modify: <code>cameraK/src/appleMain/kotlin/com/kashif/cameraK/controller/CameraController.apple.kt</code> (replace Task 3's placeholder actual)</p>
+<p><strong>Interfaces:</strong>
+- Consumes: <code>LensInfo</code>, <code>CameraCapabilities</code> (Task 1).
+- Produces: <code>CustomCameraController.getCameraCapabilities(): List&lt;LensInfo&gt;</code>; <code>CameraController.getCameraCapabilities(): CameraCapabilities</code> actual.</p>
+<ul>
+<li>[ ] <strong>Step 1: Add the discovery helper and refactor both call sites</strong></li>
+</ul>
+<p>In <code>CustomCameraController.kt</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="cm">/**</span>
+<span class="cm">     * Single discovery entry point — setupInputs, switchToDeviceType and</span>
+<span class="cm">     * getCameraCapabilities all enumerate through here.</span>
+<span class="cm">     */</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">discoverDevices</span><span class="p">(</span>
+<span class="w">        </span><span class="n">deviceTypes</span><span class="p">:</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="kt">String</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">        </span><span class="n">position</span><span class="p">:</span><span class="w"> </span><span class="n">AVCaptureDevicePosition</span><span class="p">,</span>
+<span class="w">    </span><span class="p">):</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">AVCaptureDevice</span><span class="o">&gt;</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">AVCaptureDeviceDiscoverySession</span><span class="p">.</span><span class="na">discoverySessionWithDeviceTypes</span><span class="p">(</span>
+<span class="w">            </span><span class="n">deviceTypes</span><span class="p">,</span>
+<span class="w">            </span><span class="n">AVMediaTypeVideo</span><span class="p">,</span>
+<span class="w">            </span><span class="n">position</span><span class="p">,</span>
+<span class="w">        </span><span class="p">).</span><span class="na">devices</span><span class="p">.</span><span class="na">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">it</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="n">AVCaptureDevice</span><span class="w"> </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">allLensDeviceTypes</span><span class="p">():</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="kt">String</span><span class="o">&gt;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">listOfNotNull</span><span class="p">(</span>
+<span class="w">        </span><span class="n">AVCaptureDeviceTypeBuiltInWideAngleCamera</span><span class="p">,</span>
+<span class="w">        </span><span class="n">AVCaptureDeviceTypeBuiltInTelephotoCamera</span><span class="p">,</span>
+<span class="w">        </span><span class="n">AVCaptureDeviceTypeBuiltInUltraWideCamera</span><span class="p">,</span>
+<span class="w">    </span><span class="p">)</span>
+</code></pre></div>
+<p>In <code>setupInputs</code> (~line 176), replace the inline <code>AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes(...)</code> block with:</p>
+<div class="highlight"><pre><span></span><code><span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">discovered</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">discoverDevices</span><span class="p">(</span>
+<span class="w">            </span><span class="n">deviceTypeString</span><span class="o">?.</span><span class="na">let</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">listOf</span><span class="p">(</span><span class="nb">it</span><span class="p">)</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">?:</span><span class="w"> </span><span class="n">allLensDeviceTypes</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">AVCaptureDevicePositionUnspecified</span><span class="p">,</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">devices</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">discovered</span><span class="p">.</span><span class="na">ifEmpty</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">listOfNotNull</span><span class="p">(</span><span class="n">AVCaptureDevice</span><span class="p">.</span><span class="na">defaultDeviceWithMediaType</span><span class="p">(</span><span class="n">AVMediaTypeVideo</span><span class="p">)</span><span class="w"> </span><span class="k">as?</span><span class="w"> </span><span class="n">AVCaptureDevice</span><span class="p">)</span>
+<span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+<p>(The <code>devices.forEach { ... }</code> and <code>findByTypeAndPosition</code> logic below stays, but the <code>as AVCaptureDevice</code> casts can be dropped since the list is now typed.)</p>
+<p>In <code>switchToDeviceType</code> (~lines 531-545), replace both discovery blocks with:</p>
+<div class="highlight"><pre><span></span><code><span class="w">        </span><span class="kd">val</span><span class="w"> </span><span class="nv">newDevice</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">discoverDevices</span><span class="p">(</span><span class="n">listOf</span><span class="p">(</span><span class="n">targetType</span><span class="p">),</span><span class="w"> </span><span class="n">position</span><span class="p">).</span><span class="na">firstOrNull</span><span class="p">()</span>
+<span class="w">            </span><span class="o">?:</span><span class="w"> </span><span class="n">discoverDevices</span><span class="p">(</span><span class="n">listOf</span><span class="p">(</span><span class="n">targetType</span><span class="p">),</span><span class="w"> </span><span class="n">AVCaptureDevicePositionUnspecified</span><span class="p">).</span><span class="na">firstOrNull</span><span class="p">()</span>
+<span class="w">            </span><span class="o">?:</span><span class="w"> </span><span class="k">return</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Add the capabilities mapping</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="cm">/**</span>
+<span class="cm">     * Enumerates every built-in lens (wide, telephoto, ultra-wide) on both positions.</span>
+<span class="cm">     */</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">getCameraCapabilities</span><span class="p">():</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">LensInfo</span><span class="o">&gt;</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">discoverDevices</span><span class="p">(</span><span class="n">allLensDeviceTypes</span><span class="p">(),</span><span class="w"> </span><span class="n">AVCaptureDevicePositionUnspecified</span><span class="p">).</span><span class="na">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">device</span><span class="w"> </span><span class="o">-&gt;</span>
+<span class="w">            </span><span class="n">LensInfo</span><span class="p">(</span>
+<span class="w">                </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">device</span><span class="p">.</span><span class="na">uniqueID</span><span class="p">,</span>
+<span class="w">                </span><span class="n">deviceType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">when</span><span class="w"> </span><span class="p">(</span><span class="n">device</span><span class="p">.</span><span class="na">deviceType</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">AVCaptureDeviceTypeBuiltInUltraWideCamera</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">ULTRA_WIDE</span>
+<span class="w">                    </span><span class="n">AVCaptureDeviceTypeBuiltInTelephotoCamera</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">TELEPHOTO</span>
+<span class="w">                    </span><span class="n">AVCaptureDeviceTypeBuiltInWideAngleCamera</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">WIDE_ANGLE</span>
+<span class="w">                    </span><span class="k">else</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">DEFAULT</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="n">lens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">device</span><span class="p">.</span><span class="na">position</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">AVCaptureDevicePositionFront</span><span class="p">)</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">.</span><span class="na">FRONT</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span><span class="p">,</span>
+<span class="w">                </span><span class="n">minZoom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">device</span><span class="p">.</span><span class="na">minAvailableVideoZoomFactor</span><span class="p">.</span><span class="na">toFloat</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">maxZoom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">device</span><span class="p">.</span><span class="na">maxAvailableVideoZoomFactor</span><span class="p">.</span><span class="na">toFloat</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">hasFlash</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">device</span><span class="p">.</span><span class="na">hasFlash</span><span class="p">,</span>
+<span class="w">                </span><span class="n">isLogical</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">            </span><span class="p">)</span>
+<span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+<p>Imports needed in <code>CustomCameraController.kt</code>: <code>com.kashif.cameraK.capabilities.LensInfo</code>, <code>com.kashif.cameraK.enums.CameraDeviceType</code> (already imported: check), <code>com.kashif.cameraK.enums.CameraLens</code> (already imported).</p>
+<ul>
+<li>[ ] <strong>Step 3: Replace the apple actual</strong></li>
+</ul>
+<p>In <code>CameraController.apple.kt</code> (import <code>com.kashif.cameraK.capabilities.CameraCapabilities</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="kd">actual</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">getCameraCapabilities</span><span class="p">():</span><span class="w"> </span><span class="n">CameraCapabilities</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">CameraCapabilities</span><span class="p">(</span><span class="n">customCameraController</span><span class="p">.</span><span class="na">getCameraCapabilities</span><span class="p">())</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 4: Verify iOS compiles</strong></li>
+</ul>
+<p>Run: <code>./gradlew cameraK:compileKotlinIosSimulatorArm64 cameraK:compileKotlinIosArm64</code>
+Expected: BUILD SUCCESSFUL.</p>
+<ul>
+<li>[ ] <strong>Step 5: Format and commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code>./gradlew<span class="w"> </span>spotlessApply
+git<span class="w"> </span>add<span class="w"> </span>-u<span class="w"> </span>cameraK/src/appleMain
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"feat(ios): getCameraCapabilities via unified device discovery helper</span>
+
+<span class="s2">Co-Authored-By: Claude Fable 5 &lt;noreply@anthropic.com&gt;"</span>
+</code></pre></div>
+<hr />
+<h3 id="task-7-docs-full-gate">Task 7: Docs + full gate<a class="headerlink" href="#task-7-docs-full-gate" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>README.MD</code> (the <code>CameraKStateHolder</code> API listing ~line 720 and the <code>CameraController</code> listing ~line 750; feature bullet ~line 22)</p>
+<p><strong>Interfaces:</strong> none — documentation only.</p>
+<ul>
+<li>[ ] <strong>Step 1: Document the API in README</strong></li>
+</ul>
+<p>In the feature bullet (~line 22), change <code>Aspect ratios, zoom, focus, flash control</code> → <code>Aspect ratios, zoom, focus, flash, lens selection (ultra-wide/tele) with hardware capability query</code>. In the <code>CameraKStateHolder</code> API listing add <code>fun getCameraCapabilities(): CameraCapabilities</code> next to the other functions, and in the <code>CameraController</code> listing add:</p>
+<div class="highlight"><pre><span></span><code><span class="w">    </span><span class="c1">// Hardware capabilities</span>
+<span class="w">    </span><span class="kd">fun</span><span class="w"> </span><span class="nf">getCameraCapabilities</span><span class="p">():</span><span class="w"> </span><span class="n">CameraCapabilities</span>
+</code></pre></div>
+<p>Plus a short usage snippet in the appropriate examples area:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">val</span><span class="w"> </span><span class="nv">capabilities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">stateHolder</span><span class="p">.</span><span class="na">getCameraCapabilities</span><span class="p">()</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">ULTRA_WIDE</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">capabilities</span><span class="p">.</span><span class="na">availableDeviceTypes</span><span class="p">(</span><span class="n">CameraLens</span><span class="p">.</span><span class="na">BACK</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">stateHolder</span><span class="p">.</span><span class="na">setPreferredCameraDeviceType</span><span class="p">(</span><span class="n">CameraDeviceType</span><span class="p">.</span><span class="na">ULTRA_WIDE</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Run the full gate</strong></li>
+</ul>
+<p>Run: <code>./gradlew check</code>
+Expected: BUILD SUCCESSFUL (formatting + all target tests).</p>
+<ul>
+<li>[ ] <strong>Step 3: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>add<span class="w"> </span>README.MD
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"docs: document getCameraCapabilities + lens selection</span>
+
+<span class="s2">Co-Authored-By: Claude Fable 5 &lt;noreply@anthropic.com&gt;"</span>
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024 Kamera
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/kashif-e/Kamera" target="_blank" rel="noopener" title="GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../../..", "features": ["navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "toc.follow", "content.code.copy", "content.code.select", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": 1.0}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.3220b9d7.min.js"></script>
+      
+    
+  </body>
+</html>
