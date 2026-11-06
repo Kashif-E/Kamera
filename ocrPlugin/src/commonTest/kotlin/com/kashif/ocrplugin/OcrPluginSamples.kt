@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect

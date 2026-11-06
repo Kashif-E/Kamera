@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf

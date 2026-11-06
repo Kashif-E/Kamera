@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import com.google.android.gms.tasks.Tasks
 import com.kashif.cameraK.utils.CameraKLogger

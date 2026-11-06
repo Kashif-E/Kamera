@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import java.io.File
 import java.lang.reflect.Modifier
@@ -14,8 +14,8 @@ import kotlin.test.assertTrue
 class LegacyPluginSurfaceGoneTest {
     @Test
     fun removedSymbolsAreAbsent() {
-        val classes = classesIn("com.kashif.ocrPlugin")
-        assertTrue(classes.any { it.name == "com.kashif.ocrPlugin.OcrPlugin" }, "no plugin class found in $classes")
+        val classes = classesIn("com.kashif.ocrplugin")
+        assertTrue(classes.any { it.name == "com.kashif.ocrplugin.OcrPlugin" }, "no plugin class found in $classes")
 
         val present = classes.filter { it.simpleName == "RecognitionHandle" }.map { "class ${it.name}" } +
             classes.flatMap { type ->

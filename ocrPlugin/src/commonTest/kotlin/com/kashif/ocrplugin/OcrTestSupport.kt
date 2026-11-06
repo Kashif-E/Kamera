@@ -1,6 +1,6 @@
 @file:OptIn(CameraKEngineApi::class)
 
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.engine.CameraEngine

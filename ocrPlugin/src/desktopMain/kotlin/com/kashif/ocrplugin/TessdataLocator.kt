@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import com.kashif.cameraK.utils.CameraKLogger
 import java.io.File
@@ -37,8 +37,11 @@ internal class TessdataSources(
  */
 internal class BundledModel(val sha256: String, val open: () -> InputStream?)
 
-/** Classpath location of the optional packaged model. */
-internal const val BUNDLED_MODEL_RESOURCE = "/com/kashif/ocrPlugin/tessdata/eng.traineddata"
+/** Classpath location of the optional packaged model, under the 2.0 package's directory. */
+internal const val BUNDLED_MODEL_RESOURCE = "/com/kashif/ocrplugin/tessdata/eng.traineddata"
+
+/** Where 1.x apps packaged the model, before the package became lowercase; read only as a fallback. */
+internal const val LEGACY_BUNDLED_MODEL_RESOURCE = "/com/kashif/ocrPlugin/tessdata/eng.traineddata"
 
 /** SHA-256 of `eng.traineddata` from github.com/tesseract-ocr/tessdata (git blob f4744c20, 23,466,654 bytes). */
 internal const val BUNDLED_MODEL_SHA256 = "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047"
@@ -56,8 +59,18 @@ internal fun processTessdataSources(config: OcrConfig): TessdataSources = Tessda
     environment = System::getenv,
 )
 
-/** Opens the packaged model through [resources], which reads one absolute classpath resource, or returns null. */
-internal fun openBundledModel(resources: (String) -> InputStream?): InputStream? = resources(BUNDLED_MODEL_RESOURCE)
+/**
+ * Opens the packaged model through [resources], which reads one absolute classpath resource, or returns
+ * null. The 2.0 path comes first; a model only at the 1.x path is opened with one warning to move it.
+ */
+internal fun openBundledModel(resources: (String) -> InputStream?): InputStream? =
+    resources(BUNDLED_MODEL_RESOURCE) ?: resources(LEGACY_BUNDLED_MODEL_RESOURCE)?.also {
+        CameraKLogger.w(
+            TAG,
+            "OcrPlugin: the packaged $MODEL_FILE is in the 1.x resource directory com/kashif/ocrPlugin/tessdata; " +
+                "move it to com/kashif/ocrplugin/tessdata, which CameraK 2.0 reads first",
+        )
+    }
 
 /** A per-user application data directory for CameraK's extracted models. */
 internal fun defaultModelCacheDir(): File {

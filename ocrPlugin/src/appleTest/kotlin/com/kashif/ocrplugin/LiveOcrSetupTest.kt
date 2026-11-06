@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import com.kashif.cameraK.frames.pixelBuffer
 import com.kashif.cameraK.utils.CameraKPlatformApi

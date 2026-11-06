@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.locks.ReentrantLock

@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import androidx.compose.runtime.Immutable
 import com.kashif.cameraK.frames.FrameRect
@@ -11,10 +11,12 @@ import com.kashif.cameraK.frames.FrameRect
  * 1. [tessdataPath], when set. It is final: if that directory has no `eng.traineddata`, OCR fails
  *    rather than loading a model from somewhere else.
  * 2. A packaged model: the `eng.traineddata` from github.com/tesseract-ocr/tessdata, placed on the
- *    classpath at `com/kashif/ocrPlugin/tessdata/eng.traineddata`. It is loaded only if its SHA-256
+ *    classpath at `com/kashif/ocrplugin/tessdata/eng.traineddata`. It is loaded only if its SHA-256
  *    matches the one pinned in the library, after it is extracted to a per-user directory
  *    (`~/Library/Application Support/CameraK/tessdata` on macOS, `%LOCALAPPDATA%\CameraK\tessdata`
- *    on Windows, `$XDG_DATA_HOME/CameraK/tessdata` elsewhere).
+ *    on Windows, `$XDG_DATA_HOME/CameraK/tessdata` elsewhere). A model at 1.x's
+ *    `com/kashif/ocrPlugin/tessdata/eng.traineddata` is still read when the 2.0 path has none, with
+ *    one warning to move it.
  * 3. The directory named by the `TESSDATA_PREFIX` environment variable.
  *
  * The working directory is never searched. [tessdataPath] and `TESSDATA_PREFIX` are trusted as

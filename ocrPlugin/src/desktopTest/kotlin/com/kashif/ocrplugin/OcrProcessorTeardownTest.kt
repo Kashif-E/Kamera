@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import java.awt.image.BufferedImage
 import java.util.concurrent.CountDownLatch

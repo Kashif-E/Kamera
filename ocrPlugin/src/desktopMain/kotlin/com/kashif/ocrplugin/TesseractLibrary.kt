@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import org.bytedeco.javacpp.BytePointer
 import org.bytedeco.leptonica.PIX

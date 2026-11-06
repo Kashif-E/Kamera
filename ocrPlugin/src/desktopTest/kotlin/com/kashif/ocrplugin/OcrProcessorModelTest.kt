@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

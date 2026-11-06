@@ -28,8 +28,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Type
-import com.kashif.ocrPlugin.OcrPlugin
-import com.kashif.ocrPlugin.rememberOcrPlugin
+import com.kashif.ocrplugin.OcrPlugin
+import com.kashif.ocrplugin.rememberOcrPlugin
 
 /** The Sample's text recognition: the latest recognized text, shown in a banner. */
 internal class OcrFeature(val plugin: OcrPlugin)

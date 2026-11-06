@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import org.bytedeco.tesseract.global.tesseract.OEM_TESSERACT_ONLY
 import java.util.concurrent.CopyOnWriteArrayList

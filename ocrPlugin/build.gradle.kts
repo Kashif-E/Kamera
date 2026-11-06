@@ -75,7 +75,7 @@ tasks.named<Test>("desktopTest") {
             .asFile
     workingDir = testWorkingDir
     doFirst { testWorkingDir.mkdirs() }
-    systemProperty("ocr.tessdataDir", file("model/com/kashif/ocrPlugin/tessdata").absolutePath)
+    systemProperty("ocr.tessdataDir", file("model/com/kashif/ocrplugin/tessdata").absolutePath)
 }
 
 android {

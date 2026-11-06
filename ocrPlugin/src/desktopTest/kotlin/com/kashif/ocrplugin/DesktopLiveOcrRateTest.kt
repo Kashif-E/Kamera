@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch

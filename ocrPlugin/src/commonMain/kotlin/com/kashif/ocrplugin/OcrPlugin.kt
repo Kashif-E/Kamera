@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -46,7 +46,7 @@ import kotlinx.coroutines.withContext
  * with the frame's rotation; frames that arrive while a recognition runs are skipped, never queued.
  * What it reads is emitted on [results]. Recognized text is never logged.
  *
- * @sample com.kashif.ocrPlugin.RecognizeLiveTextSample
+ * @sample com.kashif.ocrplugin.RecognizeLiveTextSample
  * @property config How live text is recognized.
  */
 public class OcrPlugin internal constructor(
@@ -127,7 +127,7 @@ public class OcrPlugin internal constructor(
      *
      * @return the text, empty when there is none; `Failure(Internal)` carrying the platform's
      *   throwable when the image cannot be read or the recognizer fails. It never throws for either.
-     * @sample com.kashif.ocrPlugin.recognizeStillSample
+     * @sample com.kashif.ocrplugin.recognizeStillSample
      */
     @OptIn(InternalCameraKApi::class)
     public suspend fun recognize(

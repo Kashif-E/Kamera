@@ -1,4 +1,4 @@
-package com.kashif.ocrPlugin
+package com.kashif.ocrplugin
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
