@@ -30,8 +30,11 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      one version key per release train (no two keys give one Maven group the same
                      version), and every plugin it declares is applied somewhere; build scripts
                      apply third-party plugins only through [plugins] aliases (no buildscript
-                     classpath, no versionless id("...")), and libraries declare Compose by explicit
-                     coordinates rather than the compose.* accessors or the compose() function.
+                     classpath, no versionless id("...")), except that a build-logic precompiled
+                     plugin applies by id the [plugins] entries build-logic's build file takes from
+                     the catalog and a module applies build-logic's plugins by id; and libraries
+                     declare Compose by explicit coordinates rather than the compose.* accessors or
+                     the compose() function.
                      Every published build file takes its shared setup from build-logic's convention
                      plugins: a library applies camerak.kmp-library and camerak.publish, the BOM
                      camerak.publish and each relocation camerak.relocation, and none of them sets
@@ -41,8 +44,9 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      .so) sets no NDK version and no jniLibs packaging option, which would have no
                      effect on its artifact and would make contributors install an NDK.
   repository-links   Every GitHub repository link in the build (POM, Dokka homepage and source
-                     links) names the repository POM_URL names, and the dead convention-plugins
-                     included build stays deleted.
+                     links) names the repository POM_URL names, the dead convention-plugins
+                     included build stays deleted, and every build settings includes (build-logic)
+                     has a precompiled plugin some module applies.
   module-sources     Every tracked Kotlin source file lives in a module settings.gradle.kts includes;
                      a .kt file no build compiles is dead code that still reads as part of the library.
                      The iOS engine's internals stay internal: Kotlin/Native has no reflection that
@@ -839,8 +843,15 @@ COMPOSE_ACCESSOR = re.compile(
 
 COMPOSE_FUNCTION_IMPORT = re.compile(r"^import\s+org\.jetbrains\.compose\.compose\s*$", re.MULTILINE)
 SETTINGS_INCLUDE = re.compile(r'\binclude\(\s*"(:?[A-Za-z0-9_-]+)"\s*\)')
-PUBLISH_PLUGIN = re.compile(r"\balias\(libs\.plugins\.vanniktech\.publish\)")
-MULTIPLATFORM_PLUGIN = re.compile(r"\balias\(libs\.plugins\.multiplatform\)")
+PUBLISH_PLUGIN = re.compile(r'\balias\(libs\.plugins\.vanniktech\.publish\)|\bid\(\s*"camerak\.publish"\s*\)')
+MULTIPLATFORM_PLUGIN = re.compile(r'\balias\(libs\.plugins\.multiplatform\)|\bid\(\s*"camerak\.kmp-library"\s*\)')
+# A precompiled script plugin of an included build: build-logic/src/main/kotlin/<plugin id>.gradle.kts.
+PRECOMPILED_PLUGIN = re.compile(r"^(?P<build>[A-Za-z0-9_.-]+)/src/main/kotlin/(?P<id>[A-Za-z0-9_.-]+)\.gradle\.kts$")
+
+
+def precompiled_plugins(names) -> Dict[str, str]:
+    """The precompiled script plugins among [names], each plugin id to the directory of its build."""
+    return {match["id"]: match["build"] for match in map(PRECOMPILED_PLUGIN.match, names) if match}
 
 
 def unlisted_library_modules(settings_text: str, scripts: Dict[str, str], listed: List[str] = LIBRARY_MODULES) -> List[str]:
@@ -890,6 +901,23 @@ def catalog_problems(catalog_text: str, scripts: Dict[str, str]) -> List[str]:
         "plugins": {accessor(key): key for key in catalog["plugins"]},
         "libraries": {accessor(key): key for key in catalog["libraries"]},
     }
+    # A precompiled plugin applies a catalog plugin by id, the only way it can, once its build's build
+    # file takes that [plugins] entry from the catalog; a module applies a precompiled plugin by its id.
+    included_plugins = precompiled_plugins(scripts)
+    plugin_ids = {fields.get("id"): key for key, fields in catalog["plugins"].items()}
+
+    def build_classpath(build: str) -> set:
+        text = scripts.get(f"{build}/build.gradle.kts", "")
+        keys = set()
+        for match in ACCESSOR.finditer(text):
+            path = match.group(1)
+            if path.startswith("plugins."):
+                path = path[len("plugins."):]
+                candidates = [a for a in accessors["plugins"] if path == a or path.startswith(a + ".")]
+                if candidates:
+                    keys.add(accessors["plugins"][max(candidates, key=len)])
+        return keys
+
     for name, text in scripts.items():
         for match in ACCESSOR.finditer(text):
             path = match.group(1)
@@ -906,7 +934,14 @@ def catalog_problems(catalog_text: str, scripts: Dict[str, str]) -> List[str]:
                 applied.add(accessors["plugins"].get(match.group(1), match.group(1)))
         if "classpath(" in text:
             problems.append(f"{name} puts a plugin on a buildscript classpath; declare it in [plugins] and use alias(...)")
+        precompiled = PRECOMPILED_PLUGIN.match(name)
         for plugin_id in VERSIONLESS_PLUGIN_ID.findall(text):
+            if plugin_id in included_plugins:
+                continue
+            key = plugin_ids.get(plugin_id)
+            if precompiled and key is not None and key in build_classpath(precompiled["build"]):
+                applied.add(key)
+                continue
             problems.append(f"{name} applies id(\"{plugin_id}\") without the catalog; use a [plugins] alias")
         module = name.split("/", 1)[0]
         if module in LIBRARY_MODULES:
@@ -1136,7 +1171,14 @@ def repository_link_problems(repository: str, files: Dict[str, str]) -> List[str
             problems.append(f"{name}: convention-plugins/ was deleted; publishing is configured in one place")
             continue
         for build in INCLUDED_BUILD.findall(text):
-            problems.append(f"{name} includes the build {build}, which no module applies")
+            if not any(
+                plugin_id in PLUGIN_ID.findall(other)
+                for plugin_id, owner in precompiled_plugins(files).items()
+                if owner == build
+                for other_name, other in files.items()
+                if not other_name.startswith(f"{build}/")
+            ):
+                problems.append(f"{name} includes the build {build}, which no module applies")
         for match in GITHUB_REPOSITORY.finditer(text):
             if match.groups() != expected.groups():
                 line = text.count("\n", 0, match.start()) + 1
