@@ -101,6 +101,34 @@ internal fun CameraContent(
         },
         plugins = plugins,
     )
+    SampleCameraKScreen(holder) {
+        CameraScreen(
+            holder = holder,
+            imageSaver = imageSaver,
+            qrScanner = qrScanner,
+            ocr = ocr,
+            analyzer = analyzer,
+            snackbarHostState = snackbarHostState,
+            qrCodes = qrCodes,
+            recognizedText = recognizedText,
+            latestFrame = latestFrame,
+            aspectRatio = settings.aspectRatio,
+            onAspectRatioChange = { settings = settings.copy(aspectRatio = it) },
+            resolution = settings.resolution,
+            onResolutionChange = { settings = settings.copy(resolution = it) },
+            imageFormat = settings.imageFormat,
+            onImageFormatChange = { settings = settings.copy(imageFormat = it) },
+            qualityPrioritization = settings.qualityPrioritization,
+            onQualityPrioritizationChange = { settings = settings.copy(qualityPrioritization = it) },
+            cameraDeviceType = settings.cameraDeviceType,
+            onCameraDeviceTypeChange = { settings = settings.copy(cameraDeviceType = it) },
+        )
+    }
+}
+
+/** [CameraKScreen] with the Sample's starting and error screens, and [content] over the preview. */
+@Composable
+internal fun SampleCameraKScreen(holder: CameraKStateHolder, content: @Composable () -> Unit) {
     CameraKScreen(
         holder = holder,
         loading = {
@@ -141,27 +169,7 @@ internal fun CameraContent(
             }
         },
     ) {
-        CameraScreen(
-            holder = holder,
-            imageSaver = imageSaver,
-            qrScanner = qrScanner,
-            ocr = ocr,
-            analyzer = analyzer,
-            snackbarHostState = snackbarHostState,
-            qrCodes = qrCodes,
-            recognizedText = recognizedText,
-            latestFrame = latestFrame,
-            aspectRatio = settings.aspectRatio,
-            onAspectRatioChange = { settings = settings.copy(aspectRatio = it) },
-            resolution = settings.resolution,
-            onResolutionChange = { settings = settings.copy(resolution = it) },
-            imageFormat = settings.imageFormat,
-            onImageFormatChange = { settings = settings.copy(imageFormat = it) },
-            qualityPrioritization = settings.qualityPrioritization,
-            onQualityPrioritizationChange = { settings = settings.copy(qualityPrioritization = it) },
-            cameraDeviceType = settings.cameraDeviceType,
-            onCameraDeviceTypeChange = { settings = settings.copy(cameraDeviceType = it) },
-        )
+        content()
     }
 }
 
