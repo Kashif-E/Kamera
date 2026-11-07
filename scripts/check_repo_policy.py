@@ -1271,6 +1271,8 @@ def apple_internal_problems(files: Dict[str, str], internals: Dict[str, str] = A
 # are over the limit too and outside W12's splits; splitting them would add their paths here.
 SPLIT_ENGINE_FILES = [
     "cameraK-core/src/androidMain/kotlin/com/kashif/cameraK/controller/AndroidCameraEngine.kt",
+    "cameraK-core/src/appleMain/kotlin/com/kashif/cameraK/controller/AppleCameraEngine.kt",
+    "cameraK-core/src/appleMain/kotlin/com/kashif/cameraK/controller/CustomCameraController.kt",
 ]
 ENGINE_FILE_LINE_LIMIT = 600
 
