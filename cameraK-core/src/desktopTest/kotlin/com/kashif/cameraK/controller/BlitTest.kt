@@ -18,8 +18,6 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
-import org.bytedeco.javacv.Frame
-import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
@@ -98,15 +96,6 @@ class BlitTest {
             stills += seen(image)
             writeImage(image, format, file)
         }
-        val recorded = CopyOnWriteArrayList<Seen>()
-        rig.recordingConverter = {
-            object : Java2DFrameConverter() {
-                override fun convert(img: BufferedImage?): Frame? {
-                    img?.let { recorded += seen(it) }
-                    return super.convert(img)
-                }
-            }
-        }
         val steps = DesktopRecordingSteps(this, rig)
         val sut = rig.engine(
             config.copy { analysisFormat = FrameFormat.RGBA_8888 },
@@ -132,7 +121,10 @@ class BlitTest {
             steps.startRecording(sut)
             steps.frameAt(1_040)
             assertIs<CameraKResult.Success<RecordedVideo>>(steps.stopRecording(sut))
-            val recorderSize = rig.recorders.single().sizeAtStart
+            val recorder = rig.recorders.single()
+            // The frame the encoder was handed: the slot's own bytes, read at the frame's stride.
+            val recorded = recorder.pixels.map { Seen(it.width, it.height, it.rgb(0, 0)) }
+            val recorderSize = recorder.sizeAtStart
 
             return Consumers(
                 preview = preview,

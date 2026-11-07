@@ -6,7 +6,6 @@ import com.kashif.cameraK.video.VideoConfiguration
 import org.bytedeco.ffmpeg.global.avcodec
 import org.bytedeco.javacv.FFmpegFrameRecorder
 import org.bytedeco.javacv.FrameRecorder
-import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
 import java.io.File
 import java.io.IOException
@@ -19,20 +18,17 @@ import java.time.format.DateTimeFormatter
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
-import org.bytedeco.javacv.FrameConverter as JavaCvFrameConverter
 
 /**
  * Where and how the desktop engine writes its stills and recordings: the seams tests replace.
  *
  * @property userHome The folder the app-owned folders resolve under: the user's home.
  * @property recorderFactory A new, unstarted recorder for an output path and a configuration.
- * @property recordingConverter A new converter from the producer's frames to the recorder's.
  * @property writeCapture Writes a still to a file in a format, throwing if it cannot.
  */
 internal class DesktopMedia(
     val userHome: File = defaultUserHome(),
     val recorderFactory: (String, VideoConfiguration) -> FrameRecorder = ::createFrameRecorder,
-    val recordingConverter: () -> JavaCvFrameConverter<BufferedImage> = ::Java2DFrameConverter,
     val writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage,
 )
 

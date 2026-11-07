@@ -22,10 +22,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bytedeco.javacv.FrameRecorder
-import java.awt.image.BufferedImage
 import java.io.File
 import kotlin.time.Duration.Companion.microseconds
-import org.bytedeco.javacv.FrameConverter as JavaCvFrameConverter
 
 /** What a recording tells its engine, under the engine's lock. */
 internal interface RecordingListener {
@@ -39,8 +37,10 @@ internal interface RecordingListener {
 /**
  * One desktop recording (§5). A coroutine of its own, on its own worker thread, owns the recorder
  * from `start()` to `release()`: it is the only code that calls them, so `stop()` never runs while
- * `record()` encodes. It writes the producer's leased frames (§8 desktop: no copy per frame, each
- * lease given back once the frame is written), stamped by the common [RecordingClock], so a
+ * `record()` encodes. It writes the producer's leased frames (§8 desktop: each lease given back once
+ * the frame is written) as they are: the encoder is handed the slot's own bytes
+ * ([LeasedFrame.recordable]), so the recording adds no conversion or copy of its own, and the
+ * producer's one blit is the only one. Each frame is stamped by the common [RecordingClock], so a
  * pause is left out of the file, and enforces both limits itself: `maxDuration` on the recorded
  * time and `maxFileSizeBytes` on the file's length after each frame.
  *
@@ -54,7 +54,6 @@ internal class DesktopRecording(
     val path: String,
     private val config: VideoConfiguration,
     private val recorder: FrameRecorder,
-    private val converter: JavaCvFrameConverter<BufferedImage>,
     private val nanoClock: () -> Long,
     private val diskFull: (File) -> Boolean,
     private val listener: RecordingListener,
@@ -105,7 +104,6 @@ internal class DesktopRecording(
             worker.close()
             // Cancelled before it ran (a stop or close during the start): nothing was started.
             if (!ran) {
-                closeConverter()
                 release()
                 deleteFile()
             }
@@ -207,7 +205,6 @@ internal class DesktopRecording(
         }
         clock = RecordingClock(nanoClock())
         if (!listener.onStarted(this)) {
-            closeConverter()
             stopAndRelease()
             deleteFile()
             clock = null
@@ -240,7 +237,7 @@ internal class DesktopRecording(
         if (frameNumber <= lastFrameNumber) return false
         lastFrameNumber = frameNumber
         recorder.timestamp = timestamp
-        recorder.record(converter.convert(frame.image))
+        recorder.record(frame.recordable)
         framesWritten++
         lastTimestampMicros = timestamp
         val maxSize = config.maxFileSizeBytes?.takeIf { it > 0 }
@@ -252,7 +249,6 @@ internal class DesktopRecording(
     }
 
     private fun finish(failure: Exception?) {
-        closeConverter()
         val stopFailure = stopAndRelease()
         val playable = framesWritten > 0 && stopFailure == null
         val endFailure = failure ?: stopFailure
@@ -322,14 +318,6 @@ internal class DesktopRecording(
     } catch (e: Exception) {
         CameraKLogger.e(TAG, "Releasing the recorder failed", e)
         e
-    }
-
-    private fun closeConverter() {
-        try {
-            converter.close()
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Closing the recording's frame converter failed", e)
-        }
     }
 
     private fun deleteFile() {

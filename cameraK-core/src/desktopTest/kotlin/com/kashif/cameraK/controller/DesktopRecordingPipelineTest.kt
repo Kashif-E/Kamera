@@ -10,8 +10,6 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
 import kotlinx.coroutines.test.runTest
-import org.bytedeco.javacv.Java2DFrameConverter
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -20,8 +18,8 @@ import kotlin.test.assertTrue
 /**
  * Desktop recordings play in real time: each frame reaches the encoder with the time it was
  * captured, measured from the start of the recording with paused time left out, at the camera's
- * own frame size, and the recording's frame converter is closed when it ends. Over the engine's
- * rig, whose camera delivers a frame when the case says so, at the time the case sets.
+ * own frame size, and the recording leaves nothing but its recorder to release when it ends. Over
+ * the engine's rig, whose camera delivers a frame when the case says so, at the time the case sets.
  */
 class DesktopRecordingPipelineTest {
     // The engine crops frames to the configured aspect ratio; the rig's camera is 4:3 (64 x 48), so a
@@ -124,18 +122,9 @@ class DesktopRecordingPipelineTest {
     }
 
     @Test
-    fun theRecordingsFrameConverter_isClosedWhenTheRecordingStops() = runTest {
+    fun theRecordingsFrames_holdNoNativeMemory_andItsRecorderIsReleasedOnceWhenItStops() = runTest {
         val rig = DesktopEngineRig(testScheduler)
         val steps = DesktopRecordingSteps(this, rig)
-        val closes = AtomicInteger(0)
-        rig.recordingConverter = {
-            object : Java2DFrameConverter() {
-                override fun close() {
-                    closes.incrementAndGet()
-                    super.close()
-                }
-            }
-        }
         val sut = rig.engine()
         try {
             steps.open(sut)
@@ -144,7 +133,12 @@ class DesktopRecordingPipelineTest {
             repeat(5) { steps.frameAt(START_MILLIS + (it + 1) * FRAME_MILLIS) }
             assertIs<CameraKResult.Success<RecordedVideo>>(steps.stopRecording(sut))
 
-            assertEquals(1, closes.get(), "frame converter close() count")
+            // The frames wrap the producer's slots, so the recording has no converter or native
+            // frame of its own to close: the recorder is the one thing it releases.
+            val recorder = rig.recorders.single()
+            assertEquals(5, recorder.buffers.size, "frames recorded")
+            assertTrue(recorder.buffers.none { it.isDirect }, "a recorded frame held native memory")
+            assertEquals(1, recorder.releaseCount.get(), "recorder release() count")
         } finally {
             sut.close()
             rig.settle()

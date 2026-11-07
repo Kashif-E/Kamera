@@ -19,7 +19,6 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameGrabber
-import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
 import java.io.File
 import java.nio.ByteBuffer
@@ -35,7 +34,6 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration
-import org.bytedeco.javacv.FrameConverter as JavaCvFrameConverter
 
 /**
  * A desktop engine on the test scheduler, with its producer on real threads the rig can see. The
@@ -83,14 +81,10 @@ internal class DesktopEngineRig(
     /** How the engines write a still to its file. */
     var writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage
 
-    /** A new converter from the producer's frames to a recorder's, for each recording. */
-    var recordingConverter: () -> JavaCvFrameConverter<BufferedImage> = ::Java2DFrameConverter
-
     /** The media an engine of the rig writes with: under [home], into [recorders]. */
     fun media(): DesktopMedia = DesktopMedia(
         userHome = home,
         recorderFactory = { path, _ -> recorderScript(path).also { recorders += it } },
-        recordingConverter = { recordingConverter() },
         writeCapture = { image, format, file -> writeCapture(image, format, file) },
     )
 

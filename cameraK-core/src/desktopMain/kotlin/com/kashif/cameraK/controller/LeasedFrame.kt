@@ -6,11 +6,14 @@ import com.kashif.cameraK.state.Resolution
 import kotlinx.atomicfu.AtomicLong
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.channels.Channel
+import org.bytedeco.javacv.Frame
 import java.awt.AlphaComposite
 import java.awt.Graphics2D
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.awt.image.DataBufferByte
+import java.nio.Buffer
+import java.nio.ByteBuffer
 
 /**
  * One slot of the producer's frame pool (§8 desktop): an owned `TYPE_3BYTE_BGR` [image], already
@@ -21,7 +24,7 @@ import java.awt.image.DataBufferByte
  *
  * Analysis frames read [analysisPlanes]: the slot's pixels in the session's format and at its
  * analysis size, converted into a buffer the slot keeps, at most once per frame and only when an
- * analyzer takes the frame.
+ * analyzer takes the frame. The recorder reads [recordable], the same bytes as a JavaCV frame.
  */
 internal class LeasedFrame internal constructor(
     val width: Int,
@@ -36,6 +39,19 @@ internal class LeasedFrame internal constructor(
     // TYPE_3BYTE_BGR stores B, G, R per pixel, rows of width * 3 bytes.
     private val bgr: ByteArray = (image.raster.dataBuffer as DataBufferByte).data
     private val leases = atomic(0)
+
+    /**
+     * The slot's pixels for the recorder: a BGR24 frame over the slot's own bytes, not a copy, at
+     * the slot's width, height and stride. It owns no native memory, so nothing releases it.
+     */
+    internal val recordable: Frame = Frame().apply {
+        imageWidth = width
+        imageHeight = height
+        imageDepth = Frame.DEPTH_UBYTE
+        imageChannels = BGR_BYTES
+        imageStride = width * BGR_BYTES
+        image = arrayOf<Buffer>(ByteBuffer.wrap(bgr))
+    }
 
     /** When the camera delivered the frame in the slot, on the engine's clock. */
     @Volatile var captureNanos: Long = 0L
@@ -144,6 +160,7 @@ internal class LeasedFrame internal constructor(
 
     private companion object {
         const val RGBA_BYTES = 4
+        const val BGR_BYTES = 3
     }
 }
 

@@ -772,9 +772,8 @@ internal class DesktopCameraEngine(
             val error = JavaCvErrorMapper.recordingFailure(e, playable = false, file.absolutePath, isDiskFull(folder))
             return CameraKResult.Failure(error ?: CameraKError.Internal(e))
         }
-        val converter = media.recordingConverter()
         return CameraKResult.Success(
-            DesktopRecording(file.absolutePath, video, recorder, converter, nanoClock, ::isDiskFull, recordingListener),
+            DesktopRecording(file.absolutePath, video, recorder, nanoClock, ::isDiskFull, recordingListener),
         )
     }
 
