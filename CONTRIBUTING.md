@@ -119,17 +119,24 @@ exempt.
 until the file is regenerated, in the same commit, over everything CI and a release resolve:
 
 ```bash
+rm gradle/verification-metadata.xml
 ./gradlew --write-verification-metadata sha256 --continue verifyAll -Pcamerak.verify.rerunTests=true \
     -Pcamerak.verify.publishRepo="$PWD/build/verify/m2" -PsignAllPublications=false
 ./gradlew --write-verification-metadata sha256 --dry-run publishAllPublicationsToMavenCentralRepository
 mv gradle/verification-metadata.dryrun.xml gradle/verification-metadata.xml
 ```
 
-The second command adds what signing a release resolves; with `--dry-run` it uploads nothing and
-writes `verification-metadata.dryrun.xml`, the first file plus those entries. Review the new entries
-before committing. CI runs on Apple silicon macOS, which is what the file covers; on another OS the
-desktop tests' bytedeco natives and the Kotlin/Native toolchain differ, so run the first command there
-and do not commit the result.
+Starting without the file drops the entries nothing resolves any more; Gradle only ever adds to an
+existing one. The `verifyAll` run's `checkBuildIntegrity` fails on the missing file, and `--continue`
+runs everything else. `verifyAll` includes the sample target, which runs
+`:Sample:iosSimulatorArm64ResolveResourcesFromDependencies` and
+`:Sample:iosArm64ResolveResourcesFromDependencies`: what the Xcode build's Gradle phase
+(`embedAndSignAppleFrameworkForXcode`) resolves beyond the framework link, so the file also covers
+building `iosApp` in Xcode. The publish dry run adds what signing a release resolves; with
+`--dry-run` it uploads nothing and writes `verification-metadata.dryrun.xml`, the first run's file plus
+those entries. Review the diff before committing. CI runs on Apple silicon macOS, which is what the
+file covers; on another OS the desktop tests' bytedeco natives and the Kotlin/Native toolchain
+differ, so run the `verifyAll` command there and do not commit the result.
 
 The release entries come from a `--dry-run`, which resolves what signing needs but runs no task, so
 nothing has yet checked them against a real upload. The maintainer's first signed
