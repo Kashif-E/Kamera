@@ -6,6 +6,7 @@ import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.coroutines.isFatal
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraEngineFactory
@@ -505,6 +506,31 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         commands.refused()?.let { return it }
         return orientationRequests.submit(orientation)
     }
+
+    /**
+     * Meters focus and exposure at [point] of the preview's content rectangle; the platform returns
+     * to its own metering after its default timeout, and a camera switch drops the point.
+     * `Failure(InvalidArgument(FOCUS_POINT))` for a coordinate outside [0, 1] or NaN, and
+     * `Failure(Unsupported(FOCUS_POINT))` on a camera whose capabilities do not list it in
+     * `supportsFocusPoint`.
+     */
+    public suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = TODO("Y-focus-api")
+
+    /**
+     * Sets the exposure compensation [index], in the bound camera's
+     * [CameraCapabilities.exposureCompensationRange] (each step is its `exposureCompensationStep` EV).
+     * `Failure(Unsupported(EXPOSURE_COMPENSATION))` on a camera without one, and
+     * `Failure(InvalidArgument(EXPOSURE_COMPENSATION))` for an index outside it. The index is kept:
+     * after a camera switch or a restart it is applied again, clamped into the new camera's range.
+     * [uiState] shows it once the platform has applied it.
+     */
+    public suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = TODO("Y-focus-api")
+
+    /**
+     * Returns the camera to the platform's metering and exposure index 0, for what it supports;
+     * `Failure(Unsupported(FOCUS_POINT))` on a camera that supports neither.
+     */
+    public suspend fun resetFocusAndExposure(): CameraKResult<Unit> = TODO("Y-focus-api")
 
     /**
      * Where the recording is: Idle, then Starting, Recording, Paused and Stopping, and Finished after

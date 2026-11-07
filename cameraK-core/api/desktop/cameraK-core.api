@@ -1,8 +1,11 @@
 public final class com/kashif/cameraK/capabilities/CameraCapabilities {
 	public static final field Companion Lcom/kashif/cameraK/capabilities/CameraCapabilities$Companion;
-	public fun <init> (Ljava/util/List;Ljava/util/Map;Ljava/util/Map;ZLjava/util/Set;ZLjava/util/Set;Ljava/util/Set;Ljava/util/Set;Z)V
+	public fun <init> (Ljava/util/List;Ljava/util/Map;Ljava/util/Map;ZLjava/util/Set;ZLjava/util/Set;Ljava/util/Set;Ljava/util/Set;ZLjava/util/Set;Ljava/util/Map;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/Map;Ljava/util/Map;ZLjava/util/Set;ZLjava/util/Set;Ljava/util/Set;Ljava/util/Set;ZLjava/util/Set;Ljava/util/Map;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun availableDeviceTypes (Lcom/kashif/cameraK/enums/CameraLens;)Ljava/util/Set;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun exposureCompensationRange (Ljava/lang/String;)Lkotlin/ranges/IntRange;
+	public final fun exposureCompensationStep (Ljava/lang/String;)Ljava/lang/Float;
 	public final fun getAllLenses ()Ljava/util/List;
 	public final fun getExternalLenses ()Ljava/util/List;
 	public final fun getSupportedAnalysisFormats ()Ljava/util/Set;
@@ -16,6 +19,7 @@ public final class com/kashif/cameraK/capabilities/CameraCapabilities {
 	public final fun lenses (Lcom/kashif/cameraK/enums/CameraLens;)Ljava/util/List;
 	public final fun supportedFlashModes (Ljava/lang/String;)Ljava/util/Set;
 	public final fun supportedTorchModes (Ljava/lang/String;)Ljava/util/Set;
+	public final fun supportsFocusPoint (Ljava/lang/String;)Z
 	public fun toString ()Ljava/lang/String;
 }
 
@@ -79,6 +83,15 @@ public final class com/kashif/cameraK/controller/CameraGrabber {
 	public final fun grabCurrentFrame ()Ljava/awt/image/BufferedImage;
 }
 
+public final class com/kashif/cameraK/controls/NormalizedPoint {
+	public fun <init> (FF)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getX ()F
+	public final fun getY ()F
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/kashif/cameraK/controls/TogglesKt {
 	public static final fun cycleFlashMode (Lcom/kashif/cameraK/state/CameraKStateHolder;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun toggleLens (Lcom/kashif/cameraK/state/CameraKStateHolder;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -98,6 +111,7 @@ public abstract interface class com/kashif/cameraK/engine/CameraEngine {
 	public abstract fun capture (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun close ()V
 	public abstract fun closeAndJoin (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun focusAt (Lcom/kashif/cameraK/controls/NormalizedPoint;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun getCapabilities ()Lkotlinx/coroutines/flow/StateFlow;
 	public abstract fun getDeviceOrientation ()Lkotlinx/coroutines/flow/StateFlow;
 	public abstract fun getFrames ()Lcom/kashif/cameraK/frames/FrameSource;
@@ -108,8 +122,10 @@ public abstract interface class com/kashif/cameraK/engine/CameraEngine {
 	public abstract fun getZoom ()Lkotlinx/coroutines/flow/StateFlow;
 	public abstract fun pauseRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun prepareRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun resetFocusAndExposure (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun resumeRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun selectCamera (Lcom/kashif/cameraK/engine/CameraSelection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun setExposureCompensation (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setFlashMode (Lcom/kashif/cameraK/enums/FlashMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setTargetOrientation (Lcom/kashif/cameraK/enums/DeviceOrientation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setTorchMode (Lcom/kashif/cameraK/enums/TorchMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -118,6 +134,12 @@ public abstract interface class com/kashif/cameraK/engine/CameraEngine {
 	public abstract fun startRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun stop (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun stopRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/kashif/cameraK/engine/CameraEngine$DefaultImpls {
+	public static fun focusAt (Lcom/kashif/cameraK/engine/CameraEngine;Lcom/kashif/cameraK/controls/NormalizedPoint;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun resetFocusAndExposure (Lcom/kashif/cameraK/engine/CameraEngine;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun setExposureCompensation (Lcom/kashif/cameraK/engine/CameraEngine;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public abstract interface class com/kashif/cameraK/engine/CameraEngineFactory {
@@ -163,8 +185,10 @@ public final class com/kashif/cameraK/engine/CameraSelection$Default : com/kashi
 }
 
 public final class com/kashif/cameraK/engine/DesiredHardware {
-	public fun <init> (Lcom/kashif/cameraK/engine/CameraSelection;Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;FLcom/kashif/cameraK/enums/DeviceOrientation;)V
+	public fun <init> (Lcom/kashif/cameraK/engine/CameraSelection;Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;FLcom/kashif/cameraK/enums/DeviceOrientation;I)V
+	public synthetic fun <init> (Lcom/kashif/cameraK/engine/CameraSelection;Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;FLcom/kashif/cameraK/enums/DeviceOrientation;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExposureCompensationIndex ()I
 	public final fun getFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
 	public final fun getSelection ()Lcom/kashif/cameraK/engine/CameraSelection;
 	public final fun getTargetOrientation ()Lcom/kashif/cameraK/enums/DeviceOrientation;
@@ -250,9 +274,11 @@ public final class com/kashif/cameraK/engine/EngineState$Opening : com/kashif/ca
 }
 
 public final class com/kashif/cameraK/engine/HardwareState {
-	public fun <init> (Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;Lcom/kashif/cameraK/capabilities/LensInfo;Lcom/kashif/cameraK/enums/DeviceOrientation;)V
+	public fun <init> (Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;Lcom/kashif/cameraK/capabilities/LensInfo;Lcom/kashif/cameraK/enums/DeviceOrientation;I)V
+	public synthetic fun <init> (Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;Lcom/kashif/cameraK/capabilities/LensInfo;Lcom/kashif/cameraK/enums/DeviceOrientation;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCamera ()Lcom/kashif/cameraK/capabilities/LensInfo;
+	public final fun getExposureCompensationIndex ()I
 	public final fun getFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
 	public final fun getTargetOrientation ()Lcom/kashif/cameraK/enums/DeviceOrientation;
 	public final fun getTorchMode ()Lcom/kashif/cameraK/enums/TorchMode;
@@ -386,8 +412,10 @@ public final class com/kashif/cameraK/error/CameraFeature$Companion {
 	public final fun getASPECT_RATIO-h2w28t0 ()Ljava/lang/String;
 	public final fun getAUDIO-h2w28t0 ()Ljava/lang/String;
 	public final fun getDEVICE_TYPE-h2w28t0 ()Ljava/lang/String;
+	public final fun getEXPOSURE_COMPENSATION-h2w28t0 ()Ljava/lang/String;
 	public final fun getFLASH_AUTO-h2w28t0 ()Ljava/lang/String;
 	public final fun getFLASH_ON-h2w28t0 ()Ljava/lang/String;
+	public final fun getFOCUS_POINT-h2w28t0 ()Ljava/lang/String;
 	public final fun getIMAGE_FORMAT-h2w28t0 ()Ljava/lang/String;
 	public final fun getLENS_SWITCH-h2w28t0 ()Ljava/lang/String;
 	public final fun getPAUSE_RESUME-h2w28t0 ()Ljava/lang/String;
@@ -450,6 +478,12 @@ public final class com/kashif/cameraK/error/CameraKError$Hardware : com/kashif/c
 
 public final class com/kashif/cameraK/error/CameraKError$Internal : com/kashif/cameraK/error/CameraKError {
 	public fun <init> (Ljava/lang/Throwable;)V
+	public fun isRetryable ()Z
+}
+
+public final class com/kashif/cameraK/error/CameraKError$InvalidArgument : com/kashif/cameraK/error/CameraKError {
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getOperation-rFEmPBI ()Ljava/lang/String;
 	public fun isRetryable ()Z
 }
 
@@ -529,7 +563,9 @@ public final class com/kashif/cameraK/error/CameraOperation {
 public final class com/kashif/cameraK/error/CameraOperation$Companion {
 	public final fun getCAPTURE-rFEmPBI ()Ljava/lang/String;
 	public final fun getDEVICE_TYPE-rFEmPBI ()Ljava/lang/String;
+	public final fun getEXPOSURE_COMPENSATION-rFEmPBI ()Ljava/lang/String;
 	public final fun getFLASH-rFEmPBI ()Ljava/lang/String;
+	public final fun getFOCUS_POINT-rFEmPBI ()Ljava/lang/String;
 	public final fun getLENS-rFEmPBI ()Ljava/lang/String;
 	public final fun getORIENTATION-rFEmPBI ()Ljava/lang/String;
 	public final fun getRECORD_PAUSE-rFEmPBI ()Ljava/lang/String;
@@ -952,6 +988,7 @@ public final class com/kashif/cameraK/state/CameraConfiguration {
 	public final fun getFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
 	public final fun getFrameAnalysis ()Z
 	public final fun getImageFormat ()Lcom/kashif/cameraK/enums/ImageFormat;
+	public final fun getInitialExposureCompensationIndex ()I
 	public final fun getInitialZoomRatio ()F
 	public final fun getMirrorFrontCamera ()Z
 	public final fun getOutputDirectory ()Ljava/lang/String;
@@ -973,6 +1010,7 @@ public final class com/kashif/cameraK/state/CameraConfiguration$Builder {
 	public final fun getFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
 	public final fun getFrameAnalysis ()Z
 	public final fun getImageFormat ()Lcom/kashif/cameraK/enums/ImageFormat;
+	public final fun getInitialExposureCompensationIndex ()I
 	public final fun getInitialZoomRatio ()F
 	public final fun getMirrorFrontCamera ()Z
 	public final fun getOutputDirectory ()Ljava/lang/String;
@@ -989,6 +1027,7 @@ public final class com/kashif/cameraK/state/CameraConfiguration$Builder {
 	public final fun setFlashMode (Lcom/kashif/cameraK/enums/FlashMode;)V
 	public final fun setFrameAnalysis (Z)V
 	public final fun setImageFormat (Lcom/kashif/cameraK/enums/ImageFormat;)V
+	public final fun setInitialExposureCompensationIndex (I)V
 	public final fun setInitialZoomRatio (F)V
 	public final fun setMirrorFrontCamera (Z)V
 	public final fun setOutputDirectory (Ljava/lang/String;)V
@@ -1094,6 +1133,7 @@ public final class com/kashif/cameraK/state/CameraKStateHolder : java/lang/AutoC
 	public fun close ()V
 	public final fun closeAndJoin (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun detachPlugin (Lcom/kashif/cameraK/state/CameraKPlugin;)V
+	public final fun focusAt (Lcom/kashif/cameraK/controls/NormalizedPoint;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getCameraCapabilities ()Lcom/kashif/cameraK/capabilities/CameraCapabilities;
 	public final fun getCameraState ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getCapabilities ()Lkotlinx/coroutines/flow/StateFlow;
@@ -1111,11 +1151,13 @@ public final class com/kashif/cameraK/state/CameraKStateHolder : java/lang/AutoC
 	public final fun prepareRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun prepareRecording$default (Lcom/kashif/cameraK/state/CameraKStateHolder;Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun recheckPermission ()V
+	public final fun resetFocusAndExposure (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun resumeRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun retry ()Z
 	public final fun selectCamera (Lcom/kashif/cameraK/enums/CameraLens;Lcom/kashif/cameraK/enums/CameraDeviceType;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun selectCamera (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun selectCamera$default (Lcom/kashif/cameraK/state/CameraKStateHolder;Lcom/kashif/cameraK/enums/CameraLens;Lcom/kashif/cameraK/enums/CameraDeviceType;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun setExposureCompensation (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setFlashMode (Lcom/kashif/cameraK/enums/FlashMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setTargetOrientation (Lcom/kashif/cameraK/enums/DeviceOrientation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setTorchMode (Lcom/kashif/cameraK/enums/TorchMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -1136,6 +1178,7 @@ public final class com/kashif/cameraK/state/CameraUIState {
 	public final fun getCameraDeviceType ()Lcom/kashif/cameraK/enums/CameraDeviceType;
 	public final fun getCameraId ()Ljava/lang/String;
 	public final fun getCameraLens ()Lcom/kashif/cameraK/enums/CameraLens;
+	public final fun getExposureCompensationIndex ()I
 	public final fun getFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
 	public final fun getPendingCaptures ()I
 	public final fun getTargetOrientation ()Lcom/kashif/cameraK/enums/DeviceOrientation;

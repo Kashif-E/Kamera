@@ -11,8 +11,10 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoQuality
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(CameraKEngineApi::class)
@@ -153,6 +155,9 @@ class CameraCapabilitiesTest {
             "an image format" to full(supportedImageFormats = setOf(ImageFormat.PNG)),
             "an analysis format" to full(supportedAnalysisFormats = setOf(FrameFormat.RGBA_8888)),
             "square capture" to full(supportsSquareCapture = false),
+            "a focus point camera" to full(focusPointCameras = emptySet()),
+            "an exposure range" to full(exposureRanges = mapOf("0" to -2..2)),
+            "an exposure step" to full(exposureSteps = mapOf("0" to 0.5f)),
         )
         variants.forEach { (member, variant) ->
             assertNotEquals(full(), variant, "capabilities that differ only in $member compared equal")
@@ -170,6 +175,9 @@ class CameraCapabilitiesTest {
         supportedImageFormats: Set<ImageFormat> = setOf(ImageFormat.JPEG),
         supportedAnalysisFormats: Set<FrameFormat> = setOf(FrameFormat.YUV_420),
         supportsSquareCapture: Boolean = true,
+        focusPointCameras: Set<String> = setOf("0"),
+        exposureRanges: Map<String, IntRange> = mapOf("0" to -4..4),
+        exposureSteps: Map<String, Float> = mapOf("0" to 0.25f),
     ) = CameraCapabilities(
         allLenses = lenses,
         flashModes = flashModes,
@@ -181,5 +189,72 @@ class CameraCapabilitiesTest {
         supportedImageFormats = supportedImageFormats,
         supportedAnalysisFormats = supportedAnalysisFormats,
         supportsSquareCapture = supportsSquareCapture,
+        focusPointCameras = focusPointCameras,
+        exposureCompensationRanges = exposureRanges,
+        exposureCompensationSteps = exposureSteps,
     )
+
+    @Test
+    fun focusPointAndExposureArePerCamera() {
+        val given = CameraCapabilities(
+            allLenses = caps.allLenses,
+            flashModes = emptyMap(),
+            torchModes = emptyMap(),
+            supportsPauseResume = false,
+            supportedVideoQualities = emptySet(),
+            supportsVideoBitrate = false,
+            supportedAspectRatios = emptySet(),
+            supportedImageFormats = emptySet(),
+            supportedAnalysisFormats = emptySet(),
+            supportsSquareCapture = false,
+            focusPointCameras = setOf("0"),
+            exposureCompensationRanges = mapOf("0" to -6..6, "1" to -2..2),
+            exposureCompensationSteps = mapOf("0" to 1f / 3, "1" to 0.5f),
+        )
+
+        assertTrue(given.supportsFocusPoint("0"), "the back wide camera")
+        assertFalse(given.supportsFocusPoint("1"), "the front camera")
+        assertEquals(-6..6, given.exposureCompensationRange("0"))
+        assertEquals(1f / 3, given.exposureCompensationStep("0"))
+        assertEquals(-2..2, given.exposureCompensationRange("1"))
+        assertEquals(0.5f, given.exposureCompensationStep("1"))
+        assertNull(given.exposureCompensationRange("2"), "the ultra-wide has no compensation")
+        assertNull(given.exposureCompensationStep("2"), "no step without a range")
+    }
+
+    @Test
+    fun focusPointAndExposureClaimNothingByDefaultOrForAnIdThatIsNotALens() {
+        listOf("0", "1", "2").forEach { id ->
+            assertFalse(caps.supportsFocusPoint(id), "capabilitiesOf claims a focus point for '$id'")
+            assertNull(caps.exposureCompensationRange(id), "capabilitiesOf claims exposure for '$id'")
+            assertNull(caps.exposureCompensationStep(id), "capabilitiesOf claims an exposure step for '$id'")
+        }
+
+        val stray = full(
+            focusPointCameras = setOf("99"),
+            exposureRanges = mapOf("99" to -1..1),
+            exposureSteps = mapOf("99" to 1f),
+        )
+        assertFalse(stray.supportsFocusPoint("99"))
+        assertNull(stray.exposureCompensationRange("99"))
+        assertNull(stray.exposureCompensationStep("99"))
+    }
+
+    @Test
+    fun anExposureRangeWithoutAStepOrAStepWithoutARangeIsRefused() {
+        assertFailsWith<IllegalArgumentException>("a range without a step") {
+            full(exposureRanges = mapOf("0" to -4..4), exposureSteps = emptyMap())
+        }
+        assertFailsWith<IllegalArgumentException>("a step without a range") {
+            full(exposureRanges = emptyMap(), exposureSteps = mapOf("0" to 0.25f))
+        }
+    }
+
+    @Test
+    fun theFocusAndExposureMembersAreInToString() {
+        val text = full().toString()
+        listOf("focusPointCameras=", "exposureCompensationRanges=", "exposureCompensationSteps=").forEach {
+            assertTrue(it in text, "toString omits $it: $text")
+        }
+    }
 }

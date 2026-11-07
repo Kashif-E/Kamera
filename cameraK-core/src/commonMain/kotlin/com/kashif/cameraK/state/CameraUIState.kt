@@ -26,6 +26,8 @@ import dev.drewhamilton.poko.Poko
  * @property pendingCaptures How many captures are in flight.
  * @property cameraId The bound camera's `LensInfo.id`; null before the first bind.
  * @property targetOrientation The orientation outputs are fixed to; null follows the device.
+ * @property exposureCompensationIndex The exposure compensation index the platform applies, in the
+ *   bound camera's `CameraCapabilities.exposureCompensationRange`; 0 on a camera without compensation.
  *
  * @sample com.kashif.cameraK.samples.cameraUIStateSample
  * @sample com.kashif.cameraK.samples.cameraUIStateFlashButtonSample
@@ -40,4 +42,5 @@ public class CameraUIState internal constructor(
     public val pendingCaptures: Int = 0,
     public val cameraId: String? = null,
     public val targetOrientation: DeviceOrientation? = null,
+    public val exposureCompensationIndex: Int = 0,
 )

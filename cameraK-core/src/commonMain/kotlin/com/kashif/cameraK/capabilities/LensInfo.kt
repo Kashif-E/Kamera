@@ -58,6 +58,13 @@ public class LensInfo @CameraKEngineApi constructor(
  *
  * @param flashModes The flash modes per [LensInfo.id].
  * @param torchModes The torch modes per [LensInfo.id].
+ * @param focusPointCameras The [LensInfo.id]s of the cameras that meter focus and exposure at a point.
+ * @param exposureCompensationRanges The exposure compensation index range per [LensInfo.id]; a camera
+ *   without compensation has no entry.
+ * @param exposureCompensationSteps The exposure value, in EV, of one index step per [LensInfo.id]: an
+ *   entry exactly for each camera in [exposureCompensationRanges].
+ * @throws IllegalArgumentException when [exposureCompensationRanges] and [exposureCompensationSteps]
+ *   name different cameras.
  */
 public class CameraCapabilities @CameraKEngineApi constructor(
     allLenses: List<LensInfo>,
@@ -70,6 +77,9 @@ public class CameraCapabilities @CameraKEngineApi constructor(
     supportedImageFormats: Set<ImageFormat>,
     supportedAnalysisFormats: Set<FrameFormat>,
     public val supportsSquareCapture: Boolean,
+    focusPointCameras: Set<String> = emptySet(),
+    exposureCompensationRanges: Map<String, IntRange> = emptyMap(),
+    exposureCompensationSteps: Map<String, Float> = emptyMap(),
 ) {
     public val allLenses: List<LensInfo> = allLenses.toList()
     private val flashModes: Map<String, Set<FlashMode>> = flashModes.mapValues { it.value.toSet() }
@@ -78,6 +88,9 @@ public class CameraCapabilities @CameraKEngineApi constructor(
     public val supportedAspectRatios: Set<AspectRatio> = supportedAspectRatios.toSet()
     public val supportedImageFormats: Set<ImageFormat> = supportedImageFormats.toSet()
     public val supportedAnalysisFormats: Set<FrameFormat> = supportedAnalysisFormats.toSet()
+    private val focusPointCameras: Set<String> = focusPointCameras.toSet()
+    private val exposureCompensationRanges: Map<String, IntRange> = exposureCompensationRanges.toMap()
+    private val exposureCompensationSteps: Map<String, Float> = exposureCompensationSteps.toMap()
 
     /** Built-in lenses facing [lens], in enumeration order. External cameras are not included. */
     public fun lenses(lens: CameraLens): List<LensInfo> = allLenses.filter { it.lens == lens && !it.isExternal }
@@ -96,6 +109,21 @@ public class CameraCapabilities @CameraKEngineApi constructor(
     /** The torch modes of the camera [cameraId]; OFF only for an id that is not in [allLenses]. */
     public fun supportedTorchModes(cameraId: String): Set<TorchMode> =
         torchModes[cameraId]?.takeIf { isLens(cameraId) } ?: setOf(TorchMode.OFF)
+
+    /**
+     * Whether the camera [cameraId] meters focus and exposure at a point; false for an id that is not
+     * in [allLenses].
+     */
+    public fun supportsFocusPoint(cameraId: String): Boolean = TODO("Y-focus-api")
+
+    /**
+     * The exposure compensation indexes the camera [cameraId] takes, 0 being the platform's default
+     * exposure; null when it has no compensation or the id is not in [allLenses].
+     */
+    public fun exposureCompensationRange(cameraId: String): IntRange? = TODO("Y-focus-api")
+
+    /** The exposure value, in EV, of one index step of the camera [cameraId]; null exactly when its range is null. */
+    public fun exposureCompensationStep(cameraId: String): Float? = TODO("Y-focus-api")
 
     private fun isLens(cameraId: String): Boolean = allLenses.any { it.id == cameraId }
 

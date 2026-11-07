@@ -27,6 +27,8 @@ class OpenVocabularyTest {
             "TARGET_ORIENTATION" to CameraFeature.TARGET_ORIENTATION,
             "ANALYSIS_FORMAT" to CameraFeature.ANALYSIS_FORMAT,
             "PLATFORM_VERSION" to CameraFeature.PLATFORM_VERSION,
+            "FOCUS_POINT" to CameraFeature.FOCUS_POINT,
+            "EXPOSURE_COMPENSATION" to CameraFeature.EXPOSURE_COMPENSATION,
         ),
     )
 
@@ -46,6 +48,8 @@ class OpenVocabularyTest {
             "LENS" to CameraOperation.LENS,
             "DEVICE_TYPE" to CameraOperation.DEVICE_TYPE,
             "ORIENTATION" to CameraOperation.ORIENTATION,
+            "FOCUS_POINT" to CameraOperation.FOCUS_POINT,
+            "EXPOSURE_COMPENSATION" to CameraOperation.EXPOSURE_COMPENSATION,
         ),
     )
 

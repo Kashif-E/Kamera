@@ -85,6 +85,14 @@ public sealed class CameraKError(public val cause: Throwable?) {
         override val isRetryable: Boolean get() = false
     }
 
+    /**
+     * An argument outside what [operation] takes: a focus point outside [0, 1], or an exposure index
+     * outside the bound camera's range. Only the holder returns it, before calling the camera.
+     */
+    public class InvalidArgument(public val operation: CameraOperation) : CameraKError(null) {
+        override val isRetryable: Boolean get() = false
+    }
+
     public data object NotReady : CameraKError(null) {
         override val isRetryable: Boolean get() = true
     }

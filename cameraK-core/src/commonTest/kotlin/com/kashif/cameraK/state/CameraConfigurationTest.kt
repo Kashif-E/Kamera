@@ -29,6 +29,11 @@ class CameraConfigurationTest {
         assertEquals(CameraDefaults.FLASH, config.flashMode, "flashMode")
         assertEquals(CameraDefaults.TORCH, config.torchMode, "torchMode")
         assertEquals(CameraDefaults.ZOOM_RATIO, config.initialZoomRatio, "initialZoomRatio")
+        assertEquals(
+            CameraDefaults.EXPOSURE_COMPENSATION_INDEX,
+            config.initialExposureCompensationIndex,
+            "initialExposureCompensationIndex",
+        )
         assertEquals(CameraDefaults.IMAGE_FORMAT, config.imageFormat, "imageFormat")
         assertEquals(CameraDefaults.QUALITY, config.qualityPrioritization, "qualityPrioritization")
         assertEquals(CameraDefaults.ASPECT_RATIO, config.aspectRatio, "aspectRatio")
@@ -42,6 +47,7 @@ class CameraConfigurationTest {
         // The platform default camera, and the 16:9 every rememberCameraKState user already gets.
         assertEquals(null, CameraDefaults.LENS)
         assertEquals(AspectRatio.RATIO_16_9, CameraDefaults.ASPECT_RATIO)
+        assertEquals(0, CameraDefaults.EXPOSURE_COMPENSATION_INDEX, "the platform's default exposure")
     }
 
     @Test
@@ -81,6 +87,7 @@ class CameraConfigurationTest {
             "flashMode" to { flashMode = FlashMode.AUTO },
             "torchMode" to { torchMode = TorchMode.ON },
             "initialZoomRatio" to { initialZoomRatio = 2f },
+            "initialExposureCompensationIndex" to { initialExposureCompensationIndex = -2 },
             "imageFormat" to { imageFormat = ImageFormat.PNG },
             "qualityPrioritization" to { qualityPrioritization = QualityPrioritization.SPEED },
             "aspectRatio" to { aspectRatio = AspectRatio.RATIO_1_1 },

@@ -6,6 +6,7 @@ import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
@@ -145,6 +146,14 @@ public class FakeCameraEngine(
 
     /** A `LensInfo.id`; null before the first open. */
     public var appliedCameraId: String? = null
+        private set
+
+    /** The exposure compensation index the fake platform last received; 0 on a camera without compensation. */
+    public var appliedExposureCompensationIndex: Int = 0
+        private set
+
+    /** The point the last successful [focusAt] sent to the fake platform; null before one and after a reset. */
+    public var lastFocusPoint: NormalizedPoint? = null
         private set
 
     /** Native releases the fake performed: 1 after the first close, never more. */
@@ -317,6 +326,12 @@ public class FakeCameraEngine(
         updateDesired(targetOrientation = orientation)
         return CameraKResult.Success(Unit)
     }
+
+    override suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = TODO("Y-focus-api")
+
+    override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = TODO("Y-focus-api")
+
+    override suspend fun resetFocusAndExposure(): CameraKResult<Unit> = TODO("Y-focus-api")
 
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> {
         callLog += "prepareRecording"
@@ -492,6 +507,16 @@ public class FakeCameraEngine(
         callback("reportZoom") {
             if (isLive()) _zoom.value = ZoomState(ratio, minRatio, maxRatio)
         }
+    }
+
+    /** The platform reports the exposure compensation index it applied (rule 5). */
+    public fun reportExposureIndex(index: Int) {
+        TODO("Y-focus-api")
+    }
+
+    /** The next [focusAt] the camera supports fails with [error] instead of reaching the fake platform. */
+    public fun failNextFocus(error: CameraKError) {
+        TODO("Y-focus-api")
     }
 
     /** [lensId] is a `LensInfo.id` from the capabilities; an unknown one is ignored. */

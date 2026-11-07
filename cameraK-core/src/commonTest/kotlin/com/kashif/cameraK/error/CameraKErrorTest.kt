@@ -27,6 +27,7 @@ class CameraKErrorTest {
         CameraKError.Timeout(CameraOperation.START, cause) to true,
         CameraKError.Busy(CameraOperation.CAPTURE) to true,
         CameraKError.InvalidState(CameraOperation.RECORD_STOP) to false,
+        CameraKError.InvalidArgument(CameraOperation.EXPOSURE_COMPENSATION) to false,
         CameraKError.NotReady to true,
         CameraKError.Closed to false,
         CameraKError.Internal(cause) to false,
@@ -70,6 +71,7 @@ class CameraKErrorTest {
             setOf(
                 CameraKError.Busy::class,
                 CameraKError.InvalidState::class,
+                CameraKError.InvalidArgument::class,
                 CameraKError.NotReady::class,
                 CameraKError.Closed::class,
             )

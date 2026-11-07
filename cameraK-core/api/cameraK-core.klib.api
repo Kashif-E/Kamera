@@ -241,6 +241,9 @@ abstract interface com.kashif.cameraK.engine/CameraEngine { // com.kashif.camera
     abstract suspend fun startRecording(com.kashif.cameraK.video/VideoConfiguration): com.kashif.cameraK.result/CameraKResult<kotlin/String> // com.kashif.cameraK.engine/CameraEngine.startRecording|startRecording(com.kashif.cameraK.video.VideoConfiguration){}[0]
     abstract suspend fun stop() // com.kashif.cameraK.engine/CameraEngine.stop|stop(){}[0]
     abstract suspend fun stopRecording(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/RecordedVideo> // com.kashif.cameraK.engine/CameraEngine.stopRecording|stopRecording(){}[0]
+    open suspend fun focusAt(com.kashif.cameraK.controls/NormalizedPoint): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.engine/CameraEngine.focusAt|focusAt(com.kashif.cameraK.controls.NormalizedPoint){}[0]
+    open suspend fun resetFocusAndExposure(): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.engine/CameraEngine.resetFocusAndExposure|resetFocusAndExposure(){}[0]
+    open suspend fun setExposureCompensation(kotlin/Int): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.engine/CameraEngine.setExposureCompensation|setExposureCompensation(kotlin.Int){}[0]
 }
 
 abstract interface com.kashif.cameraK.engine/PlatformPreviewSource { // com.kashif.cameraK.engine/PlatformPreviewSource|null[0]
@@ -697,7 +700,7 @@ abstract class com.kashif.cameraK.state/CameraKEvent { // com.kashif.cameraK.sta
 }
 
 final class com.kashif.cameraK.capabilities/CameraCapabilities { // com.kashif.cameraK.capabilities/CameraCapabilities|null[0]
-    constructor <init>(kotlin.collections/List<com.kashif.cameraK.capabilities/LensInfo>, kotlin.collections/Map<kotlin/String, kotlin.collections/Set<com.kashif.cameraK.enums/FlashMode>>, kotlin.collections/Map<kotlin/String, kotlin.collections/Set<com.kashif.cameraK.enums/TorchMode>>, kotlin/Boolean, kotlin.collections/Set<com.kashif.cameraK.video/VideoQuality>, kotlin/Boolean, kotlin.collections/Set<com.kashif.cameraK.enums/AspectRatio>, kotlin.collections/Set<com.kashif.cameraK.enums/ImageFormat>, kotlin.collections/Set<com.kashif.cameraK.frames/FrameFormat>, kotlin/Boolean) // com.kashif.cameraK.capabilities/CameraCapabilities.<init>|<init>(kotlin.collections.List<com.kashif.cameraK.capabilities.LensInfo>;kotlin.collections.Map<kotlin.String,kotlin.collections.Set<com.kashif.cameraK.enums.FlashMode>>;kotlin.collections.Map<kotlin.String,kotlin.collections.Set<com.kashif.cameraK.enums.TorchMode>>;kotlin.Boolean;kotlin.collections.Set<com.kashif.cameraK.video.VideoQuality>;kotlin.Boolean;kotlin.collections.Set<com.kashif.cameraK.enums.AspectRatio>;kotlin.collections.Set<com.kashif.cameraK.enums.ImageFormat>;kotlin.collections.Set<com.kashif.cameraK.frames.FrameFormat>;kotlin.Boolean){}[0]
+    constructor <init>(kotlin.collections/List<com.kashif.cameraK.capabilities/LensInfo>, kotlin.collections/Map<kotlin/String, kotlin.collections/Set<com.kashif.cameraK.enums/FlashMode>>, kotlin.collections/Map<kotlin/String, kotlin.collections/Set<com.kashif.cameraK.enums/TorchMode>>, kotlin/Boolean, kotlin.collections/Set<com.kashif.cameraK.video/VideoQuality>, kotlin/Boolean, kotlin.collections/Set<com.kashif.cameraK.enums/AspectRatio>, kotlin.collections/Set<com.kashif.cameraK.enums/ImageFormat>, kotlin.collections/Set<com.kashif.cameraK.frames/FrameFormat>, kotlin/Boolean, kotlin.collections/Set<kotlin/String> = ..., kotlin.collections/Map<kotlin/String, kotlin.ranges/IntRange> = ..., kotlin.collections/Map<kotlin/String, kotlin/Float> = ...) // com.kashif.cameraK.capabilities/CameraCapabilities.<init>|<init>(kotlin.collections.List<com.kashif.cameraK.capabilities.LensInfo>;kotlin.collections.Map<kotlin.String,kotlin.collections.Set<com.kashif.cameraK.enums.FlashMode>>;kotlin.collections.Map<kotlin.String,kotlin.collections.Set<com.kashif.cameraK.enums.TorchMode>>;kotlin.Boolean;kotlin.collections.Set<com.kashif.cameraK.video.VideoQuality>;kotlin.Boolean;kotlin.collections.Set<com.kashif.cameraK.enums.AspectRatio>;kotlin.collections.Set<com.kashif.cameraK.enums.ImageFormat>;kotlin.collections.Set<com.kashif.cameraK.frames.FrameFormat>;kotlin.Boolean;kotlin.collections.Set<kotlin.String>;kotlin.collections.Map<kotlin.String,kotlin.ranges.IntRange>;kotlin.collections.Map<kotlin.String,kotlin.Float>){}[0]
 
     final val allLenses // com.kashif.cameraK.capabilities/CameraCapabilities.allLenses|{}allLenses[0]
         final fun <get-allLenses>(): kotlin.collections/List<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.capabilities/CameraCapabilities.allLenses.<get-allLenses>|<get-allLenses>(){}[0]
@@ -720,10 +723,13 @@ final class com.kashif.cameraK.capabilities/CameraCapabilities { // com.kashif.c
 
     final fun availableDeviceTypes(com.kashif.cameraK.enums/CameraLens): kotlin.collections/Set<com.kashif.cameraK.enums/CameraDeviceType> // com.kashif.cameraK.capabilities/CameraCapabilities.availableDeviceTypes|availableDeviceTypes(com.kashif.cameraK.enums.CameraLens){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.capabilities/CameraCapabilities.equals|equals(kotlin.Any?){}[0]
+    final fun exposureCompensationRange(kotlin/String): kotlin.ranges/IntRange? // com.kashif.cameraK.capabilities/CameraCapabilities.exposureCompensationRange|exposureCompensationRange(kotlin.String){}[0]
+    final fun exposureCompensationStep(kotlin/String): kotlin/Float? // com.kashif.cameraK.capabilities/CameraCapabilities.exposureCompensationStep|exposureCompensationStep(kotlin.String){}[0]
     final fun hashCode(): kotlin/Int // com.kashif.cameraK.capabilities/CameraCapabilities.hashCode|hashCode(){}[0]
     final fun lenses(com.kashif.cameraK.enums/CameraLens): kotlin.collections/List<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.capabilities/CameraCapabilities.lenses|lenses(com.kashif.cameraK.enums.CameraLens){}[0]
     final fun supportedFlashModes(kotlin/String): kotlin.collections/Set<com.kashif.cameraK.enums/FlashMode> // com.kashif.cameraK.capabilities/CameraCapabilities.supportedFlashModes|supportedFlashModes(kotlin.String){}[0]
     final fun supportedTorchModes(kotlin/String): kotlin.collections/Set<com.kashif.cameraK.enums/TorchMode> // com.kashif.cameraK.capabilities/CameraCapabilities.supportedTorchModes|supportedTorchModes(kotlin.String){}[0]
+    final fun supportsFocusPoint(kotlin/String): kotlin/Boolean // com.kashif.cameraK.capabilities/CameraCapabilities.supportsFocusPoint|supportsFocusPoint(kotlin.String){}[0]
     final fun toString(): kotlin/String // com.kashif.cameraK.capabilities/CameraCapabilities.toString|toString(){}[0]
 
     final object Companion { // com.kashif.cameraK.capabilities/CameraCapabilities.Companion|null[0]
@@ -804,6 +810,19 @@ final class com.kashif.cameraK.capture/RecordedVideo { // com.kashif.cameraK.cap
     final fun toString(): kotlin/String // com.kashif.cameraK.capture/RecordedVideo.toString|toString(){}[0]
 }
 
+final class com.kashif.cameraK.controls/NormalizedPoint { // com.kashif.cameraK.controls/NormalizedPoint|null[0]
+    constructor <init>(kotlin/Float, kotlin/Float) // com.kashif.cameraK.controls/NormalizedPoint.<init>|<init>(kotlin.Float;kotlin.Float){}[0]
+
+    final val x // com.kashif.cameraK.controls/NormalizedPoint.x|{}x[0]
+        final fun <get-x>(): kotlin/Float // com.kashif.cameraK.controls/NormalizedPoint.x.<get-x>|<get-x>(){}[0]
+    final val y // com.kashif.cameraK.controls/NormalizedPoint.y|{}y[0]
+        final fun <get-y>(): kotlin/Float // com.kashif.cameraK.controls/NormalizedPoint.y.<get-y>|<get-y>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.kashif.cameraK.controls/NormalizedPoint.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.kashif.cameraK.controls/NormalizedPoint.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.kashif.cameraK.controls/NormalizedPoint.toString|toString(){}[0]
+}
+
 final class com.kashif.cameraK.coroutines/CameraKDispatchers { // com.kashif.cameraK.coroutines/CameraKDispatchers|null[0]
     constructor <init>(kotlinx.coroutines/CoroutineDispatcher = ..., kotlinx.coroutines/CoroutineDispatcher = ..., kotlinx.coroutines/CoroutineDispatcher = ...) // com.kashif.cameraK.coroutines/CameraKDispatchers.<init>|<init>(kotlinx.coroutines.CoroutineDispatcher;kotlinx.coroutines.CoroutineDispatcher;kotlinx.coroutines.CoroutineDispatcher){}[0]
 
@@ -829,8 +848,10 @@ final class com.kashif.cameraK.engine/CameraKEnvironment { // com.kashif.cameraK
 }
 
 final class com.kashif.cameraK.engine/DesiredHardware { // com.kashif.cameraK.engine/DesiredHardware|null[0]
-    constructor <init>(com.kashif.cameraK.engine/CameraSelection, com.kashif.cameraK.enums/FlashMode, com.kashif.cameraK.enums/TorchMode, kotlin/Float, com.kashif.cameraK.enums/DeviceOrientation?) // com.kashif.cameraK.engine/DesiredHardware.<init>|<init>(com.kashif.cameraK.engine.CameraSelection;com.kashif.cameraK.enums.FlashMode;com.kashif.cameraK.enums.TorchMode;kotlin.Float;com.kashif.cameraK.enums.DeviceOrientation?){}[0]
+    constructor <init>(com.kashif.cameraK.engine/CameraSelection, com.kashif.cameraK.enums/FlashMode, com.kashif.cameraK.enums/TorchMode, kotlin/Float, com.kashif.cameraK.enums/DeviceOrientation?, kotlin/Int = ...) // com.kashif.cameraK.engine/DesiredHardware.<init>|<init>(com.kashif.cameraK.engine.CameraSelection;com.kashif.cameraK.enums.FlashMode;com.kashif.cameraK.enums.TorchMode;kotlin.Float;com.kashif.cameraK.enums.DeviceOrientation?;kotlin.Int){}[0]
 
+    final val exposureCompensationIndex // com.kashif.cameraK.engine/DesiredHardware.exposureCompensationIndex|{}exposureCompensationIndex[0]
+        final fun <get-exposureCompensationIndex>(): kotlin/Int // com.kashif.cameraK.engine/DesiredHardware.exposureCompensationIndex.<get-exposureCompensationIndex>|<get-exposureCompensationIndex>(){}[0]
     final val flashMode // com.kashif.cameraK.engine/DesiredHardware.flashMode|{}flashMode[0]
         final fun <get-flashMode>(): com.kashif.cameraK.enums/FlashMode // com.kashif.cameraK.engine/DesiredHardware.flashMode.<get-flashMode>|<get-flashMode>(){}[0]
     final val selection // com.kashif.cameraK.engine/DesiredHardware.selection|{}selection[0]
@@ -848,10 +869,12 @@ final class com.kashif.cameraK.engine/DesiredHardware { // com.kashif.cameraK.en
 }
 
 final class com.kashif.cameraK.engine/HardwareState { // com.kashif.cameraK.engine/HardwareState|null[0]
-    constructor <init>(com.kashif.cameraK.enums/FlashMode, com.kashif.cameraK.enums/TorchMode, com.kashif.cameraK.capabilities/LensInfo?, com.kashif.cameraK.enums/DeviceOrientation?) // com.kashif.cameraK.engine/HardwareState.<init>|<init>(com.kashif.cameraK.enums.FlashMode;com.kashif.cameraK.enums.TorchMode;com.kashif.cameraK.capabilities.LensInfo?;com.kashif.cameraK.enums.DeviceOrientation?){}[0]
+    constructor <init>(com.kashif.cameraK.enums/FlashMode, com.kashif.cameraK.enums/TorchMode, com.kashif.cameraK.capabilities/LensInfo?, com.kashif.cameraK.enums/DeviceOrientation?, kotlin/Int = ...) // com.kashif.cameraK.engine/HardwareState.<init>|<init>(com.kashif.cameraK.enums.FlashMode;com.kashif.cameraK.enums.TorchMode;com.kashif.cameraK.capabilities.LensInfo?;com.kashif.cameraK.enums.DeviceOrientation?;kotlin.Int){}[0]
 
     final val camera // com.kashif.cameraK.engine/HardwareState.camera|{}camera[0]
         final fun <get-camera>(): com.kashif.cameraK.capabilities/LensInfo? // com.kashif.cameraK.engine/HardwareState.camera.<get-camera>|<get-camera>(){}[0]
+    final val exposureCompensationIndex // com.kashif.cameraK.engine/HardwareState.exposureCompensationIndex|{}exposureCompensationIndex[0]
+        final fun <get-exposureCompensationIndex>(): kotlin/Int // com.kashif.cameraK.engine/HardwareState.exposureCompensationIndex.<get-exposureCompensationIndex>|<get-exposureCompensationIndex>(){}[0]
     final val flashMode // com.kashif.cameraK.engine/HardwareState.flashMode|{}flashMode[0]
         final fun <get-flashMode>(): com.kashif.cameraK.enums/FlashMode // com.kashif.cameraK.engine/HardwareState.flashMode.<get-flashMode>|<get-flashMode>(){}[0]
     final val targetOrientation // com.kashif.cameraK.engine/HardwareState.targetOrientation|{}targetOrientation[0]
@@ -919,6 +942,8 @@ final class com.kashif.cameraK.state/CameraConfiguration { // com.kashif.cameraK
         final fun <get-frameAnalysis>(): kotlin/Boolean // com.kashif.cameraK.state/CameraConfiguration.frameAnalysis.<get-frameAnalysis>|<get-frameAnalysis>(){}[0]
     final val imageFormat // com.kashif.cameraK.state/CameraConfiguration.imageFormat|{}imageFormat[0]
         final fun <get-imageFormat>(): com.kashif.cameraK.enums/ImageFormat // com.kashif.cameraK.state/CameraConfiguration.imageFormat.<get-imageFormat>|<get-imageFormat>(){}[0]
+    final val initialExposureCompensationIndex // com.kashif.cameraK.state/CameraConfiguration.initialExposureCompensationIndex|{}initialExposureCompensationIndex[0]
+        final fun <get-initialExposureCompensationIndex>(): kotlin/Int // com.kashif.cameraK.state/CameraConfiguration.initialExposureCompensationIndex.<get-initialExposureCompensationIndex>|<get-initialExposureCompensationIndex>(){}[0]
     final val initialZoomRatio // com.kashif.cameraK.state/CameraConfiguration.initialZoomRatio|{}initialZoomRatio[0]
         final fun <get-initialZoomRatio>(): kotlin/Float // com.kashif.cameraK.state/CameraConfiguration.initialZoomRatio.<get-initialZoomRatio>|<get-initialZoomRatio>(){}[0]
     final val mirrorFrontCamera // com.kashif.cameraK.state/CameraConfiguration.mirrorFrontCamera|{}mirrorFrontCamera[0]
@@ -967,6 +992,9 @@ final class com.kashif.cameraK.state/CameraConfiguration { // com.kashif.cameraK
         final var imageFormat // com.kashif.cameraK.state/CameraConfiguration.Builder.imageFormat|{}imageFormat[0]
             final fun <get-imageFormat>(): com.kashif.cameraK.enums/ImageFormat // com.kashif.cameraK.state/CameraConfiguration.Builder.imageFormat.<get-imageFormat>|<get-imageFormat>(){}[0]
             final fun <set-imageFormat>(com.kashif.cameraK.enums/ImageFormat) // com.kashif.cameraK.state/CameraConfiguration.Builder.imageFormat.<set-imageFormat>|<set-imageFormat>(com.kashif.cameraK.enums.ImageFormat){}[0]
+        final var initialExposureCompensationIndex // com.kashif.cameraK.state/CameraConfiguration.Builder.initialExposureCompensationIndex|{}initialExposureCompensationIndex[0]
+            final fun <get-initialExposureCompensationIndex>(): kotlin/Int // com.kashif.cameraK.state/CameraConfiguration.Builder.initialExposureCompensationIndex.<get-initialExposureCompensationIndex>|<get-initialExposureCompensationIndex>(){}[0]
+            final fun <set-initialExposureCompensationIndex>(kotlin/Int) // com.kashif.cameraK.state/CameraConfiguration.Builder.initialExposureCompensationIndex.<set-initialExposureCompensationIndex>|<set-initialExposureCompensationIndex>(kotlin.Int){}[0]
         final var initialZoomRatio // com.kashif.cameraK.state/CameraConfiguration.Builder.initialZoomRatio|{}initialZoomRatio[0]
             final fun <get-initialZoomRatio>(): kotlin/Float // com.kashif.cameraK.state/CameraConfiguration.Builder.initialZoomRatio.<get-initialZoomRatio>|<get-initialZoomRatio>(){}[0]
             final fun <set-initialZoomRatio>(kotlin/Float) // com.kashif.cameraK.state/CameraConfiguration.Builder.initialZoomRatio.<set-initialZoomRatio>|<set-initialZoomRatio>(kotlin.Float){}[0]
@@ -1037,11 +1065,14 @@ final class com.kashif.cameraK.state/CameraKStateHolder : kotlin/AutoCloseable {
     final fun toggleTorchMode() // com.kashif.cameraK.state/CameraKStateHolder.toggleTorchMode|toggleTorchMode(){}[0]
     final suspend fun capture(): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capture/CapturedImage> // com.kashif.cameraK.state/CameraKStateHolder.capture|capture(){}[0]
     final suspend fun closeAndJoin() // com.kashif.cameraK.state/CameraKStateHolder.closeAndJoin|closeAndJoin(){}[0]
+    final suspend fun focusAt(com.kashif.cameraK.controls/NormalizedPoint): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.focusAt|focusAt(com.kashif.cameraK.controls.NormalizedPoint){}[0]
     final suspend fun pauseRecording(): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.pauseRecording|pauseRecording(){}[0]
     final suspend fun prepareRecording(com.kashif.cameraK.video/VideoConfiguration = ...): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.prepareRecording|prepareRecording(com.kashif.cameraK.video.VideoConfiguration){}[0]
+    final suspend fun resetFocusAndExposure(): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.resetFocusAndExposure|resetFocusAndExposure(){}[0]
     final suspend fun resumeRecording(): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.resumeRecording|resumeRecording(){}[0]
     final suspend fun selectCamera(com.kashif.cameraK.enums/CameraLens, com.kashif.cameraK.enums/CameraDeviceType = ...): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.state/CameraKStateHolder.selectCamera|selectCamera(com.kashif.cameraK.enums.CameraLens;com.kashif.cameraK.enums.CameraDeviceType){}[0]
     final suspend fun selectCamera(kotlin/String): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.capabilities/LensInfo> // com.kashif.cameraK.state/CameraKStateHolder.selectCamera|selectCamera(kotlin.String){}[0]
+    final suspend fun setExposureCompensation(kotlin/Int): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.setExposureCompensation|setExposureCompensation(kotlin.Int){}[0]
     final suspend fun setFlashMode(com.kashif.cameraK.enums/FlashMode): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.enums/FlashMode> // com.kashif.cameraK.state/CameraKStateHolder.setFlashMode|setFlashMode(com.kashif.cameraK.enums.FlashMode){}[0]
     final suspend fun setTargetOrientation(com.kashif.cameraK.enums/DeviceOrientation?): com.kashif.cameraK.result/CameraKResult<kotlin/Unit> // com.kashif.cameraK.state/CameraKStateHolder.setTargetOrientation|setTargetOrientation(com.kashif.cameraK.enums.DeviceOrientation?){}[0]
     final suspend fun setTorchMode(com.kashif.cameraK.enums/TorchMode): com.kashif.cameraK.result/CameraKResult<com.kashif.cameraK.enums/TorchMode> // com.kashif.cameraK.state/CameraKStateHolder.setTorchMode|setTorchMode(com.kashif.cameraK.enums.TorchMode){}[0]
@@ -1057,6 +1088,8 @@ final class com.kashif.cameraK.state/CameraUIState { // com.kashif.cameraK.state
         final fun <get-cameraId>(): kotlin/String? // com.kashif.cameraK.state/CameraUIState.cameraId.<get-cameraId>|<get-cameraId>(){}[0]
     final val cameraLens // com.kashif.cameraK.state/CameraUIState.cameraLens|{}cameraLens[0]
         final fun <get-cameraLens>(): com.kashif.cameraK.enums/CameraLens? // com.kashif.cameraK.state/CameraUIState.cameraLens.<get-cameraLens>|<get-cameraLens>(){}[0]
+    final val exposureCompensationIndex // com.kashif.cameraK.state/CameraUIState.exposureCompensationIndex|{}exposureCompensationIndex[0]
+        final fun <get-exposureCompensationIndex>(): kotlin/Int // com.kashif.cameraK.state/CameraUIState.exposureCompensationIndex.<get-exposureCompensationIndex>|<get-exposureCompensationIndex>(){}[0]
     final val flashMode // com.kashif.cameraK.state/CameraUIState.flashMode|{}flashMode[0]
         final fun <get-flashMode>(): com.kashif.cameraK.enums/FlashMode? // com.kashif.cameraK.state/CameraUIState.flashMode.<get-flashMode>|<get-flashMode>(){}[0]
     final val isCapturing // com.kashif.cameraK.state/CameraUIState.isCapturing|{}isCapturing[0]
@@ -1159,10 +1192,14 @@ final value class com.kashif.cameraK.error/CameraFeature { // com.kashif.cameraK
             final fun <get-AUDIO>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.AUDIO.<get-AUDIO>|<get-AUDIO>(){}[0]
         final val DEVICE_TYPE // com.kashif.cameraK.error/CameraFeature.Companion.DEVICE_TYPE|{}DEVICE_TYPE[0]
             final fun <get-DEVICE_TYPE>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.DEVICE_TYPE.<get-DEVICE_TYPE>|<get-DEVICE_TYPE>(){}[0]
+        final val EXPOSURE_COMPENSATION // com.kashif.cameraK.error/CameraFeature.Companion.EXPOSURE_COMPENSATION|{}EXPOSURE_COMPENSATION[0]
+            final fun <get-EXPOSURE_COMPENSATION>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.EXPOSURE_COMPENSATION.<get-EXPOSURE_COMPENSATION>|<get-EXPOSURE_COMPENSATION>(){}[0]
         final val FLASH_AUTO // com.kashif.cameraK.error/CameraFeature.Companion.FLASH_AUTO|{}FLASH_AUTO[0]
             final fun <get-FLASH_AUTO>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.FLASH_AUTO.<get-FLASH_AUTO>|<get-FLASH_AUTO>(){}[0]
         final val FLASH_ON // com.kashif.cameraK.error/CameraFeature.Companion.FLASH_ON|{}FLASH_ON[0]
             final fun <get-FLASH_ON>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.FLASH_ON.<get-FLASH_ON>|<get-FLASH_ON>(){}[0]
+        final val FOCUS_POINT // com.kashif.cameraK.error/CameraFeature.Companion.FOCUS_POINT|{}FOCUS_POINT[0]
+            final fun <get-FOCUS_POINT>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.FOCUS_POINT.<get-FOCUS_POINT>|<get-FOCUS_POINT>(){}[0]
         final val IMAGE_FORMAT // com.kashif.cameraK.error/CameraFeature.Companion.IMAGE_FORMAT|{}IMAGE_FORMAT[0]
             final fun <get-IMAGE_FORMAT>(): com.kashif.cameraK.error/CameraFeature // com.kashif.cameraK.error/CameraFeature.Companion.IMAGE_FORMAT.<get-IMAGE_FORMAT>|<get-IMAGE_FORMAT>(){}[0]
         final val LENS_SWITCH // com.kashif.cameraK.error/CameraFeature.Companion.LENS_SWITCH|{}LENS_SWITCH[0]
@@ -1199,8 +1236,12 @@ final value class com.kashif.cameraK.error/CameraOperation { // com.kashif.camer
             final fun <get-CAPTURE>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.CAPTURE.<get-CAPTURE>|<get-CAPTURE>(){}[0]
         final val DEVICE_TYPE // com.kashif.cameraK.error/CameraOperation.Companion.DEVICE_TYPE|{}DEVICE_TYPE[0]
             final fun <get-DEVICE_TYPE>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.DEVICE_TYPE.<get-DEVICE_TYPE>|<get-DEVICE_TYPE>(){}[0]
+        final val EXPOSURE_COMPENSATION // com.kashif.cameraK.error/CameraOperation.Companion.EXPOSURE_COMPENSATION|{}EXPOSURE_COMPENSATION[0]
+            final fun <get-EXPOSURE_COMPENSATION>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.EXPOSURE_COMPENSATION.<get-EXPOSURE_COMPENSATION>|<get-EXPOSURE_COMPENSATION>(){}[0]
         final val FLASH // com.kashif.cameraK.error/CameraOperation.Companion.FLASH|{}FLASH[0]
             final fun <get-FLASH>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.FLASH.<get-FLASH>|<get-FLASH>(){}[0]
+        final val FOCUS_POINT // com.kashif.cameraK.error/CameraOperation.Companion.FOCUS_POINT|{}FOCUS_POINT[0]
+            final fun <get-FOCUS_POINT>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.FOCUS_POINT.<get-FOCUS_POINT>|<get-FOCUS_POINT>(){}[0]
         final val LENS // com.kashif.cameraK.error/CameraOperation.Companion.LENS|{}LENS[0]
             final fun <get-LENS>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraOperation.Companion.LENS.<get-LENS>|<get-LENS>(){}[0]
         final val ORIENTATION // com.kashif.cameraK.error/CameraOperation.Companion.ORIENTATION|{}ORIENTATION[0]
@@ -1320,6 +1361,15 @@ sealed class com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error
 
         final val isRetryable // com.kashif.cameraK.error/CameraKError.Internal.isRetryable|{}isRetryable[0]
             final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.Internal.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+    }
+
+    final class InvalidArgument : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.InvalidArgument|null[0]
+        constructor <init>(com.kashif.cameraK.error/CameraOperation) // com.kashif.cameraK.error/CameraKError.InvalidArgument.<init>|<init>(com.kashif.cameraK.error.CameraOperation){}[0]
+
+        final val isRetryable // com.kashif.cameraK.error/CameraKError.InvalidArgument.isRetryable|{}isRetryable[0]
+            final fun <get-isRetryable>(): kotlin/Boolean // com.kashif.cameraK.error/CameraKError.InvalidArgument.isRetryable.<get-isRetryable>|<get-isRetryable>(){}[0]
+        final val operation // com.kashif.cameraK.error/CameraKError.InvalidArgument.operation|{}operation[0]
+            final fun <get-operation>(): com.kashif.cameraK.error/CameraOperation // com.kashif.cameraK.error/CameraKError.InvalidArgument.operation.<get-operation>|<get-operation>(){}[0]
     }
 
     final class InvalidState : com.kashif.cameraK.error/CameraKError { // com.kashif.cameraK.error/CameraKError.InvalidState|null[0]

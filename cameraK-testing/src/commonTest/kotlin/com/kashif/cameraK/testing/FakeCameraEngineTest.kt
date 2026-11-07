@@ -4,6 +4,7 @@ package com.kashif.cameraK.testing
 
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineRecordingEvent
@@ -144,5 +145,81 @@ class FakeCameraEngineTest {
         assertEquals(stopped, finalized.single().result)
         assertEquals(RecordingEndReason.USER, finalized.single().reason)
         fake.close()
+    }
+
+    @Test
+    fun focusAtRecordsThePointAndFailNextFocusFailsOneCall() = runTest {
+        val fake = FakeCameraEngine()
+        assertEquals(success, fake.start(desiredOn(FakeCapabilities.BACK_ID)))
+
+        assertEquals(success, fake.focusAt(NormalizedPoint(0.3f, 0.6f)))
+        assertEquals(NormalizedPoint(0.3f, 0.6f), fake.lastFocusPoint)
+
+        fake.failNextFocus(CameraKError.Hardware(platformCode = 2))
+        assertIs<CameraKError.Hardware>(assertIs<CameraKResult.Failure>(fake.focusAt(NormalizedPoint(0f, 0f))).error)
+        assertEquals(NormalizedPoint(0.3f, 0.6f), fake.lastFocusPoint, "a failed focus reached the platform")
+        assertEquals(success, fake.focusAt(NormalizedPoint(0f, 0f)), "the scripted failure was for one call")
+
+        assertEquals(success, fake.resetFocusAndExposure())
+        assertNull(fake.lastFocusPoint, "the reset kept the focus point")
+        fake.close()
+    }
+
+    @Test
+    fun focusAndExposureFollowTheBoundCamerasCapabilities() = runTest {
+        val fake = FakeCameraEngine()
+        assertEquals(success, fake.start(desiredOn(FakeCapabilities.FRONT_ID)))
+
+        val focus = assertIs<CameraKResult.Failure>(fake.focusAt(NormalizedPoint(0.5f, 0.5f)), "focus on the front")
+        assertEquals(CameraFeature.FOCUS_POINT, assertIs<CameraKError.Unsupported>(focus.error).feature)
+        assertEquals(success, fake.setExposureCompensation(2), "exposure on the front camera's -3..3")
+        assertEquals(2, fake.appliedExposureCompensationIndex)
+
+        val none = FakeCameraEngine(FakeCapabilities.backAndFront(focusAndExposure = false))
+        assertEquals(success, none.start(desiredOn(FakeCapabilities.BACK_ID)))
+        val exposure = assertIs<CameraKResult.Failure>(none.setExposureCompensation(1), "exposure without a range")
+        assertEquals(CameraFeature.EXPOSURE_COMPENSATION, assertIs<CameraKError.Unsupported>(exposure.error).feature)
+        val reset = assertIs<CameraKResult.Failure>(none.resetFocusAndExposure(), "reset with neither feature")
+        assertEquals(CameraFeature.FOCUS_POINT, assertIs<CameraKError.Unsupported>(reset.error).feature)
+        fake.close()
+        none.close()
+    }
+
+    @Test
+    fun theExposureIndexIsAppliedClampedOnEveryBindAndReportedOnlyByThePlatform() = runTest {
+        val fake = FakeCameraEngine()
+        val desired = DesiredHardware(
+            CameraSelection.ById(FakeCapabilities.BACK_ID),
+            FlashMode.OFF,
+            TorchMode.OFF,
+            1f,
+            targetOrientation = null,
+            exposureCompensationIndex = 5,
+        )
+        assertEquals(success, fake.start(desired))
+        assertEquals(5, fake.appliedExposureCompensationIndex, "the index the bind applied")
+        assertEquals(0, fake.hardware.value.exposureCompensationIndex, "hardware moved before a report")
+
+        assertIs<CameraKResult.Success<LensInfo>>(fake.selectCamera(CameraSelection.ById(FakeCapabilities.FRONT_ID)))
+        assertEquals(3, fake.appliedExposureCompensationIndex, "5 clamped into the front camera's -3..3")
+
+        fake.reportExposureIndex(3)
+        assertEquals(3, fake.hardware.value.exposureCompensationIndex)
+        fake.stop()
+        fake.reportExposureIndex(1)
+        assertEquals(3, fake.hardware.value.exposureCompensationIndex, "a report while closed reached hardware")
+        fake.close()
+    }
+
+    @Test
+    fun turningPauseOffKeepsTheFocusAndExposureCapabilities() = runTest {
+        val fake = FakeCameraEngine()
+        fake.supportsPause = false
+
+        val capabilities = fake.capabilities.value
+        assertEquals(false, capabilities.supportsPauseResume)
+        assertEquals(true, capabilities.supportsFocusPoint(FakeCapabilities.BACK_ID))
+        assertEquals(-6..6, capabilities.exposureCompensationRange(FakeCapabilities.BACK_ID))
+        assertEquals(1f / 3, capabilities.exposureCompensationStep(FakeCapabilities.FRONT_ID))
     }
 }

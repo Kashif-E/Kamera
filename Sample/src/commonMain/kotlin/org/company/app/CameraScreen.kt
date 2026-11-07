@@ -407,6 +407,7 @@ private fun CameraKError.displayText(): String = when (this) {
     is CameraKError.Timeout -> "The camera took too long to start"
     is CameraKError.Busy -> "The camera is busy"
     is CameraKError.InvalidState -> "The camera cannot do that now"
+    is CameraKError.InvalidArgument -> "That value is out of range"
     CameraKError.NotReady -> "The camera is not ready"
     CameraKError.Closed -> "The camera is closed"
     is CameraKError.Internal -> "Something went wrong with the camera"

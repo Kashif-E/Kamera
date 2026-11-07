@@ -27,6 +27,12 @@ public value class CameraFeature private constructor(public val name: String) {
         public val TARGET_ORIENTATION: CameraFeature = CameraFeature("TARGET_ORIENTATION")
         public val ANALYSIS_FORMAT: CameraFeature = CameraFeature("ANALYSIS_FORMAT")
 
+        /** Metering for focus and exposure at a point of the preview. */
+        public val FOCUS_POINT: CameraFeature = CameraFeature("FOCUS_POINT")
+
+        /** Exposure compensation, in the camera's index steps. */
+        public val EXPOSURE_COMPENSATION: CameraFeature = CameraFeature("EXPOSURE_COMPENSATION")
+
         /** The operating system is older than CameraK's minimum. */
         public val PLATFORM_VERSION: CameraFeature = CameraFeature("PLATFORM_VERSION")
     }

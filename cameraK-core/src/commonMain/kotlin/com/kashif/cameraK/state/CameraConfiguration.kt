@@ -27,6 +27,8 @@ import com.kashif.cameraK.frames.FrameFormat
  * @property flashMode Initial flash mode.
  * @property torchMode Initial torch mode.
  * @property initialZoomRatio The zoom the camera opens at, clamped into its range.
+ * @property initialExposureCompensationIndex The exposure compensation index the camera opens at,
+ *   clamped into its range; a camera without compensation ignores it.
  * @property imageFormat Image format for captures.
  * @property qualityPrioritization Quality vs performance trade-off.
  * @property aspectRatio Aspect ratio for preview and capture.
@@ -61,6 +63,7 @@ public class CameraConfiguration private constructor(builder: Builder) {
     public val flashMode: FlashMode = builder.flashMode
     public val torchMode: TorchMode = builder.torchMode
     public val initialZoomRatio: Float = builder.initialZoomRatio
+    public val initialExposureCompensationIndex: Int = builder.initialExposureCompensationIndex
     public val imageFormat: ImageFormat = builder.imageFormat
     public val qualityPrioritization: QualityPrioritization = builder.qualityPrioritization
     public val aspectRatio: AspectRatio = builder.aspectRatio
@@ -82,6 +85,7 @@ public class CameraConfiguration private constructor(builder: Builder) {
         "flashMode" to flashMode,
         "torchMode" to torchMode,
         "initialZoomRatio" to initialZoomRatio,
+        "initialExposureCompensationIndex" to initialExposureCompensationIndex,
         "imageFormat" to imageFormat,
         "qualityPrioritization" to qualityPrioritization,
         "aspectRatio" to aspectRatio,
@@ -109,6 +113,8 @@ public class CameraConfiguration private constructor(builder: Builder) {
         public var flashMode: FlashMode = from?.flashMode ?: CameraDefaults.FLASH
         public var torchMode: TorchMode = from?.torchMode ?: CameraDefaults.TORCH
         public var initialZoomRatio: Float = from?.initialZoomRatio ?: CameraDefaults.ZOOM_RATIO
+        public var initialExposureCompensationIndex: Int =
+            from?.initialExposureCompensationIndex ?: CameraDefaults.EXPOSURE_COMPENSATION_INDEX
         public var imageFormat: ImageFormat = from?.imageFormat ?: CameraDefaults.IMAGE_FORMAT
         public var qualityPrioritization: QualityPrioritization =
             from?.qualityPrioritization ?: CameraDefaults.QUALITY
@@ -192,6 +198,9 @@ internal object CameraDefaults {
     val FLASH = FlashMode.OFF
     val TORCH = TorchMode.OFF
     const val ZOOM_RATIO = 1f
+
+    /** The platform's default exposure. */
+    const val EXPOSURE_COMPENSATION_INDEX = 0
     val IMAGE_FORMAT = ImageFormat.JPEG
     val QUALITY = QualityPrioritization.BALANCED
 

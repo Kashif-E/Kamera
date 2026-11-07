@@ -15,6 +15,8 @@ import dev.drewhamilton.poko.Poko
  *
  * @property camera The camera the platform has bound; null before the first one.
  * @property targetOrientation The orientation override the platform applies to outputs; null follows the device.
+ * @property exposureCompensationIndex The exposure compensation index the platform applies; 0 on a camera
+ *   without compensation.
  */
 @CameraKEngineApi
 @Poko
@@ -23,12 +25,16 @@ public class HardwareState(
     public val torchMode: TorchMode,
     public val camera: LensInfo?,
     public val targetOrientation: DeviceOrientation?,
+    public val exposureCompensationIndex: Int = 0,
 )
 
 /**
  * The hardware the holder wants: seeded from the configuration, changed only by successful
  * commands, and re-applied by the engine after every bind, camera switch and restart. Compares by
  * value.
+ *
+ * @property exposureCompensationIndex Clamped by the engine into the bound camera's range when it
+ *   applies it; a camera without compensation ignores it.
  */
 @CameraKEngineApi
 @Poko
@@ -38,6 +44,7 @@ public class DesiredHardware(
     public val torchMode: TorchMode,
     public val zoomRatio: Float,
     public val targetOrientation: DeviceOrientation?,
+    public val exposureCompensationIndex: Int = 0,
 )
 
 /** Closed hierarchy: which camera to open. Subtypes compare by value. */

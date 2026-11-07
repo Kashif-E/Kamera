@@ -4,7 +4,8 @@ import kotlin.jvm.JvmInline
 
 /**
  * Open: new values can be added in a minor release, so a `when` over it needs an `else` branch.
- * A command or lifecycle step, named in [CameraKError.Timeout], [CameraKError.Busy] and [CameraKError.InvalidState].
+ * A command or lifecycle step, named in [CameraKError.Timeout], [CameraKError.Busy], [CameraKError.InvalidState]
+ * and [CameraKError.InvalidArgument].
  */
 @JvmInline
 public value class CameraOperation private constructor(public val name: String) {
@@ -26,5 +27,9 @@ public value class CameraOperation private constructor(public val name: String) 
         /** A camera switch that changes only the device type (wide, ultra-wide, telephoto). */
         public val DEVICE_TYPE: CameraOperation = CameraOperation("DEVICE_TYPE")
         public val ORIENTATION: CameraOperation = CameraOperation("ORIENTATION")
+
+        /** Focus and exposure metering at a point, and their reset. */
+        public val FOCUS_POINT: CameraOperation = CameraOperation("FOCUS_POINT")
+        public val EXPOSURE_COMPENSATION: CameraOperation = CameraOperation("EXPOSURE_COMPENSATION")
     }
 }

@@ -15,9 +15,12 @@ public final class com/kashif/cameraK/testing/FakeCameraEngine : com/kashif/came
 	public final fun deliverRecordingStarted ()V
 	public final fun endInterruption ()V
 	public final fun fail (Lcom/kashif/cameraK/error/CameraKError;)V
+	public final fun failNextFocus (Lcom/kashif/cameraK/error/CameraKError;)V
 	public final fun failOpen (Lcom/kashif/cameraK/error/CameraKError;)V
 	public final fun finishRecording (Lcom/kashif/cameraK/result/CameraKResult;Lcom/kashif/cameraK/recording/RecordingEndReason;)V
+	public fun focusAt (Lcom/kashif/cameraK/controls/NormalizedPoint;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getAppliedCameraId ()Ljava/lang/String;
+	public final fun getAppliedExposureCompensationIndex ()I
 	public final fun getAppliedFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
 	public final fun getAppliedTorchMode ()Lcom/kashif/cameraK/enums/TorchMode;
 	public final fun getAppliedZoomRatio ()F
@@ -33,6 +36,7 @@ public final class com/kashif/cameraK/testing/FakeCameraEngine : com/kashif/came
 	public final fun getFakeFrames ()Lcom/kashif/cameraK/testing/FakeFrameSource;
 	public fun getFrames ()Lcom/kashif/cameraK/frames/FrameSource;
 	public fun getHardware ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getLastFocusPoint ()Lcom/kashif/cameraK/controls/NormalizedPoint;
 	public fun getPreview ()Lcom/kashif/cameraK/engine/PlatformPreviewSource;
 	public fun getRecordingEvents ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getReleaseCount ()I
@@ -49,10 +53,12 @@ public final class com/kashif/cameraK/testing/FakeCameraEngine : com/kashif/came
 	public final fun releaseCapture ()V
 	public final fun reopenAfterFailure ()V
 	public final fun reportCamera (Ljava/lang/String;)V
+	public final fun reportExposureIndex (I)V
 	public final fun reportFlash (Lcom/kashif/cameraK/enums/FlashMode;)V
 	public final fun reportTorch (Lcom/kashif/cameraK/enums/TorchMode;)V
 	public final fun reportZoom (FFF)V
 	public static synthetic fun reportZoom$default (Lcom/kashif/cameraK/testing/FakeCameraEngine;FFFILjava/lang/Object;)V
+	public fun resetFocusAndExposure (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun resumeRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun selectCamera (Lcom/kashif/cameraK/engine/CameraSelection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setAutoFinalizeRecording (Z)V
@@ -60,6 +66,7 @@ public final class com/kashif/cameraK/testing/FakeCameraEngine : com/kashif/came
 	public final fun setAutoStartRecording (Z)V
 	public final fun setCaptureResult (Lkotlin/jvm/functions/Function1;)V
 	public final fun setConfiguration (Lcom/kashif/cameraK/state/CameraConfiguration;)V
+	public fun setExposureCompensation (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setFlashMode (Lcom/kashif/cameraK/enums/FlashMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setSupportsPause (Z)V
 	public fun setTargetOrientation (Lcom/kashif/cameraK/enums/DeviceOrientation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -82,8 +89,8 @@ public final class com/kashif/cameraK/testing/FakeCapabilities {
 	public static final field BACK_ID Ljava/lang/String;
 	public static final field FRONT_ID Ljava/lang/String;
 	public static final field INSTANCE Lcom/kashif/cameraK/testing/FakeCapabilities;
-	public final fun backAndFront (Ljava/util/Set;)Lcom/kashif/cameraK/capabilities/CameraCapabilities;
-	public static synthetic fun backAndFront$default (Lcom/kashif/cameraK/testing/FakeCapabilities;Ljava/util/Set;ILjava/lang/Object;)Lcom/kashif/cameraK/capabilities/CameraCapabilities;
+	public final fun backAndFront (Ljava/util/Set;Z)Lcom/kashif/cameraK/capabilities/CameraCapabilities;
+	public static synthetic fun backAndFront$default (Lcom/kashif/cameraK/testing/FakeCapabilities;Ljava/util/Set;ZILjava/lang/Object;)Lcom/kashif/cameraK/capabilities/CameraCapabilities;
 }
 
 public final class com/kashif/cameraK/testing/FakeCaptures {

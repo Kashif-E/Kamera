@@ -4,6 +4,7 @@ import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
@@ -41,6 +42,9 @@ import kotlinx.coroutines.flow.StateFlow
  * 3. **[close] is terminal.** Late platform callbacks do nothing. Calls made after close return
  *    `Failure(Closed)`, and a call still pending when close runs (a capture waiting on a callback)
  *    completes with `Failure(Closed)` at once. Native resources are released once, by their owner.
+ *    An engine whose cameras report neither `FOCUS_POINT` nor `EXPOSURE_COMPENSATION` may return
+ *    `Unsupported` from [focusAt], [setExposureCompensation] and [resetFocusAndExposure] after
+ *    close; an engine that reports them returns `Failure(Closed)`.
  * 4. Every platform callback that could throw is wrapped: no exception crosses a GCD block, an
  *    executor or a JNI callback.
  * 5. [hardware] and [zoom] change only from what the platform reports, never from the requested
@@ -122,6 +126,29 @@ public interface CameraEngine {
     /** Returns the camera that is live afterwards. */
     public suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo>
     public suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit>
+
+    /**
+     * Meters focus and exposure at [point] of the preview's content rectangle, then returns to the
+     * platform's own metering after its default timeout. The holder passes only a point inside
+     * [0, 1]. A camera whose capabilities do not list it in `supportsFocusPoint` returns
+     * `Failure(Unsupported(FOCUS_POINT))`, which is the default.
+     */
+    public suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = TODO("Y-focus-api")
+
+    /**
+     * Sets the exposure compensation [index], which the holder has checked against the bound camera's
+     * `exposureCompensationRange`. [hardware] reports it once the platform has applied it (rule 5). A
+     * camera without a range returns `Failure(Unsupported(EXPOSURE_COMPENSATION))`, which is the
+     * default.
+     */
+    public suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = TODO("Y-focus-api")
+
+    /**
+     * Returns the bound camera to the platform's metering and exposure index 0, for what it supports.
+     * A camera that supports neither a focus point nor exposure compensation returns
+     * `Failure(Unsupported(FOCUS_POINT))`, which is the default.
+     */
+    public suspend fun resetFocusAndExposure(): CameraKResult<Unit> = TODO("Y-focus-api")
 
     /** Adds the recording outputs ahead of time, so startRecording commits no configuration change. */
     public suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit>
