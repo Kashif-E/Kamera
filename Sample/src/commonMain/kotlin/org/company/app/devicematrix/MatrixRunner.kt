@@ -382,7 +382,17 @@ internal class MatrixRunner(
                 return@withHolder
             }
             val ui = readBack(holder.uiState) { it.cameraId != null }
-            val base = listOf("readyMs" to opened.readyMs, "cameraIdReadBack" to ui.cameraId)
+            val id = first.cameraId
+            capabilities = readBack(holder.capabilities) {
+                it.supportsFocusPoint(id) || it.exposureCompensationRange(id) != null
+            }
+            val base = listOf(
+                "readyMs" to opened.readyMs,
+                "cameraIdReadBack" to ui.cameraId,
+                "capabilityFocusPoint" to capabilities.supportsFocusPoint(id),
+                "capabilityExposureRange" to
+                    capabilities.exposureCompensationRange(id)?.let { "${it.first}..${it.last}" },
+            )
             val idChecks = listOfNotNull(
                 "camera ${ui.cameraId} opened, asked ${first.cameraId}".takeIf { ui.cameraId != first.cameraId },
             )
@@ -753,6 +763,7 @@ internal class MatrixRunner(
                 }
                 return@withHolder
             }
+            capabilities = readBack(holder.capabilities) { it.supportedVideoQualities.isNotEmpty() }
             for (case in group) videoCase(holder, case, case.spec as VideoSpec, opened.readyMs)
         }
     }
@@ -760,7 +771,10 @@ internal class MatrixRunner(
     private suspend fun videoCase(holder: CameraKStateHolder, case: MatrixCase, spec: VideoSpec, readyMs: Long) {
         log("BEGIN #${case.index} ${case.id}")
         val predicted = videoPrediction(capabilities, spec)
-        val measures = mutableListOf<Pair<String, Any?>>("readyMs" to readyMs)
+        val measures = mutableListOf<Pair<String, Any?>>(
+            "readyMs" to readyMs,
+            "capabilityVideoQualities" to capabilities.supportedVideoQualities.map { it.name }.sorted(),
+        )
         val checks = mutableListOf<String>()
         val wall = clock.markNow()
         try {
@@ -889,7 +903,11 @@ internal class MatrixRunner(
         val checks = mutableListOf<String>()
         repeat(CYCLES) { cycle ->
             val opened = open(holder)
-            val reached = opened.state ?: "no Ready in ${timing.ready}"
+            val reached = when (val state = opened.state) {
+                null -> "no Ready in ${timing.ready}"
+                is CameraKState.Error -> "Error(${describe(state.error)})"
+                else -> state.toString()
+            }
             if (opened.ready) readyTimes += opened.readyMs else checks += "cycle ${cycle + 1}: $reached"
             holder.stop()
             val idle = withTimeoutOrNull(timing.ready) { holder.cameraState.first { it is CameraKState.Idle } }
@@ -1031,7 +1049,11 @@ internal class MatrixRunner(
                 it == CameraKState.Ready || it is CameraKState.Error || it == CameraKState.Closed
             }
         }
-        return Opened(state, starting.elapsedNow().inWholeMilliseconds)
+        val opened = Opened(state, starting.elapsedNow().inWholeMilliseconds)
+        // Engines fill some capabilities only once a camera is bound (Android: the bound camera's video
+        // qualities and each bound camera's metering), so predictions read the open holder's.
+        if (opened.ready) capabilities = readBack(holder.capabilities) { it.allLenses.isNotEmpty() }
+        return opened
     }
 
     private suspend fun <T> withHolder(
