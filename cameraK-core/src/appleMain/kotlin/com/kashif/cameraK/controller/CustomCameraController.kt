@@ -101,29 +101,40 @@ internal class CustomCameraController private constructor(
     )
 
     private val sessionFactory = seams.sessionFactory
-    private val inputConfigurator = seams.inputConfigurator
-    private val lensSwitcher = seams.lensSwitcher
-    private val cameraDevices = seams.cameraDevices
 
     /** Every AVCaptureSession call runs on this serial queue. */
-    private val sessionQueue = SessionQueue()
+    private val sessionQueue: SessionQueue = SessionQueue()
 
     /** The preview layer, its mirroring and its orientation. */
-    private val preview = PreviewLayers(seams.previewMirroring, seams.previewOrienting, seams.previewRotating)
+    private val preview: PreviewLayers =
+        PreviewLayers(seams.previewMirroring, seams.previewOrienting, seams.previewRotating)
 
     /** The torch and zoom of the camera in use. */
-    private val controls = CameraControls(sessionQueue, { currentCamera }, ::reportError)
+    private val controls: CameraControls = CameraControls(sessionQueue, { inputs.currentCamera }, ::reportError)
 
     /** The photo output, the flash mode captures request and the captures themselves. */
-    private val stills = StillCapture(
+    private val stills: StillCapture = StillCapture(
         qualityPrioritization = qualityPrioritization,
         mirrorFrontCamera = mirrorFrontCamera,
         photoCapturer = seams.photoCapturer,
         queue = sessionQueue,
         session = { session },
-        currentCamera = { currentCamera },
-        isUsingFrontCamera = { isUsingFrontCamera },
+        currentCamera = { inputs.currentCamera },
+        isUsingFrontCamera = { inputs.isUsingFrontCamera },
         currentVideoOrientation = ::currentVideoOrientation,
+        reportError = ::reportError,
+    )
+
+    /** The cameras, the one in use and the session's camera input. */
+    private val inputs: CameraInputs = CameraInputs(
+        queue = sessionQueue,
+        session = { session },
+        inputConfigurator = seams.inputConfigurator,
+        lensSwitcher = seams.lensSwitcher,
+        cameraDevices = seams.cameraDevices,
+        controls = controls,
+        stills = stills,
+        preview = preview,
         reportError = ::reportError,
     )
 
@@ -159,24 +170,12 @@ internal class CustomCameraController private constructor(
     internal val hasSession: Boolean
         get() = session != null
 
-    private var backCamera: CaptureDeviceOps? = null
-    private var frontCamera: CaptureDeviceOps? = null
-
-    @Volatile
-    private var currentCamera: CaptureDeviceOps? = null
-
-    /** The camera's input in the session, so a switch removes it and nothing else. Session queue only. */
-    private var videoInput: AVCaptureInput? = null
-
     /** A UIKit layer: read and written on main only. */
     var cameraPreviewLayer: AVCaptureVideoPreviewLayer?
         get() = preview.layer
         set(value) {
             preview.layer = value
         }
-
-    @Volatile
-    private var isUsingFrontCamera = false
 
     /**
      * The orientation photos are captured in; AppleCameraEngine answers with its target orientation
@@ -199,8 +198,11 @@ internal class CustomCameraController private constructor(
         }
 
     /** Whether a recording is in progress; the engine answers from its recorder. */
-    @Volatile
-    internal var recordingInProgress: () -> Boolean = { false }
+    internal var recordingInProgress: () -> Boolean
+        get() = inputs.recordingInProgress
+        set(value) {
+            inputs.recordingInProgress = value
+        }
 
     /** The format captures are taken in: HEIC asks the photo output for HEVC where it can encode it. */
     internal var photoFormat: ImageFormat
@@ -221,7 +223,7 @@ internal class CustomCameraController private constructor(
     var onSessionReady: (() -> Unit)? = null
 
     /** The camera in use: the one the session's video input captures from. */
-    internal val currentDevice: CaptureDeviceOps? get() = currentCamera
+    internal val currentDevice: CaptureDeviceOps? get() = inputs.currentCamera
 
     /** The flash mode a capture's settings carry now: [flashMode], or off when the photo output lacks it. */
     internal val captureFlashMode: AVCaptureFlashMode get() = stills.captureFlashMode
@@ -319,9 +321,7 @@ internal class CustomCameraController private constructor(
         val failure: CameraException? = try {
             // A photo session never reconfigures the app's audio session; only an audio recording does.
             ops.setAutomaticallyConfiguresApplicationAudioSession(false)
-            val inputsReady =
-                inputConfigurator?.invoke(ops, cameraDeviceType) ?: setupInputs(lens, cameraDeviceType, device)
-            if (inputsReady) {
+            if (inputs.setUp(ops, lens, cameraDeviceType, device)) {
                 stills.setUpOutput(ops)
                 applySessionPreset(ops)
                 runPendingConfigurations()
@@ -392,53 +392,7 @@ internal class CustomCameraController private constructor(
     /**
      * Enumerates every built-in lens (wide, telephoto, ultra-wide) on both positions.
      */
-    fun getCameraCapabilities(): List<LensInfo> =
-        discoverDevices(allLensDeviceTypes(), AVCaptureDevicePositionUnspecified).map { device ->
-            LensInfo(
-                id = device.uniqueID,
-                deviceType = when (device.deviceType) {
-                    AVCaptureDeviceTypeBuiltInUltraWideCamera -> CameraDeviceType.ULTRA_WIDE
-                    AVCaptureDeviceTypeBuiltInTelephotoCamera -> CameraDeviceType.TELEPHOTO
-                    AVCaptureDeviceTypeBuiltInWideAngleCamera -> CameraDeviceType.WIDE_ANGLE
-                    else -> CameraDeviceType.DEFAULT
-                },
-                lens = if (device.position == AVCaptureDevicePositionFront) CameraLens.FRONT else CameraLens.BACK,
-                minZoom = device.minAvailableVideoZoomFactor.toFloat(),
-                maxZoom = device.maxAvailableVideoZoomFactor.toFloat(),
-                hasFlash = device.hasFlash,
-                isLogical = false,
-            )
-        }
-
-    private fun setupInputs(lens: CameraLens, cameraDeviceType: CameraDeviceType, device: CaptureDeviceOps?): Boolean {
-        val camera = if (device != null) {
-            if (device.isFront) frontCamera = device else backCamera = device
-            device
-        } else {
-            backCamera = cameraDevices.find(CameraLens.BACK, cameraDeviceType)
-            frontCamera = cameraDevices.find(CameraLens.FRONT, cameraDeviceType)
-            when (lens) {
-                CameraLens.FRONT -> frontCamera ?: backCamera
-                CameraLens.BACK -> backCamera ?: frontCamera
-            } ?: cameraDevices.find(null, cameraDeviceType)?.also { found ->
-                if (found.isFront) frontCamera = found else backCamera = found
-            }
-        } ?: return false
-
-        currentCamera = camera
-        controls.forgetRequestedZoom()
-        isUsingFrontCamera = camera.isFront
-
-        val input = camera.makeInput().getOrElse { throw cameraInputFailure(it) }
-        val ops = session ?: return false
-        return if (ops.canAddInput(input)) {
-            ops.addInput(input)
-            videoInput = input
-            true
-        } else {
-            false
-        }
-    }
+    fun getCameraCapabilities(): List<LensInfo> = inputs.lenses()
 
     /**
      * Queues a configuration change to be applied atomically (Apple WWDC pattern) on the session
@@ -566,7 +520,7 @@ internal class CustomCameraController private constructor(
     }
 
     /** The camera's input in the session now. Session queue. */
-    internal val currentVideoInput: AVCaptureInput? get() = videoInput
+    internal val currentVideoInput: AVCaptureInput? get() = inputs.videoInput
 
     /** Runs [block] on the session queue after every piece of session work already requested. */
     internal fun afterQueuedSessionWork(block: () -> Unit) {
@@ -702,28 +656,18 @@ internal class CustomCameraController private constructor(
      * The camera facing [lens] of [type], else the one facing the other way, else any camera of that
      * type: the order setup has always picked in.
      */
-    internal fun findCamera(lens: CameraLens, type: CameraDeviceType): CaptureDeviceOps? {
-        val other = if (lens == CameraLens.FRONT) CameraLens.BACK else CameraLens.FRONT
-        return cameraDevices.find(lens, type) ?: cameraDevices.find(other, type) ?: cameraDevices.find(null, type)
-    }
+    internal fun findCamera(lens: CameraLens, type: CameraDeviceType): CaptureDeviceOps? = inputs.findCamera(lens, type)
 
-    internal fun findCameraById(id: String): CaptureDeviceOps? = cameraDevices.findById(id)
+    internal fun findCameraById(id: String): CaptureDeviceOps? = inputs.findCameraById(id)
 
     /**
      * Moves the session to [camera]'s input in one transaction, as a lens switch does: the session
      * keeps running and the configured torch follows. Session queue only; returns why it failed.
      */
-    internal fun useDeviceOnQueue(camera: CaptureDeviceOps): CameraException? {
-        val ops = session ?: return CameraException.DeviceNotAvailable("The session is not set up")
-        swapVideoInput(ops, camera)?.let { return it }
-        if (camera.isFront) frontCamera = camera else backCamera = camera
-        useCamera(camera)
-        if (ops.isRunning) controls.applyConfiguredTorch()
-        return null
-    }
+    internal fun useDeviceOnQueue(camera: CaptureDeviceOps): CameraException? = inputs.useDeviceOnQueue(camera)
 
     /** Shows [layer] as the preview: mirrored for the front camera, removed with the session. Main only. */
-    internal fun adoptPreviewLayer(layer: AVCaptureVideoPreviewLayer) = preview.adopt(layer, isUsingFrontCamera)
+    internal fun adoptPreviewLayer(layer: AVCaptureVideoPreviewLayer) = preview.adopt(layer, inputs.isUsingFrontCamera)
 
     /**
      * Stops and releases the session on the session queue, after any setup already queued, so a setup
@@ -739,11 +683,8 @@ internal class CustomCameraController private constructor(
             preparedSession = null
             stills.releaseOnQueue()
             stillPreset = null
-            currentCamera = null
-            videoInput = null
+            inputs.releaseOnQueue()
             controls.forgetRequestedZoom()
-            backCamera = null
-            frontCamera = null
         }
     }
 
@@ -831,117 +772,9 @@ internal class CustomCameraController private constructor(
      * Switches to a specific camera device type (e.g. wide-angle, telephoto, ultra-wide)
      * while keeping the same camera position (front/back).
      */
-    fun switchToDeviceType(deviceType: CameraDeviceType) {
-        sessionQueue.async {
-            val ops = session ?: return@async
-            if (deviceType.toAVCaptureDeviceType() == null) return@async
-            if (refusedWhileRecording("change the camera device type")) return@async
+    fun switchToDeviceType(deviceType: CameraDeviceType) = inputs.switchToDeviceType(deviceType)
 
-            // The requested type facing the current way, falling back to either way
-            val lens = if (isUsingFrontCamera) CameraLens.FRONT else CameraLens.BACK
-            val newDevice = cameraDevices.find(lens, deviceType)
-                ?: cameraDevices.find(null, deviceType)
-                ?: return@async
-
-            val failure = swapVideoInput(ops, newDevice)
-            if (failure != null) {
-                CameraKLogger.e(TAG, "switching camera device type failed", failure)
-                reportError(failure)
-                return@async
-            }
-            if (newDevice.isFront) frontCamera = newDevice else backCamera = newDevice
-            useCamera(newDevice)
-            if (ops.isRunning) controls.applyConfiguredTorch()
-        }
-    }
-
-    fun switchCamera() {
-        sessionQueue.async {
-            val ops = session ?: return@async
-            if (refusedWhileRecording("switch the lens")) return@async
-            val toFront = !isUsingFrontCamera
-
-            val switcher = lensSwitcher
-            if (switcher != null) {
-                ops.beginConfiguration()
-                try {
-                    videoInput?.let(ops::removeInput)
-                    switcher(ops, toFront)
-                } finally {
-                    ops.commitConfiguration()
-                }
-                isUsingFrontCamera = toFront
-                applyPreviewMirroring()
-                return@async
-            }
-
-            val camera = if (toFront) frontCamera else backCamera
-            val failure = if (camera == null) CameraException.DeviceNotAvailable() else swapVideoInput(ops, camera)
-            if (failure != null) {
-                CameraKLogger.e(TAG, "switching camera failed", failure)
-                reportError(failure)
-                return@async
-            }
-            useCamera(camera!!)
-            if (ops.isRunning) controls.applyConfiguredTorch()
-        }
-    }
-
-    /**
-     * Refuses a lens change while a recording runs: replacing the camera input cuts the movie file
-     * output's video connection and ends the recording. Runs on the session queue.
-     */
-    private fun refusedWhileRecording(operation: String): Boolean {
-        if (!recordingInProgress()) return false
-        CameraKLogger.w(TAG, "cannot $operation while recording; stop the recording first")
-        reportError(CameraException.ConfigurationError("Cannot $operation while recording"))
-        return true
-    }
-
-    /**
-     * Replaces the camera input with [camera]'s in one configuration transaction. AVFoundation swaps
-     * inputs on a running session, so the session keeps running and only the camera input is
-     * touched (a microphone stays). A refused input puts the previous one back. Runs on the session
-     * queue; returns why the swap failed, or null.
-     */
-    private fun swapVideoInput(ops: CaptureSessionOps, camera: CaptureDeviceOps): CameraException? {
-        val newInput = camera.makeInput().getOrElse { return cameraInputFailure(it) }
-        val previous = videoInput
-        ops.beginConfiguration()
-        try {
-            previous?.let(ops::removeInput)
-            if (ops.canAddInput(newInput)) {
-                ops.addInput(newInput)
-                videoInput = newInput
-                return null
-            }
-            if (previous != null && ops.canAddInput(previous)) {
-                ops.addInput(previous)
-            }
-            return CameraException.ConfigurationError("Cannot add input")
-        } finally {
-            ops.commitConfiguration()
-        }
-    }
-
-    /** Why a camera's input could not be made, keeping what AVFoundation reported as the cause. */
-    private fun cameraInputFailure(cause: Throwable): CameraException.ConfigurationError {
-        val reported = (cause as? NSErrorException)?.error?.let { ": ${it.summary}" }.orEmpty()
-        return CameraException.ConfigurationError("Could not open the camera$reported", cause)
-    }
-
-    /** Records [camera] as the one in use after a successful swap. Runs on the session queue. */
-    private fun useCamera(camera: CaptureDeviceOps) {
-        currentCamera = camera
-        controls.forgetRequestedZoom()
-        isUsingFrontCamera = camera.isFront
-        applyPreviewMirroring()
-        stills.applyMaxPhotoDimensions()
-        stills.prepareOnQueue()
-    }
-
-    /** Mirrors the preview for the lens now in use. Called on the session queue after a swap. */
-    private fun applyPreviewMirroring() = preview.mirrorOnMain(isUsingFrontCamera)
+    fun switchCamera() = inputs.switchCamera()
 
     override fun captureOutput(
         output: AVCapturePhotoOutput,
