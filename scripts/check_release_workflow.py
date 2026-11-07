@@ -307,13 +307,15 @@ FIXTURE_LIBRARIES = "      - run: ./gradlew publishLibraries --no-configuration-
 FIXTURE_RELOCATIONS = "      - run: ./gradlew publishLegacyRelocations --no-configuration-cache\n"
 
 
-def fixture_release(steps: List[str], extra_jobs: str = "") -> dict:
+def fixture_release(steps: List[str], extra_jobs: str = "", job_settings: str = "") -> dict:
     head = (
         "on:\n  push:\n    tags:\n      - 'v*'\n"
         "permissions:\n  contents: read\n"
         "concurrency:\n  group: publish\n  cancel-in-progress: false\n"
         "jobs:\n  verify:\n    uses: ./.github/workflows/build.yml\n"
-        "  publish:\n    needs: verify\n    runs-on: macos-15\n    environment: maven-central\n    steps:\n"
+        "  publish:\n    needs: verify\n    runs-on: macos-15\n    environment: maven-central\n"
+        + job_settings
+        + "    steps:\n"
     )
     document = parse_yaml(head + "".join(steps) + extra_jobs)
     if True in document:
@@ -351,6 +353,26 @@ def self_test() -> None:
             FIXTURE_RELOCATIONS + "        continue-on-error: true\n",
         ],
     }
+    # Each way a publish step's script can exit 0 after its upload failed, so the next step runs anyway.
+    masked = {
+        "|| true": "      - run: ./gradlew publishLibraries --no-configuration-cache || true\n",
+        "|| :": "      - run: ./gradlew publishLibraries --no-configuration-cache || :\n",
+        "; true": "      - run: ./gradlew publishLibraries --no-configuration-cache; true\n",
+        "set +e": "      - run: |\n          set +e\n          ./gradlew publishLibraries --no-configuration-cache\n",
+        "set +o errexit": (
+            "      - run: |\n          set +o errexit\n          ./gradlew publishLibraries --no-configuration-cache\n"
+        ),
+        "a trailing || echo": (
+            '      - run: ./gradlew publishLibraries --no-configuration-cache || echo "upload failed"\n'
+        ),
+        "|| exit 0": "      - run: ./gradlew publishLibraries --no-configuration-cache || exit 0\n",
+    }
+    for form, step in masked.items():
+        broken[f"the first publish step masking its exit status with {form}"] = [
+            FIXTURE_TAG_GUARD,
+            step,
+            FIXTURE_RELOCATIONS,
+        ]
     accepted = [
         name
         for name, steps in broken.items()
@@ -364,6 +386,13 @@ def self_test() -> None:
         fixture_release([FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES], second_job), FIXTURE_BUILD
     ):
         accepted.append("the second step in a second job")
+    if not release_workflow_problems(
+        fixture_release(
+            [FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS], job_settings="    continue-on-error: true\n"
+        ),
+        FIXTURE_BUILD,
+    ):
+        accepted.append("the publishing job with continue-on-error: true")
     if accepted:
         raise CheckError(f"the release rules accept a broken split release: {', '.join(accepted)}")
 
