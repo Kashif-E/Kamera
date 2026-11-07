@@ -191,6 +191,23 @@ class DocsApiTest {
         assertTrue(findings.isEmpty(), "the backup exclusion is not documented:\n${findings.joinToString("\n")}")
     }
 
+    /**
+     * The migration guide's storage section names each desktop default folder as core's sources
+     * build it: photos in ~/Documents/CameraK, recordings in ~/Movies/CameraK on macOS and
+     * ~/Videos/CameraK elsewhere. Naming only the photo folder tells a 1.x user looking for a
+     * recording to look in the wrong place.
+     */
+    @Test
+    fun migrationGuideNamesEachDesktopFolder() {
+        val (stillParent, stillName) = sourceMatch(DESKTOP_MAIN, DESKTOP_STILL_FOLDER)
+        val videoName = folderName(DESKTOP_MAIN, DESKTOP_VIDEO_FOLDER)
+        val (macVideos, otherVideos) = sourceMatch(DESKTOP_MAIN, DESKTOP_VIDEO_PARENTS)
+        val storage = DocsSources.section(MIGRATION_GUIDE, Regex("^## 9\\. Storage.*"), Regex("^## .*"))
+        val missing = listOf("~/$stillParent/$stillName", "~/$macVideos/$videoName", "~/$otherVideos/$videoName")
+            .filterNot { it in storage }
+        assertTrue(missing.isEmpty(), "$MIGRATION_GUIDE's storage section does not name ${missing.joinToString()}")
+    }
+
     /** The one folder name [pattern] captures in the Kotlin sources under [dir]. */
     private fun folderName(dir: String, pattern: Regex): String = sourceMatch(dir, pattern).single()
 
