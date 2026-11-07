@@ -160,6 +160,23 @@ class TessdataLocatorTest {
         assertEquals(emptyList(), warnings)
     }
 
+    /**
+     * `camerak-ocr-tessdata-eng` is the model's own artifact: a jar holding the pinned model at the 2.0
+     * path. On the classpath, the lookup a process makes extracts it and uses it.
+     */
+    @Test
+    fun theTessdataArtifactsJar_isThePackagedModel() {
+        val resource = OCRProcessor::class.java.getResource(BUNDLED_MODEL_RESOURCE)
+        assertNotNull(resource, "$BUNDLED_MODEL_RESOURCE is not on the desktop test classpath")
+        assertEquals("jar", resource.protocol, "the model is not read from the artifact's jar: $resource")
+
+        val packaged = processTessdataSources(OcrConfig()).bundledModel
+        val found = findTessdataDirectory(sources(bundledModel = packaged))
+
+        assertNotNull(found, "the model in the jar was not used")
+        assertEquals(BUNDLED_MODEL_SHA256, sha256(File(found, "eng.traineddata").readBytes()))
+    }
+
     @Test
     fun noSource_findsNothing() {
         assertNull(findTessdataDirectory(sources()))
