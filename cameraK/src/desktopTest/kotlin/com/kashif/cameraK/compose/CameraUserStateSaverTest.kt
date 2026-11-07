@@ -5,6 +5,7 @@ package com.kashif.cameraK.compose
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.saveable.SaveableStateRegistry
+import androidx.compose.runtime.saveable.SaverScope
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
 import androidx.lifecycle.Lifecycle
@@ -176,6 +177,48 @@ class CameraUserStateSaverTest {
             assertIs<CameraKResult.Success<*>>(holder.selectCamera(CameraLens.FRONT))
         }
         assertEquals(CameraLens.FRONT, restoredConfig(picked, noLens).cameraLens, "the picked lens was not restored")
+    }
+
+    @Test
+    fun restoresTheExposureIndexAfterProcessDeath() = runTest {
+        // FakeCapabilities' back camera takes exposure indexes -6 to 6.
+        val first = Process(this, FakeCameraEngine(), SaveableStateRegistry(null) { true })
+        val saved: Map<String, List<Any?>>
+        try {
+            first.frame(this)
+            val holder = assertNotNull(first.holder, "nothing was remembered")
+            assertIs<CameraKState.Ready>(holder.cameraState.value)
+            assertIs<CameraKResult.Success<*>>(holder.setExposureCompensation(-5))
+            first.fake.reportExposureIndex(-5)
+            first.frame(this)
+            first.frame(this)
+            saved = first.registry.performSave()
+        } finally {
+            first.close()
+        }
+
+        val restoredFake = FakeCameraEngine()
+        val second = Process(this, restoredFake, SaveableStateRegistry(saved) { true })
+        try {
+            second.frame(this)
+            assertIs<CameraKState.Ready>(assertNotNull(second.holder).cameraState.value)
+            assertEquals(-5, second.engineConfig?.initialExposureCompensationIndex, "the configuration it seeded")
+            assertEquals(-5, restoredFake.appliedExposureCompensationIndex, "the exposure index was not restored")
+        } finally {
+            second.close()
+        }
+    }
+
+    @Test
+    fun aStateSavedWithoutTheExposureIndexRestoresNothing() {
+        // What the saver wrote before it kept the exposure index: lens, device type, flash, torch and zoom.
+        val fiveFields = listOf(CameraLens.FRONT.name, null, FlashMode.ON.name, TorchMode.OFF.name, 2f)
+
+        assertNull(CameraUserStateSaver.restore(fiveFields))
+        val state =
+            CameraUserState(CameraLens.FRONT, null, FlashMode.ON, TorchMode.OFF, 2f, exposureCompensationIndex = 3)
+        val saved = assertNotNull(with(CameraUserStateSaver) { SaverScope { true }.save(state) })
+        assertEquals(3, CameraUserStateSaver.restore(saved)?.exposureCompensationIndex, "the index round trip")
     }
 
     // What one process saves after [choose] ran on its holder, ready, over [config].

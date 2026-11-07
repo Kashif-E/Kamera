@@ -648,6 +648,8 @@ val addedStableTypes =
         "com.kashif.cameraK.capture.RecordedVideo",
         "com.kashif.cameraK.result.CameraKResult",
         "com.kashif.cameraK.result.CameraKResult.*",
+        // W12 Y-focus-api: FocusTap's point.
+        "com.kashif.cameraK.controls.NormalizedPoint",
     )
 
 // What is wrong with cameraK/compose-stability.conf's [confLines] given the Kotlin types the published

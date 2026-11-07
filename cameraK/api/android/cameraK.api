@@ -1,10 +1,10 @@
 public final class com/kashif/cameraK/compose/CameraKScreenKt {
 	public static final fun CameraKScreen (Landroidx/compose/ui/Modifier;Lcom/kashif/cameraK/state/CameraKState;Lcom/kashif/cameraK/enums/DeviceOrientation;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function3;ZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
-	public static final fun CameraKScreen (Lcom/kashif/cameraK/state/CameraKStateHolder;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun CameraKScreen (Lcom/kashif/cameraK/state/CameraKStateHolder;Landroidx/compose/ui/Modifier;ZLkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class com/kashif/cameraK/compose/CameraPreviewKt {
-	public static final fun CameraPreview (Lcom/kashif/cameraK/state/CameraKStateHolder;Landroidx/compose/ui/Modifier;Ljava/lang/String;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun CameraPreview (Lcom/kashif/cameraK/state/CameraKStateHolder;Landroidx/compose/ui/Modifier;Ljava/lang/String;ZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
 }
 
 public abstract interface class com/kashif/cameraK/compose/CameraPreviewScope : androidx/compose/foundation/layout/BoxScope {
@@ -17,22 +17,43 @@ public final class com/kashif/cameraK/compose/ComposableSingletons$CameraKScreen
 	public static final field INSTANCE Lcom/kashif/cameraK/compose/ComposableSingletons$CameraKScreenKt;
 	public fun <init> ()V
 	public final fun getLambda$-774068693$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function2;
+	public final fun getLambda$1068247279$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function2;
 	public final fun getLambda$1247929777$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$2011792275$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function2;
 	public final fun getLambda$280984956$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$405971343$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$988121835$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function3;
 }
 
 public final class com/kashif/cameraK/compose/ComposableSingletons$CameraPreviewKt {
 	public static final field INSTANCE Lcom/kashif/cameraK/compose/ComposableSingletons$CameraPreviewKt;
 	public fun <init> ()V
-	public final fun getLambda$-1675353941$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-667599046$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$1531233671$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function3;
 }
 
 public final class com/kashif/cameraK/compose/ComposableSingletons$EnginePreview_androidKt {
 	public static final field INSTANCE Lcom/kashif/cameraK/compose/ComposableSingletons$EnginePreview_androidKt;
 	public fun <init> ()V
 	public final fun getLambda$848049185$io_github_kashif_mehmood_km_cameraK_release ()Lkotlin/jvm/functions/Function5;
+}
+
+public final class com/kashif/cameraK/compose/FocusOutcome : java/lang/Enum {
+	public static final field FAILED Lcom/kashif/cameraK/compose/FocusOutcome;
+	public static final field FOCUSED Lcom/kashif/cameraK/compose/FocusOutcome;
+	public static final field PENDING Lcom/kashif/cameraK/compose/FocusOutcome;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/kashif/cameraK/compose/FocusOutcome;
+	public static fun values ()[Lcom/kashif/cameraK/compose/FocusOutcome;
+}
+
+public final class com/kashif/cameraK/compose/FocusTap {
+	public static final field $stable I
+	public synthetic fun <init> (JLcom/kashif/cameraK/controls/NormalizedPoint;Lcom/kashif/cameraK/compose/FocusOutcome;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOutcome ()Lcom/kashif/cameraK/compose/FocusOutcome;
+	public final fun getPoint ()Lcom/kashif/cameraK/controls/NormalizedPoint;
+	public final fun getPosition-F1C5BW0 ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/kashif/cameraK/compose/RememberCameraKStateKt {

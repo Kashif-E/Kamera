@@ -31,6 +31,12 @@ import com.kashif.cameraK.utils.InternalCameraKApi
  * @param holder The camera to show.
  * @param modifier Modifier for the preview's box.
  * @param contentDescription What the preview shows, for accessibility services; null for none.
+ * @param tapToFocus Whether a tap on the content rectangle calls [CameraKStateHolder.focusAt] at that
+ *   point. A tap does nothing on a camera whose capabilities do not list it in `supportsFocusPoint`,
+ *   and an element of [overlay] that handles the tap itself keeps it.
+ * @param focusIndicator Drawn over [overlay] from a tap until 1.5 seconds after the camera answered,
+ *   in a box covering the content rectangle; place it at [FocusTap.position]. The default is a small
+ *   ring.
  * @param overlay Drawn over the frame, with [CameraPreviewScope] for orientation-aware content.
  */
 @Composable
@@ -38,6 +44,8 @@ public fun CameraPreview(
     holder: CameraKStateHolder,
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
+    tapToFocus: Boolean = true,
+    focusIndicator: @Composable (FocusTap) -> Unit = { DefaultFocusIndicator(it) },
     overlay: @Composable CameraPreviewScope.() -> Unit = {},
 ) {
     val deviceOrientation by holder.deviceOrientation.collectAsState()
@@ -47,6 +55,12 @@ public fun CameraPreview(
         modifier.semantics { this.contentDescription = contentDescription }
     }
     EnginePreview(holder.previewSource, deviceOrientation, described, overlay)
+}
+
+/** A ring at the tap, which fades when the camera did not take the point. */
+@Composable
+internal fun DefaultFocusIndicator(tap: FocusTap) {
+    TODO("Y-focus-api")
 }
 
 /**

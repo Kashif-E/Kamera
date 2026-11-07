@@ -20,6 +20,7 @@ internal data class CameraUserState(
     val flashMode: FlashMode,
     val torchMode: TorchMode,
     val zoomRatio: Float,
+    val exposureCompensationIndex: Int = 0,
 )
 
 /** [this] with the saved choices; unchanged when nothing was saved, and the configured camera while none was picked. */

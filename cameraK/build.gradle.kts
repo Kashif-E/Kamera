@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
     id("camerak.publish")
+    alias(libs.plugins.poko)
 }
 
 kotlin {
@@ -155,12 +156,14 @@ val coreValueTypes =
         "Timeout",
         "Busy",
         "InvalidState",
+        "InvalidArgument",
         "NotReady",
         "Internal",
         "CapturedImage",
         "RecordedVideo",
         "CameraKResult",
         "Failure",
+        "NormalizedPoint",
     )
 
 tasks.register("checkComposableStability") {
