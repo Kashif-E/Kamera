@@ -176,6 +176,11 @@ internal class EngineControls(
         )
     }
 
+    /** The session stopped: focus and exposure requests in flight were cut short by the stop. */
+    fun onStopped() {
+        metering.onStopped()
+    }
+
     /** Applies the desired flash, torch, zoom and exposure index to [camera], whose control is active. */
     fun applyDesiredTo(camera: Camera) {
         hardwareControls.applyDesiredHardwareState(camera)

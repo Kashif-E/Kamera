@@ -87,9 +87,13 @@ internal fun meteringFeaturesOf(camera: Camera): MeteringFeatures {
  * becomes active, clamped into its range, and dropped to 0 on a camera without one (rule 6); a focus
  * point is never re-applied.
  *
- * A newer request of the same kind, a reset or a rebind supersedes one in flight: CameraX cancels
- * it, and the caller gets Busy. CameraX cancelling a request no one superseded means the camera
- * closed. Main thread; every future is awaited on [executor].
+ * Each request belongs to the run of the bound camera it was issued on, which the next bind or a stop
+ * ends. A newer request of the same kind or a reset in its run, or the rebind that ended its run,
+ * supersedes it: CameraX cancels it, and the caller gets Busy. The stop that ended its run, or CameraX
+ * cancelling it with its run still live (the camera closed), is Closed. An exposure request or a reset
+ * CameraX completes once its run has ended was applied to a camera no longer bound: it is Busy after a
+ * rebind and Closed after a stop, and the desired index stays as it was. Main thread; every future is
+ * awaited on [executor].
  */
 internal class FocusMetering(
     private val backend: CameraXBackend,
@@ -102,9 +106,7 @@ internal class FocusMetering(
 ) {
     private var desiredExposure = 0
 
-    // Each request's number; one whose number is no longer the latest was superseded.
-    private var focusRequest = 0
-    private var exposureRequest = 0
+    private var run = Run()
 
     /** The exposure index the next camera whose control becomes active is given. */
     fun store(exposureIndex: Int) {
@@ -112,9 +114,14 @@ internal class FocusMetering(
     }
 
     /** A bind replaced the use cases: what was in flight on the old ones is superseded. */
-    fun onBound() {
-        focusRequest++
-        exposureRequest++
+    fun onBound() = endRun(RunEnd.REBIND)
+
+    /** The session stopped: what is in flight was cut short by the stop. */
+    fun onStopped() = endRun(RunEnd.STOP)
+
+    private fun endRun(end: RunEnd) {
+        run.end = end
+        run = Run()
     }
 
     /** The exposure index [camera] reports; 0 for one without compensation or whose state cannot be read. */
@@ -178,7 +185,7 @@ internal class FocusMetering(
         if (flags.isEmpty()) return unsupported(CameraFeature.FOCUS_POINT)
         val action = FocusMeteringAction.Builder(meteringPoint, flags.reduce(Int::or)).build()
 
-        val request = ++focusRequest
+        val request = Request(run, ++run.focusRequest)
         val outcome = issue { camera.cameraControl.startFocusAndMetering(action) }.await()
         if (isReleased()) return AndroidCameraEngine.CLOSED
         return outcome.fold(
@@ -191,7 +198,8 @@ internal class FocusMetering(
                 }
             },
             onFailure = {
-                failure(it, request != focusRequest, CameraOperation.FOCUS_POINT, "Focusing at a point")
+                val busy = request.isSuperseded(Run::focusRequest)
+                failure(it, busy, CameraOperation.FOCUS_POINT, "Focusing at a point")
             },
         )
     }
@@ -199,18 +207,21 @@ internal class FocusMetering(
     suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> {
         val camera = camera() ?: return NOT_READY
         if (features(camera)?.exposureRange == null) return unsupported(CameraFeature.EXPOSURE_COMPENSATION)
-        val request = ++exposureRequest
+        val request = Request(run, ++run.exposureRequest)
         val outcome = issue { camera.cameraControl.setExposureCompensationIndex(index) }.await()
         if (isReleased()) return AndroidCameraEngine.CLOSED
         return outcome.fold(
             onSuccess = {
+                request.run.end?.let {
+                    return appliedAfter(it, CameraOperation.EXPOSURE_COMPENSATION, "Setting the exposure compensation")
+                }
                 desiredExposure = index
                 if (camera === this.camera()) publishExposure(exposureIndexOf(camera))
                 SUCCESS
             },
             onFailure = {
-                val superseded = request != exposureRequest
-                failure(it, superseded, CameraOperation.EXPOSURE_COMPENSATION, "Setting the exposure compensation")
+                val busy = request.isSuperseded(Run::exposureRequest)
+                failure(it, busy, CameraOperation.EXPOSURE_COMPENSATION, "Setting the exposure compensation")
             },
         )
     }
@@ -224,20 +235,25 @@ internal class FocusMetering(
         val features = features(camera)
         val compensates = features?.exposureRange != null
         if (features?.focusPoint != true && !compensates) return unsupported(CameraFeature.FOCUS_POINT)
-        val focus = ++focusRequest
-        val exposure = ++exposureRequest
+        val focus = Request(run, ++run.focusRequest)
+        val exposure = Request(run, ++run.exposureRequest)
         val cancel = issue { camera.cameraControl.cancelFocusAndMetering() }
         val zero = if (compensates) issue { camera.cameraControl.setExposureCompensationIndex(0) } else null
         val cancelled = cancel.await()
         val zeroed = zero?.await()
         if (isReleased()) return AndroidCameraEngine.CLOSED
         cancelled.onFailure {
-            val superseded = focus != focusRequest
-            return failure(it, superseded, CameraOperation.FOCUS_POINT, "Cancelling focus and metering")
+            val busy = focus.isSuperseded(Run::focusRequest)
+            return failure(it, busy, CameraOperation.FOCUS_POINT, "Cancelling focus and metering")
         }
         zeroed?.onFailure {
-            val superseded = exposure != exposureRequest
-            return failure(it, superseded, CameraOperation.FOCUS_POINT, "Resetting the exposure compensation")
+            val busy = exposure.isSuperseded(Run::exposureRequest)
+            return failure(it, busy, CameraOperation.FOCUS_POINT, "Resetting the exposure compensation")
+        }
+        if (zeroed != null) {
+            exposure.run.end?.let {
+                return appliedAfter(it, CameraOperation.FOCUS_POINT, "Resetting the exposure compensation")
+            }
         }
         desiredExposure = 0
         if (zeroed != null && camera === this.camera()) publishExposure(exposureIndexOf(camera))
@@ -251,20 +267,28 @@ internal class FocusMetering(
         null
     }
 
-    // CameraX's own cancellation is Busy when a newer request superseded it, else the camera closed (rule 10:
-    // not an error). Anything else is the hardware's.
+    // CameraX's own cancellation is Busy when something in the session superseded it, else the camera
+    // closed (rule 10: not an error). Anything else is the hardware's.
     private fun failure(
         cause: Throwable,
-        superseded: Boolean,
+        busy: Boolean,
         operation: CameraOperation,
         name: String,
     ): CameraKResult<Unit> {
         if (cause is CameraControl.OperationCanceledException || cause is CancellationException) {
             CameraKLogger.d(TAG, "$name was cancelled by CameraX (${cause::class.java.simpleName}: ${cause.message})")
-            return if (superseded) CameraKResult.Failure(CameraKError.Busy(operation)) else AndroidCameraEngine.CLOSED
+            return if (busy) CameraKResult.Failure(CameraKError.Busy(operation)) else AndroidCameraEngine.CLOSED
         }
         CameraKLogger.e(TAG, "$name failed", cause)
         return CameraKResult.Failure(CameraKError.Hardware(null, cause))
+    }
+
+    // A request CameraX applied once its run had ended reached a camera no longer bound; the caller retries
+    // on the bound one, or on the next start.
+    private fun appliedAfter(end: RunEnd, operation: CameraOperation, name: String): CameraKResult<Unit> {
+        CameraKLogger.d(TAG, "$name completed on a camera no longer bound (${end.name.lowercase()})")
+        if (end == RunEnd.STOP) return AndroidCameraEngine.CLOSED
+        return CameraKResult.Failure(CameraKError.Busy(operation))
     }
 
     private fun logFailure(name: String, cause: Throwable) {
@@ -303,6 +327,20 @@ internal class FocusMetering(
 
     private fun unsupported(feature: CameraFeature): CameraKResult<Unit> =
         CameraKResult.Failure(CameraKError.Unsupported(feature))
+
+    private enum class RunEnd { REBIND, STOP }
+
+    // One bound camera's run: its requests' numbers, and what ended it (null while it is live).
+    private class Run {
+        var focusRequest = 0
+        var exposureRequest = 0
+        var end: RunEnd? = null
+    }
+
+    private class Request(val run: Run, val number: Int) {
+        // Busy: a newer request of its kind or a reset in its run, or the rebind that ended the run.
+        fun isSuperseded(latest: (Run) -> Int): Boolean = number != latest(run) || run.end == RunEnd.REBIND
+    }
 
     private companion object {
         val METERING_FLAGS = listOf(

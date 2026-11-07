@@ -387,6 +387,7 @@ internal class EngineSession(
     // Ends [live]: the camera closes (use cases stay bound), the sensor stops, Closed is published.
     private fun endSession(live: Session) {
         session = null
+        controls.onStopped()
         live.recovery?.cancel()
         live.opened.complete(AndroidCameraEngine.CLOSED)
         live.startTrace?.close()
