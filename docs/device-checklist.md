@@ -85,6 +85,22 @@ the main thread.
 - [ ] **Background and foreground.** With an index set, background the app and bring it back; the
       same index is applied again.
 
+### Focus and exposure (iOS)
+
+- [ ] **Focus.** Tap a near object; the reticle shows FOCUSED and the object is sharp.
+- [ ] **Focus that cannot lock.** Tap with the lens covered; the reticle shows FOCUSED or FAILED
+      within 2 seconds, never stays pending.
+- [ ] **Where the tap lands.** At 1:1 and at 16:9, tap an object near a corner of the preview; it
+      comes into focus there.
+- [ ] **Exposure.** Move the exposure slider; the brightness changes in 1/3 EV steps from -2 to +2 EV,
+      and the index shown is the one read back.
+- [ ] **Scene change.** After a tap, pan to a different scene; the camera returns to continuous focus
+      and exposure.
+- [ ] **Lens switch.** Set the index to the end of the back camera's range, then switch to the front
+      camera; the index is clamped into its range, or 0 on a camera without compensation.
+- [ ] **Background and foreground.** With an index set, background the app and bring it back; the
+      same index is applied again.
+
 ## iOS Sample in Xcode (Mac)
 
 - [ ] **The Xcode build.** From the repository root, the iOS Sample builds for the simulator with no

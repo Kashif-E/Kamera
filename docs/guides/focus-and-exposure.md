@@ -1,9 +1,8 @@
 # Focus and Exposure
 
 !!! note "Platforms"
-    The API below is common, and the Compose tap is in place on every platform. Android supports
-    it. iOS implements it in the next wave; until then its cameras report no focus point and no
-    exposure compensation, so the calls return `Unsupported`. Desktop cameras do not support either.
+    The API below is common, and the Compose tap is in place on every platform. Android and iOS
+    support it. Desktop cameras do not support either.
 
 ## Tap to focus
 
@@ -100,7 +99,7 @@ Clamped into the camera's range; a camera without compensation ignores it.
 | Platform | Focus point | Exposure compensation |
 |----------|-------------|-----------------------|
 | Android | Supported, where CameraX meters at a point | Supported, where CameraX reports a range |
-| iOS | In the next wave | In the next wave |
+| iOS | Supported, where the camera has a focus or exposure point of interest | Supported, in CameraK's 1/3 EV steps within ±2 EV |
 | Desktop | `Unsupported(FOCUS_POINT)` | `Unsupported(EXPOSURE_COMPENSATION)` |
 
 ### Android
@@ -127,6 +126,36 @@ continuous metering after its default 5 seconds.
 `ExposureState` reads back. A newer call replaces one still in flight, which returns
 `Failure(Busy(EXPOSURE_COMPENSATION))`. A camera without compensation drops the held index, and
 `uiState` shows 0. `resetFocusAndExposure` cancels the focus point and sets index 0.
+
+### iOS
+
+iOS has no exposure index, so CameraK defines one: each step is 1/3 EV, and a camera's
+`exposureCompensationRange` is its `exposureTargetBias` range cut to ±2 EV, which is -6 to 6 on every
+current iPhone. ±2 EV matches Android's typical range and the system Camera app. A camera whose range
+holds no index but 0 reports no compensation. `exposureCompensationStep` is 1/3.
+
+Each camera's capabilities are known from the start: a focus point where the camera supports a focus
+or an exposure point of interest, and the range above.
+
+`focusAt` converts the point through the preview layer, which accounts for the preview's crop, its
+rotation and the front camera's mirror. It sets the focus and exposure points with one-shot autofocus
+and autoexposure, for what the camera supports. When the scene changes (AVFoundation's subject-area
+change) the camera returns to continuous focus and exposure at the centre.
+
+| What happened | `focusAt` returns |
+|---------------|-------------------|
+| The camera stopped focusing, or was not focusing 150 ms after the tap | `Success` |
+| A camera without a focus point metered exposure | `Success` |
+| The camera was still focusing 2 seconds after the tap | `Failure(Timeout(FOCUS_POINT))` |
+| A newer `focusAt`, a reset or a camera switch replaced it | `Failure(Busy(FOCUS_POINT))` |
+| The camera stopped or closed first | `Failure(Closed)` |
+| The camera refused its configuration lock | `Failure(Hardware(code, cause))` |
+
+`setExposureCompensation` returns once AVFoundation has applied the bias, and `uiState` shows the index
+the camera's bias reads back as. A newer call replaces one still in flight, which returns
+`Failure(Busy(EXPOSURE_COMPENSATION))`. A camera without compensation drops the held index, and
+`uiState` shows 0. `resetFocusAndExposure` returns to continuous focus and exposure at the centre and
+sets index 0.
 
 ## Testing
 

@@ -26,7 +26,7 @@ Upgrading from 1.x? Read the [2.0 migration guide](docs/migration/2.0.md).
 - **Survives rotation**: the Compose holder lives in a ViewModel, so a rotation keeps the camera and any recording.
 - **Capture and recording**: photos to app-owned files with `capture()`, video with pause and resume, limits and an elapsed-time state.
 - **Lens control**: zoom, flash, torch, front and back, ultra-wide and telephoto, and per-camera capability queries.
-- **Focus and exposure**: tap to focus on the preview, a focus point and exposure compensation on the holder. Android supports both; iOS lands in the next wave, and desktop cameras do not support it.
+- **Focus and exposure**: tap to focus on the preview, a focus point and exposure compensation on the holder. Android and iOS support both; desktop cameras do not support it.
 - **Plugins**: QR and barcode scanning, OCR, an analyzer that hands you encoded frames, and a media saver that publishes to the gallery. Your own analysis uses the same frame source.
 - **Testable**: `camerak-testing` gives your tests a scripted fake camera.
 
