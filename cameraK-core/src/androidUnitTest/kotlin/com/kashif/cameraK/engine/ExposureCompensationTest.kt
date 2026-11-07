@@ -174,6 +174,24 @@ class ExposureCompensationTest {
     }
 
     @Test
+    fun aRequestTheCameraAppliesAfterAStopIsClosed() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdExposure = true
+        metering.closeLeavesPending = true
+
+        val set = async { engine.setExposureCompensation(4) }
+        platform.settle(testScheduler)
+        engine.stop()
+        platform.settle(testScheduler)
+        metering.completeExposure()
+        platform.settle(testScheduler)
+
+        assertIs<CameraKError.Closed>(failure(set.await()), "a request the stop cut off")
+        engine.closeAndJoin()
+    }
+
+    @Test
     fun aResetTheOldCameraAppliesAfterASwitchIsBusyAndLeavesTheHeldIndex() = runTest {
         val engine = open()
         assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(2))
