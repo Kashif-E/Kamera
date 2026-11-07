@@ -3,6 +3,8 @@ package com.kashif.cameraK.controller
 import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameRecorder
 import java.io.File
+import java.nio.Buffer
+import java.nio.ByteBuffer
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
@@ -14,7 +16,8 @@ import kotlin.concurrent.withLock
  * as a real one does, unless [failRecord] gives an exception for that frame's index. With
  * [holdStop], `stop()` waits until [finishStop], the way a test holds a finalization; the rig
  * counts that wait as quiet ([parkedStops]). [onStart] runs first in each `start()`, on the
- * recording's thread, before a scripted [startFailure] is thrown.
+ * recording's thread, before a scripted [startFailure] is thrown. Each frame's image buffer and a
+ * copy of its pixels are kept ([buffers], [pixels]), as the encoder was handed them.
  */
 internal class ScriptedFrameRecorder(
     private val path: String,
@@ -43,6 +46,12 @@ internal class ScriptedFrameRecorder(
     /** The `timestamp` set when each frame was written, in microseconds. */
     val timestamps: MutableList<Long> = CopyOnWriteArrayList()
 
+    /** The first image buffer of each frame written, the object the encoder was handed. */
+    val buffers: MutableList<Buffer> = CopyOnWriteArrayList()
+
+    /** The pixels of each frame written, copied when it was written. */
+    val pixels: MutableList<RecordedPixels> = CopyOnWriteArrayList()
+
     /** The frame size when `start()` was called. */
     @Volatile var sizeAtStart: Pair<Int, Int>? = null
         private set
@@ -66,6 +75,8 @@ internal class ScriptedFrameRecorder(
             throw it
         }
         timestamps += timestamp
+        buffers += frame.image[0]
+        pixels += RecordedPixels.of(frame)
         file.appendBytes(ByteArray(bytesPerFrame))
         workers.bump()
     }
@@ -103,4 +114,31 @@ internal class ScriptedFrameRecorder(
 
     /** A `stop()` waiting for [finishStop]: 0 or 1. */
     fun parkedStops(): Int = lock.withLock { if (stopWaiter != null && stopPermits == 0) 1 else 0 }
+}
+
+/** A recorded frame's BGR pixels, [width] x [height], rows packed without padding. */
+internal class RecordedPixels(val width: Int, val height: Int, private val bgr: ByteArray) {
+    /** The pixel at [x], [y] as 0xRRGGBB. */
+    fun rgb(x: Int, y: Int): Int {
+        val at = (y * width + x) * 3
+        return (bgr[at + 2].toInt() and 0xFF shl 16) or (bgr[at + 1].toInt() and 0xFF shl 8) or
+            (bgr[at].toInt() and 0xFF)
+    }
+
+    companion object {
+        /** Copies [frame]'s 3-channel byte image, reading each row at the frame's stride. */
+        fun of(frame: Frame): RecordedPixels {
+            check(frame.imageDepth == Frame.DEPTH_UBYTE && frame.imageChannels == 3) {
+                "a recorded frame of depth ${frame.imageDepth} with ${frame.imageChannels} channels"
+            }
+            val source = (frame.image[0] as ByteBuffer).duplicate()
+            val row = frame.imageWidth * 3
+            val bgr = ByteArray(row * frame.imageHeight)
+            for (y in 0 until frame.imageHeight) {
+                source.position(y * frame.imageStride)
+                source.get(bgr, y * row, row)
+            }
+            return RecordedPixels(frame.imageWidth, frame.imageHeight, bgr)
+        }
+    }
 }
