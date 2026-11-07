@@ -45,7 +45,6 @@ import com.kashif.cameraK.video.VideoQuality
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.useContents
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -64,10 +63,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import platform.AVFoundation.AVCaptureFlashMode
-import platform.AVFoundation.AVCaptureFlashModeAuto
-import platform.AVFoundation.AVCaptureFlashModeOff
-import platform.AVFoundation.AVCaptureFlashModeOn
 import platform.AVFoundation.AVCaptureInput
 import platform.AVFoundation.AVCaptureSessionDidStartRunningNotification
 import platform.AVFoundation.AVCaptureSessionErrorKey
@@ -75,23 +70,18 @@ import platform.AVFoundation.AVCaptureSessionInterruptionEndedNotification
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonKey
 import platform.AVFoundation.AVCaptureSessionRuntimeErrorNotification
 import platform.AVFoundation.AVCaptureSessionWasInterruptedNotification
-import platform.AVFoundation.AVCaptureTorchMode
 import platform.AVFoundation.AVCaptureTorchModeAuto
-import platform.AVFoundation.AVCaptureTorchModeOff
 import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVCaptureVideoOrientationPortrait
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
 import platform.CoreGraphics.CGRect
-import platform.Foundation.NSBundle
 import platform.Foundation.NSData
 import platform.Foundation.NSError
-import platform.Foundation.NSLock
 import platform.Foundation.NSNotification
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
-import platform.Foundation.NSProcessInfo
 import platform.Foundation.NSUUID
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
@@ -154,8 +144,11 @@ internal class AppleCameraEngine(
     private val unsupported: CameraKError? =
         if (osVersion < MINIMUM_IOS) CameraKError.Unsupported(CameraFeature.PLATFORM_VERSION) else null
 
-    private val _state = MutableStateFlow<EngineState>(unsupported?.let(EngineState::Failed) ?: EngineState.Closed)
-    override val state: StateFlow<EngineState> = _state.asStateFlow()
+    private val lock: EngineLock = EngineLock()
+
+    private val generations: EngineGenerations =
+        EngineGenerations(lock, tracer, custom, unsupported, frameOutputAttached = { frameSource.outputAttached })
+    override val state: StateFlow<EngineState> = generations.state
 
     private val _hardware = MutableStateFlow(HardwareState(FlashMode.OFF, TorchMode.OFF, null, null))
     override val hardware: StateFlow<HardwareState> = _hardware.asStateFlow()
@@ -212,12 +205,12 @@ internal class AppleCameraEngine(
         }
 
     /** Analysis frames on one 420f video data output (design §8). */
-    private val frameSource = AppleFrameSource(
+    private val frameSource: AppleFrameSource = AppleFrameSource(
         custom = custom,
         keepOutput = config.frameAnalysis,
         recordingActive = { recorder.isActive },
         rotationDegrees = ::frameRotationDegrees,
-        onSampleBuffer = ::onSampleBuffer,
+        onSampleBuffer = generations::onSampleBuffer,
         locker = pixelBufferLocker,
     )
     override val frames: FrameSource = frameSource
@@ -227,20 +220,7 @@ internal class AppleCameraEngine(
             CoroutineExceptionHandler { _, e -> CameraKLogger.e(TAG, "an iOS engine task failed", e) },
     )
 
-    // Everything below the lock is read and written only while holding it.
-    private val lock = NSLock()
-    private var generation = 0
-    private var phase = Phase.CLOSED
-    private var closed = false
-    private var pendingStart: PendingStart? = null
-    private var firstFrame: AutoCloseable? = null
-
-    /** A lens switch whose interval waits for the first sample buffer from [PendingSwitch.input]. */
-    private var pendingSwitch: PendingSwitch? = null
-
-    /** Set by a media-services reset's restart, cleared when the session runs again. */
-    private var restartedAfterReset = false
-    private var resetRestarts = 0
+    // Everything below is read and written only while holding the lock.
     private var orientationObserver: Any? = null
     private var enumeratedLenses: List<LensInfo> = emptyList()
     private var torchModesById: Map<String, Set<TorchMode>> = emptyMap()
@@ -316,7 +296,7 @@ internal class AppleCameraEngine(
             layer.videoGravity = AVLayerVideoGravityResizeAspectFill
             custom.adoptPreviewLayer(layer)
             if (coordinatesRotation) {
-                locked { newestPreviewLayer = layer }
+                lock.locked { newestPreviewLayer = layer }
                 custom.afterQueuedSessionWork {
                     platformCallback("binding the rotation coordinator") { bindRotationOnQueue() }
                 }
@@ -348,23 +328,23 @@ internal class AppleCameraEngine(
     // ─── Lifecycle ──────────────────────────────────────────────────────────────────────────────
 
     override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> {
-        if (isClosed) return CLOSED
+        if (generations.isClosed) return ENGINE_CLOSED
         unsupported?.let { error ->
-            locked { if (!closed) _state.value = EngineState.Failed(error) }
-            return failure(error)
+            generations.failUnusable(error)
+            return engineFailure(error)
         }
         if (config.analysisFormat != FrameFormat.YUV_420) {
             // AVCaptureVideoDataOutput delivers CameraK's frames in 420f only (design §6.1, §8).
             val error = CameraKError.Unsupported(CameraFeature.ANALYSIS_FORMAT)
             CameraKLogger.e(TAG, "iOS analysis frames are YUV_420; ${config.analysisFormat} fails the start")
-            locked { if (!closed) _state.value = EngineState.Failed(error) }
-            return failure(error)
+            generations.failUnusable(error)
+            return engineFailure(error)
         }
         enumerated.await()
         return starts.withLock {
             when {
-                isClosed -> CLOSED
-                locked { phase == Phase.LIVE } -> CameraKResult.Success(Unit)
+                generations.isClosed -> ENGINE_CLOSED
+                generations.isLive -> CameraKResult.Success(Unit)
                 else -> {
                     startObservingOrientation()
                     val started = tracer.beginInterval(TraceNames.START).use { openGeneration(desired) }
@@ -378,20 +358,9 @@ internal class AppleCameraEngine(
 
     private suspend fun openGeneration(desired: DesiredHardware): CameraKResult<Unit> =
         suspendCancellableCoroutine { continuation ->
-            val generation = locked {
-                if (closed) return@locked null
-                generation++
-                phase = Phase.STARTING
-                restartedAfterReset = false
-                pendingStart = PendingStart(generation, continuation)
-                endPendingSwitch()
-                firstFrame?.close()
-                firstFrame = tracer.beginInterval(TraceNames.FIRST_FRAME)
-                _state.value = EngineState.Opening
-                generation
-            }
+            val generation = generations.open(continuation)
             if (generation == null) {
-                continuation.resume(CLOSED)
+                continuation.resume(ENGINE_CLOSED)
                 return@suspendCancellableCoroutine
             }
             continuation.invokeOnCancellation { cancelStart(generation) }
@@ -402,15 +371,16 @@ internal class AppleCameraEngine(
 
     /** Session queue: configures the session or moves it to the selected camera, then starts it. */
     private fun startOnQueue(generation: Int, desired: DesiredHardware) {
-        if (!isCurrent(generation, Phase.STARTING)) return
+        if (!generations.isCurrent(generation, EnginePhase.STARTING)) return
         val selection = desired.selection
-        val device = resolve(selection) ?: return fail(generation, CameraKError.NoCamera(selection.lens()))
+        val device = resolve(selection)
+            ?: return generations.fail(generation, CameraKError.NoCamera(selection.lens()))
         val failure = when {
             !custom.isConfigured -> custom.configureOnQueue(device, device.lens(), selection.deviceType())
             device !== custom.currentDevice -> custom.useDeviceOnQueue(device)
             else -> null
         }
-        if (failure != null) return fail(generation, errorFor(failure, selection.lens()))
+        if (failure != null) return generations.fail(generation, engineErrorFor(failure, selection.lens()))
         target.value = desired.targetOrientation
         desiredZoom = desired.zoomRatio
         desiredTorch = desired.torchMode
@@ -418,7 +388,7 @@ internal class AppleCameraEngine(
         custom.torchMode = desiredTorch.toAVCaptureTorchMode()
         bindHardware(device)
         // A stop or close since the block was queued wins: the session is not started for nobody.
-        if (!isCurrent(generation, Phase.STARTING)) return
+        if (!generations.isCurrent(generation, EnginePhase.STARTING)) return
         // Starting the session applies the torch; one already running keeps the torch it had.
         if (session?.isRunning == true) custom.reapplyTorchOnQueue() else custom.startRunningOnQueue()
         applyDesiredZoom(device)
@@ -432,26 +402,16 @@ internal class AppleCameraEngine(
         val interrupted = ops.isInterrupted
         val running = ops.isRunning
         when {
-            interrupted -> becomeLive(
+            interrupted -> generations.becomeLive(
                 generation,
                 EngineState.Interrupted(lastInterruption.value ?: InterruptionReason.OTHER),
             )
-            running -> becomeLive(generation, EngineState.Open)
+            running -> generations.becomeLive(generation, EngineState.Open)
         }
     }
 
     private fun cancelStart(generation: Int) {
-        val cancelled = locked {
-            if (closed || this.generation != generation || phase != Phase.STARTING) return@locked false
-            this.generation++
-            phase = Phase.CLOSED
-            pendingStart = null
-            endFirstFrame()
-            endPendingSwitch()
-            _state.value = EngineState.Closed
-            true
-        }
-        if (cancelled) {
+        if (generations.cancelStart(generation)) {
             stopObservingOrientation()
             custom.afterQueuedSessionWork {
                 platformCallback("stopping a cancelled start") { custom.stopRunningOnQueue() }
@@ -461,21 +421,13 @@ internal class AppleCameraEngine(
 
     override suspend fun stop() {
         if (unsupported != null) {
-            locked { if (!closed) _state.value = EngineState.Closed }
+            generations.closeUnusable()
             return
         }
         // A recording is finalized before the camera closes (contract rule 7).
-        if (!isClosed) recorder.finishForStop()
-        val cut = locked {
-            if (closed) return
-            generation++
-            phase = Phase.CLOSED
-            endFirstFrame()
-            endPendingSwitch()
-            _state.value = EngineState.Closed
-            pendingStart.also { pendingStart = null }
-        }
-        cut?.continuation?.resume(CLOSED)
+        if (!generations.isClosed) recorder.finishForStop()
+        val cut = generations.stop() ?: return
+        cut.start?.continuation?.resume(ENGINE_CLOSED)
         stopObservingOrientation()
         suspendCancellableCoroutine { continuation ->
             custom.afterQueuedSessionWork {
@@ -488,18 +440,9 @@ internal class AppleCameraEngine(
     }
 
     override fun close() {
-        val cut = locked {
-            if (closed) return
-            closed = true
-            generation++
-            phase = Phase.CLOSED
-            endFirstFrame()
-            endPendingSwitch()
-            _state.value = EngineState.Closed
-            pendingStart.also { pendingStart = null }
-        }
-        cut?.continuation?.resume(CLOSED)
-        locked { pendingStills.toList().also { pendingStills.clear() } }.forEach { it.settle(CLOSED) }
+        val cut = generations.close() ?: return
+        cut.start?.continuation?.resume(ENGINE_CLOSED)
+        lock.locked { pendingStills.toList().also { pendingStills.clear() } }.forEach { it.settle(ENGINE_CLOSED) }
         observers.forEach(center::removeObserver)
         stopObservingOrientation()
         enumerated.complete(Unit)
@@ -534,7 +477,7 @@ internal class AppleCameraEngine(
         fun observe(name: String?, what: String, handle: (Int, NSNotification) -> Unit): Any =
             center.addObserverForName(name, avSession, null) { notification ->
                 platformCallback(what) {
-                    val generation = locked { generation }
+                    val generation = generations.current
                     if (notification != null) {
                         custom.afterQueuedSessionWork { platformCallback(what) { handle(generation, notification) } }
                     }
@@ -546,7 +489,7 @@ internal class AppleCameraEngine(
                     val code = notification?.userInfo?.get(AVCaptureSessionInterruptionReasonKey) as? NSNumber
                     val reason = interruptionReasonFor(code?.longValue)
                     lastInterruption.value = reason
-                    val generation = locked { generation }
+                    val generation = generations.current
                     custom.afterQueuedSessionWork {
                         platformCallback("a session interruption") { onInterrupted(generation, reason) }
                     }
@@ -565,40 +508,40 @@ internal class AppleCameraEngine(
     }
 
     private fun onInterrupted(generation: Int, reason: InterruptionReason) {
-        if (isLiveOrStarting(generation)) becomeLive(generation, EngineState.Interrupted(reason))
+        if (generations.isLiveOrStarting(
+                generation,
+            )
+        ) {
+            generations.becomeLive(generation, EngineState.Interrupted(reason))
+        }
     }
 
     private fun onInterruptionEnded(generation: Int) {
-        if (!isLiveOrStarting(generation)) return
-        if (session?.isRunning == true) becomeLive(generation, EngineState.Open)
+        if (!generations.isLiveOrStarting(generation)) return
+        if (session?.isRunning == true) generations.becomeLive(generation, EngineState.Open)
     }
 
     private fun onDidStartRunning(generation: Int) {
-        val stale = locked { this.generation == generation && phase == Phase.CLOSED && !closed }
-        if (stale) {
+        if (generations.isStopped(generation)) {
             // An open that arrives after the start it belonged to was stopped: the camera stays closed.
             custom.stopRunningOnQueue()
             return
         }
-        if (isLiveOrStarting(generation)) confirm(generation)
+        if (generations.isLiveOrStarting(generation)) confirm(generation)
     }
 
     private fun onRuntimeError(generation: Int, error: NSError?) {
-        if (!isLiveOrStarting(generation)) return
+        if (!generations.isLiveOrStarting(generation)) return
         if (error == null) {
             CameraKLogger.e(TAG, "the session reported a runtime error without an NSError")
-            return fail(generation, CameraKError.Hardware(null))
+            return generations.fail(generation, CameraKError.Hardware(null))
         }
         val next = sessionErrorState(error)
-        if (next is EngineState.Failed) return fail(generation, next.error)
+        if (next is EngineState.Failed) return generations.fail(generation, next.error)
         val hardware = CameraKError.Hardware(error.code.toInt(), NSErrorException(error))
         // A reset restarts the session once; a second failure in a row, before the restart ran, ends the generation.
-        val restart = locked {
-            if (restartedAfterReset) return@locked null
-            restartedAfterReset = true
-            ++resetRestarts
-        } ?: return fail(generation, hardware)
-        becomeLive(generation, next)
+        val restart = generations.claimResetRestart() ?: return generations.fail(generation, hardware)
+        generations.becomeLive(generation, next)
         custom.startRunningOnQueue()
         confirm(generation)
         failUnlessRunningWithinTheStartTimeout(generation, restart, hardware)
@@ -613,91 +556,16 @@ internal class AppleCameraEngine(
             delay(START_TIMEOUT)
             custom.afterQueuedSessionWork {
                 platformCallback("a restart after a media-services reset") {
-                    val pending = locked { restartedAfterReset && resetRestarts == restart }
+                    val pending = generations.isResetRestartPending(restart)
                     val ops = session
-                    if (pending && ops != null && !ops.isRunning && !ops.isInterrupted) fail(generation, error)
+                    if (pending &&
+                        ops != null &&
+                        !ops.isRunning &&
+                        !ops.isInterrupted
+                    ) {
+                        generations.fail(generation, error)
+                    }
                 }
-            }
-        }
-    }
-
-    /**
-     * Runs one platform callback. Nothing it throws crosses the GCD block or the notification it
-     * runs in: the throwable is logged and the callback does nothing more.
-     */
-    private inline fun platformCallback(what: String, block: () -> Unit) {
-        try {
-            block()
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "handling $what failed", e)
-        }
-    }
-
-    // ─── State transitions ──────────────────────────────────────────────────────────────────────
-
-    private fun becomeLive(generation: Int, next: EngineState) {
-        val started = locked {
-            if (closed || this.generation != generation) return
-            if (phase != Phase.STARTING && phase != Phase.LIVE) return
-            phase = Phase.LIVE
-            _state.value = next
-            if (next == EngineState.Open) {
-                // With a frame output the first frame is its first sample buffer (onSampleBuffer).
-                if (!frameSource.outputAttached) endFirstFrame()
-                restartedAfterReset = false
-            }
-            pendingStart.also { pendingStart = null }
-        }
-        started?.continuation?.resume(CameraKResult.Success(Unit))
-    }
-
-    private fun fail(generation: Int, error: CameraKError) {
-        val failedStart = locked {
-            if (closed || this.generation != generation) return
-            if (phase != Phase.STARTING && phase != Phase.LIVE) return
-            phase = Phase.FAILED
-            endFirstFrame()
-            endPendingSwitch()
-            _state.value = EngineState.Failed(error)
-            pendingStart.also { pendingStart = null }
-        }
-        CameraKLogger.e(TAG, "the camera session failed", error.cause)
-        failedStart?.continuation?.resume(failure(error))
-    }
-
-    private fun isCurrent(generation: Int, expected: Phase): Boolean =
-        locked { !closed && this.generation == generation && phase == expected }
-
-    private fun isLiveOrStarting(generation: Int): Boolean =
-        locked { !closed && this.generation == generation && (phase == Phase.STARTING || phase == Phase.LIVE) }
-
-    private val isClosed: Boolean get() = locked { closed }
-
-    // Lock held.
-    private fun endFirstFrame() {
-        firstFrame?.close()
-        firstFrame = null
-    }
-
-    // Lock held: a switch whose first frame never came ends here, marked noFrame.
-    private fun endPendingSwitch() {
-        val switch = pendingSwitch ?: return
-        pendingSwitch = null
-        tracer.marker(AppleTraceNames.LENS_SWITCH_NO_FRAME)
-        switch.interval.close()
-    }
-
-    /**
-     * The frame output's queue, before any analyzer: the start's first sample buffer ends its
-     * first-frame interval, and the first one through the new camera's input ends a lens switch's.
-     */
-    private fun onSampleBuffer(input: AVCaptureInput?) {
-        locked {
-            if (!closed && (phase == Phase.STARTING || phase == Phase.LIVE)) endFirstFrame()
-            val switch = pendingSwitch
-            if (switch != null && input != null && switch.input === input) {
-                pendingSwitch = null
-                switch.interval.close()
             }
         }
     }
@@ -720,7 +588,7 @@ internal class AppleCameraEngine(
     // ─── Commands ───────────────────────────────────────────────────────────────────────────────
 
     override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> {
-        unusable()?.let { return it }
+        generations.unusable()?.let { return it }
         enumerated.await()
         return suspendCancellableCoroutine { continuation -> switchCamera(selection) { continuation.resume(it) } }
     }
@@ -736,28 +604,22 @@ internal class AppleCameraEngine(
      * a refused switch ends at once, marked failed.
      */
     internal fun switchCamera(selection: CameraSelection, done: (CameraKResult<LensInfo>) -> Unit) {
-        locked { endPendingSwitch() }
+        generations.endPendingSwitch()
         val interval = tracer.beginInterval(TraceNames.LENS_SWITCH)
         custom.afterQueuedSessionWork {
-            val generation = locked { this.generation }
+            val generation = generations.current
             val result = try {
                 switchOnQueue(selection, generation)
             } catch (e: Exception) {
                 CameraKLogger.e(TAG, "switching the camera failed", e)
-                failure(CameraKError.Internal(e))
+                engineFailure(CameraKError.Internal(e))
             }
             // The input whose first sample buffer ends the interval, when a frame output is attached.
             val awaited = custom.currentVideoInput
                 .takeIf { result is CameraKResult.Success && frameSource.outputAttached }
             // The phase and generation are checked under the lock that publishes the switch, so a stop
             // since the live check ends the switch here instead of leaving it waiting.
-            val pending = awaited != null &&
-                locked {
-                    if (closed || this.generation != generation || phase != Phase.LIVE) return@locked false
-                    endPendingSwitch()
-                    pendingSwitch = PendingSwitch(interval, awaited)
-                    true
-                }
+            val pending = awaited != null && generations.awaitSwitchFrame(generation, interval, awaited)
             if (!pending) {
                 when {
                     result is CameraKResult.Failure -> tracer.marker(AppleTraceNames.LENS_SWITCH_FAILED)
@@ -770,13 +632,13 @@ internal class AppleCameraEngine(
     }
 
     private fun switchOnQueue(selection: CameraSelection, generation: Int): CameraKResult<LensInfo> {
-        unusable()?.let { return it }
-        if (!isCurrent(generation, Phase.LIVE)) return failure(CameraKError.NotReady)
+        generations.unusable()?.let { return it }
+        if (!generations.isCurrent(generation, EnginePhase.LIVE)) return engineFailure(CameraKError.NotReady)
         afterSwitchLiveCheck()
-        val device = resolve(selection) ?: return failure(CameraKError.NoCamera(selection.lens()))
-        if (custom.recordingInProgress()) return failure(CameraKError.Busy(CameraOperation.LENS))
+        val device = resolve(selection) ?: return engineFailure(CameraKError.NoCamera(selection.lens()))
+        if (custom.recordingInProgress()) return engineFailure(CameraKError.Busy(CameraOperation.LENS))
         // A refused input puts the previous camera back, inside the same transaction.
-        custom.useDeviceOnQueue(device)?.let { return failure(errorFor(it, selection.lens())) }
+        custom.useDeviceOnQueue(device)?.let { return engineFailure(engineErrorFor(it, selection.lens())) }
         bindHardware(device)
         applyDesiredZoom(device)
         publishHardware()
@@ -788,13 +650,13 @@ internal class AppleCameraEngine(
      * and publishes the mode the photo output will use, read back after the store (contract rule 5).
      */
     override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> {
-        notOpen()?.let { return it }
+        generations.notOpen()?.let { return it }
         val camera = custom.currentDevice?.let(::lensInfo)
         if (camera != null && mode !in capabilities.value.supportedFlashModes(camera.id)) {
             val feature = if (mode == FlashMode.AUTO) CameraFeature.FLASH_AUTO else CameraFeature.FLASH_ON
-            return failure(CameraKError.Unsupported(feature))
+            return engineFailure(CameraKError.Unsupported(feature))
         }
-        return onSessionQueue("setting the flash mode") {
+        return generations.onSessionQueue("setting the flash mode") {
             custom.setFlashMode(mode.toAVCaptureFlashMode())
             publishHardware()
             CameraKResult.Success(custom.captureFlashMode.toFlashMode())
@@ -809,24 +671,25 @@ internal class AppleCameraEngine(
      * capture's delegate lives on until AVFoundation's last callback, and its photo goes nowhere.
      */
     override suspend fun capture(): CameraKResult<CapturedImage> {
-        notOpen()?.let { return it }
+        generations.notOpen()?.let { return it }
         return tracer.beginInterval(TraceNames.CAPTURE).use { takeStill() }
     }
 
     private suspend fun takeStill(): CameraKResult<CapturedImage> {
         val photo = suspendCancellableCoroutine { continuation ->
             val request = StillRequest(continuation)
-            if (!locked { !closed && pendingStills.add(request) }) {
-                continuation.resume(CLOSED)
+            if (!lock.locked { !generations.closedLocked && pendingStills.add(request) }) {
+                continuation.resume(ENGINE_CLOSED)
                 return@suspendCancellableCoroutine
             }
             continuation.invokeOnCancellation { request.detach() }
             custom.afterQueuedSessionWork {
                 val outcome = try {
-                    stillRefusal() ?: if (custom.capturePhotoOnQueue(request)) null else failure(CameraKError.NotReady)
+                    stillRefusal()
+                        ?: if (custom.capturePhotoOnQueue(request)) null else engineFailure(CameraKError.NotReady)
                 } catch (e: Exception) {
                     CameraKLogger.e(TAG, "issuing a capture failed", e)
-                    failure(CameraKError.Internal(e))
+                    engineFailure(CameraKError.Internal(e))
                 }
                 outcome?.let(request::settle)
             }
@@ -840,12 +703,12 @@ internal class AppleCameraEngine(
 
     /** Session queue: why no capture can be issued now; null when one can. */
     private fun stillRefusal(): CameraKResult.Failure? {
-        unusable()?.let { return it }
+        generations.unusable()?.let { return it }
         if (config.imageFormat != ImageFormat.HEIC || custom.canCaptureHeic) return null
         if (heicRefusalLogged.compareAndSet(expect = false, update = true)) {
             CameraKLogger.e(TAG, "this camera cannot encode HEIC (no HEVC photo codec); captures are refused")
         }
-        return failure(CameraKError.Unsupported(CameraFeature.IMAGE_FORMAT))
+        return engineFailure(CameraKError.Unsupported(CameraFeature.IMAGE_FORMAT))
     }
 
     /** Writes [photo] where the configuration says, in its format and aspect ratio. Runs off the session queue. */
@@ -855,13 +718,13 @@ internal class AppleCameraEngine(
             "${appOwnedDirectory(config.outputDirectory)}/IMG_${NSUUID().UUIDString}.${format.extension}"
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "creating the capture's directory failed", e)
-            return failure(CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = e))
+            return engineFailure(CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = e))
         }
         val written = writeStill(photo, format, config.aspectRatio, path).getOrElse { e ->
             CameraKLogger.e(TAG, "writing the captured photo failed", e)
             removeFileIfPresent(path)
             val onDisk = e.cause is NSErrorException
-            return failure(
+            return engineFailure(
                 if (onDisk) CameraKError.Storage(StorageFailure.NOT_WRITABLE, cause = e) else CameraKError.Internal(e),
             )
         }
@@ -883,7 +746,7 @@ internal class AppleCameraEngine(
 
         fun settle(result: CameraKResult<NSData>) {
             if (!settled.compareAndSet(expect = false, update = true)) return
-            locked { pendingStills.remove(this) }
+            lock.locked { pendingStills.remove(this) }
             if (detached.value) {
                 CameraKLogger.d(TAG, "discarding the photo of a cancelled capture")
                 return
@@ -893,14 +756,16 @@ internal class AppleCameraEngine(
 
         override fun photoProcessed(data: NSData?, error: NSError?) = settle(
             when {
-                error != null -> failure(photoError(error))
-                data == null -> failure(CameraKError.Internal(IllegalStateException("AVFoundation delivered no photo")))
+                error != null -> engineFailure(photoError(error))
+                data == null -> engineFailure(
+                    CameraKError.Internal(IllegalStateException("AVFoundation delivered no photo")),
+                )
                 else -> CameraKResult.Success(data)
             },
         )
 
         override fun captureFinished(error: NSError?) = settle(
-            failure(
+            engineFailure(
                 error?.let(::photoError)
                     ?: CameraKError.Internal(
                         IllegalStateException("AVFoundation finished the capture without a photo"),
@@ -921,17 +786,17 @@ internal class AppleCameraEngine(
      * ratio without waiting for the device's report. A camera with a fixed zoom takes only that ratio.
      */
     override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> {
-        notOpen()?.let { return it }
-        if (ratio.isNaN()) return failure(CameraKError.Unsupported(CameraFeature.ZOOM))
-        return onSessionQueue("setting the zoom") {
-            val device = custom.currentDevice ?: return@onSessionQueue failure(CameraKError.NotReady)
+        generations.notOpen()?.let { return it }
+        if (ratio.isNaN()) return engineFailure(CameraKError.Unsupported(CameraFeature.ZOOM))
+        return generations.onSessionQueue("setting the zoom") {
+            val device = custom.currentDevice ?: return@onSessionQueue engineFailure(CameraKError.NotReady)
             val min = device.minVideoZoomFactor
             val max = device.maxAvailableVideoZoomFactor
             if (max <= min) {
                 return@onSessionQueue if (ratio.toDouble() == min) {
                     CameraKResult.Success(ZoomState(min.toFloat(), min.toFloat(), max.toFloat()))
                 } else {
-                    failure(CameraKError.Unsupported(CameraFeature.ZOOM))
+                    engineFailure(CameraKError.Unsupported(CameraFeature.ZOOM))
                 }
             }
             val factor = ratio.toDouble().coerceIn(min, max)
@@ -946,12 +811,12 @@ internal class AppleCameraEngine(
      * torch capabilities; [hardware] follows when the device reports it lit or dark.
      */
     override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> {
-        notOpen()?.let { return it }
-        return onSessionQueue("setting the torch") {
-            val device = custom.currentDevice ?: return@onSessionQueue failure(CameraKError.NotReady)
+        generations.notOpen()?.let { return it }
+        return generations.onSessionQueue("setting the torch") {
+            val device = custom.currentDevice ?: return@onSessionQueue engineFailure(CameraKError.NotReady)
             val avMode = mode.toAVCaptureTorchMode()
             if (!device.hasTorch || !device.isTorchModeSupported(avMode)) {
-                return@onSessionQueue failure(CameraKError.Unsupported(CameraFeature.TORCH))
+                return@onSessionQueue engineFailure(CameraKError.Unsupported(CameraFeature.TORCH))
             }
             custom.setTorchOnQueue(device, avMode)?.let {
                 return@onSessionQueue hardwareFailure("setting the torch", it)
@@ -967,9 +832,9 @@ internal class AppleCameraEngine(
      * [hardware] before this returns. The next start sets it from its desired hardware.
      */
     override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> {
-        unusable()?.let { return it }
+        generations.unusable()?.let { return it }
         target.value = orientation
-        return onSessionQueue("setting the target orientation") {
+        return generations.onSessionQueue("setting the target orientation") {
             publishHardware()
             CameraKResult.Success(Unit)
         }
@@ -977,29 +842,29 @@ internal class AppleCameraEngine(
 
     /** Adds the movie output (and the microphone, for audio) now, so the next start commits nothing. */
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> {
-        notOpen()?.let { return it }
+        generations.notOpen()?.let { return it }
         return recorder.prepare(config)
     }
 
     /** Returns once AVFoundation reports the recording started; its value is the file's path. */
     override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> {
-        notOpen()?.let { return it }
+        generations.notOpen()?.let { return it }
         return recorder.start(config)
     }
 
     /** Reaches the movie output in any state before close, so a recording can always be ended. */
     override suspend fun stopRecording(): CameraKResult<RecordedVideo> {
-        unusable()?.let { return it }
+        generations.unusable()?.let { return it }
         return recorder.stop(RecordingEndReason.USER)
     }
 
     override suspend fun pauseRecording(): CameraKResult<Unit> {
-        unusable()?.let { return it }
+        generations.unusable()?.let { return it }
         return recorder.pause()
     }
 
     override suspend fun resumeRecording(): CameraKResult<Unit> {
-        unusable()?.let { return it }
+        generations.unusable()?.let { return it }
         return recorder.resume()
     }
 
@@ -1009,33 +874,9 @@ internal class AppleCameraEngine(
         return VideoQuality.entries.filter { device.supportsSessionPreset(it.sessionPreset) }.toSet()
     }
 
-    private fun unusable(): CameraKResult.Failure? = when {
-        isClosed -> CLOSED
-        unsupported != null -> failure(unsupported)
-        else -> null
-    }
-
-    /** Hardware commands need an Open camera, as on every engine and the fake. */
-    private fun notOpen(): CameraKResult.Failure? =
-        unusable() ?: failure(CameraKError.NotReady).takeIf { _state.value != EngineState.Open }
-
-    /** Runs [block] on the session queue and returns its result; nothing it throws leaves the queue. */
-    private suspend fun <T> onSessionQueue(what: String, block: () -> CameraKResult<T>): CameraKResult<T> =
-        suspendCancellableCoroutine { continuation ->
-            custom.afterQueuedSessionWork {
-                val result = try {
-                    unusable() ?: block()
-                } catch (e: Exception) {
-                    CameraKLogger.e(TAG, "$what failed", e)
-                    failure(CameraKError.Internal(e))
-                }
-                continuation.resume(result)
-            }
-        }
-
     private fun hardwareFailure(what: String, cause: CustomCameraController.CameraException): CameraKResult.Failure {
         CameraKLogger.e(TAG, "$what failed", cause)
-        return failure(errorFor(cause, null))
+        return engineFailure(engineErrorFor(cause, null))
     }
 
     /** The orientation captures and movies take: the target when one is set, otherwise the device's. */
@@ -1048,7 +889,7 @@ internal class AppleCameraEngine(
      */
     internal fun captureRotation(): VideoRotation {
         target.value?.let { return VideoRotation.Orientation(it.toVideoOrientation()) }
-        locked { rotation }?.let { return VideoRotation.Angle(it.source.captureAngle) }
+        lock.locked { rotation }?.let { return VideoRotation.Angle(it.source.captureAngle) }
         return VideoRotation.Orientation(deviceVideoOrientation())
     }
 
@@ -1065,7 +906,7 @@ internal class AppleCameraEngine(
 
     /** Main thread: [layer] by the coordinator's preview angle when it drives the layer, else to [interfaceOrientation]. */
     private fun turnPreview(layer: AVCaptureVideoPreviewLayer, interfaceOrientation: AVCaptureVideoOrientation?) {
-        val driven = locked { rotation }?.takeIf { it.layer === layer }
+        val driven = lock.locked { rotation }?.takeIf { it.layer === layer }
         val turn = when {
             driven != null -> VideoRotation.Angle(driven.source.previewAngle)
             interfaceOrientation != null -> VideoRotation.Orientation(interfaceOrientation)
@@ -1093,8 +934,8 @@ internal class AppleCameraEngine(
     private fun bindRotationOnQueue() {
         if (!coordinatesRotation) return
         val device = observedDevice ?: return
-        val layer = locked { newestPreviewLayer }
-        val current = locked { rotation }
+        val layer = lock.locked { newestPreviewLayer }
+        val current = lock.locked { rotation }
         if (current != null && current.device === device && current.layer === layer) return
         val made = atomic<Rotation?>(null)
         val source = try {
@@ -1107,8 +948,8 @@ internal class AppleCameraEngine(
         }
         val next = source?.let { Rotation(device, layer, it) }
         made.value = next
-        val replaced = locked {
-            if (closed) {
+        val replaced = lock.locked {
+            if (generations.closedLocked) {
                 next?.source?.close()
                 return
             }
@@ -1120,7 +961,7 @@ internal class AppleCameraEngine(
 
     /** Session queue: the coordinator closed, so nothing reports angles for a camera that stopped. */
     private fun unbindRotationOnQueue() {
-        locked { rotation.also { rotation = null } }?.source?.close()
+        lock.locked { rotation.also { rotation = null } }?.source?.close()
     }
 
     /** From any thread: [made]'s layer turned to [angle] on main, unless another coordinator replaced it since. */
@@ -1128,7 +969,7 @@ internal class AppleCameraEngine(
         val layer = made.layer ?: return
         dispatch_async(dispatch_get_main_queue()) {
             platformCallback("turning the preview") {
-                if (locked { rotation === made }) custom.turnPreview(layer, VideoRotation.Angle(angle))
+                if (lock.locked { rotation === made }) custom.turnPreview(layer, VideoRotation.Angle(angle))
             }
         }
     }
@@ -1137,8 +978,8 @@ internal class AppleCameraEngine(
 
     /** From start until stop or close: UIDeviceOrientationDidChangeNotification, read through the reader seam. */
     private fun startObservingOrientation() {
-        val added = locked {
-            if (closed || orientationObserver != null) return@locked false
+        val added = lock.locked {
+            if (generations.closedLocked || orientationObserver != null) return@locked false
             orientationObserver = center.addObserverForName(UIDeviceOrientationDidChangeNotification, null, null) {
                 platformCallback("a device orientation change") { updateDeviceOrientation() }
             }
@@ -1150,7 +991,7 @@ internal class AppleCameraEngine(
     }
 
     private fun stopObservingOrientation() {
-        val observer = locked { orientationObserver.also { orientationObserver = null } } ?: return
+        val observer = lock.locked { orientationObserver.also { orientationObserver = null } } ?: return
         center.removeObserver(observer)
         generateOrientationNotifications(false)
     }
@@ -1158,8 +999,8 @@ internal class AppleCameraEngine(
     /** Face up, face down and unknown name no orientation, so they keep the last one. */
     private fun updateDeviceOrientation() {
         val orientation = readDeviceOrientation().toDeviceOrientation() ?: return
-        locked {
-            if (!closed) _deviceOrientation.value = orientation
+        lock.locked {
+            if (!generations.closedLocked) _deviceOrientation.value = orientation
         }
     }
 
@@ -1173,7 +1014,7 @@ internal class AppleCameraEngine(
             CameraKLogger.e(TAG, "enumerating the cameras failed; reporting none", e)
             emptyList<LensInfo>() to emptyMap()
         }
-        locked {
+        lock.locked {
             enumeratedLenses = lenses
             torchModesById = torchModes
         }
@@ -1191,8 +1032,8 @@ internal class AppleCameraEngine(
     }
 
     private fun publishCapabilities() {
-        val capabilities = locked {
-            if (closed) return
+        val capabilities = lock.locked {
+            if (generations.closedLocked) return
             capabilitiesOf(
                 enumeratedLenses,
                 torchModesById,
@@ -1255,7 +1096,7 @@ internal class AppleCameraEngine(
         val formats =
             setOf(ImageFormat.JPEG, ImageFormat.PNG) + listOfNotNull(ImageFormat.HEIC.takeIf { custom.canCaptureHeic })
         val qualities = boundQualities()
-        locked {
+        lock.locked {
             boundFlashModes[device.uniqueId] = flash
             boundImageFormats = formats
             boundVideoQualities = qualities
@@ -1293,7 +1134,7 @@ internal class AppleCameraEngine(
      * values again, which [publishHardware] reads from the device in use, so it changes nothing.
      */
     private fun onHardwareReport() {
-        if (!locked { !closed && (phase == Phase.STARTING || phase == Phase.LIVE) }) return
+        if (!generations.isStartingOrLive) return
         publishHardware()
     }
 
@@ -1315,7 +1156,7 @@ internal class AppleCameraEngine(
      */
     private fun publishHardware() {
         val device = custom.currentDevice ?: return
-        if (isClosed) return
+        if (generations.isClosed) return
         _hardware.value = HardwareState(
             flashMode = custom.captureFlashMode.toFlashMode(),
             torchMode = when {
@@ -1346,30 +1187,6 @@ internal class AppleCameraEngine(
             isLogical = false,
         )
 
-    private fun errorFor(failure: CustomCameraController.CameraException, lens: CameraLens?): CameraKError {
-        val platform = (failure.cause as? NSErrorException)?.error
-        return when {
-            platform != null -> cameraKErrorFor(platform)
-            failure is CustomCameraController.CameraException.DeviceNotAvailable -> CameraKError.NoCamera(lens, failure)
-            else -> CameraKError.Hardware(null, failure)
-        }
-    }
-
-    private inline fun <T> locked(block: () -> T): T {
-        lock.lock()
-        try {
-            return block()
-        } finally {
-            lock.unlock()
-        }
-    }
-
-    private enum class Phase { CLOSED, STARTING, LIVE, FAILED }
-
-    private class PendingStart(val generation: Int, val continuation: CancellableContinuation<CameraKResult<Unit>>)
-
-    private class PendingSwitch(val interval: AutoCloseable, val input: AVCaptureInput)
-
     private companion object {
         const val TAG = "CameraK"
         const val MINIMUM_IOS = 16
@@ -1379,57 +1196,5 @@ internal class AppleCameraEngine(
         const val DEGREES_90 = 90
         const val DEGREES_180 = 180
         const val DEGREES_270 = 270
-        val CLOSED = CameraKResult.Failure(CameraKError.Closed)
-
-        fun failure(error: CameraKError) = CameraKResult.Failure(error)
     }
 }
-
-private fun CaptureDeviceOps.lens(): CameraLens = if (isFront) CameraLens.FRONT else CameraLens.BACK
-
-private fun CameraSelection.lens(): CameraLens? = when (this) {
-    is CameraSelection.ByLens -> lens
-    is CameraSelection.Default -> CameraLens.BACK
-    is CameraSelection.ById -> null
-}
-
-private fun CameraSelection.deviceType(): CameraDeviceType = when (this) {
-    is CameraSelection.ByLens -> deviceType
-    is CameraSelection.Default -> deviceType
-    is CameraSelection.ById -> CameraDeviceType.DEFAULT
-}
-
-internal fun FlashMode.toAVCaptureFlashMode() = when (this) {
-    FlashMode.ON -> AVCaptureFlashModeOn
-    FlashMode.OFF -> AVCaptureFlashModeOff
-    FlashMode.AUTO -> AVCaptureFlashModeAuto
-}
-
-private fun AVCaptureFlashMode.toFlashMode(): FlashMode = when (this) {
-    AVCaptureFlashModeOn -> FlashMode.ON
-    AVCaptureFlashModeAuto -> FlashMode.AUTO
-    else -> FlashMode.OFF
-}
-
-internal fun TorchMode.toAVCaptureTorchMode(): AVCaptureTorchMode = when (this) {
-    TorchMode.ON -> AVCaptureTorchModeOn
-    TorchMode.OFF -> AVCaptureTorchModeOff
-    TorchMode.AUTO -> AVCaptureTorchModeAuto
-}
-
-/** Whether the main bundle's Info.plist has `key`. */
-private fun hasInfoPlistKey(key: String): Boolean = NSBundle.mainBundle.objectForInfoDictionaryKey(key) != null
-
-/** UIDevice's orientation notifications, begun or ended on main, where UIKit wants them. */
-private fun generateDeviceOrientationNotifications(on: Boolean) {
-    dispatch_async(dispatch_get_main_queue()) {
-        if (on) {
-            UIDevice.currentDevice.beginGeneratingDeviceOrientationNotifications()
-        } else {
-            UIDevice.currentDevice.endGeneratingDeviceOrientationNotifications()
-        }
-    }
-}
-
-private fun runningIosMajorVersion(): Int =
-    NSProcessInfo.processInfo.operatingSystemVersion.useContents { majorVersion.toInt() }
