@@ -13,6 +13,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -36,6 +37,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.fail
 
 /**
  * Tap to focus on the preview (w12 Y-focus-api, G4): a tap inside the content rectangle reaches
@@ -48,6 +50,7 @@ class TapToFocusTest {
     private val engineCalls get() = fake.calls.filter { it == "focusAt" }
     private val fake = FakeCameraEngine()
     private val shown = AtomicReference<FocusTap?>(null)
+    private val laidOutBounds = AtomicReference<Rect?>(null)
 
     // Records the tap it is drawn for, and null once it leaves the composition.
     private val recordingIndicator: @Composable (FocusTap) -> Unit = { tap ->
@@ -60,7 +63,7 @@ class TapToFocusTest {
         tapToFocus: Boolean = true,
         overlay: @Composable CameraPreviewScope.() -> Unit = {},
     ): ImageComposeScene = ImageComposeScene(
-        width = 200,
+        width = SCENE_WIDTH,
         height = 100,
         density = Density(1f),
         coroutineContext = StandardTestDispatcher(testScheduler),
@@ -70,14 +73,33 @@ class TapToFocusTest {
             Modifier.fillMaxSize(),
             tapToFocus = tapToFocus,
             focusIndicator = recordingIndicator,
-            overlay = overlay,
-        )
-    }.also { settle(it) }
+        ) {
+            laidOutBounds.set(contentBounds)
+            overlay()
+        }
+    }.also {
+        awaitFrame(it)
+        settle(it)
+    }
 
     private fun TestScope.readyHolder(): CameraKStateHolder = fakeCameraKStateHolder(fake = fake).also {
         it.start()
         runCurrent()
         assertIs<CameraKState.Ready>(it.cameraState.value)
+    }
+
+    // The desktop preview collects the fake's frame on Dispatchers.Default, outside the test's virtual
+    // time, and the content rectangle is the whole scene until that frame's size reaches the layout.
+    private fun TestScope.awaitFrame(scene: ImageComposeScene) {
+        val deadline = System.nanoTime() + AWAIT_NANOS
+        while ((laidOutBounds.get()?.width ?: SCENE_WIDTH.toFloat()) >= SCENE_WIDTH) {
+            if (System.nanoTime() > deadline) {
+                fail("the fake\'s frame did not reach the preview in ${AWAIT_NANOS / 1_000_000} ms")
+            }
+            runCurrent()
+            scene.render()
+            Thread.sleep(5)
+        }
     }
 
     private fun TestScope.settle(scene: ImageComposeScene) {
@@ -208,5 +230,7 @@ class TapToFocusTest {
 
     private companion object {
         const val RENDERS = 20
+        const val SCENE_WIDTH = 200
+        const val AWAIT_NANOS = 5_000_000_000L
     }
 }

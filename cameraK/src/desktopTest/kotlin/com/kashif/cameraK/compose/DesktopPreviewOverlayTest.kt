@@ -25,6 +25,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.fail
 
 /**
  * The desktop preview's overlay shares the box the camera frame is drawn in, so overlay
@@ -94,6 +95,17 @@ class DesktopPreviewOverlayTest {
             }
         }
         try {
+            // The preview collects the fake's frame on Dispatchers.Default, outside the test's virtual
+            // time; until its size reaches the layout the content rectangle is the whole scene.
+            val deadline = System.nanoTime() + AWAIT_NANOS
+            while ((contentBounds.get()?.width ?: 200f) >= 200f) {
+                if (System.nanoTime() > deadline) {
+                    fail("the fake\'s frame did not reach the preview in ${AWAIT_NANOS / 1_000_000} ms")
+                }
+                runCurrent()
+                scene.render()
+                Thread.sleep(5)
+            }
             repeat(RENDERS) {
                 runCurrent()
                 scene.render()
@@ -132,5 +144,6 @@ class DesktopPreviewOverlayTest {
 
     private companion object {
         const val RENDERS = 20
+        const val AWAIT_NANOS = 5_000_000_000L
     }
 }
