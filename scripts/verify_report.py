@@ -296,9 +296,10 @@ def write_publication(repo: Path, group: str, artifact: str, version: str, exten
         (directory / f"{artifact}-{version}.{extension}").write_text("{}\n" if extension == "module" else "<project/>\n")
 
 
-def relocation_pom(group: str, artifact: str, version: str) -> str:
+def relocation_pom(own_group: str, group: str, artifact: str, version: str) -> str:
     return (
-        '<project xmlns="http://maven.apache.org/POM/4.0.0"><distributionManagement><relocation>'
+        f'<project xmlns="http://maven.apache.org/POM/4.0.0"><groupId>{own_group}</groupId>'
+        "<distributionManagement><relocation>"
         f"<groupId>{group}</groupId><artifactId>{artifact}</artifactId><version>{version}</version>"
         "</relocation></distributionManagement></project>\n"
     )
@@ -307,9 +308,10 @@ def relocation_pom(group: str, artifact: str, version: str) -> str:
 def publish_check_self_test() -> list[str]:
     """What publish_problems misjudges among its fixtures: a complete repository, a module whose build
     dropped its iOS targets (so the build's own model expects none), a resource artifact without its .jar,
-    a build that no longer lists a resource artifact, and relocation POMs that name the wrong group or
-    version."""
-    group, version = "io.example", "2.0"
+    a build that no longer lists a resource artifact, relocation POMs that name the wrong group or
+    version, a relocation POM published under the new group instead of the legacy one, and one whose own
+    groupId is not the legacy group."""
+    group, legacy_group, version = "io.example", "io.legacy", "2.0"
     every_target = ["android", "desktop", "iosarm64", "iossimulatorarm64"]
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as scratch:
@@ -318,6 +320,8 @@ def publish_check_self_test() -> list[str]:
             targets: list[str],
             relocated: tuple[str, str, str],
             resource: tuple[str, ...] = ("module", "pom", "jar"),
+            relocation_dir: str = legacy_group,
+            relocation_own_group: str = legacy_group,
         ) -> Path:
             repo = Path(scratch) / name
             for artifact in ("lib", "bom"):
@@ -326,14 +330,15 @@ def publish_check_self_test() -> list[str]:
                 write_publication(repo, group, artifact, version, resource)
             for target in targets:
                 write_publication(repo, group, f"lib-{target}", version, ("module", "pom"))
-            pom = repo.joinpath(*group.split("."), "old-lib", version, f"old-lib-{version}.pom")
+            pom = repo.joinpath(*relocation_dir.split("."), "old-lib", version, f"old-lib-{version}.pom")
             pom.parent.mkdir(parents=True)
-            pom.write_text(relocation_pom(*relocated))
+            pom.write_text(relocation_pom(relocation_own_group, *relocated))
             return repo
 
         def expected(targets: list[str], resources: tuple[str, ...] = RESOURCE_ARTIFACTS) -> dict:
             return {
                 "group": group,
+                "legacyGroup": legacy_group,
                 "version": version,
                 "modules": {"lib": targets},
                 "resourceArtifacts": list(resources),
@@ -359,6 +364,18 @@ def publish_check_self_test() -> list[str]:
             found = publish_problems(repository(f"wrong-{name}", every_target, relocated), expected(every_target))
             if len(found) != 1 or "old-lib" not in found[0]:
                 problems.append(f"a relocation POM naming the wrong {name} is misjudged: {found}")
+        found = publish_problems(
+            repository("relocation-in-new-group", every_target, complete, relocation_dir=group, relocation_own_group=group),
+            expected(every_target),
+        )
+        if len(found) != 1 or f"{legacy_group}:old-lib:{version} has no relocation .pom" not in found[0]:
+            problems.append(f"a relocation POM published under the new group is misjudged: {found}")
+        found = publish_problems(
+            repository("relocation-own-group", every_target, complete, relocation_own_group=group),
+            expected(every_target),
+        )
+        if len(found) != 1 or "groupId" not in found[0]:
+            problems.append(f"a relocation POM whose own groupId is not the legacy group is misjudged: {found}")
     return problems
 
 
