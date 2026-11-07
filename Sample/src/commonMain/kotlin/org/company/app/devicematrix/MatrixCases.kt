@@ -169,5 +169,43 @@ internal val analysisResolutions: List<MatrixSize?> = listOf(null, MatrixSize(64
  * every value of its enum.
  */
 internal fun enumerateCases(capabilities: CameraCapabilities): List<MatrixCase> {
-    TODO()
+    val lenses = CameraLens.entries.filter { capabilities.lenses(it).isNotEmpty() }
+    val cameras = capabilities.allLenses.filterNot { it.isExternal }
+    val specs = buildList {
+        for (camera in cameras) {
+            FeatureCheck.entries.forEach { add(FeatureSpec(camera.id, camera.lens, camera.deviceType, it)) }
+        }
+        for (lens in lenses) FlashMode.entries.forEach { add(ConfigFlashSpec(lens, it)) }
+        for (lens in lenses) {
+            for (format in FrameFormat.entries) analysisResolutions.forEach { add(AnalysisSpec(lens, format, it)) }
+        }
+        PluginKind.entries.forEach { add(PluginSpec(it)) }
+        for (lens in lenses) {
+            for (ratio in AspectRatio.entries) {
+                for (quality in VideoQuality.entries) listOf(false, true).forEach { add(VideoSpec(lens, ratio, quality, it)) }
+            }
+        }
+        LifecycleKind.entries.forEach { add(LifecycleSpec(it)) }
+        for (lens in lenses) addPhotoCases(lens)
+    }
+    return specs.mapIndexed { index, spec -> MatrixCase(index, spec) }
+}
+
+private fun MutableList<CaseSpec>.addPhotoCases(lens: CameraLens) {
+    val mirrors = if (lens == CameraLens.FRONT) listOf(false, true) else listOf(false)
+    for (type in CameraDeviceType.entries) {
+        for (ratio in AspectRatio.entries) {
+            for (resolution in photoResolutions) {
+                for (format in ImageFormat.entries) {
+                    for (quality in QualityPrioritization.entries) {
+                        for (mirror in mirrors) {
+                            FlashMode.entries.forEach {
+                                add(PhotoSpec(lens, type, ratio, resolution, format, quality, mirror, it))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

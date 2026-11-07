@@ -14,7 +14,17 @@ internal data class MatrixArgs(
  * The run iOS launch [arguments] ask for, or null without `-cameraKMatrix`:
  * `-cameraKMatrix [-cameraKMatrixOffset N] [-cameraKMatrixSections photo,video] [-cameraKMatrixLimit N]`.
  */
-internal fun matrixArgsFromLaunchArguments(arguments: List<String>): MatrixArgs? = TODO()
+internal fun matrixArgsFromLaunchArguments(arguments: List<String>): MatrixArgs? {
+    if ("-cameraKMatrix" !in arguments) return null
+    fun valueOf(flag: String): String? = arguments.indexOf(flag).takeIf { it >= 0 }?.let { arguments.getOrNull(it + 1) }
+    return MatrixArgs(
+        offset = valueOf("-cameraKMatrixOffset")?.toIntOrNull() ?: 0,
+        sections = parseSections(valueOf("-cameraKMatrixSections")),
+        limit = valueOf("-cameraKMatrixLimit")?.toIntOrNull(),
+    )
+}
 
 /** The sections a comma-separated list names; every section for null or blank. Unknown names are ignored. */
-internal fun parseSections(csv: String?): Set<MatrixSection> = TODO()
+internal fun parseSections(csv: String?): Set<MatrixSection> =
+    csv?.split(',')?.mapNotNull(MatrixSection::ofKey)?.toSet()?.takeIf { it.isNotEmpty() }
+        ?: MatrixSection.entries.toSet()
