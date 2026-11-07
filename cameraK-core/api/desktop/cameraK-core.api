@@ -264,6 +264,10 @@ public abstract interface class com/kashif/cameraK/engine/PlatformPreviewSource 
 	public abstract fun getFrames ()Lkotlinx/coroutines/flow/StateFlow;
 }
 
+public final class com/kashif/cameraK/engine/PreviewAspectRatioKt {
+	public static final fun previewAspectRatio (Lcom/kashif/cameraK/engine/PlatformPreviewSource;)Lcom/kashif/cameraK/enums/AspectRatio;
+}
+
 public final class com/kashif/cameraK/engine/PreviewFrame {
 	public fun <init> (Ljava/awt/image/BufferedImage;J)V
 	public final fun getImage ()Ljava/awt/image/BufferedImage;

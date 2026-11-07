@@ -260,7 +260,7 @@ public abstract interface class com/kashif/cameraK/engine/PlatformPreviewSource 
 	public abstract fun attach (Landroidx/camera/core/Preview$SurfaceProvider;Landroid/view/Display;)Lcom/kashif/cameraK/engine/PreviewAttachment;
 }
 
-public final class com/kashif/cameraK/engine/PlatformPreviewSource_androidKt {
+public final class com/kashif/cameraK/engine/PreviewAspectRatioKt {
 	public static final fun previewAspectRatio (Lcom/kashif/cameraK/engine/PlatformPreviewSource;)Lcom/kashif/cameraK/enums/AspectRatio;
 }
 
