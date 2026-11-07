@@ -97,12 +97,42 @@ and `timestampNanos`. `recognize` runs off the calling thread and never throws: 
 or a recognizer failure is `Failure(Internal)`. Recognized text is never logged. ML Kit reads on
 Android, Vision on iOS, Tesseract on desktop.
 
+### Android model
+
+`camerak-ocr` depends on ML Kit's bundled recognizer, `com.google.mlkit:text-recognition`, so the model
+ships inside your app and works offline from the first call. To have Google Play services download the
+model instead, exclude the bundled module and add `com.google.android.gms:play-services-mlkit-text-recognition`,
+which has the same API:
+
+```kotlin
+// Your app module's build.gradle.kts
+kotlin {
+    sourceSets {
+        androidMain.dependencies {
+            implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+        }
+    }
+}
+
+configurations.configureEach {
+    exclude(group = "com.google.mlkit", module = "text-recognition")
+}
+```
+
+Play services downloads the model the first time OCR runs, unless your manifest asks for it at install
+time (a `com.google.mlkit.vision.DEPENDENCIES` meta-data entry with the value `ocr`) or you request it
+through Play services' `ModuleInstallClient`. Until the download completes, `recognize` returns
+`Failure(Internal)` with ML Kit's exception as its cause, and live frames produce no `results`; each
+failed frame is logged. The device needs Google Play services.
+
 ### Desktop language data
 
-Desktop OCR runs Tesseract, which needs `eng.traineddata`. The plugin does not ship it. It uses the first of:
+Desktop OCR runs Tesseract, which needs `eng.traineddata`. The plugin does not ship it: `camerak-ocr` does not depend on `camerak-ocr-tessdata-eng`, the artifact that holds the model, so an app that points OCR at its own copy does not carry a second one. To ship the model in your desktop app, add `camerak-ocr-tessdata-eng` to your `desktopMain` dependencies. It is published beside `camerak-ocr`, with the same group and version, and the BOM aligns it.
+
+Desktop OCR uses the first of:
 
 1. `OcrConfig { tessdataPath = "/path/to/tessdata" }`. If that directory has no `eng.traineddata`, OCR fails; no other source replaces it.
-2. The `eng.traineddata` from [tesseract-ocr/tessdata](https://github.com/tesseract-ocr/tessdata), on your classpath at `com/kashif/ocrplugin/tessdata/eng.traineddata`. It is used only if its SHA-256 matches the one pinned in the library, after it is extracted to a per-user directory.
+2. The `eng.traineddata` from [tesseract-ocr/tessdata](https://github.com/tesseract-ocr/tessdata) (Apache-2.0), on your classpath at `com/kashif/ocrplugin/tessdata/eng.traineddata`, which is where `camerak-ocr-tessdata-eng` puts it. It is used only if its SHA-256 matches the one pinned in the library, after it is extracted to a per-user directory.
 3. The directory in the `TESSDATA_PREFIX` environment variable.
 
 The working directory is never searched. Tesseract parses whatever model the first and third options point at, so point them only at files you trust.

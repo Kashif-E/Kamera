@@ -35,7 +35,7 @@ internal interface MlKitTextClient {
     fun close()
 }
 
-/** [MlKitTextClient] over ML Kit's bundled Latin text recognizer. */
+/** [MlKitTextClient] over ML Kit's Latin text recognizer: the bundled model, or the one Play services downloads. */
 internal class LatinMlKitTextClient : MlKitTextClient {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
