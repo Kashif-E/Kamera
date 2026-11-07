@@ -222,7 +222,20 @@ def publish_env_violations(name: str, text: str) -> List[Violation]:
     ]
 
 
+def check_publish_env_rule() -> None:
+    """The release publishes in two steps, publishLibraries and publishLegacyRelocations; the publish-env
+    rule must see each as publishing."""
+    env = "".join(f"          {name}: ${{{{ secrets.X }}}}\n" for name in PUBLISH_ENV)
+    for task in ("publishLibraries", "publishLegacyRelocations", "publishAllPublicationsToMavenCentralRepository"):
+        bare = f"jobs:\n  publish:\n    steps:\n      - run: ./gradlew {task}\n"
+        if len(publish_env_violations("fixture.yml", bare)) != len(PUBLISH_ENV):
+            raise CheckError(f"the publish-env rule does not see `{task}` as publishing")
+        if publish_env_violations("fixture.yml", bare + "        env:\n" + env):
+            raise CheckError(f"the publish-env rule rejects `{task}` with every credential from a secret")
+
+
 def check_workflows() -> List[Violation]:
+    check_publish_env_rule()
     workflows = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
     if not workflows:
         raise CheckError("no workflows found under .github/workflows")
