@@ -23,7 +23,8 @@ import org.company.app.designsystem.SecondaryButton
 
 /**
  * What the Sample shows while the camera is not granted: why it needs the camera, what else it may
- * ask for, Allow camera access, and Open Settings when [onOpenSettings] can open them.
+ * ask for, Allow camera access, and, for a permanently denied camera, Open Settings when
+ * [onOpenSettings] can open them.
  */
 @Composable
 internal fun PermissionScreen(
@@ -73,7 +74,8 @@ internal fun PermissionScreen(
                 modifier = Modifier.fillMaxWidth(),
                 size = ButtonSize.Large,
             )
-            if (onOpenSettings != null) {
+            // Only the settings can grant a permanently denied camera; any other status still prompts.
+            if (onOpenSettings != null && cameraStatus == PermissionStatus.PermanentlyDenied) {
                 SecondaryButton(text = "Open Settings", onClick = onOpenSettings, modifier = Modifier.fillMaxWidth())
             }
             val camera = cameraStatus ?: PermissionStatus.NotDetermined
