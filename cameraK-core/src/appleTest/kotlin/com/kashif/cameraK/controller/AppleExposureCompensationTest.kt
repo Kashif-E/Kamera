@@ -152,6 +152,34 @@ class AppleExposureCompensationTest {
     }
 
     @Test
+    fun aBoundJustShortOfAThirdOfAnEvIsNeverPassed() = driver.runCase {
+        // Index 3 would set 1.0 EV, past the bound, and AVFoundation's exception would crash the app.
+        driver.back.minExposureTargetBias = -0.9997f
+        driver.back.maxExposureTargetBias = 0.9997f
+        val engine = started()
+        assertEquals(-2..2, engine.capabilities.value.exposureCompensationRange(AppleEngineDriver.BACK_ID))
+
+        assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(3))
+        assertEquals(emptyList(), driver.back.outOfRangeBiasSets, "a bias past the device's bounds")
+        assertClose(2f / 3, driver.back.lastBiasSet ?: 0f, "index 3 clamped to the range's 2")
+        assertEquals(2, engine.hardware.value.exposureCompensationIndex)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun theResetOnADeviceWhoseBiasExcludesZeroStaysInsideItsBounds() = driver.runCase {
+        driver.back.minExposureTargetBias = 0.5f
+        driver.back.maxExposureTargetBias = 1.5f
+        val engine = started()
+        assertEquals(2..4, engine.capabilities.value.exposureCompensationRange(AppleEngineDriver.BACK_ID))
+
+        assertEquals(CameraKResult.Success(Unit), engine.resetFocusAndExposure())
+        assertEquals(emptyList(), driver.back.outOfRangeBiasSets, "a bias past the device's bounds")
+        assertClose(0.5f, driver.back.lastBiasSet ?: 0f, "the reset's bias 0, clamped to the lower bound")
+        engine.closeAndJoin()
+    }
+
+    @Test
     fun aCameraWithoutARangeDropsTheIndex() = driver.runCase {
         driver.front.minExposureTargetBias = 0f
         driver.front.maxExposureTargetBias = 0f

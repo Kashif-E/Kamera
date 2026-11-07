@@ -99,6 +99,9 @@ internal fun exposureIndexOf(bias: Float): Int = (bias * EXPOSURE_STEPS_PER_EV).
 /** The `exposureTargetBias` of [index]. */
 internal fun exposureBiasOf(index: Int): Float = index.toFloat() / EXPOSURE_STEPS_PER_EV
 
+/** The bias `setExposureTargetBias` is given for [index] on a device whose bias runs from [minBias] to [maxBias]. */
+internal fun exposureBiasOf(index: Int, minBias: Float, maxBias: Float): Float = TODO()
+
 /** [this] camera's exposure indexes; null without compensation. */
 internal val CaptureDeviceOps.exposureIndexes: IntRange?
     get() = exposureIndexRange(minExposureTargetBias, maxExposureTargetBias)

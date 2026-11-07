@@ -33,6 +33,33 @@ class ExposureBiasIndexTest {
     }
 
     @Test
+    fun everyIndexsBiasIsInsideTheDevicesBounds() {
+        // A bound just short of a third of an EV: the index there would set a bias past it, and
+        // AVFoundation raises an exception for that which Kotlin cannot catch.
+        assertEquals(-2..2, exposureIndexRange(-0.9997f, 0.9997f), "a bound just short of 1 EV")
+        assertEquals(-5..5, exposureIndexRange(-1.6666f, 1.6666f), "a bound just short of 5/3 EV")
+        val bounds =
+            listOf(0.9997f, 1f, 1f / 3, 0.3333333f, 2f / 3, 0.6666666f, 1.3333333f, 1.6666666f, 1.9999f, 2f, 8f)
+        for (max in bounds) {
+            for (min in bounds.map { -it }) {
+                val range = exposureIndexRange(min, max) ?: continue
+                for (index in range) {
+                    val bias = exposureBiasOf(index)
+                    assertTrue(bias in min..max, "index $index's bias $bias is outside $min..$max")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun theBiasSetIsClampedIntoTheDevicesBounds() {
+        assertEquals(0.9997f, exposureBiasOf(3, -0.9997f, 0.9997f), "index 3 against a bound just short of 1 EV")
+        assertEquals(-0.9997f, exposureBiasOf(-3, -0.9997f, 0.9997f), "index -3 against a bound just short of -1 EV")
+        assertEquals(0.5f, exposureBiasOf(0, 0.5f, 1.5f), "index 0 on a device whose bias excludes 0")
+        assertClose(2f / 3, exposureBiasOf(2, -8f, 8f), "an index inside the bounds is its own bias")
+    }
+
+    @Test
     fun anIndexIsAThirdOfAnEv() {
         assertClose(1f, exposureBiasOf(3), "index 3")
         assertClose(-2f, exposureBiasOf(-6), "index -6")
