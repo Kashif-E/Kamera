@@ -17,6 +17,7 @@ import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewLayerLayout
 import com.kashif.cameraK.engine.TraceNames
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
