@@ -17,7 +17,6 @@ import com.kashif.cameraK.capabilities.AndroidLensDescriptor
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensEnumerator
 import com.kashif.cameraK.capabilities.LensInfo
-import com.kashif.cameraK.capabilities.capabilitiesOf
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.engine.CameraEngine
@@ -30,7 +29,6 @@ import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.TraceNames
 import com.kashif.cameraK.engine.Tracer
-import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
@@ -39,7 +37,6 @@ import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
-import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
@@ -163,8 +160,7 @@ internal class AndroidCameraEngine(
     private val _deviceOrientation = MutableStateFlow(DeviceOrientation.PORTRAIT)
     override val deviceOrientation: StateFlow<DeviceOrientation> = _deviceOrientation.asStateFlow()
 
-    private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
-    override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
+    override val capabilities: StateFlow<CameraCapabilities> get() = catalog.capabilities
 
     override val recordingEvents: Flow<EngineRecordingEvent> get() = videoRecorder.events
 
@@ -178,7 +174,6 @@ internal class AndroidCameraEngine(
     // on the main dispatcher.
     private val mainExecutor = main.asExecutor()
 
-    internal val selectorResolver = CameraSelectorResolver(lensSource)
     internal val orientation = OrientationTracker(context)
     internal val binder = UseCaseBinder(
         context = context,
@@ -240,9 +235,15 @@ internal class AndroidCameraEngine(
     internal var boundLens: CameraLens = config.cameraLens ?: CameraLens.BACK
         private set
 
-    private val enumeration: Deferred<CameraCapabilities> = scope.async(environment.dispatchers.default) {
-        androidCapabilities(enumerateLenses()).also { _capabilities.value = it }
-    }
+    private val catalog = LensCatalog(
+        lensSource = lensSource,
+        backend = backend,
+        scope = scope,
+        background = environment.dispatchers.default,
+        mainImmediate = mainImmediate,
+        isReleased = { closed.value },
+        boundCamera = { binder.camera },
+    )
 
     private var provider: CameraBinding? = null
 
@@ -261,10 +262,6 @@ internal class AndroidCameraEngine(
 
     // A late bind of the ImageAnalysis a registration asked for is queued. Main thread.
     private var analysisBindPending = false
-
-    // The bound camera's video qualities (§6.3), queried off Main after every bind.
-    private var boundQualities: Set<VideoQuality> = emptySet()
-    private var qualityQuery: Deferred<Set<VideoQuality>>? = null
 
     init {
         // Declared up front, so the first bind includes the ImageAnalysis and a plugin that registers
@@ -308,9 +305,9 @@ internal class AndroidCameraEngine(
         applyDesired(desired)
         try {
             // A stop or a close completes `opened` while the start waits, which ends the wait.
-            if (awaitUnlessEnded(live, enumeration) == null) return live.opened.await()
-            val resolved = resolve(desired.selection)
-                ?: return fail(live, CameraKError.NoCamera(lensOf(desired.selection)))
+            if (awaitUnlessEnded(live, catalog.enumeration) == null) return live.opened.await()
+            val resolved = catalog.resolve(desired.selection)
+                ?: return fail(live, CameraKError.NoCamera(catalog.lensOf(desired.selection)))
             // The display listener runs only while started, so a display that turned while stopped
             // left the ViewPort stale: the start rebinds then, even on the same camera.
             val stale = viewPortStale() || videoRecorder.videoBindStale || framePipeline.analysisMissing
@@ -318,8 +315,12 @@ internal class AndroidCameraEngine(
                 val bindProvider = awaitUnlessEnded(live, providerAsync()) ?: return live.opened.await()
                 val error = bindProvider.fold(
                     onSuccess = { binding ->
-                        val camera = offered(resolved, binding)
-                        if (camera == null) CameraKError.NoCamera(lensOf(desired.selection)) else bind(camera, binding)
+                        val camera = catalog.offered(resolved, binding)
+                        if (camera == null) {
+                            CameraKError.NoCamera(catalog.lensOf(desired.selection))
+                        } else {
+                            bind(camera, binding)
+                        }
                     },
                     onFailure = {
                         CameraKLogger.e(TAG, "Obtaining the camera provider failed", it)
@@ -374,13 +375,13 @@ internal class AndroidCameraEngine(
     }
 
     private suspend fun switchTo(live: Session, selection: CameraSelection): CameraKResult<LensInfo> {
-        enumeration.await()
-        val resolved = resolve(selection)
-            ?: return CameraKResult.Failure(CameraKError.NoCamera(lensOf(selection)))
+        catalog.enumeration.await()
+        val resolved = catalog.resolve(selection)
+            ?: return CameraKResult.Failure(CameraKError.NoCamera(catalog.lensOf(selection)))
         if (resolved != boundCamera) {
             val binding = checkNotNull(provider) { "a live session has its provider" }
-            val camera = offered(resolved, binding)
-                ?: return CameraKResult.Failure(CameraKError.NoCamera(lensOf(selection)))
+            val camera = catalog.offered(resolved, binding)
+                ?: return CameraKResult.Failure(CameraKError.NoCamera(catalog.lensOf(selection)))
             if (camera != boundCamera) {
                 val error = bind(camera, binding)
                 if (error != null) {
@@ -599,34 +600,6 @@ internal class AndroidCameraEngine(
         desired.targetOrientation?.let { orientation.targetOrientation = it }
     }
 
-    private fun resolve(selection: CameraSelection): ResolvedCamera? = when (selection) {
-        is CameraSelection.ByLens -> selectorResolver.resolveFacing(selection.lens, selection.deviceType)
-        is CameraSelection.ById -> selectorResolver.resolveId(selection.id)
-        is CameraSelection.Default -> selectorResolver.resolveFacing(CameraLens.BACK, selection.deviceType)
-    }
-
-    /**
-     * [resolved], or what stands in for it: an external camera the enumeration listed that CameraX no
-     * longer offers (unplugged since) is replaced by the back camera, and with no back camera either
-     * this is null, decided before anything unbinds.
-     */
-    private fun offered(resolved: ResolvedCamera, binding: CameraBinding): ResolvedCamera? {
-        if (resolved !is ResolvedCamera.External || binding.hasCamera(resolved)) return resolved
-        val back = ResolvedCamera.FacingDefault(CameraLens.BACK)
-        if (!binding.hasCamera(back)) {
-            CameraKLogger.w(TAG, "External camera ${resolved.cameraId} not offered by CameraX, and no back camera")
-            return null
-        }
-        CameraKLogger.w(TAG, "External camera ${resolved.cameraId} not offered by CameraX, using the back camera")
-        return back
-    }
-
-    private fun lensOf(selection: CameraSelection): CameraLens? = when (selection) {
-        is CameraSelection.ByLens -> selection.lens
-        is CameraSelection.Default -> CameraLens.BACK
-        is CameraSelection.ById -> null
-    }
-
     /** Binds the use cases on [resolved]; null when bound, else the error. Main thread. */
     private fun bind(resolved: ResolvedCamera, binding: CameraBinding): CameraKError? {
         binder.useProvider(binding)
@@ -642,7 +615,7 @@ internal class AndroidCameraEngine(
         stillCapturer.configure(resolutionSelector, hardwareControls.flashMode, pinned)
         // VideoCapture joins the group only while a recording needs it or it was prepared.
         val video = videoRecorder.useCaseForBind()
-        boundQualities = emptySet()
+        catalog.forgetBoundQualities()
         // Rebuilt rather than reused: its Camera2Interop pin belongs to the bind it was built for.
         framePipeline.analysis = if (framePipeline.analysisRequested) framePipeline.build(pinned) else null
         applyCaptureRotation()
@@ -680,12 +653,12 @@ internal class AndroidCameraEngine(
         boundCamera = resolved
         framePipeline.onBound(framePipeline.analysis != null)
         if (video == null) videoRecorder.onBoundWithoutVideo()
-        queryVideoQualities(camera)
+        catalog.queryVideoQualities(camera)
         hardwareControls.revalidateFlash()
         _hardware.value = HardwareState(
             flashMode = hardwareControls.boundFlashMode() ?: hardwareControls.flashMode,
             torchMode = if (camera.cameraInfo.torchState.value == TorchState.ON) TorchMode.ON else TorchMode.OFF,
-            camera = withFlashUnitOf(camera, reportedLens(resolved, camera, binding)),
+            camera = catalog.withFlashUnitOf(camera, catalog.reportedLens(resolved, camera, binding)),
             targetOrientation = orientation.targetOrientation,
         )
         observe(camera)
@@ -693,65 +666,6 @@ internal class AndroidCameraEngine(
         // for the camera to open, which applies them.
         if (registry.currentState == Lifecycle.State.RESUMED) hardwareControls.applyDesiredHardwareState(camera)
         return null
-    }
-
-    // The bound camera's id as CameraX reports it, or the pinned physical lens inside it.
-    private fun reportedLens(resolved: ResolvedCamera, camera: Camera, binding: CameraBinding): LensInfo? {
-        val id = (resolved as? ResolvedCamera.PhysicalLens)?.physicalId ?: try {
-            binding.cameraIdOf(camera)
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Reading the bound camera's id failed", e)
-            return null
-        }
-        return _capabilities.value.allLenses.firstOrNull { it.id == id }
-    }
-
-    // The bound camera, as CameraInfo.hasFlashUnit describes it: the value CameraX acts on, which the
-    // enumeration's FLASH_INFO_AVAILABLE only estimated. A disagreement corrects the capabilities.
-    private fun withFlashUnitOf(camera: Camera, lens: LensInfo?): LensInfo? {
-        lens ?: return null
-        val flashUnit = try {
-            camera.cameraInfo.hasFlashUnit()
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Reading the bound camera's flash unit failed", e)
-            return lens
-        }
-        if (flashUnit == lens.hasFlash) return lens
-        val corrected = LensInfo(
-            lens.id,
-            lens.deviceType,
-            lens.lens,
-            lens.minZoom,
-            lens.maxZoom,
-            flashUnit,
-            lens.isLogical,
-            lens.isExternal,
-        )
-        _capabilities.value = androidCapabilities(
-            _capabilities.value.allLenses.map { if (it.id == lens.id) corrected else it },
-            boundQualities,
-        )
-        return corrected
-    }
-
-    // The bound camera's video qualities, read off Main (the encoder profiles and codec list, §2.4)
-    // and published once they are in, unless another bind replaced the camera meanwhile.
-    private fun queryVideoQualities(camera: Camera) {
-        val query = scope.async(environment.dispatchers.default) {
-            try {
-                backend.videoQualities(camera.cameraInfo)
-            } catch (e: Exception) {
-                CameraKLogger.e(TAG, "Reading the bound camera's video qualities failed", e)
-                emptySet()
-            }
-        }
-        qualityQuery = query
-        scope.launch(mainImmediate) {
-            val qualities = query.await()
-            if (closed.value || camera !== binder.camera) return@launch
-            boundQualities = qualities
-            _capabilities.value = androidCapabilities(_capabilities.value.allLenses, qualities)
-        }
     }
 
     /**
@@ -899,13 +813,6 @@ internal class AndroidCameraEngine(
         }
     }
 
-    private fun enumerateLenses(): List<LensInfo> = try {
-        selectorResolver.lensSnapshot().map { it.info }
-    } catch (e: Exception) {
-        CameraKLogger.e(TAG, "Enumerating the cameras failed", e)
-        emptyList()
-    }
-
     private fun onDeviceOrientation(orientation: DeviceOrientation) {
         if (session == null) return
         _deviceOrientation.value = orientation
@@ -976,7 +883,7 @@ internal class AndroidCameraEngine(
 
         override fun bindWithVideo(): CameraKError? = this@AndroidCameraEngine.bindWithVideo()
 
-        override suspend fun videoQualities(): Set<VideoQuality> = qualityQuery?.await() ?: boundQualities
+        override suspend fun videoQualities(): Set<VideoQuality> = catalog.videoQualities()
 
         // Dispatched, never run inline: a caller that gives up before the bind runs leaves nothing bound.
         override suspend fun rebindAndAwait() {
@@ -1067,32 +974,4 @@ internal class AndroidCameraEngine(
             }
         }
     }
-}
-
-/**
- * The capabilities the engine reports for [lenses] (design §6.3): flash OFF, AUTO and ON and torch
- * OFF and ON on a lens with a flash unit, OFF only otherwise (CameraX has no AUTO torch); pause and
- * resume, which CameraX's Recorder supports; [videoQualities], the bound camera's own (empty before
- * the first bind), each recorded at its `VideoQuality.bitrateBps` as the encoder's target rate; JPEG
- * and PNG; every aspect ratio, 1:1 as the square file the 1:1 ViewPort crops from a 4:3 stream;
- * YUV_420 and RGBA_8888 analysis, the two formats ImageAnalysis outputs.
- */
-@OptIn(CameraKEngineApi::class)
-internal fun androidCapabilities(
-    lenses: List<LensInfo>,
-    videoQualities: Set<VideoQuality> = emptySet(),
-): CameraCapabilities {
-    val plain = capabilitiesOf(lenses)
-    return CameraCapabilities(
-        allLenses = lenses,
-        flashModes = lenses.associate { it.id to plain.supportedFlashModes(it.id) },
-        torchModes = lenses.associate { it.id to plain.supportedTorchModes(it.id) },
-        supportsPauseResume = true,
-        supportedVideoQualities = videoQualities,
-        supportsVideoBitrate = true,
-        supportedAspectRatios = AspectRatio.entries.toSet(),
-        supportedImageFormats = setOf(ImageFormat.JPEG, ImageFormat.PNG),
-        supportedAnalysisFormats = setOf(FrameFormat.YUV_420, FrameFormat.RGBA_8888),
-        supportsSquareCapture = true,
-    )
 }
