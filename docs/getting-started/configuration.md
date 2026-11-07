@@ -32,6 +32,7 @@ start with `CameraKError.Unsupported(feature)`; `holder.capabilities` lists what
 | `flashMode` | `FlashMode` | `OFF` | `ON`, `OFF` or `AUTO`, for captures |
 | `torchMode` | `TorchMode` | `OFF` | The torch at open |
 | `initialZoomRatio` | `Float` | `1f` | Clamped into the camera's range |
+| `initialExposureCompensationIndex` | `Int` | `0` | Clamped into the camera's exposure compensation range; a camera without one ignores it. See [Focus and Exposure](../guides/focus-and-exposure.md) |
 | `imageFormat` | `ImageFormat` | `JPEG` | `JPEG`, `PNG`, or `HEIC` where the iOS camera offers HEVC |
 | `qualityPrioritization` | `QualityPrioritization` | `BALANCED` | `QUALITY`, `SPEED`, `BALANCED` or `NONE` |
 | `aspectRatio` | `AspectRatio` | `RATIO_16_9` | `RATIO_4_3`, `RATIO_16_9` or `RATIO_1_1`; the device's orientation decides portrait or landscape (`RATIO_9_16` is deprecated in favour of `RATIO_16_9`, which it now equals) |

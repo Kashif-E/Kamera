@@ -79,6 +79,9 @@ returns `Failure(NotReady)`, and after `close()` `Failure(Closed)`.
 | `selectCamera(lens, deviceType)` | `LensInfo` | One rebind; `NoCamera` keeps the current camera; `Busy(LENS)` while recording |
 | `selectCamera(id)` | `LensInfo` | A `LensInfo.id` from `capabilities` |
 | `setTargetOrientation(orientation)` | `Unit` | Fixes capture and recording orientation; null follows the device |
+| `focusAt(point)` | `Unit` | A `NormalizedPoint` in [0, 1]; `InvalidArgument(FOCUS_POINT)` outside it, `Unsupported(FOCUS_POINT)` on a camera without one |
+| `setExposureCompensation(index)` | `Unit` | In the camera's `exposureCompensationRange`; `InvalidArgument(EXPOSURE_COMPENSATION)` outside it; kept and re-applied, clamped, after a switch or restart |
+| `resetFocusAndExposure()` | `Unit` | The platform's metering and index 0 |
 | `prepareRecording(config)` | `Unit` | Adds the recording outputs ahead of time |
 | `startRecording(config)` | `RecordingState.Recording` | Once the platform confirms it |
 | `stopRecording()` | `RecordedVideo` | Also while Interrupted |
@@ -105,6 +108,7 @@ frame analysis up front for plugins that read frames. See [Plugins](../guides/pl
 | `NativeLibraryMissing(platform)` | Desktop natives are missing |
 | `Hardware(platformCode)`, `Timeout(operation)` | The platform failed or did not answer |
 | `Busy(operation)`, `InvalidState(operation)` | The command clashes with one in progress, or makes no sense now |
+| `InvalidArgument(operation)` | A value outside the range the command takes |
 | `NotReady`, `Closed` | The camera is not open, or the holder is closed |
 | `Internal` | A bug; its `cause` is the throwable |
 

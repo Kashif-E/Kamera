@@ -10,6 +10,7 @@ usually from `rememberCameraKStateHolder`, and neither opens or closes the camer
 fun CameraKScreen(
     holder: CameraKStateHolder,
     modifier: Modifier = Modifier,
+    tapToFocus: Boolean = true,
     loading: @Composable () -> Unit = {},
     error: @Composable (error: CameraKError, retry: () -> Unit) -> Unit = /* retries once */,
     content: @Composable CameraPreviewScope.() -> Unit = {},
@@ -69,6 +70,8 @@ fun CameraPreview(
     holder: CameraKStateHolder,
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
+    tapToFocus: Boolean = true,
+    focusIndicator: @Composable (FocusTap) -> Unit = /* a ring at the tap */,
     overlay: @Composable CameraPreviewScope.() -> Unit = {},
 )
 ```
@@ -88,6 +91,10 @@ the preview's box, with letterbox or pillarbox bars outside it where the ratios 
 platform the overlay is laid out over that rectangle, so overlay coordinates map 1:1 to the camera
 image. On Android and iOS the rectangle has the configured aspect ratio, turned to the screen's
 orientation; on desktop it has the frame's.
+
+With `tapToFocus`, a tap on the content rectangle calls `holder.focusAt` there, on a camera that
+supports a focus point, and `focusIndicator` shows at the tap; see
+[Focus and Exposure](../guides/focus-and-exposure.md).
 
 Two previews of one holder, as in a crossfade, both show it. To run the camera with no preview at
 all, use the holder without `CameraPreview`.

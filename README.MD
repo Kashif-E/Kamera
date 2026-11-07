@@ -26,6 +26,7 @@ Upgrading from 1.x? Read the [2.0 migration guide](docs/migration/2.0.md).
 - **Survives rotation**: the Compose holder lives in a ViewModel, so a rotation keeps the camera and any recording.
 - **Capture and recording**: photos to app-owned files with `capture()`, video with pause and resume, limits and an elapsed-time state.
 - **Lens control**: zoom, flash, torch, front and back, ultra-wide and telephoto, and per-camera capability queries.
+- **Focus and exposure**: tap to focus on the preview, a focus point and exposure compensation on the holder. The API is common; Android and iOS land in the next wave, and desktop cameras do not support it.
 - **Plugins**: QR and barcode scanning, OCR, an analyzer that hands you encoded frames, and a media saver that publishes to the gallery. Your own analysis uses the same frame source.
 - **Testable**: `camerak-testing` gives your tests a scripted fake camera.
 
@@ -225,7 +226,7 @@ Each plugin has `results`, a `status` and, for the frame readers, `pause()` and 
 
 - [Installation](docs/getting-started/installation.md) and [Quick Start](docs/getting-started/quick-start.md)
 - [Configuration](docs/getting-started/configuration.md)
-- Guides: [capture](docs/guides/camera-capture.md), [flash and torch](docs/guides/flash-and-torch.md), [zoom](docs/guides/zoom-control.md), [switching cameras](docs/guides/camera-switching.md), [video recording](docs/guides/video-recording.md), [plugins](docs/guides/plugins.md), [testing](docs/guides/testing.md)
+- Guides: [capture](docs/guides/camera-capture.md), [flash and torch](docs/guides/flash-and-torch.md), [zoom](docs/guides/zoom-control.md), [focus and exposure](docs/guides/focus-and-exposure.md), [switching cameras](docs/guides/camera-switching.md), [video recording](docs/guides/video-recording.md), [plugins](docs/guides/plugins.md), [testing](docs/guides/testing.md)
 - [Migrating from 1.x](docs/migration/2.0.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
