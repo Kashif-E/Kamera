@@ -59,7 +59,13 @@ public fun CameraKScreen(
         when (val current = state) {
             CameraKState.Idle, CameraKState.Starting -> loading()
             is CameraKState.Ready, is CameraKState.Interrupted ->
-                CameraPreview(holder, Modifier.fillMaxSize(), tapToFocus = tapToFocus, overlay = content)
+                CameraPreview(
+                    holder,
+                    Modifier.fillMaxSize(),
+                    tapToFocus = tapToFocus,
+                    focusIndicator = focusIndicator,
+                    overlay = content,
+                )
             is CameraKState.Error ->
                 if (error === DefaultCameraKError) {
                     DefaultErrorSlot(current.error, autoRetry::retryOnce)
