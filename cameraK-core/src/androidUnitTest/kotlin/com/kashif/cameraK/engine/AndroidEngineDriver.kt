@@ -8,6 +8,7 @@ import com.kashif.cameraK.engine.contract.BoundSettings
 import com.kashif.cameraK.engine.contract.CaptureDriver
 import com.kashif.cameraK.engine.contract.HardwareChange
 import com.kashif.cameraK.engine.contract.PreOpenInterruptionDriver
+import com.kashif.cameraK.engine.contract.ReadBackExposureDriver
 import com.kashif.cameraK.engine.contract.ReadBackFlashDriver
 import com.kashif.cameraK.engine.contract.RecordingDriver
 import com.kashif.cameraK.engine.contract.ThrowingCallbackDriver
@@ -32,7 +33,10 @@ import kotlin.time.Duration.Companion.milliseconds
  * OPEN, an interruption a recoverable error, a failed open a critical one, and a runtime failure a
  * recoverable error CameraX does not recover from within the engine's
  * [AndroidCameraEngine.RECOVERY_TIMEOUT]. Flash has no CameraX observer: the engine reads the bound
- * ImageCapture's mode back after each set ([ReadBackFlashDriver]). A recording's Start and Finalize
+ * ImageCapture's mode back after each set ([ReadBackFlashDriver]), and exposure compensation has none
+ * either: the engine reads `ExposureState`'s index back once CameraX completes the request
+ * ([ReadBackExposureDriver]). The back camera focuses at a point and the front one is fixed-focus,
+ * each with its own exposure range. A recording's Start and Finalize
  * are CameraX's events on the newest recording, a capture waits until its saved callback is
  * delivered, and HEIC is the configuration Android cannot honour.
  */
@@ -40,6 +44,7 @@ internal class AndroidEngineDriver :
     ThrowingCallbackDriver,
     PreOpenInterruptionDriver,
     ReadBackFlashDriver,
+    ReadBackExposureDriver,
     RecordingDriver,
     CaptureDriver,
     UnsupportedConfigurationDriver {
@@ -108,7 +113,7 @@ internal class AndroidEngineDriver :
         val camera = platform.camera ?: return
         change.torchMode?.let { camera.reportTorch(it != TorchMode.OFF) }
         change.zoomRatio?.let { camera.reportZoom(it) }
-        // Flash is never reported: the engine reads the ImageCapture's mode back after each set.
+        // Flash and exposure are never reported: the engine reads them back after each set.
     }
 
     override fun boundSettings(): BoundSettings = BoundSettings(
@@ -116,6 +121,7 @@ internal class AndroidEngineDriver :
         torchMode = platform.boundTorchMode(),
         zoomRatio = platform.boundZoomRatio(),
         cameraId = platform.camera?.id,
+        exposureCompensationIndex = platform.camera?.metering?.exposureState?.exposureCompensationIndex ?: 0,
     )
 
     override fun releaseCount(): Int = platform.backend.binding.releaseCount
@@ -126,7 +132,11 @@ internal class AndroidEngineDriver :
         throwNext = true
     }
 
-    private fun newPlatform() = FakeAndroidPlatform(FakeAndroidPlatform.CONTRACT_CAMERAS, holdReports = true)
+    private fun newPlatform() = FakeAndroidPlatform(
+        FakeAndroidPlatform.CONTRACT_CAMERAS,
+        holdReports = true,
+        meteringOf = FakeAndroidPlatform.CONTRACT_METERING,
+    )
 
     private fun report(state: CameraState) {
         val camera = platform.camera ?: return

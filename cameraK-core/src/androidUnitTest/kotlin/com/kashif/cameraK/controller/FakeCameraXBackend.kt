@@ -4,19 +4,23 @@ package com.kashif.cameraK.controller
 
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Rect
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.Size
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraControl
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.MeteringPoint
 import androidx.camera.core.Preview
 import androidx.camera.core.TorchState
 import androidx.camera.core.UseCase
@@ -121,6 +125,22 @@ internal class FakeCameraXBackend : CameraXBackend {
     override fun flashModeOf(imageCapture: ImageCapture): Int =
         flashReadBack?.invoke(imageCapture) ?: imageCapture.flashMode
 
+    /**
+     * What `Preview.getResolutionInfo()` reports for every bound preview: a 640 x 480 buffer, uncropped, drawn
+     * turned 90 degrees as on a phone held upright. Null is a preview with no surface attached yet.
+     */
+    var previewGeometryReported: PreviewGeometry? = PreviewGeometry(Size(640, 480), Rect(0, 0, 640, 480), 90)
+
+    override fun previewGeometry(preview: Preview): PreviewGeometry? = previewGeometryReported
+
+    /** Each metering point the engine had built, oldest first: a buffer pixel of a surface of that size. */
+    val meteringPoints = mutableListOf<MeteringPointBuild>()
+
+    override fun meteringPoint(x: Float, y: Float, width: Int, height: Int): MeteringPoint {
+        meteringPoints += MeteringPointBuild(x, y, width, height)
+        return super.meteringPoint(x, y, width, height)
+    }
+
     /** The preview of the latest bind produces a frame, reported on the calling thread. */
     fun deliverPreviewFrame() = previewFrameCallbacks.last().invoke()
 
@@ -165,6 +185,9 @@ internal class FakeCameraXBackend : CameraXBackend {
         return recording
     }
 }
+
+/** A metering point the engine had built: the buffer pixel ([x], [y]) of a [width] by [height] surface. */
+internal data class MeteringPointBuild(val x: Float, val y: Float, val width: Int, val height: Int)
 
 /** A VideoCapture the engine had built: for [quality] at [bitrateBps] with [fallback], on [thread]. */
 internal class VideoCaptureBuild(
@@ -441,7 +464,11 @@ internal class FakeCamera(
     private val hasFlashUnit: Boolean = true,
     private val torchFailure: Throwable? = null,
     private val holdReports: Boolean = false,
+    meters: FakeMetering = FakeMetering(),
 ) {
+    /** Its focus, metering and exposure control, which also answers its CameraInfo's exposure state. */
+    val metering = FakeMeteringControl(meters) { opened }
+
     /** The torch requests the camera accepted, oldest first. */
     val torchRequests = mutableListOf<Boolean>()
 
@@ -472,6 +499,7 @@ internal class FakeCamera(
                     if (!holdOpen()) report(CameraState.create(CameraState.Type.OPEN))
                 } else if (!started && opened) {
                     opened = false
+                    metering.onClosed()
                     report(CameraState.create(CameraState.Type.CLOSED))
                 }
             },
@@ -481,6 +509,7 @@ internal class FakeCamera(
     fun closeForUnbind() {
         if (!opened) return
         opened = false
+        metering.onClosed()
         report(CameraState.create(CameraState.Type.CLOSED))
     }
 
@@ -521,13 +550,18 @@ internal class FakeCamera(
                     completedFuture()
                 }
             }
+            "startFocusAndMetering" -> metering.startFocusAndMetering(args!![0] as FocusMeteringAction)
+            "cancelFocusAndMetering" -> metering.cancelFocusAndMetering()
+            "setExposureCompensationIndex" -> metering.setExposureCompensationIndex(args!![0] as Int)
             else -> completedFuture()
         }
     }
 
-    private val info = proxy<CameraInfo> { method, _ ->
+    private val info = proxy<CameraInfo> { method, args ->
         when (method.name) {
             "hasFlashUnit" -> hasFlashUnit
+            "isFocusMeteringSupported" -> metering.isFocusMeteringSupported(args!![0] as FocusMeteringAction)
+            "getExposureState" -> metering.exposureState
             "getTorchState" -> torchState
             "getZoomState" -> zoomState
             "getCameraState" -> cameraState

@@ -18,6 +18,7 @@ import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.controller.AndroidCameraEngine
 import com.kashif.cameraK.controller.FakeCamera
 import com.kashif.cameraK.controller.FakeCameraXBackend
+import com.kashif.cameraK.controller.FakeMetering
 import com.kashif.cameraK.controller.ResolvedCamera
 import com.kashif.cameraK.controller.toCameraSelector
 import com.kashif.cameraK.coroutines.CameraKDispatchers
@@ -44,6 +45,8 @@ import java.util.concurrent.ExecutorService
  * change only when the test does. [flashUnitOf] is what each camera's CameraInfo.hasFlashUnit says;
  * by default the lens's own hasFlash, which the enumerator read from the same characteristic.
  *
+ * [meteringOf] is what each camera meters with and its exposure compensation; by default nothing.
+ *
  * With [offeredByCameraX], CameraX offers only those cameras, which may differ from what the
  * enumeration listed (a USB camera unplugged since): each camera a bind asks for is selected by its
  * real CameraX selector over them, and a bind that selects none is refused as CameraX refuses it.
@@ -53,6 +56,7 @@ internal class FakeAndroidPlatform(
     private val holdReports: Boolean = false,
     private val flashUnitOf: (LensInfo) -> Boolean = { it.hasFlash },
     private val offeredByCameraX: List<LensInfo>? = null,
+    private val meteringOf: (LensInfo) -> FakeMetering = { FakeMetering() },
 ) {
     val context: Context = ApplicationProvider.getApplicationContext()
     val backend = FakeCameraXBackend()
@@ -201,6 +205,7 @@ internal class FakeAndroidPlatform(
             minZoom = lens.minZoom,
             hasFlashUnit = flashUnitOf(lens),
             holdReports = holdReports,
+            meters = meteringOf(lens),
         )
     }
 
@@ -224,6 +229,13 @@ internal class FakeAndroidPlatform(
 
         /** The contract driver's cameras from A2: both with a flash unit and a zoom range, so every step runs. */
         val CONTRACT_CAMERAS = listOf(BACK_WITH_FLASH, FRONT_WITH_FLASH)
+
+        /**
+         * What the contract driver's cameras meter with: the back camera focuses at a point and takes -12 to
+         * 12, the fixed-focus front camera meters exposure at a point and takes -6 to 6, so a switch clamps.
+         */
+        val CONTRACT_METERING: (LensInfo) -> FakeMetering =
+            { if (it.lens == CameraLens.FRONT) FakeMetering.FIXED_FOCUS else FakeMetering.FULL }
 
         val desired = DesiredHardware(
             selection = CameraSelection.ByLens(CameraLens.BACK, CameraDeviceType.DEFAULT),

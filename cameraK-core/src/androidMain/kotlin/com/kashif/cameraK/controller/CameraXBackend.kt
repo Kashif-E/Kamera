@@ -15,7 +15,9 @@ import androidx.camera.core.CameraInfoUnavailableException
 import androidx.camera.core.DynamicRange
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
+import androidx.camera.core.MeteringPoint
 import androidx.camera.core.Preview
+import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.core.UseCase
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -174,6 +176,17 @@ internal interface CameraXBackend {
      * CameraX observer, so this read-back is the platform's report (design §2.3 rule 5).
      */
     fun flashModeOf(imageCapture: ImageCapture): Int = imageCapture.flashMode
+
+    /**
+     * How [preview] is drawn, from its `getResolutionInfo()`: the buffer size, the ViewPort's crop and the
+     * rotation to the display. Null until a surface is attached.
+     */
+    fun previewGeometry(preview: Preview): PreviewGeometry? =
+        preview.resolutionInfo?.let { PreviewGeometry(it.resolution, it.cropRect, it.rotationDegrees) }
+
+    /** The metering point at the buffer pixel ([x], [y]) of a [width] by [height] output surface. */
+    fun meteringPoint(x: Float, y: Float, width: Int, height: Int): MeteringPoint =
+        SurfaceOrientedMeteringPointFactory(width.toFloat(), height.toFloat()).createPoint(x, y)
 
     object Default : CameraXBackend {
         override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
