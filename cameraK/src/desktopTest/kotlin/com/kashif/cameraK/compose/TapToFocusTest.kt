@@ -228,6 +228,37 @@ class TapToFocusTest {
         }
     }
 
+    // w13 G2: CameraKScreen passes its focusIndicator to the preview, so an app that wraps the screen
+    // can draw its own.
+    @Test
+    fun cameraKScreenDrawsTheFocusIndicatorItIsGiven() = runTest {
+        val holder = readyHolder()
+        val scene = ImageComposeScene(
+            width = SCENE_WIDTH,
+            height = 100,
+            density = Density(1f),
+            coroutineContext = StandardTestDispatcher(testScheduler),
+        ) {
+            CameraKScreen(holder, Modifier.fillMaxSize(), focusIndicator = recordingIndicator) {
+                laidOutBounds.set(contentBounds)
+            }
+        }
+        try {
+            awaitFrame(scene)
+            settle(scene)
+            tap(scene, Offset(34f + 66.5f, 50f))
+
+            assertEquals(
+                FocusTap(Offset(66.5f, 50f), NormalizedPoint(0.5f, 0.5f), FocusOutcome.FOCUSED),
+                shown.get(),
+                "CameraKScreen did not draw the focus indicator it was given",
+            )
+        } finally {
+            scene.close()
+            holder.close()
+        }
+    }
+
     private companion object {
         const val RENDERS = 20
         const val SCENE_WIDTH = 200

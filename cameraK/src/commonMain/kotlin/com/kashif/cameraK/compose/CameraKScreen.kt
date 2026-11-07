@@ -31,6 +31,7 @@ import com.kashif.cameraK.state.CameraKStateHolder
  * @param holder The camera, usually from [rememberCameraKStateHolder].
  * @param modifier Modifier for the screen's box.
  * @param tapToFocus Whether a tap on the preview focuses there; see [CameraPreview].
+ * @param focusIndicator Drawn for the latest focus tap; see [CameraPreview].
  * @param loading Shown while the camera is idle or starting.
  * @param error Shown when the camera failed, with the error and a retry.
  * @param content Drawn over the preview, with [CameraPreviewScope] for orientation-aware overlays.
@@ -42,6 +43,7 @@ public fun CameraKScreen(
     holder: CameraKStateHolder,
     modifier: Modifier = Modifier,
     tapToFocus: Boolean = true,
+    focusIndicator: @Composable (FocusTap) -> Unit = { DefaultFocusIndicator(it) },
     loading: @Composable () -> Unit = {},
     error: @Composable (error: CameraKError, retry: () -> Unit) -> Unit = DefaultCameraKError,
     content: @Composable CameraPreviewScope.() -> Unit = {},

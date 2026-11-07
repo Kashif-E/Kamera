@@ -11,6 +11,7 @@ fun CameraKScreen(
     holder: CameraKStateHolder,
     modifier: Modifier = Modifier,
     tapToFocus: Boolean = true,
+    focusIndicator: @Composable (FocusTap) -> Unit = /* a ring at the tap */,
     loading: @Composable () -> Unit = {},
     error: @Composable (error: CameraKError, retry: () -> Unit) -> Unit = /* retries once */,
     content: @Composable CameraPreviewScope.() -> Unit = {},

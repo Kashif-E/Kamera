@@ -1,6 +1,6 @@
 public final class com/kashif/cameraK/compose/CameraKScreenKt {
 	public static final fun CameraKScreen (Landroidx/compose/ui/Modifier;Lcom/kashif/cameraK/state/CameraKState;Lcom/kashif/cameraK/enums/DeviceOrientation;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function3;ZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
-	public static final fun CameraKScreen (Lcom/kashif/cameraK/state/CameraKStateHolder;Landroidx/compose/ui/Modifier;ZLkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun CameraKScreen (Lcom/kashif/cameraK/state/CameraKStateHolder;Landroidx/compose/ui/Modifier;ZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class com/kashif/cameraK/compose/CameraPreviewKt {
@@ -16,11 +16,12 @@ public abstract interface class com/kashif/cameraK/compose/CameraPreviewScope : 
 public final class com/kashif/cameraK/compose/ComposableSingletons$CameraKScreenKt {
 	public static final field INSTANCE Lcom/kashif/cameraK/compose/ComposableSingletons$CameraKScreenKt;
 	public fun <init> ()V
+	public final fun getLambda$-1046711313$dev_kashifmehmood_cameraK_release ()Lkotlin/jvm/functions/Function2;
 	public final fun getLambda$-774068693$dev_kashifmehmood_cameraK_release ()Lkotlin/jvm/functions/Function2;
-	public final fun getLambda$1068247279$dev_kashifmehmood_cameraK_release ()Lkotlin/jvm/functions/Function2;
+	public final fun getLambda$1106051051$dev_kashifmehmood_cameraK_release ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$115617903$dev_kashifmehmood_cameraK_release ()Lkotlin/jvm/functions/Function3;
 	public final fun getLambda$1247929777$dev_kashifmehmood_cameraK_release ()Lkotlin/jvm/functions/Function3;
 	public final fun getLambda$280984956$dev_kashifmehmood_cameraK_release ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$988121835$dev_kashifmehmood_cameraK_release ()Lkotlin/jvm/functions/Function3;
 }
 
 public final class com/kashif/cameraK/compose/ComposableSingletons$CameraPreviewKt {
