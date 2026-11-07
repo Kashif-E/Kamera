@@ -75,7 +75,8 @@ internal interface MatrixPlatform {
 /** How long each step may take, and how long the runner records or watches. */
 internal class MatrixTiming(
     val ready: Duration = 15.seconds,
-    val capture: Duration = 20.seconds,
+    // A full-resolution PNG from the Pixel 7's main camera takes 20 to 26 s to encode.
+    val capture: Duration = 60.seconds,
     val command: Duration = 10.seconds,
     val close: Duration = 10.seconds,
     val readBack: Duration = 2.seconds,
