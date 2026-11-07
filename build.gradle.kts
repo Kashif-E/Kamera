@@ -2657,6 +2657,10 @@ fun verifyTaskPaths(
                 ":Sample:lintDebug",
                 // The framework the iOS app embeds; linking it is where Kotlin/Native runs out of heap.
                 ":Sample:linkDebugFrameworkIosSimulatorArm64",
+                // What the Xcode build's Gradle phase (embedAndSignAppleFrameworkForXcode) resolves beyond
+                // the link: the dependencies' Compose resources, which strict dependency verification checks.
+                ":Sample:iosSimulatorArm64ResolveResourcesFromDependencies",
+                ":Sample:iosArm64ResolveResourcesFromDependencies",
                 // The non-debuggable, profileable build the release gate's Macrobenchmark measures.
                 ":Sample:assembleBenchmark",
                 // The Macrobenchmark itself. It builds against the Sample app, so it is built here and
@@ -2669,15 +2673,22 @@ fun verifyTaskPaths(
 
 // CI runs scripts/verify.sh --full. Tests and compiles alone miss what only Android lint reports and
 // what fails only at the Kotlin/Native link of the framework an app embeds, so the full selection
-// must lint every Android module and link the Sample's iOS framework.
+// must lint every Android module, link the Sample's iOS framework and resolve what the Xcode build resolves.
 tasks.register("checkVerifyCoverage") {
     group = lintGroup
-    description = "Fails if scripts/verify.sh --full skips Android lint or the iOS framework link"
+    description =
+        "Fails if scripts/verify.sh --full skips Android lint, the iOS framework link or the resources the Xcode " +
+        "build resolves"
     val full = verifyTaskPaths(allVerifyTargets, publishedModules, record = false).toSet()
     doLast {
         val required =
             publishedModules.map { ":$it:lintRelease" } +
-                listOf(":Sample:lintDebug", ":Sample:linkDebugFrameworkIosSimulatorArm64")
+                listOf(
+                    ":Sample:lintDebug",
+                    ":Sample:linkDebugFrameworkIosSimulatorArm64",
+                    ":Sample:iosSimulatorArm64ResolveResourcesFromDependencies",
+                    ":Sample:iosArm64ResolveResourcesFromDependencies",
+                )
         val missing = required.filterNot(full::contains)
         check(missing.isEmpty()) { "scripts/verify.sh --full does not run:\n" + missing.joinToString("\n") }
     }
