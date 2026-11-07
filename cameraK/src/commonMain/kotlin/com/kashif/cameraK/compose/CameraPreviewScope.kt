@@ -5,12 +5,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import com.kashif.cameraK.enums.DeviceOrientation
 
 @Stable
 public interface CameraPreviewScope : BoxScope {
     public val deviceOrientation: DeviceOrientation
+
+    /**
+     * The preview's content rectangle in this overlay's coordinates, in pixels: the area the camera
+     * image fills, with any letterbox or pillarbox bars outside it. On every platform the overlay is
+     * laid out over this rectangle, so it is the overlay's own box, from (0, 0) to its size, and a
+     * point's offset over the overlay divided by this size is where it falls in the image.
+     */
+    public val contentBounds: Rect
+
     public fun Modifier.keepUpright(): Modifier
 }
 
@@ -34,6 +44,8 @@ internal class CameraPreviewScopeImpl(
     override val deviceOrientation: DeviceOrientation,
 ) : CameraPreviewScope,
     BoxScope by boxScope {
+
+    override val contentBounds: Rect get() = TODO("Y-overlay")
 
     override fun Modifier.keepUpright(): Modifier = this.then(
         Modifier.graphicsLayer {

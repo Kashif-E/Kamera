@@ -7,6 +7,8 @@
 
 // Library unique name: <io.github.kashif-mehmood-km:cameraK>
 abstract interface com.kashif.cameraK.compose/CameraPreviewScope : androidx.compose.foundation.layout/BoxScope { // com.kashif.cameraK.compose/CameraPreviewScope|null[0]
+    abstract val contentBounds // com.kashif.cameraK.compose/CameraPreviewScope.contentBounds|{}contentBounds[0]
+        abstract fun <get-contentBounds>(): androidx.compose.ui.geometry/Rect // com.kashif.cameraK.compose/CameraPreviewScope.contentBounds.<get-contentBounds>|<get-contentBounds>(){}[0]
     abstract val deviceOrientation // com.kashif.cameraK.compose/CameraPreviewScope.deviceOrientation|{}deviceOrientation[0]
         abstract fun <get-deviceOrientation>(): com.kashif.cameraK.enums/DeviceOrientation // com.kashif.cameraK.compose/CameraPreviewScope.deviceOrientation.<get-deviceOrientation>|<get-deviceOrientation>(){}[0]
 

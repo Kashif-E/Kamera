@@ -8,6 +8,7 @@ public final class com/kashif/cameraK/compose/CameraPreviewKt {
 }
 
 public abstract interface class com/kashif/cameraK/compose/CameraPreviewScope : androidx/compose/foundation/layout/BoxScope {
+	public abstract fun getContentBounds ()Landroidx/compose/ui/geometry/Rect;
 	public abstract fun getDeviceOrientation ()Lcom/kashif/cameraK/enums/DeviceOrientation;
 	public abstract fun keepUpright (Landroidx/compose/ui/Modifier;)Landroidx/compose/ui/Modifier;
 }

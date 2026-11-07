@@ -72,6 +72,42 @@ class DesktopPreviewOverlayTest {
         }
     }
 
+    @Test
+    fun anOverlaysFillMaxSize_measuresToTheContentRectangle() = runTest {
+        // The fake's 640 x 480 frame in a 200 x 100 preview: a 133 x 100 content rectangle, centred
+        // as Alignment.Center places it, with the pillarbox bars outside it.
+        val holder = fakeCameraKStateHolder()
+        holder.start()
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value)
+        val overlayBounds = AtomicReference<Rect?>(null)
+        val contentBounds = AtomicReference<Rect?>(null)
+        val scene = ImageComposeScene(
+            width = 200,
+            height = 100,
+            density = Density(1f),
+            coroutineContext = StandardTestDispatcher(testScheduler),
+        ) {
+            CameraPreview(holder, Modifier.fillMaxSize()) {
+                contentBounds.set(this.contentBounds)
+                Box(Modifier.fillMaxSize().onGloballyPositioned { overlayBounds.set(it.boundsInRoot()) })
+            }
+        }
+        try {
+            repeat(RENDERS) {
+                runCurrent()
+                scene.render()
+            }
+
+            val overlay = assertNotNull(overlayBounds.get(), "the overlay was never laid out")
+            assertEquals(IntRect(34, 0, 167, 100), overlay.toIntRect(), "the overlay's box in the preview")
+            assertEquals(Rect(0f, 0f, 133f, 100f), contentBounds.get(), "contentBounds, in the overlay's coordinates")
+        } finally {
+            scene.close()
+            holder.close()
+        }
+    }
+
     // The fake's frame is opaque and the scene's background is transparent, so the opaque pixels
     // are exactly the drawn frame.
     private fun drawnFrameBounds(scene: ImageComposeScene): IntRect? {
