@@ -95,4 +95,4 @@ internal fun AppTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-internal expect fun SystemAppearance(isDark: Boolean)
+internal expect fun SystemAppearance(darkIcons: Boolean)
