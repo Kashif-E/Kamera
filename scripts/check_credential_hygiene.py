@@ -48,7 +48,7 @@ KEY_FILE = re.compile(r"secring\.gpg|secretKeyRingFile|SECRET_KEY_RING_FILE")
 LOCAL_PROPERTIES = re.compile(r"local\.properties")
 BUILD_SCRIPT_CREDENTIAL = re.compile(r"signing\.(?:keyId|password)|ossrh(?:Username|Password)|mavenCentral(?:Username|Password)")
 RUN_KEY = re.compile(r"^\s*(?:-\s+)?run:(?P<rest>.*)$")
-PUBLISH_TASK = re.compile(r"publish\w*MavenCentral", re.IGNORECASE)
+PUBLISH_TASK = re.compile(r"\bpublish(?:\w*MavenCentral\w*|Libraries|LegacyRelocations)\b", re.IGNORECASE)
 GITLEAKS_ACTION = re.compile(r"uses:\s*gitleaks/gitleaks-action@(?P<ref>\S+)")
 # The action runs `gitleaks detect` with no --log-opts on scheduled runs, which covers only the
 # checked-out branch. Every branch and tag needs the CLI with --log-opts=--all.

@@ -8,6 +8,9 @@ A Maven Central upload cannot be undone. The publish workflow must therefore:
   which this script also runs against a matching and a mismatching tag);
 - wait for the full verification harness, reused from build.yml rather than copied;
 - publish from the protected `maven-central` environment, on the runner image CI uses;
+- publish in two steps of that one job, `publishLibraries` then `publishLegacyRelocations`, after the tag
+  check, neither conditional, so each namespace is its own deployment and a failed first step stops
+  the second;
 - hold only `contents: read`, and never run two publishes at once (`publish` concurrency group).
 
 Credentials travelling as env variables only is checked by check_credential_hygiene.py.
@@ -30,7 +33,10 @@ BUILD_WORKFLOW = WORKFLOWS / "build.yml"
 TAG_GUARD = ROOT / "scripts" / "check_release_tag.sh"
 ENVIRONMENT = "maven-central"
 CONCURRENCY_GROUP = "publish"
-PUBLISH_TASK = re.compile(r"publish\w*MavenCentral", re.IGNORECASE)
+# The release publishes in two builds, one Central Portal deployment per namespace: the libraries under
+# GROUP, then the relocation POMs under LEGACY_GROUP. PUBLISH_TASK sees any step that publishes.
+RELEASE_TASKS = ("publishLibraries", "publishLegacyRelocations")
+PUBLISH_TASK = re.compile(r"\bpublish(?:\w*MavenCentral\w*|Libraries|LegacyRelocations)\b", re.IGNORECASE)
 FULL_HARNESS = re.compile(r"scripts/verify\.sh\s+--full\b")
 
 
@@ -191,6 +197,31 @@ def check_tag_guard() -> List[str]:
     return problems
 
 
+def release_step_problems(steps: List[dict], uploads: List[int]) -> List[str]:
+    """What is wrong with the publishing steps [uploads] (indexes into [steps]) of the one publishing job."""
+    problems = []
+    found = {task: [] for task in RELEASE_TASKS}
+    for index in uploads:
+        step = steps[index]
+        run = str(step.get("run", ""))
+        tasks = PUBLISH_TASK.findall(run)
+        if len(tasks) != 1 or tasks[0] not in RELEASE_TASKS:
+            problems.append(f"step {index + 1} runs {tasks}; each publishing step runs one of {list(RELEASE_TASKS)}")
+        for task in RELEASE_TASKS:
+            if re.search(rf"\b{task}\b", run):
+                found[task].append(index)
+        for key in ("if", "continue-on-error"):
+            if key in step:
+                problems.append(f"step {index + 1} sets {key}, so a failed publish need not stop the release")
+    for task, indexes in found.items():
+        if len(indexes) != 1:
+            problems.append(f"runs {task} in {len(indexes)} steps, not one")
+    libraries, relocations = (found[task] for task in RELEASE_TASKS)
+    if len(libraries) == 1 and len(relocations) == 1 and libraries[0] > relocations[0]:
+        problems.append(f"runs {RELEASE_TASKS[1]} before {RELEASE_TASKS[0]}")
+    return problems
+
+
 def release_workflow_problems(release: dict, build: dict) -> List[str]:
     """What lets [release], the publish workflow, publish a commit [build]'s harness did not test, a tag
     other than VERSION_NAME, or an upload nobody approved."""
@@ -253,9 +284,9 @@ def release_workflow_problems(release: dict, build: dict) -> List[str]:
             (index for index, step in enumerate(steps) if "scripts/check_release_tag.sh" in str(step.get("run", ""))),
             None,
         )
-        upload = next(
-            (index for index, step in enumerate(steps) if PUBLISH_TASK.search(str(step.get("run", "")))), None
-        )
+        uploads = [index for index, step in enumerate(steps) if PUBLISH_TASK.search(str(step.get("run", "")))]
+        upload = uploads[0] if uploads else None
+        problems += [f"{name}: job {job_id} {problem}" for problem in release_step_problems(steps, uploads)]
         if guard is None or upload is None or guard > upload:
             problems.append(f"{name}: job {job_id} does not run scripts/check_release_tag.sh before publishing")
         elif "${{" in str(steps[guard].get("run", "")):
