@@ -1,18 +1,7 @@
 package org.company.app
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,23 +9,38 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Type
+import com.kashif.ocrplugin.OcrConfig
+import com.kashif.ocrplugin.OcrLevel
 import com.kashif.ocrplugin.OcrPlugin
 import com.kashif.ocrplugin.rememberOcrPlugin
+import org.company.app.designsystem.PrimaryButton
+import org.company.app.designsystem.SampleTheme
+import org.company.app.designsystem.SegmentedControl
+import org.company.app.designsystem.Sheet
+import org.company.app.designsystem.SheetHeader
+import org.company.app.designsystem.SheetMeta
 
-/** The Sample's text recognition: the latest recognized text, shown in a banner. */
+/**
+ * How hard live recognition works: the Text mode's Fast / Accurate switch. Android's ML Kit has one
+ * model and reads both the same.
+ */
+internal enum class OcrAccuracy(val label: String) {
+    Fast("Fast"),
+    Accurate("Accurate"),
+}
+
+/** The Sample's text recognition: the latest recognized text, in the Text mode's sheet. */
 internal class OcrFeature(val plugin: OcrPlugin)
 
+/** The recognizer at [accuracy]; a new accuracy is a new plugin, which the holder swaps for the old one. */
 @Composable
-internal fun rememberOcrFeature(): OcrFeature {
-    val plugin = rememberOcrPlugin()
+internal fun rememberOcrFeature(accuracy: OcrAccuracy = OcrAccuracy.Fast): OcrFeature {
+    val config = remember(accuracy) {
+        OcrConfig { level = if (accuracy == OcrAccuracy.Accurate) OcrLevel.ACCURATE else OcrLevel.FAST }
+    }
+    val plugin = rememberOcrPlugin(config)
     return remember(plugin) { OcrFeature(plugin) }
 }
 
@@ -56,50 +60,46 @@ internal fun OcrRecognitionEffect(ocr: OcrFeature, isOCREnabled: Boolean) {
     }
 }
 
+/** The Text mode's Fast / Accurate switch, for its top bar. */
 @Composable
-internal fun OcrBanner(modifier: Modifier = Modifier, text: String) {
-    var expanded by remember { mutableStateOf(false) }
+internal fun OcrAccuracyToggle(accuracy: OcrAccuracy, onChange: (OcrAccuracy) -> Unit, modifier: Modifier = Modifier) {
+    SegmentedControl(
+        options = OcrAccuracy.entries,
+        selected = accuracy,
+        onSelect = onChange,
+        label = { it.label },
+        modifier = modifier,
+    )
+}
 
-    Surface(
-        modifier = modifier
-            .padding(horizontal = 24.dp)
-            .fillMaxWidth()
-            .clickable { expanded = !expanded },
-        color = Color(0xFF1A237E).copy(alpha = 0.9f),
-        shape = RoundedCornerShape(16.dp),
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    imageVector = Lucide.Type,
-                    contentDescription = null,
-                    tint = Color(0xFF82B1FF),
-                    modifier = Modifier.size(18.dp),
-                )
-                Text(
-                    text = "Text Detected",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF82B1FF),
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = if (expanded) "Less" else "More",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
+/** The Text mode's sheet: the recognized lines, all of them on a tap, and Copy all. */
+@Composable
+internal fun TextResultSheet(text: String?, onCopy: (String) -> Unit, modifier: Modifier = Modifier) {
+    var expanded by remember { mutableStateOf(false) }
+    Sheet(modifier = modifier) {
+        val lines = text?.lines()?.filter { it.isNotBlank() }.orEmpty()
+        if (lines.isEmpty()) {
+            SheetHeader(title = "No text yet")
             Text(
-                text = text,
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White,
-                maxLines = if (expanded) 10 else 2,
-                overflow = TextOverflow.Ellipsis,
+                text = "Hold printed text in view; what is read shows here.",
+                style = SampleTheme.typography.body,
+                color = SampleTheme.colors.inkSecondary,
             )
+            return@Sheet
         }
+        SheetHeader(title = "Text Detected") {
+            SheetMeta(if (lines.size == 1) "1 line" else "${lines.size} lines")
+        }
+        Text(
+            text = lines.joinToString("\n"),
+            style = SampleTheme.typography.body,
+            color = SampleTheme.colors.ink,
+            maxLines = if (expanded) Int.MAX_VALUE else COLLAPSED_LINES,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        )
+        PrimaryButton(text = "Copy all", onClick = { onCopy(lines.joinToString("\n")) }, modifier = Modifier.fillMaxWidth())
     }
 }
+
+private const val COLLAPSED_LINES = 6

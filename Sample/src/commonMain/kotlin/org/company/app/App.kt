@@ -1,55 +1,79 @@
 package org.company.app
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalInspectionMode
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.permissions.rememberCameraKPermissionState
 import kotlinx.coroutines.launch
-import org.company.app.theme.AppTheme
+import org.company.app.designsystem.SampleSnackbarHost
+import org.company.app.designsystem.SampleTheme
 
 @Composable
-fun App() = AppTheme {
+fun App() = SampleTheme {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val imageSaver = rememberImageSaverFeature()
+    var saveToGallery by rememberSaveable { mutableStateOf(true) }
+    var ocrAccuracy by rememberSaveable { mutableStateOf(OcrAccuracy.Fast) }
+    val imageSaver = rememberImageSaverFeature(saveToGallery)
     val analyzer = rememberAnalyzerFeature()
     val qrScanner = rememberQrScannerFeature()
-    val ocr = rememberOcrFeature()
+    val ocr = rememberOcrFeature(ocrAccuracy)
 
     val asked = remember(imageSaver) { samplePermissions(imageSaver.plugin.config.autoSave) }
     val permissions = rememberCameraKPermissionState(*asked.toTypedArray()) { results ->
         permissionNotice(results)?.let { scope.launch { snackbarHostState.showSnackbar(it) } }
     }
-    // Asked once when the app opens, as the 1.x screen did.
+    // Asked once when the app opens, as the 1.x screen did, and again when Save to gallery adds the
+    // gallery to what is asked. A preview asks for nothing.
+    val inspecting = LocalInspectionMode.current
     LaunchedEffect(permissions) {
-        if (!permissions.allGranted) permissions.launchRequest()
+        if (!inspecting && !permissions.allGranted) permissions.launchRequest()
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        modifier = Modifier.windowInsetsPadding(WindowInsets.systemBars),
-        // Camera app: black background so the preview re-bind on aspect-ratio change (and any
-        // letterbox bars) never flashes the default white surface.
-        containerColor = Color.Black,
-    ) {
-        if (cameraGranted(permissions.statuses[CameraKPermission.CAMERA])) {
+        snackbarHost = { SampleSnackbarHost(snackbarHostState) },
+        // The ground colour runs under the system bars, so their dark icons sit on it.
+        modifier = Modifier.background(SampleTheme.colors.background).windowInsetsPadding(WindowInsets.systemBars),
+        containerColor = SampleTheme.colors.background,
+    ) { padding ->
+        val cameraStatus = permissions.statuses[CameraKPermission.CAMERA]
+        if (cameraGranted(cameraStatus)) {
             CameraContent(
                 analyzer = analyzer,
                 imageSaver = imageSaver,
                 qrScanner = qrScanner,
                 ocr = ocr,
                 snackbarHostState = snackbarHostState,
+                options = SampleOptions(
+                    saveToGallery = saveToGallery,
+                    onSaveToGalleryChange = { saveToGallery = it },
+                    ocrAccuracy = ocrAccuracy,
+                    onOcrAccuracyChange = { ocrAccuracy = it },
+                ),
+            )
+        } else {
+            PermissionScreen(
+                cameraStatus = cameraStatus,
+                onAllow = permissions::launchRequest,
+                onOpenSettings = rememberAppSettingsOpener(),
+                modifier = Modifier.fillMaxSize().padding(padding),
             )
         }
     }

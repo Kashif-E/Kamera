@@ -1,56 +1,79 @@
 package org.company.app
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.EaseInOut
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import com.composables.icons.lucide.ChevronLeft
+import com.composables.icons.lucide.Flashlight
+import com.composables.icons.lucide.FlashlightOff
 import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Ratio
-import com.composables.icons.lucide.Settings
-import com.composables.icons.lucide.Sun
+import com.composables.icons.lucide.Pause
+import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.SlidersHorizontal
 import com.composables.icons.lucide.SwitchCamera
-import com.composables.icons.lucide.X
 import com.composables.icons.lucide.Zap
+import com.composables.icons.lucide.ZapOff
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
+import org.company.app.designsystem.CameraTopBar
+import org.company.app.designsystem.CaptureDock
+import org.company.app.designsystem.CircleIconButton
+import org.company.app.designsystem.CircleIconButtonDefaults
+import org.company.app.designsystem.DetectionChip
+import org.company.app.designsystem.ModeSwitcher
+import org.company.app.designsystem.PhotoThumb
+import org.company.app.designsystem.Pill
+import org.company.app.designsystem.RecordingTimerPill
+import org.company.app.designsystem.SampleTheme
+import org.company.app.designsystem.ShutterButton
+import org.company.app.designsystem.ShutterVariant
+import org.company.app.designsystem.TopBarTitle
+import org.company.app.designsystem.ZoomPills
 
+/** The flash's button: off, auto, or on (indigo). Each tap moves to the next mode the camera has. */
 @Composable
-internal fun TopBar(
-    modifier: Modifier = Modifier,
+internal fun FlashButton(flashMode: FlashMode, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    CircleIconButton(
+        icon = if (flashMode == FlashMode.OFF) Lucide.ZapOff else Lucide.Zap,
+        contentDescription = "Flash: ${flashMode.name.lowercase()}",
+        onClick = onClick,
+        modifier = modifier,
+        style = if (flashMode == FlashMode.ON) CircleIconButtonDefaults.active() else CircleIconButtonDefaults.style(),
+    )
+}
+
+/** The torch's button, indigo while the torch is on. */
+@Composable
+internal fun TorchButton(torchMode: TorchMode, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val on = torchMode != TorchMode.OFF
+    CircleIconButton(
+        icon = if (on) Lucide.Flashlight else Lucide.FlashlightOff,
+        contentDescription = if (on) "Torch: on" else "Torch: off",
+        onClick = onClick,
+        modifier = modifier,
+        style = if (on) CircleIconButtonDefaults.active() else CircleIconButtonDefaults.style(),
+    )
+}
+
+/** The way back from the QR, Text and Analyze modes to the photo camera. */
+@Composable
+internal fun BackToCameraButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    CircleIconButton(icon = Lucide.ChevronLeft, contentDescription = "Back to camera", onClick = onClick, modifier = modifier)
+}
+
+/**
+ * The photo and video modes' top bar: flash and aspect ratio at the start, torch and settings at the
+ * end, or, while recording, only the recorded time.
+ */
+@Composable
+internal fun CaptureTopBar(
     flashMode: FlashMode,
     torchMode: TorchMode,
     aspectRatio: AspectRatio,
@@ -59,264 +82,159 @@ internal fun TopBar(
     onFlashToggle: () -> Unit,
     onTorchToggle: () -> Unit,
     onAspectRatioCycle: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.6f))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (isRecording) {
-            RecordingTimerHud(durationMs = recordingDurationMs)
-        } else {
-            TopBarIconChip(
-                icon = if (flashMode != FlashMode.OFF) Lucide.Zap else Lucide.Zap,
-                label = flashMode.name,
-                active = flashMode != FlashMode.OFF,
-                onClick = onFlashToggle,
-            )
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            TopBarIconChip(
-                icon = Lucide.Ratio,
-                label = aspectRatio.name.replace("RATIO_", "").replace("_", ":"),
-                active = false,
-                onClick = onAspectRatioCycle,
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            TopBarIconChip(
-                icon = if (torchMode != TorchMode.OFF) Lucide.Sun else Lucide.Sun,
-                label = torchMode.name,
-                active = torchMode != TorchMode.OFF,
-                onClick = onTorchToggle,
-            )
-        }
+    if (isRecording) {
+        CameraTopBar(modifier = modifier, center = { RecordingTimerPill(durationMs = recordingDurationMs) })
+        return
     }
-}
-
-@Composable
-private fun TopBarIconChip(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    active: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.clickable(onClick = onClick),
-        color = if (active) Color.White.copy(alpha = 0.2f) else Color.Transparent,
-        shape = RoundedCornerShape(20.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (active) Color.Yellow else TextSecondary,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                text = label,
-                color = if (active) Color.Yellow else TextSecondary,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
-            )
-        }
-    }
-}
-
-@Composable
-internal fun ZoomChips(modifier: Modifier = Modifier, zoomLevel: Float, maxZoom: Float, onZoomChange: (Float) -> Unit) {
-    val stops = buildList {
-        add(1f)
-        if (maxZoom >= 2f) add(2f)
-        if (maxZoom > 2f && maxZoom >= 4f) add(4f.coerceAtMost(maxZoom))
-        if (maxZoom > 4f) add(maxZoom)
-    }.distinct()
-
-    Surface(
+    val ratio = aspectRatio.label()
+    CameraTopBar(
         modifier = modifier,
-        color = Color.Black.copy(alpha = 0.5f),
-        shape = RoundedCornerShape(24.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            stops.forEach { stop ->
-                val isActive = (zoomLevel - stop).let { it > -0.15f && it < 0.15f }
-                val label = if (stop == stop.toLong().toFloat()) {
-                    "${stop.toInt()}x"
-                } else {
-                    "${(stop * 10).toInt() / 10f}x"
-                }
-                Surface(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clickable { onZoomChange(stop) },
-                    color = if (isActive) Color.White.copy(alpha = 0.25f) else Color.Transparent,
-                    shape = CircleShape,
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Text(
-                            text = label,
-                            color = if (isActive) Color.Yellow else TextSecondary,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                        )
-                    }
-                }
-            }
-        }
-    }
+        leading = listOf(
+            { FlashButton(flashMode = flashMode, onClick = onFlashToggle) },
+            // The ratio is its own description, as the benchmarks find the chip by it.
+            { Pill(text = ratio, onClick = onAspectRatioCycle, contentDescription = ratio) },
+        ),
+        trailing = listOf(
+            { TorchButton(torchMode = torchMode, onClick = onTorchToggle) },
+            { CircleIconButton(icon = Lucide.SlidersHorizontal, contentDescription = "Settings", onClick = onOpenSettings) },
+        ),
+    )
 }
 
+/** The QR, Text and Analyze modes' top bar: back, the mode's [title], and [trailing] at the end. */
 @Composable
-internal fun ModeSwitcher(currentMode: CameraMode, onModeChange: (CameraMode) -> Unit, enabled: Boolean = true) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(32.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CameraMode.entries.forEach { mode ->
-            val isSelected = mode == currentMode
-            val textColor by animateColorAsState(
-                targetValue = if (isSelected) TextPrimary else TextSecondary,
-            )
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable(enabled = enabled) { onModeChange(mode) },
-            ) {
-                Text(
-                    text = mode.name.uppercase(),
-                    color = textColor,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    letterSpacing = 1.sp,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Box(
-                    modifier = Modifier
-                        .height(3.dp)
-                        .width(if (isSelected) 24.dp else 0.dp)
-                        .background(
-                            if (isSelected) TextPrimary else Color.Transparent,
-                            RoundedCornerShape(1.5.dp),
-                        ),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun ShutterButton(
-    mode: CameraMode,
-    isRecording: Boolean,
-    isCapturing: Boolean,
-    onPhotoCapture: () -> Unit,
-    onVideoToggle: () -> Unit,
+internal fun ToolTopBar(
+    title: String,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    trailing: List<@Composable () -> Unit> = emptyList(),
 ) {
-    val isVideoMode = mode == CameraMode.Video
-
-    val outerRingColor by animateColorAsState(
-        targetValue = if (isRecording) Red else Color.White,
+    CameraTopBar(
+        modifier = modifier,
+        leading = listOf({ BackToCameraButton(onClick = onBack) }, { TopBarTitle(text = title) }),
+        trailing = trailing,
     )
-    val innerColor by animateColorAsState(
-        targetValue = if (isVideoMode) Red else Color.White,
-    )
-    val innerSize by animateDpAsState(
-        targetValue = if (isRecording) 24.dp else 60.dp,
-    )
-    val innerCornerRadius by animateDpAsState(
-        targetValue = if (isRecording) 6.dp else 30.dp,
-    )
-
-    val pulseScale = if (isRecording) {
-        val infiniteTransition = rememberInfiniteTransition()
-        val scale by infiniteTransition.animateFloat(
-            initialValue = 1.0f,
-            targetValue = 1.08f,
-            animationSpec = infiniteRepeatable(
-                animation = tween<Float>(1000, easing = EaseInOut),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "pulseScale",
-        )
-        scale
-    } else {
-        1.0f
-    }
-
-    val pressScale by animateFloatAsState(
-        targetValue = if (isCapturing) 0.85f else 1.0f,
-    )
-
-    val combinedScale = pulseScale * pressScale
-
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(72.dp)
-            .clickable(
-                enabled = !isCapturing,
-                onClick = if (isVideoMode) onVideoToggle else onPhotoCapture,
-            ),
-    ) {
-        Box(
-            modifier = Modifier
-                .size((72 * combinedScale).dp)
-                .border(3.dp, outerRingColor, CircleShape),
-        )
-        Box(
-            modifier = Modifier
-                .size(innerSize * combinedScale)
-                .background(innerColor, RoundedCornerShape(innerCornerRadius)),
-        )
-    }
 }
 
-@Composable
-internal fun CameraFlipButton(onClick: () -> Unit, enabled: Boolean = true) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(48.dp)
-            .background(ChipBg, CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
-    ) {
-        Icon(
-            imageVector = Lucide.SwitchCamera,
-            contentDescription = "Flip Camera",
-            tint = TextPrimary,
-            modifier = Modifier.size(22.dp),
-        )
-    }
-}
+/** What the capture controls show and do; the screen fills it from the holder. */
+internal class CaptureControlsState(
+    val mode: CameraMode,
+    val cameraLive: Boolean,
+    val isRecording: Boolean,
+    val isPaused: Boolean,
+    val canPause: Boolean,
+    val isCapturing: Boolean,
+    val zoomStops: List<Float>,
+    val zoom: Float,
+    val thumbnail: ImageBitmap?,
+    val rotationDegrees: Float,
+)
 
+/**
+ * The photo and video modes' controls: the zoom pills (a note while recording), the modes, and the
+ * last photo or pause, the shutter, and flip. The shutter row shows once the camera is live, as the
+ * benchmarks read Flip Camera's arrival as the camera being Ready.
+ */
 @Composable
-internal fun SettingsButton(isOpen: Boolean, onClick: () -> Unit) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(48.dp)
-            .background(
-                if (isOpen) ChipBgSelected else ChipBg,
-                CircleShape,
+internal fun CaptureControls(
+    state: CaptureControlsState,
+    onZoom: (Float) -> Unit,
+    onModeChange: (CameraMode) -> Unit,
+    onShutter: () -> Unit,
+    onPauseToggle: () -> Unit,
+    onFlip: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val upright = Modifier.graphicsLayer { rotationZ = state.rotationDegrees }
+    CaptureDock(
+        modifier = modifier,
+        above = {
+            when {
+                state.isRecording -> Text(
+                    text = "Lens switching is paused while recording",
+                    style = SampleTheme.typography.note,
+                    color = SampleTheme.colors.inkSecondary,
+                )
+                state.cameraLive && state.zoomStops.size > 1 ->
+                    ZoomPills(stops = state.zoomStops, zoom = state.zoom, onSelect = onZoom)
+            }
+        },
+        modes = {
+            ModeSwitcher(
+                modes = CameraMode.entries,
+                selected = state.mode,
+                onSelect = onModeChange,
+                label = { it.label },
+                enabled = !state.isRecording,
             )
-            .clickable(onClick = onClick),
+        },
+        start = {
+            when {
+                !state.cameraLive -> Unit
+                state.isRecording && state.canPause -> CircleIconButton(
+                    icon = if (state.isPaused) Lucide.Play else Lucide.Pause,
+                    contentDescription = if (state.isPaused) "Resume recording" else "Pause recording",
+                    onClick = onPauseToggle,
+                    modifier = upright,
+                    style = CircleIconButtonDefaults.control(),
+                )
+                !state.isRecording -> PhotoThumb(image = state.thumbnail, modifier = upright)
+            }
+        },
+        shutter = {
+            if (state.cameraLive) {
+                ShutterButton(
+                    variant = when {
+                        state.isRecording -> ShutterVariant.Recording
+                        state.mode == CameraMode.Video -> ShutterVariant.Video
+                        else -> ShutterVariant.Photo
+                    },
+                    onClick = onShutter,
+                    modifier = upright,
+                    enabled = !state.isCapturing,
+                )
+            }
+        },
+        end = {
+            if (state.cameraLive) {
+                CircleIconButton(
+                    icon = Lucide.SwitchCamera,
+                    // The benchmarks find this button by its description.
+                    contentDescription = "Flip Camera",
+                    onClick = onFlip,
+                    modifier = upright,
+                    enabled = !state.isRecording,
+                    style = CircleIconButtonDefaults.control(),
+                )
+            }
+        },
+    )
+}
+
+/**
+ * Over the photo and video preview: a chip for the newest code and one for the text in view, when the
+ * scanner or the recognizer runs in these modes. Each opens its mode.
+ */
+@Composable
+internal fun DetectionChips(
+    latestCode: ScannedCode?,
+    textLine: String?,
+    onOpenQr: () -> Unit,
+    onOpenText: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = SampleTheme.spacing.lg, vertical = SampleTheme.spacing.md),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(SampleTheme.spacing.sm),
     ) {
-        Icon(
-            imageVector = if (isOpen) Lucide.X else Lucide.Settings,
-            contentDescription = if (isOpen) "Close Settings" else "Settings",
-            tint = TextPrimary,
-            modifier = Modifier.size(22.dp),
-        )
+        if (latestCode != null) DetectionChip(label = latestCode.format, value = latestCode.value, onClick = onOpenQr)
+        if (textLine != null) DetectionChip(label = "Text", value = textLine, onClick = onOpenText)
     }
 }
+
+/** The ratio as the Sample shows it, "4:3". */
+internal fun AspectRatio.label(): String = name.removePrefix("RATIO_").replace('_', ':')

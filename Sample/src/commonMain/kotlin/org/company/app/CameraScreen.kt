@@ -2,21 +2,15 @@ package org.company.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -25,20 +19,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
+import com.composables.icons.lucide.CircleAlert
 import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.X
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.compose.CameraKScreen
+import com.kashif.cameraK.compose.CameraPreviewScope
 import com.kashif.cameraK.compose.rememberCameraKStateHolder
 import com.kashif.cameraK.controls.cycleFlashMode
 import com.kashif.cameraK.controls.toggleLens
@@ -52,8 +47,10 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.recording.RecordingState
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKLogger
@@ -62,8 +59,21 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import org.company.app.designsystem.SampleTheme
+import org.company.app.designsystem.StatusMessage
+import org.company.app.designsystem.ThirdsGrid
+import org.company.app.designsystem.zoomStops
+
+/** What the Sample lets the user change outside the camera's configuration, hoisted to [App]. */
+internal class SampleOptions(
+    val saveToGallery: Boolean,
+    val onSaveToGalleryChange: (Boolean) -> Unit,
+    val ocrAccuracy: OcrAccuracy,
+    val onOcrAccuracyChange: (OcrAccuracy) -> Unit,
+)
 
 @Composable
 internal fun CameraContent(
@@ -72,6 +82,7 @@ internal fun CameraContent(
     qrScanner: QrScannerFeature,
     ocr: OcrFeature,
     snackbarHostState: SnackbarHostState,
+    options: SampleOptions,
 ) {
     val qrCodes = rememberQrCodes(qrScanner)
     val recognizedText = rememberRecognizedText(ocr)
@@ -100,101 +111,67 @@ internal fun CameraContent(
         },
         plugins = plugins,
     )
-    SampleCameraKScreen(holder) {
-        CameraScreen(
-            holder = holder,
-            imageSaver = imageSaver,
-            qrScanner = qrScanner,
-            ocr = ocr,
-            analyzer = analyzer,
-            snackbarHostState = snackbarHostState,
-            qrCodes = qrCodes,
-            recognizedText = recognizedText,
-            aspectRatio = settings.aspectRatio,
-            onAspectRatioChange = { settings = settings.copy(aspectRatio = it) },
-            resolution = settings.resolution,
-            onResolutionChange = { settings = settings.copy(resolution = it) },
-            imageFormat = settings.imageFormat,
-            onImageFormatChange = { settings = settings.copy(imageFormat = it) },
-            qualityPrioritization = settings.qualityPrioritization,
-            onQualityPrioritizationChange = { settings = settings.copy(qualityPrioritization = it) },
-            cameraDeviceType = settings.cameraDeviceType,
-            onCameraDeviceTypeChange = { settings = settings.copy(cameraDeviceType = it) },
-        )
-    }
+    CameraScreen(
+        holder = holder,
+        qrScanner = qrScanner,
+        ocr = ocr,
+        analyzer = analyzer,
+        snackbarHostState = snackbarHostState,
+        qrCodes = qrCodes,
+        recognizedText = recognizedText,
+        settings = settings,
+        onSettingsChange = { settings = it },
+        options = options,
+    )
 }
 
-/** [CameraKScreen] with the Sample's starting and error screens, and [content] over the preview. */
+/**
+ * [CameraKScreen] with the Sample's starting and error screens, and [content] over the preview.
+ */
 @Composable
-internal fun SampleCameraKScreen(holder: CameraKStateHolder, content: @Composable () -> Unit) {
+internal fun SampleCameraKScreen(
+    holder: CameraKStateHolder,
+    modifier: Modifier = Modifier,
+    content: @Composable CameraPreviewScope.() -> Unit,
+) {
     CameraKScreen(
         holder = holder,
-        loading = {
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "Initializing Camera...",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextSecondary,
-                )
-            }
-        },
+        modifier = modifier,
+        loading = { StatusMessage(text = "Initializing Camera...", modifier = Modifier.fillMaxSize().wrapContentSize()) },
         error = { error, _ ->
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.padding(32.dp),
-                ) {
-                    Icon(
-                        imageVector = Lucide.X,
-                        contentDescription = "Error",
-                        tint = Red,
-                        modifier = Modifier.size(48.dp),
-                    )
-                    Text(
-                        error.displayText(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
+            StatusMessage(
+                text = error.displayText(),
+                modifier = Modifier.fillMaxSize().wrapContentSize(),
+                icon = Lucide.CircleAlert,
+                iconDescription = "Error",
+            )
         },
-    ) {
-        content()
-    }
+        content = content,
+    )
 }
 
-internal enum class CameraMode { Photo, Video }
+/** The camera's modes, as the mode switcher names them. */
+internal enum class CameraMode(val label: String) {
+    Photo("PHOTO"),
+    Video("VIDEO"),
+    Qr("QR"),
+    Text("TEXT"),
+    Analyze("ANALYZE"),
+}
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CameraScreen(
+internal fun CameraScreen(
     holder: CameraKStateHolder,
-    imageSaver: ImageSaverFeature,
     qrScanner: QrScannerFeature,
     ocr: OcrFeature,
     analyzer: AnalyzerFeature,
     snackbarHostState: SnackbarHostState,
-    qrCodes: List<String>,
+    qrCodes: List<ScannedCode>,
     recognizedText: String?,
     // Config-level settings hoisted to the caller (changing one re-initializes the camera).
-    aspectRatio: AspectRatio,
-    onAspectRatioChange: (AspectRatio) -> Unit,
-    resolution: Pair<Int, Int>?,
-    onResolutionChange: (Pair<Int, Int>?) -> Unit,
-    imageFormat: ImageFormat,
-    onImageFormatChange: (ImageFormat) -> Unit,
-    qualityPrioritization: QualityPrioritization,
-    onQualityPrioritizationChange: (QualityPrioritization) -> Unit,
-    cameraDeviceType: CameraDeviceType,
-    onCameraDeviceTypeChange: (CameraDeviceType) -> Unit,
+    settings: CameraSettings,
+    onSettingsChange: (CameraSettings) -> Unit,
+    options: SampleOptions,
 ) {
     val scope = rememberCoroutineScope()
     val capture = remember(holder) { CaptureFeature(holder.asSampleCapturer()) }
@@ -202,17 +179,13 @@ private fun CameraScreen(
         capture.notices.collect { snackbarHostState.showSnackbar(it) }
     }
     var isCapturing by remember { mutableStateOf(false) }
+    val cameraState by holder.cameraState.collectAsState()
     val uiState by holder.uiState.collectAsState()
     val zoom by holder.zoom.collectAsState()
+    val capabilities by holder.capabilities.collectAsState()
     val deviceOrientation by holder.deviceOrientation.collectAsState()
-
-    // Re-apply the selected camera device type when a new holder (a configuration change) starts
-    // from the default. A holder kept across a rotation already has it, so nothing re-binds.
-    LaunchedEffect(holder) {
-        if (holder.uiState.value.cameraDeviceType != cameraDeviceType) {
-            holder.selectCamera(uiState.cameraLens ?: CameraLens.BACK, cameraDeviceType)
-        }
-    }
+    val lastPhoto by capture.lastPhoto.collectAsState()
+    val thumbnail by rememberThumbnail(lastPhoto)
 
     // Saved: a rotation keeps the holder and any recording, and the recreated screen must offer the
     // same mode, switches and lock, or a recording kept alive could no longer be stopped.
@@ -220,10 +193,7 @@ private fun CameraScreen(
     val recording = rememberRecordingFeature(holder)
     val recordingState by recording.state.collectAsState()
     val isRecording = recordingState.isLive()
-    val cameraMode = choices.shownMode(isRecording)
-    val isQRScanningEnabled = choices.qrScanning
-    val isOCREnabled = choices.ocr
-    val lockedOrientation = choices.lockedOrientation
+    val mode = choices.shownMode(isRecording)
     LaunchedEffect(recording) {
         recording.notices.collect { snackbarHostState.showSnackbar(it) }
     }
@@ -231,167 +201,188 @@ private fun CameraScreen(
 
     var showSettings by remember { mutableStateOf(false) }
 
-    // A holder kept across a rotation still has the lock; one built after process death does not.
+    // Once the camera is Ready: a new holder (a configuration change) starts from the default device
+    // type, and one built after process death has no orientation lock. A holder kept across a rotation
+    // has both, so nothing re-binds.
+    val latestDeviceType by rememberUpdatedState(settings.cameraDeviceType)
+    val latestLock by rememberUpdatedState(choices.lockedOrientation)
     LaunchedEffect(holder) {
-        if (holder.uiState.value.targetOrientation != lockedOrientation) {
-            holder.setTargetOrientation(lockedOrientation)
+        holder.cameraState.first { it is CameraKState.Ready }
+        val current = holder.uiState.value
+        if (current.cameraDeviceType != latestDeviceType) {
+            holder.selectCamera(current.cameraLens ?: CameraLens.BACK, latestDeviceType)
         }
+        if (holder.uiState.value.targetOrientation != latestLock) holder.setTargetOrientation(latestLock)
     }
 
-    QrScanningEffect(qrScanner, isQRScanningEnabled)
+    // The QR and Text modes always scan; Photo and Video only with their switches on.
+    QrScanningEffect(qrScanner, choices.qrScanning || mode == CameraMode.Qr)
+    OcrRecognitionEffect(ocr, choices.ocr || mode == CameraMode.Text)
 
-    OcrRecognitionEffect(ocr, isOCREnabled)
+    val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
+    val notify: (String) -> Unit = { scope.launch { snackbarHostState.showSnackbar(it) } }
+    val copy: (String) -> Unit = {
+        clipboard.setText(AnnotatedString(it))
+        notify("Copied")
+    }
+    val open: (String) -> Unit = {
+        try {
+            uriHandler.openUri(it)
+        } catch (e: IllegalArgumentException) {
+            CameraKLogger.w(TAG, "Opening a scanned link failed", e)
+            notify("Could not open the link")
+        }
+    }
+    val toPhoto = { choices = choices.copy(mode = CameraMode.Photo) }
 
     // Latest wins in the holder, and the engine clamps into the camera's range.
     fun setCameraZoom(newLevel: Float) {
         scope.launch { holder.setZoom(newLevel) }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(holder) {
-                detectTransformGestures { _, _, zoomChange, _ ->
-                    if (zoomChange != 1f) {
-                        setCameraZoom(zoom.ratio * zoomChange)
+    val cameraLive = cameraState is CameraKState.Ready || cameraState is CameraKState.Interrupted
+    val sheetWidth = Modifier.widthIn(max = SampleTheme.sizes.contentMaxWidth).fillMaxWidth()
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            when (mode) {
+                CameraMode.Photo, CameraMode.Video -> CaptureTopBar(
+                    flashMode = uiState.flashMode ?: FlashMode.OFF,
+                    torchMode = uiState.torchMode ?: TorchMode.OFF,
+                    aspectRatio = settings.aspectRatio,
+                    isRecording = isRecording,
+                    recordingDurationMs = shownDurationMs,
+                    onFlashToggle = { scope.launch { holder.cycleFlashMode() } },
+                    onTorchToggle = { scope.launch { holder.toggleTorch() } },
+                    onAspectRatioCycle = {
+                        if (!isRecording) {
+                            onSettingsChange(settings.copy(aspectRatio = settings.aspectRatio.nextInSample()))
+                        }
+                    },
+                    onOpenSettings = { showSettings = true },
+                )
+                CameraMode.Qr -> ToolTopBar(
+                    title = "QR Scanner",
+                    onBack = toPhoto,
+                    trailing = listOf({
+                        TorchButton(uiState.torchMode ?: TorchMode.OFF, onClick = { scope.launch { holder.toggleTorch() } })
+                    }),
+                )
+                CameraMode.Text -> ToolTopBar(
+                    title = "Text",
+                    onBack = toPhoto,
+                    trailing = listOf({ OcrAccuracyToggle(options.ocrAccuracy, options.onOcrAccuracyChange) }),
+                )
+                CameraMode.Analyze -> ToolTopBar(title = "Analyze", onBack = toPhoto)
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(SampleTheme.colors.previewPlaceholder)
+                    .pointerInput(holder) {
+                        detectTransformGestures { _, _, zoomChange, _ ->
+                            if (zoomChange != 1f) setCameraZoom(zoom.ratio * zoomChange)
+                        }
+                    },
+            ) {
+                SampleCameraKScreen(holder, Modifier.fillMaxSize()) {
+                    when (mode) {
+                        CameraMode.Photo -> ThirdsGrid()
+                        CameraMode.Qr -> QrOverlay(qrScanner, Modifier.align(Alignment.Center))
+                        else -> Unit
                     }
                 }
-            },
-    ) {
-        TopBar(
-            modifier = Modifier.align(Alignment.TopCenter),
-            flashMode = uiState.flashMode ?: FlashMode.OFF,
-            torchMode = uiState.torchMode ?: TorchMode.OFF,
-            aspectRatio = aspectRatio,
-            isRecording = isRecording,
-            recordingDurationMs = shownDurationMs,
-            onFlashToggle = { scope.launch { holder.cycleFlashMode() } },
-            onTorchToggle = { scope.launch { holder.toggleTorch() } },
-            onAspectRatioCycle = {
-                if (!isRecording) onAspectRatioChange(aspectRatio.nextInSample())
-            },
-        )
-
-        AnalyzerLabel(
-            analyzer = analyzer,
-            modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 64.dp),
-        )
-
-        if (isOCREnabled && recognizedText != null) {
-            OcrBanner(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 220.dp),
-                text = recognizedText,
-            )
+                if (!isRecording && (mode == CameraMode.Photo || mode == CameraMode.Video)) {
+                    DetectionChips(
+                        latestCode = qrCodes.firstOrNull().takeIf { choices.qrScanning },
+                        textLine = recognizedText?.lineSequence()?.firstOrNull { it.isNotBlank() }
+                            ?.takeIf { choices.ocr },
+                        onOpenQr = { choices = choices.copy(mode = CameraMode.Qr) },
+                        onOpenText = { choices = choices.copy(mode = CameraMode.Text) },
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
+                }
+            }
+            // The preview keeps one size in every mode; a sheet taller than this overlaps its bottom.
+            Spacer(Modifier.height(SampleTheme.sizes.controlsArea))
         }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.85f))
-                .padding(bottom = 16.dp, top = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // Zoom chips
-            if (zoom.maxRatio > 1f) {
-                ZoomChips(
-                    zoomLevel = zoom.ratio,
-                    maxZoom = zoom.maxRatio,
-                    onZoomChange = { setCameraZoom(it) },
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            if (isQRScanningEnabled && qrCodes.isNotEmpty()) {
-                QrChipRow(qrCodes = qrCodes)
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-            // Mode switcher
-            ModeSwitcher(
-                currentMode = cameraMode,
+        val bottom = Modifier.align(Alignment.BottomCenter).then(sheetWidth)
+        when (mode) {
+            CameraMode.Photo, CameraMode.Video -> CaptureControls(
+                state = CaptureControlsState(
+                    mode = mode,
+                    cameraLive = cameraLive,
+                    isRecording = isRecording,
+                    isPaused = recordingState is RecordingState.Paused,
+                    canPause = capabilities.supportsPauseResume,
+                    isCapturing = isCapturing,
+                    zoomStops = zoomStops(zoom.minRatio, zoom.maxRatio),
+                    zoom = zoom.ratio,
+                    thumbnail = thumbnail,
+                    rotationDegrees = deviceOrientation.compensationDegrees,
+                ),
+                onZoom = ::setCameraZoom,
                 onModeChange = { choices = choices.copy(mode = it) },
-                enabled = !isRecording,
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                val orientationRotation = deviceOrientation.compensationDegrees
-
-                Box(modifier = Modifier.graphicsLayer { rotationZ = orientationRotation }) {
-                    CameraFlipButton(
-                        onClick = { scope.launch { holder.toggleLens() } },
-                        enabled = !isRecording,
-                    )
-                }
-
-                Box(modifier = Modifier.graphicsLayer { rotationZ = orientationRotation }) {
-                    ShutterButton(
-                        mode = cameraMode,
-                        isRecording = isRecording,
-                        isCapturing = isCapturing,
-                        onPhotoCapture = {
-                            if (!isCapturing) {
-                                isCapturing = true
-                                scope.launch {
-                                    capture.takePhoto()
-                                    isCapturing = false
-                                }
+                onShutter = {
+                    if (mode == CameraMode.Photo) {
+                        if (!isCapturing) {
+                            isCapturing = true
+                            scope.launch {
+                                capture.takePhoto()
+                                isCapturing = false
                             }
-                        },
-                        onVideoToggle = {
-                            scope.launch { recording.toggleRecording() }
-                        },
-                    )
-                }
-
-                Box(modifier = Modifier.graphicsLayer { rotationZ = orientationRotation }) {
-                    SettingsButton(
-                        isOpen = showSettings,
-                        onClick = { showSettings = !showSettings },
-                    )
-                }
-            }
+                        }
+                    } else {
+                        scope.launch { recording.toggleRecording() }
+                    }
+                },
+                onPauseToggle = { scope.launch { holder.togglePause()?.let(notify) } },
+                onFlip = { scope.launch { holder.toggleLens() } },
+                modifier = bottom,
+            )
+            CameraMode.Qr -> QrResultSheet(codes = qrCodes, onCopy = copy, onOpen = open, modifier = bottom)
+            CameraMode.Text -> TextResultSheet(text = recognizedText, onCopy = copy, modifier = bottom)
+            CameraMode.Analyze -> AnalyzerSheet(analyzer = analyzer, modifier = bottom)
         }
 
         if (showSettings) {
-            SettingsPanel(
-                modifier = Modifier.align(Alignment.BottomCenter),
-                resolution = resolution,
-                imageFormat = imageFormat,
-                qualityPrioritization = qualityPrioritization,
-                cameraDeviceType = cameraDeviceType,
-                isQRScanningEnabled = isQRScanningEnabled,
-                isOCREnabled = isOCREnabled,
-                lockedOrientation = lockedOrientation,
-                deviceOrientation = deviceOrientation,
+            SettingsSheet(
+                settings = settings,
                 // Config-level changes re-initialize the camera, so ignore them mid-recording
                 // (tearing the controller down under an active recording would corrupt the clip).
-                onResolutionChange = { if (!isRecording) onResolutionChange(it) },
-                onImageFormatChange = { if (!isRecording) onImageFormatChange(it) },
-                onQualityPrioritizationChange = { if (!isRecording) onQualityPrioritizationChange(it) },
-                onCameraDeviceTypeChange = {
+                onSettingsChange = { changed ->
                     if (!isRecording) {
-                        onCameraDeviceTypeChange(it)
-                        // Live re-bind, on the camera facing the same way.
-                        scope.launch { holder.selectCamera(uiState.cameraLens ?: CameraLens.BACK, it) }
+                        if (changed.cameraDeviceType != settings.cameraDeviceType) {
+                            // Live re-bind, on the camera facing the same way.
+                            scope.launch {
+                                holder.selectCamera(uiState.cameraLens ?: CameraLens.BACK, changed.cameraDeviceType)
+                            }
+                        }
+                        onSettingsChange(changed)
                     }
                 },
-                onQRScanningToggle = { choices = choices.copy(qrScanning = it) },
-                onOCRToggle = { choices = choices.copy(ocr = it) },
-                onOrientationLockChange = { orientation ->
-                    choices = choices.copy(lockedOrientation = orientation)
-                    scope.launch { holder.setTargetOrientation(orientation) }
+                choices = choices,
+                onChoicesChange = { changed ->
+                    if (changed.lockedOrientation != choices.lockedOrientation) {
+                        scope.launch { holder.setTargetOrientation(changed.lockedOrientation) }
+                    }
+                    choices = changed
                 },
+                saveToGallery = options.saveToGallery,
+                onSaveToGalleryChange = options.onSaveToGalleryChange,
+                deviceOrientation = deviceOrientation,
+                configLocked = isRecording,
                 onDismiss = { showSettings = false },
+                modifier = Modifier.fillMaxSize(),
             )
         }
     }
 }
+
+private const val TAG = "Sample"
 
 // A fixed text per kind of error: an error's cause may carry a platform message with a file path in it.
 private fun CameraKError.displayText(): String = when (this) {
@@ -501,7 +492,7 @@ internal fun CameraScreenChoices.shownMode(recordingLive: Boolean): CameraMode =
     if (recordingLive) CameraMode.Video else mode
 
 // RATIO_9_16 is deprecated as the same as RATIO_16_9, so the Sample does not offer it.
-private val sampleAspectRatios = listOf(AspectRatio.RATIO_4_3, AspectRatio.RATIO_16_9, AspectRatio.RATIO_1_1)
+internal val sampleAspectRatios = listOf(AspectRatio.RATIO_4_3, AspectRatio.RATIO_16_9, AspectRatio.RATIO_1_1)
 
 /** The ratio the aspect-ratio button selects after this one. */
 internal fun AspectRatio.nextInSample(): AspectRatio =

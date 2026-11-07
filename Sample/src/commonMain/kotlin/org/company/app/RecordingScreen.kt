@@ -1,28 +1,8 @@
 package org.company.app
 
-import androidx.compose.animation.core.EaseInOut
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.kashif.cameraK.capture.RecordedVideo
 import com.kashif.cameraK.compose.rememberRecordingElapsed
 import com.kashif.cameraK.error.CameraKError
@@ -197,39 +177,21 @@ internal fun rememberRecordingFeature(holder: CameraKStateHolder): RecordingFeat
     return recording
 }
 
-@Composable
-internal fun RecordingTimerHud(modifier: Modifier = Modifier, durationMs: Long) {
-    val totalSeconds = (durationMs / 1000).toInt()
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    val timeText = "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
-
-    val infiniteTransition = rememberInfiniteTransition()
-    val dotAlpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween<Float>(1000, easing = EaseInOut),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "dotAlpha",
-    )
-
-    Row(
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .background(Red.copy(alpha = dotAlpha), CircleShape),
-        )
-        Text(
-            text = timeText,
-            color = Red,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
+/**
+ * Pauses the recording under way, or resumes a paused one. Returns the line to show when the holder
+ * refuses, as it does where the platform cannot pause.
+ */
+internal suspend fun CameraKStateHolder.togglePause(): String? {
+    val paused = recordingState.value is RecordingState.Paused
+    val result = if (paused) resumeRecording() else pauseRecording()
+    if (result !is CameraKResult.Failure) return null
+    val error = result.error
+    CameraKLogger.w(PAUSE_TAG, "Pausing or resuming a recording failed: ${error::class.simpleName}", error.cause)
+    val reason = when (error) {
+        is CameraKError.Unsupported -> "this camera cannot pause a recording"
+        else -> error.recordingText()
     }
+    return if (paused) "Recording did not resume: $reason" else "Recording did not pause: $reason"
 }
+
+private const val PAUSE_TAG = "Sample"

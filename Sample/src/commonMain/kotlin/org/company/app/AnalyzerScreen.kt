@@ -1,9 +1,5 @@
 package org.company.app
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -11,8 +7,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import com.kashif.analyzerplugin.AnalyzerPlugin
 import com.kashif.analyzerplugin.EncodedFrame
 import com.kashif.analyzerplugin.rememberAnalyzerPlugin
@@ -21,6 +15,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import org.company.app.designsystem.SampleTheme
+import org.company.app.designsystem.Sheet
+import org.company.app.designsystem.SheetHeader
+import org.company.app.designsystem.SheetHeaderEmphasis
+import org.company.app.designsystem.SheetMeta
 
 /**
  * The Sample's frame analyzer: analysis frames as JPEGs, at the analyzer's default rate. It keeps a
@@ -57,18 +56,29 @@ internal fun rememberAnalyzerFeature(): AnalyzerFeature {
     return remember(plugin) { AnalyzerFeature(plugin) }
 }
 
-/** The latest analyzed frame's summary. It alone reads the analyzer, so only it redraws per frame. */
+/**
+ * The Analyze mode's sheet: the latest analyzed frame's summary. The analyzer encodes only while this
+ * is shown, and only this reads it, so only this redraws per frame.
+ */
 @Composable
-internal fun AnalyzerLabel(analyzer: AnalyzerFeature, modifier: Modifier = Modifier) {
+internal fun AnalyzerSheet(analyzer: AnalyzerFeature, modifier: Modifier = Modifier) {
     LaunchedEffect(analyzer) { analyzer.summarize() }
     val summary by analyzer.summary.collectAsState()
-    val latest = summary ?: return
-    Text(
-        text = "Analyzer: frame ${latest.frames}, ${latest.width}×${latest.height}, ${latest.jpegBytes / 1024} KB JPEG",
-        color = TextSecondary,
-        style = MaterialTheme.typography.labelSmall,
-        modifier = modifier
-            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-    )
+    Sheet(modifier = modifier) {
+        val latest = summary
+        SheetHeader(title = "Frame analyzer", emphasis = SheetHeaderEmphasis.Eyebrow) {
+            if (latest != null) SheetMeta(if (latest.frames == 1) "1 frame" else "${latest.frames} frames")
+        }
+        Text(
+            text = latest?.let { "${it.width}×${it.height} · ${it.jpegBytes / 1024} KB JPEG" }
+                ?: "Waiting for the first frame",
+            style = SampleTheme.typography.value,
+            color = if (latest == null) SampleTheme.colors.inkSecondary else SampleTheme.colors.ink,
+        )
+        Text(
+            text = "Each analysis frame arrives as a JPEG; an app hands it to its model here.",
+            style = SampleTheme.typography.caption,
+            color = SampleTheme.colors.inkSecondary,
+        )
+    }
 }
