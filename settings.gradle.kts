@@ -41,6 +41,8 @@ include(":qrScannerPlugin")
 include(":analyzerPlugin")
 
 include("ocrPlugin")
+// camerak-ocr-tessdata-eng, the desktop OCR model as a resource jar (the root build's resourceModules).
+include(":ocrTessdata")
 include(":cameraKScreenshotTests")
 include(":camerak-bom")
 // The release gate's Macrobenchmark over the Sample app; built by verify.sh, run on a device by the maintainer.

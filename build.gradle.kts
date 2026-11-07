@@ -55,6 +55,11 @@ val libraryModules =
 // of them; checkTestOnlyDependencies names the one exception.
 val testFixtureModules = listOf("cameraK-testing")
 val publishedModules = libraryModules + testFixtureModules
+
+// Published modules that are a resource jar: java-library, no Kotlin. They take the coordinates, the BOM,
+// the publish step and the POM checks, and none of the Kotlin, Android, ABI or classpath gates, which read
+// publishedModules. ocrTessdata is camerak-ocr-tessdata-eng, Tesseract's English model for desktop OCR.
+val resourceModules = listOf("ocrTessdata")
 val screenshotModule = "cameraKScreenshotTests"
 
 // Every check the lint target runs is a task in this group, in any project: verifyAll runs them all,
@@ -122,7 +127,10 @@ extra["javacppPlatform"] =
 // One version and group for every published module, from gradle.properties (vanniktech reads the
 // same keys for the published coordinates).
 subprojects {
-    if (name in publishedModules || name == bomModule || path in relocatedArtifacts.keys.map { ":relocations:$it" }) {
+    if (name in publishedModules + resourceModules ||
+        name == bomModule ||
+        path in relocatedArtifacts.keys.map { ":relocations:$it" }
+    ) {
         group = providers.gradleProperty("GROUP").get()
         version = providers.gradleProperty("VERSION_NAME").get()
     }
@@ -134,7 +142,7 @@ project(":$bomModule") {
     plugins.withId("java-platform") {
         dependencies {
             constraints {
-                publishedModules.forEach { add("api", project(":$it")) }
+                (publishedModules + resourceModules).forEach { add("api", project(":$it")) }
             }
         }
     }
@@ -174,7 +182,9 @@ val verifyPublishRepository = providers.gradleProperty("camerak.verify.publishRe
 val verifyPublishRepositoryName = "verifyScratch"
 val publishedCoordinatesFile = layout.buildDirectory.file("verify/published-coordinates.json")
 val publishingProjects =
-    publishedModules.map { ":$it" } + ":$bomModule" + relocatedArtifacts.keys.map { ":relocations:$it" }
+    (publishedModules + resourceModules).map { ":$it" } +
+        ":$bomModule" +
+        relocatedArtifacts.keys.map { ":relocations:$it" }
 if (verifyPublishRepository != null) {
     publishingProjects.forEach { path ->
         project(path).plugins.withId("maven-publish") {
@@ -188,10 +198,11 @@ if (verifyPublishRepository != null) {
     }
 }
 
-// What the publish step must find: each published module's root artifact, the BOM's root, and each
-// relocation POM with the coordinate it relocates to. Each module's Kotlin targets (lowercased, as the
-// Kotlin plugin names the variant's artifact id) are listed so verify_report.py can compare them with its
-// own fixed list of variants, which is what it requires.
+// What the publish step must find: each published module's root artifact, each resource module's root
+// artifact, the BOM's root, and each relocation POM with the coordinate it relocates to. Each module's
+// Kotlin targets (lowercased, as the Kotlin plugin names the variant's artifact id) are listed so
+// verify_report.py can compare them with its own fixed list of variants, which is what it requires; the
+// resource artifacts are listed so it can compare them with its RESOURCE_ARTIFACTS.
 fun expectedPublishedCoordinates(): Map<String, Any> {
     val modules =
         publishedModules.associate { module ->
@@ -209,6 +220,7 @@ fun expectedPublishedCoordinates(): Map<String, Any> {
         "group" to providers.gradleProperty("GROUP").get(),
         "version" to providers.gradleProperty("VERSION_NAME").get(),
         "modules" to modules,
+        "resourceArtifacts" to resourceModules.map(::pomArtifactId),
         "bom" to pomArtifactId(bomModule),
         "relocations" to relocatedArtifacts.mapValues { (_, module) -> pomArtifactId(module) },
     )
@@ -2284,16 +2296,20 @@ tasks.register("checkReleaseMetadata") {
     group = lintGroup
     description = "Fails if published modules disagree on version, group or shared POM metadata, or the docs lag"
     dependsOn(publishedModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
+    dependsOn(resourceModules.map { ":$it:generatePomFileForMavenPublication" })
     val pomFiles =
         publishedModules.associateWith {
             project(":$it").layout.buildDirectory.file("publications/kotlinMultiplatform/pom-default.xml")
-        }
+        } +
+            resourceModules.associateWith {
+                project(":$it").layout.buildDirectory.file("publications/maven/pom-default.xml")
+            }
     val bomProject = findProject(":$bomModule")
     if (bomProject != null) dependsOn(":$bomModule:generatePomFileForMavenPublication")
     val bomPomFile = bomProject?.layout?.buildDirectory?.file("publications/maven/pom-default.xml")
     val gradleCoordinates =
         provider {
-            (publishedModules + listOfNotNull(bomProject?.name)).associateWith {
+            (publishedModules + resourceModules + listOfNotNull(bomProject?.name)).associateWith {
                 project(":$it").let { p ->
                     "${p.group}:${p.version}"
                 }
@@ -2432,13 +2448,17 @@ tasks.register("checkLicenseMetadata") {
     group = lintGroup
     description = "Fails if a published POM declares a licence other than the one LICENSE grants"
     dependsOn(publishedModules.map { ":$it:generatePomFileForKotlinMultiplatformPublication" })
+    dependsOn(resourceModules.map { ":$it:generatePomFileForMavenPublication" })
     dependsOn(":$bomModule:generatePomFileForMavenPublication")
     val relocationProjects = relocatedArtifacts.keys.associateWith { project(":relocations:$it") }
     relocationProjects.values.forEach { dependsOn("${it.path}:generatePomFileForMavenPublication") }
     val pomFiles =
         publishedModules.associateWith {
             project(":$it").layout.buildDirectory.file("publications/kotlinMultiplatform/pom-default.xml")
-        } + (bomModule to project(":$bomModule").layout.buildDirectory.file("publications/maven/pom-default.xml")) +
+        } +
+            resourceModules.associateWith {
+                project(":$it").layout.buildDirectory.file("publications/maven/pom-default.xml")
+            } + (bomModule to project(":$bomModule").layout.buildDirectory.file("publications/maven/pom-default.xml")) +
             relocationProjects.mapValues { (_, relocation) ->
                 relocation.layout.buildDirectory.file("publications/maven/pom-default.xml")
             }

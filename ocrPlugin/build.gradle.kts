@@ -21,6 +21,13 @@ kotlin {
             implementation(libs.atomicfu)
         }
 
+        val desktopTest by getting {
+            dependencies {
+                // TessdataLocatorTest finds the model in the tessdata artifact's jar.
+                implementation(projects.ocrTessdata)
+            }
+        }
+
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(projects.cameraKTesting)
@@ -64,7 +71,10 @@ tasks.named<Test>("desktopTest") {
             .asFile
     workingDir = testWorkingDir
     doFirst { testWorkingDir.mkdirs() }
-    systemProperty("ocr.tessdataDir", file("model/com/kashif/ocrplugin/tessdata").absolutePath)
+    systemProperty(
+        "ocr.tessdataDir",
+        rootProject.file("ocrTessdata/src/main/resources/com/kashif/ocrplugin/tessdata").absolutePath,
+    )
 }
 
 android {

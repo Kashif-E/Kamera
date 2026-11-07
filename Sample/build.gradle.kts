@@ -31,8 +31,10 @@ kotlin {
 
     sourceSets {
         val desktopMain by getting {
-            // Packages Tesseract's eng.traineddata so desktop OCR finds it (see OcrConfig).
-            resources.srcDir(rootProject.file("ocrPlugin/model"))
+            dependencies {
+                // Tesseract's eng.traineddata, so desktop OCR finds it (see OcrConfig).
+                implementation(projects.ocrTessdata)
+            }
         }
 
         commonMain.dependencies {

@@ -979,6 +979,9 @@ def catalog_problems(catalog_text: str, scripts: Dict[str, str]) -> List[str]:
 LIBRARY_CONVENTIONS = ("camerak.kmp-library", "camerak.publish")
 BOM_MODULE = "camerak-bom"
 BOM_CONVENTIONS = ("camerak.publish",)
+# Published resource jars (the root build's resourceModules): java-library modules that publish through
+# camerak.publish, as the BOM does.
+RESOURCE_MODULES = ["ocrTessdata"]
 RELOCATION_CONVENTIONS = ("camerak.relocation",)
 RELOCATION_SCRIPT = re.compile(r"^relocations/[A-Za-z0-9_-]+/build\.gradle\.kts$")
 PLUGIN_ID = re.compile(r'\bid\(\s*"([A-Za-z0-9_.-]+)"\s*\)')
@@ -1001,12 +1004,16 @@ CONVENTION_SETTINGS = [
 ]
 
 
-def convention_plugin_problems(scripts: Dict[str, str], libraries: List[str] = LIBRARY_MODULES) -> List[str]:
+def convention_plugin_problems(
+    scripts: Dict[str, str], libraries: List[str] = LIBRARY_MODULES, resources: List[str] = RESOURCE_MODULES
+) -> List[str]:
     """module_build_files_use_convention_plugins: [scripts] maps each tracked build file to its text. A
-    published library's applies camerak.kmp-library and camerak.publish, the BOM's camerak.publish and a
-    relocation project's camerak.relocation; none sets what those plugins set."""
+    published library's applies camerak.kmp-library and camerak.publish, the BOM's and each resource
+    module's camerak.publish, and a relocation project's camerak.relocation; none sets what those plugins
+    set."""
     expected: Dict[str, tuple] = {f"{module}/build.gradle.kts": LIBRARY_CONVENTIONS for module in libraries}
     expected[f"{BOM_MODULE}/build.gradle.kts"] = BOM_CONVENTIONS
+    expected.update({f"{module}/build.gradle.kts": BOM_CONVENTIONS for module in resources})
     expected.update({name: RELOCATION_CONVENTIONS for name in scripts if RELOCATION_SCRIPT.match(name)})
     problems = []
     for name, conventions in sorted(expected.items()):
@@ -1094,8 +1101,10 @@ def check_catalog() -> List[str]:
         "camerak-bom/build.gradle.kts": 'plugins {\n    `java-platform`\n    id("com.vanniktech.maven.publish")\n}\n',
         "relocations/old_a/build.gradle.kts": 'plugins {\n    id("camerak.relocation")\n}\n',
         "relocations/old_b/build.gradle.kts": "plugins {\n    `java-platform`\n}\n",
+        "d/build.gradle.kts": 'plugins {\n    `java-library`\n    id("camerak.publish")\n}\n',
+        "e/build.gradle.kts": 'plugins {\n    `java-library`\n    id("com.vanniktech.maven.publish")\n}\n',
     }
-    found = convention_plugin_problems(fixture, ["a", "b", "c"])
+    found = convention_plugin_problems(fixture, ["a", "b", "c"], ["d", "e"])
     wanted = [
         'b/build.gradle.kts does not apply id("camerak.kmp-library")',
         'b/build.gradle.kts does not apply id("camerak.publish")',
@@ -1110,6 +1119,8 @@ def check_catalog() -> List[str]:
         'c/build.gradle.kts is missing; a published module needs a build file',
         'camerak-bom/build.gradle.kts does not apply id("camerak.publish")',
         "camerak-bom/build.gradle.kts:3 sets the publish plugin itself; the convention plugins own it",
+        'e/build.gradle.kts does not apply id("camerak.publish")',
+        "e/build.gradle.kts:3 sets the publish plugin itself; the convention plugins own it",
         'relocations/old_b/build.gradle.kts does not apply id("camerak.relocation")',
     ]
     if sorted(found) != sorted(wanted):
