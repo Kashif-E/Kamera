@@ -16,8 +16,6 @@ import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewLayerLayout
 import com.kashif.cameraK.engine.TraceNames
-import com.kashif.cameraK.enums.AspectRatio
-import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
@@ -41,12 +39,10 @@ import com.kashif.cameraK.state.ZoomState
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
-import com.kashif.cameraK.video.VideoQuality
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -175,8 +171,9 @@ internal class AppleCameraEngine(
 
     internal val desiredTorchMode: TorchMode get() = desiredTorch
 
-    private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
-    override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
+    private val capabilitySource: EngineCapabilities =
+        EngineCapabilities(lock, generations, custom, osVersion, enumerateLenses)
+    override val capabilities: StateFlow<CameraCapabilities> get() = capabilitySource.capabilities
 
     /** Recordings on the movie file output. */
     internal val recorder = AppleRecorder(
@@ -184,7 +181,7 @@ internal class AppleCameraEngine(
         cameraConfig = config,
         osVersion = osVersion,
         hasUsageDescription = hasUsageDescription,
-        supportedQualities = ::boundQualities,
+        supportedQualities = capabilitySource::boundQualities,
         videoRotation = ::captureRotation,
     )
 
@@ -222,15 +219,6 @@ internal class AppleCameraEngine(
 
     // Everything below is read and written only while holding the lock.
     private var orientationObserver: Any? = null
-    private var enumeratedLenses: List<LensInfo> = emptyList()
-    private var torchModesById: Map<String, Set<TorchMode>> = emptyMap()
-
-    /** Each bound camera's flash modes, as the photo output reported them with that camera behind it. */
-    private val boundFlashModes = mutableMapOf<String, Set<FlashMode>>()
-
-    /** The image formats and recording qualities of the camera bound last; JPEG and PNG and none before. */
-    private var boundImageFormats: Set<ImageFormat> = setOf(ImageFormat.JPEG, ImageFormat.PNG)
-    private var boundVideoQualities: Set<VideoQuality> = emptySet()
 
     // Session queue only: the device whose torch and zoom the engine observes, and the observation.
     private var observedDevice: CaptureDeviceOps? = null
@@ -248,7 +236,6 @@ internal class AppleCameraEngine(
     /** The reason of the latest interruption, recorded when AVFoundation posts it, before the hop to the queue. */
     private val lastInterruption = atomic<InterruptionReason?>(null)
 
-    private val enumerated = CompletableDeferred<Unit>()
     private val closeDone = Job()
     private val starts = Mutex()
 
@@ -280,9 +267,9 @@ internal class AppleCameraEngine(
                     platformCallback("adding the frame output") { frameSource.reconcileOnQueue() }
                 }
             }
-            scope.launch { enumerate() }
+            scope.launch { capabilitySource.enumerate() }
         } else {
-            enumerated.complete(Unit)
+            capabilitySource.enumerated.complete(Unit)
             closeDone.complete()
         }
     }
@@ -340,7 +327,7 @@ internal class AppleCameraEngine(
             generations.failUnusable(error)
             return engineFailure(error)
         }
-        enumerated.await()
+        capabilitySource.enumerated.await()
         return starts.withLock {
             when {
                 generations.isClosed -> ENGINE_CLOSED
@@ -445,7 +432,7 @@ internal class AppleCameraEngine(
         lock.locked { pendingStills.toList().also { pendingStills.clear() } }.forEach { it.settle(ENGINE_CLOSED) }
         observers.forEach(center::removeObserver)
         stopObservingOrientation()
-        enumerated.complete(Unit)
+        capabilitySource.enumerated.complete(Unit)
         if (session != null) {
             // A recording is finalized before the session is released (contract rule 7).
             recorder.finishForClose {
@@ -589,7 +576,7 @@ internal class AppleCameraEngine(
 
     override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> {
         generations.unusable()?.let { return it }
-        enumerated.await()
+        capabilitySource.enumerated.await()
         return suspendCancellableCoroutine { continuation -> switchCamera(selection) { continuation.resume(it) } }
     }
 
@@ -642,7 +629,7 @@ internal class AppleCameraEngine(
         bindHardware(device)
         applyDesiredZoom(device)
         publishHardware()
-        return CameraKResult.Success(lensInfo(device))
+        return CameraKResult.Success(capabilitySource.lensInfo(device))
     }
 
     /**
@@ -651,7 +638,7 @@ internal class AppleCameraEngine(
      */
     override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> {
         generations.notOpen()?.let { return it }
-        val camera = custom.currentDevice?.let(::lensInfo)
+        val camera = custom.currentDevice?.let(capabilitySource::lensInfo)
         if (camera != null && mode !in capabilities.value.supportedFlashModes(camera.id)) {
             val feature = if (mode == FlashMode.AUTO) CameraFeature.FLASH_AUTO else CameraFeature.FLASH_ON
             return engineFailure(CameraKError.Unsupported(feature))
@@ -868,12 +855,6 @@ internal class AppleCameraEngine(
         return recorder.resume()
     }
 
-    /** The recording qualities the bound camera can deliver: those whose session preset it supports. */
-    private fun boundQualities(): Set<VideoQuality> {
-        val device = custom.currentDevice ?: return emptySet()
-        return VideoQuality.entries.filter { device.supportsSessionPreset(it.sessionPreset) }.toSet()
-    }
-
     private fun hardwareFailure(what: String, cause: CustomCameraController.CameraException): CameraKResult.Failure {
         CameraKLogger.e(TAG, "$what failed", cause)
         return engineFailure(engineErrorFor(cause, null))
@@ -1006,80 +987,6 @@ internal class AppleCameraEngine(
 
     // ─── Platform reads ─────────────────────────────────────────────────────────────────────────
 
-    private suspend fun enumerate() {
-        val (lenses, torchModes) = try {
-            val lenses = enumerateLenses()
-            lenses to lenses.associate { it.id to torchModesOf(it) }
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "enumerating the cameras failed; reporting none", e)
-            emptyList<LensInfo>() to emptyMap()
-        }
-        lock.locked {
-            enumeratedLenses = lenses
-            torchModesById = torchModes
-        }
-        publishCapabilities()
-        enumerated.complete(Unit)
-    }
-
-    /** The torch modes [lens]'s device supports; from its hasFlash when the device cannot be found. */
-    private fun torchModesOf(lens: LensInfo): Set<TorchMode> {
-        val device = custom.findCameraById(lens.id)
-            ?: return if (lens.hasFlash) setOf(TorchMode.OFF, TorchMode.ON) else setOf(TorchMode.OFF)
-        if (!device.hasTorch) return setOf(TorchMode.OFF)
-        return setOf(TorchMode.OFF) + listOf(TorchMode.ON, TorchMode.AUTO)
-            .filter { device.isTorchModeSupported(it.toAVCaptureTorchMode()) }
-    }
-
-    private fun publishCapabilities() {
-        val capabilities = lock.locked {
-            if (generations.closedLocked) return
-            capabilitiesOf(
-                enumeratedLenses,
-                torchModesById,
-                boundFlashModes.toMap(),
-                boundImageFormats,
-                boundVideoQualities,
-            )
-        }
-        _capabilities.value = capabilities
-    }
-
-    /**
-     * A lens's flash modes are the photo output's once the lens has been bound, and come from its
-     * hasFlash before; its torch modes are its device's. The image formats and recording qualities are
-     * the bound camera's.
-     */
-    private fun capabilitiesOf(
-        lenses: List<LensInfo>,
-        torchModes: Map<String, Set<TorchMode>>,
-        boundFlash: Map<String, Set<FlashMode>>,
-        imageFormats: Set<ImageFormat>,
-        videoQualities: Set<VideoQuality>,
-    ) = CameraCapabilities(
-        allLenses = lenses,
-        flashModes = lenses.associate {
-            it.id to (
-                boundFlash[it.id]
-                    ?: if (it.hasFlash) setOf(FlashMode.OFF, FlashMode.AUTO, FlashMode.ON) else setOf(FlashMode.OFF)
-                )
-        },
-        torchModes = lenses.associate { it.id to (torchModes[it.id] ?: setOf(TorchMode.OFF)) },
-        // AVCaptureFileOutput pauses from iOS 18.
-        supportsPauseResume = osVersion >= PAUSE_RESUME_IOS,
-        // The qualities whose preset the bound camera delivers; none before the first bind.
-        supportedVideoQualities = videoQualities,
-        // AVCaptureMovieFileOutput records at its session preset's rate; no bitrate is applied (§6.3).
-        supportsVideoBitrate = false,
-        // 16:9 and 1:1 are crops of the full-resolution photo (StillWriter), so 1:1 is a true square.
-        supportedAspectRatios = AspectRatio.entries.toSet(),
-        // HEIC where the bound camera's photo output can encode HEVC.
-        supportedImageFormats = imageFormats,
-        // AVCaptureVideoDataOutput delivers CameraK's frames in 420f only (design §8).
-        supportedAnalysisFormats = setOf(FrameFormat.YUV_420),
-        supportsSquareCapture = true,
-    )
-
     private fun resolve(selection: CameraSelection): CaptureDeviceOps? = when (selection) {
         is CameraSelection.ById -> custom.findCameraById(selection.id)
         is CameraSelection.ByLens -> custom.findCamera(selection.lens, selection.deviceType)
@@ -1092,16 +999,7 @@ internal class AppleCameraEngine(
      * zoom observed in place of the previous camera's.
      */
     private fun bindHardware(device: CaptureDeviceOps) {
-        val flash = custom.captureFlashModes.map { it.toFlashMode() }.toSet() + FlashMode.OFF
-        val formats =
-            setOf(ImageFormat.JPEG, ImageFormat.PNG) + listOfNotNull(ImageFormat.HEIC.takeIf { custom.canCaptureHeic })
-        val qualities = boundQualities()
-        lock.locked {
-            boundFlashModes[device.uniqueId] = flash
-            boundImageFormats = formats
-            boundVideoQualities = qualities
-        }
-        publishCapabilities()
+        capabilitySource.bind(device)
         if (observedDevice !== device) {
             stopObservingHardware()
             observeHardwareOf(device)
@@ -1165,7 +1063,7 @@ internal class AppleCameraEngine(
                 device.torchMode == AVCaptureTorchModeOn && device.isTorchActive -> TorchMode.ON
                 else -> TorchMode.OFF
             },
-            camera = lensInfo(device),
+            camera = capabilitySource.lensInfo(device),
             targetOrientation = target.value,
         )
         _zoom.value = ZoomState(
@@ -1175,23 +1073,10 @@ internal class AppleCameraEngine(
         )
     }
 
-    /** [device] as the enumeration lists it, or described from the device when the enumeration does not. */
-    private fun lensInfo(device: CaptureDeviceOps): LensInfo =
-        capabilities.value.allLenses.firstOrNull { it.id == device.uniqueId } ?: LensInfo(
-            id = device.uniqueId,
-            deviceType = CameraDeviceType.DEFAULT,
-            lens = device.lens(),
-            minZoom = 1f,
-            maxZoom = device.maxAvailableVideoZoomFactor.toFloat(),
-            hasFlash = false,
-            isLogical = false,
-        )
-
     private companion object {
         const val TAG = "CameraK"
         const val MINIMUM_IOS = 16
         const val ROTATION_COORDINATOR_IOS = 17
-        const val PAUSE_RESUME_IOS = 18
         const val DEFERRED_START_IOS = 26
         const val DEGREES_90 = 90
         const val DEGREES_180 = 180
