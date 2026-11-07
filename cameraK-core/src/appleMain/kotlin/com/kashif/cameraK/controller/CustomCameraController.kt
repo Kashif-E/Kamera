@@ -65,6 +65,7 @@ internal class CustomCameraController private constructor(
      * [photoCapturer], when set, receives each capture request in place of the photo output.
      * [previewOrienting], when set, applies the preview's orientation in place of setting it on the
      * preview layer's connection, and [previewRotating] the rotation coordinator's preview angle.
+     * [previewPointConverting], when set, converts a preview-layer point to a point of interest.
      */
     internal constructor(
         qualityPrioritization: QualityPrioritization,
@@ -80,6 +81,7 @@ internal class CustomCameraController private constructor(
         photoCapturer: PhotoCapturer? = null,
         previewOrienting: ((AVCaptureVideoPreviewLayer?, AVCaptureVideoOrientation) -> Unit)? = null,
         previewRotating: ((AVCaptureVideoPreviewLayer, Double) -> Unit)? = null,
+        previewPointConverting: PreviewPointConverter? = null,
     ) : this(
         qualityPrioritization,
         initialCameraLens,
@@ -95,6 +97,7 @@ internal class CustomCameraController private constructor(
             photoCapturer = photoCapturer,
             previewOrienting = previewOrienting,
             previewRotating = previewRotating,
+            previewPointConverting = previewPointConverting,
         ),
     )
 

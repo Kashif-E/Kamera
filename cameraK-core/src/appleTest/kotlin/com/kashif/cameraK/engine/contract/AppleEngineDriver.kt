@@ -13,6 +13,7 @@ import com.kashif.cameraK.controller.FakeMovieRecorder
 import com.kashif.cameraK.controller.FakePhotoCapturer
 import com.kashif.cameraK.controller.FakeSessionOps
 import com.kashif.cameraK.controller.PhotoDimensions
+import com.kashif.cameraK.controller.PreviewPointConverter
 import com.kashif.cameraK.controller.RotationSourceFactory
 import com.kashif.cameraK.controller.VideoRotation
 import com.kashif.cameraK.controller.captureInputWithoutCamera
@@ -65,6 +66,7 @@ import platform.AVFoundation.AVErrorDeviceWasDisconnected
 import platform.CoreFoundation.CFRelease
 import platform.UIKit.UIDeviceOrientation
 import kotlin.concurrent.Volatile
+import kotlin.math.roundToInt
 
 /**
  * The contract kit's driver over the iOS engine on a [FakeSessionOps]. Its fake platform has two
@@ -78,6 +80,12 @@ import kotlin.concurrent.Volatile
  * given. Flash has no observer on iOS: the engine reads the photo output's mode back itself
  * ([ReadBackFlashDriver]), and the fake photo output supports [backPhotoFlashModes] or
  * [frontPhotoFlashModes] with an adjustable camera behind it, and only off otherwise.
+ *
+ * With [metering] the back camera focuses and meters exposure at a point with a bias of -8 to 8 EV
+ * (indexes -6 to 6, CameraK's ±2 EV), and the front camera meters exposure only, with a bias of -1.5 to
+ * 1.5 EV (indexes -4 to 4). Exposure has no observer on iOS: the engine reads the bias back in
+ * `setExposureTargetBias`'s completion ([ReadBackExposureDriver]), which the fake devices run at once.
+ * [previewPointConverting] replaces the preview layer's conversion of a layer point.
  *
  * The engine runs on the case's test scheduler, and AVFoundation's side on the engine's own session
  * queue; [settle] drains the session queue and the main queue, then runs the scheduler's current
@@ -100,9 +108,12 @@ internal class AppleEngineDriver(
     private val rotationSources: RotationSourceFactory? = null,
     /** Locks analysis frames' pixel buffers; null keeps Core Video's. */
     private val pixelBufferLocker: PixelBufferLocker? = null,
+    /** The back camera meters focus and exposure at a point, the front camera exposure; both take compensation. */
+    metering: Boolean = false,
 ) : ThrowingCallbackDriver,
     PreOpenInterruptionDriver,
     ReadBackFlashDriver,
+    ReadBackExposureDriver,
     CaptureDriver,
     RecordingDriver,
     UnsupportedConfigurationDriver {
@@ -114,6 +125,10 @@ internal class AppleEngineDriver(
         maxVideoZoomFactor = if (adjustableBack) BACK_MAX_ZOOM.toDouble() else 1.0,
         supportedMaxPhotoDimensions = backPhotoSizes,
         holdReports = true,
+        isFocusPointOfInterestSupported = metering,
+        isExposurePointOfInterestSupported = metering,
+        minExposureTargetBias = if (metering) -8f else 0f,
+        maxExposureTargetBias = if (metering) 8f else 0f,
     )
     val front = FakeDevice(
         isFront = true,
@@ -123,6 +138,9 @@ internal class AppleEngineDriver(
         maxVideoZoomFactor = if (adjustableFront) FRONT_MAX_ZOOM.toDouble() else 1.0,
         supportedMaxPhotoDimensions = frontPhotoSizes,
         holdReports = true,
+        isExposurePointOfInterestSupported = metering,
+        minExposureTargetBias = if (metering) -1.5f else 0f,
+        maxExposureTargetBias = if (metering) 1.5f else 0f,
     )
     val lenses = listOf(
         lensInfo(
@@ -148,6 +166,9 @@ internal class AppleEngineDriver(
     @Volatile
     var frontPhotoFlashModes: List<AVCaptureFlashMode> =
         listOf(AVCaptureFlashModeOff, AVCaptureFlashModeAuto, AVCaptureFlashModeOn)
+
+    /** Converts a preview-layer point to a point of interest for the next engine; null keeps the layer's own. */
+    var previewPointConverting: PreviewPointConverter? = null
 
     private val orientationNotificationLock = platform.Foundation.NSLock()
     private val orientationNotificationCalls = mutableListOf<Boolean>()
@@ -252,6 +273,7 @@ internal class AppleEngineDriver(
                 recordPreviewTurn(layer, VideoRotation.Orientation(orientation))
             },
             previewRotating = { layer, degrees -> recordPreviewTurn(layer, VideoRotation.Angle(degrees)) },
+            previewPointConverting = previewPointConverting,
         )
         val onScheduler = checkNotNull(dispatcher) { "createEngine runs inside runCase" }
         val environment = CameraKEnvironment(dispatchers = CameraKDispatchers(onScheduler, onScheduler, onScheduler))
@@ -321,6 +343,8 @@ internal class AppleEngineDriver(
             },
             zoomRatio = (camera?.lastZoomSet ?: 1.0).toFloat(),
             cameraId = camera?.uniqueId,
+            // CameraK's iOS index is a third of an EV.
+            exposureCompensationIndex = ((camera?.lastBiasSet ?: 0f) * 3).roundToInt(),
         )
     }
 

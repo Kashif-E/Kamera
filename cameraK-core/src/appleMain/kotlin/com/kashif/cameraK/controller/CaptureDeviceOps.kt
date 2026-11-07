@@ -62,6 +62,43 @@ internal interface CaptureDeviceOps {
      */
     fun observeHardware(onChange: () -> Unit): AutoCloseable
 
+    val isFocusPointOfInterestSupported: Boolean
+    val isExposurePointOfInterestSupported: Boolean
+
+    fun isFocusModeSupported(mode: AVCaptureFocusMode): Boolean
+
+    fun isExposureModeSupported(mode: AVCaptureExposureMode): Boolean
+
+    /** Whether the camera is focusing now. */
+    val isAdjustingFocus: Boolean
+
+    /** The bias range `setExposureTargetBias` takes; AVFoundation raises an exception nothing can catch outside it. */
+    val minExposureTargetBias: Float
+    val maxExposureTargetBias: Float
+    val exposureTargetBias: Float
+
+    /** The width and height the active format delivers, in the sensor's landscape orientation; null when unknown. */
+    val activeFormatDimensions: PhotoDimensions?
+
+    fun setFocusPointOfInterest(point: PointOfInterest)
+
+    fun setFocusMode(mode: AVCaptureFocusMode)
+
+    fun setExposurePointOfInterest(point: PointOfInterest)
+
+    fun setExposureMode(mode: AVCaptureExposureMode)
+
+    fun setSubjectAreaChangeMonitoringEnabled(enabled: Boolean)
+
+    /** Sets the bias; [completion] runs, on whatever thread AVFoundation picks, once frames carry it. */
+    fun setExposureTargetBias(bias: Float, completion: () -> Unit)
+
+    /** Calls [onChange], on whatever thread reports it, each time [isAdjustingFocus] changes. */
+    fun observeAdjustingFocus(onChange: () -> Unit): AutoCloseable
+
+    /** Calls [onChange], on whatever thread posts it, on each AVCaptureDeviceSubjectAreaDidChangeNotification. */
+    fun observeSubjectAreaChange(onChange: () -> Unit): AutoCloseable
+
     /**
      * A session input that captures from this device, or why one cannot be made: for a real device,
      * an [NSErrorException] carrying AVFoundation's error (a camera the user has not authorised, one
@@ -120,6 +157,35 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
 
     override fun observeHardware(onChange: () -> Unit): AutoCloseable =
         observeKeyPaths(device, listOf("torchMode", "torchActive", "videoZoomFactor"), onChange)
+
+    override val isFocusPointOfInterestSupported: Boolean get() = TODO("Z-focus-ios")
+    override val isExposurePointOfInterestSupported: Boolean get() = TODO("Z-focus-ios")
+
+    override fun isFocusModeSupported(mode: AVCaptureFocusMode): Boolean = TODO("Z-focus-ios")
+
+    override fun isExposureModeSupported(mode: AVCaptureExposureMode): Boolean = TODO("Z-focus-ios")
+
+    override val isAdjustingFocus: Boolean get() = TODO("Z-focus-ios")
+    override val minExposureTargetBias: Float get() = TODO("Z-focus-ios")
+    override val maxExposureTargetBias: Float get() = TODO("Z-focus-ios")
+    override val exposureTargetBias: Float get() = TODO("Z-focus-ios")
+    override val activeFormatDimensions: PhotoDimensions? get() = TODO("Z-focus-ios")
+
+    override fun setFocusPointOfInterest(point: PointOfInterest): Unit = TODO("Z-focus-ios")
+
+    override fun setFocusMode(mode: AVCaptureFocusMode): Unit = TODO("Z-focus-ios")
+
+    override fun setExposurePointOfInterest(point: PointOfInterest): Unit = TODO("Z-focus-ios")
+
+    override fun setExposureMode(mode: AVCaptureExposureMode): Unit = TODO("Z-focus-ios")
+
+    override fun setSubjectAreaChangeMonitoringEnabled(enabled: Boolean): Unit = TODO("Z-focus-ios")
+
+    override fun setExposureTargetBias(bias: Float, completion: () -> Unit): Unit = TODO("Z-focus-ios")
+
+    override fun observeAdjustingFocus(onChange: () -> Unit): AutoCloseable = TODO("Z-focus-ios")
+
+    override fun observeSubjectAreaChange(onChange: () -> Unit): AutoCloseable = TODO("Z-focus-ios")
 
     override fun makeInput(): Result<AVCaptureInput> = memScoped {
         val error = alloc<ObjCObjectVar<NSError?>>()

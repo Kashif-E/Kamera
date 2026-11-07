@@ -5,6 +5,8 @@ import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
+import platform.AVFoundation.AVCaptureExposureMode
+import platform.AVFoundation.AVCaptureFocusMode
 import platform.AVFoundation.AVCaptureInput
 import platform.AVFoundation.AVCaptureMetadataInput
 import platform.AVFoundation.AVCaptureTorchMode
@@ -66,6 +68,14 @@ internal fun captureInputWithoutCamera(): AVCaptureInput = memScoped {
  * clamped to it, as AVFoundation does. A zoom set outside [minVideoZoomFactor]..[maxVideoZoomFactor] is recorded in
  * [outOfRangeZoomSets], and a torch mode the device lacks in [unsupportedTorchSets]: AVFoundation
  * raises an exception nothing can catch for either.
+ *
+ * Focus and exposure: a device that meters at a point ([focusPointSupported], [exposurePointSupported])
+ * supports every focus or exposure mode; its bias runs from [minExposureTargetBias] to
+ * [maxExposureTargetBias], and a bias set outside it is recorded in [outOfRangeBiasSets]. A bias set
+ * reaches [exposureTargetBias] through [biasReadBack] when its completion runs: at once, on the
+ * calling thread, unless [holdBiasCompletions] holds it for [completeBiasChanges]. [adjustFocus] plays
+ * the device starting or ending a focus, and [subjectAreaChanged] AVFoundation's subject-area
+ * notification.
  */
 internal class FakeDevice(
     override val isFront: Boolean = false,
@@ -83,6 +93,13 @@ internal class FakeDevice(
     val holdReports: Boolean = false,
     /** The session presets the camera can deliver; null for every preset. */
     var supportedPresets: Set<String>? = null,
+    override val isFocusPointOfInterestSupported: Boolean = false,
+    override val isExposurePointOfInterestSupported: Boolean = false,
+    override var minExposureTargetBias: Float = 0f,
+    override var maxExposureTargetBias: Float = 0f,
+    override val activeFormatDimensions: PhotoDimensions? = PhotoDimensions(4032, 3024),
+    /** What the device refuses its configuration lock with while [lockSucceeds] is false. */
+    var lockRefusal: Throwable = IllegalStateException("the device refused its configuration lock"),
 ) : CaptureDeviceOps {
     class Call(val op: String, val value: Any?, val queue: String, val onMainThread: Boolean, val locked: Boolean) {
         override fun toString(): String = "$op($value) on '$queue'${if (onMainThread) " (main thread)" else ""}" +
@@ -100,6 +117,21 @@ internal class FakeDevice(
     private var zoom = 1.0
     private var setTorch: AVCaptureTorchMode? = null
     private var setZoom: Double? = null
+    private var adjusting = false
+    private var bias = 0f
+    private var setBias: Float? = null
+    private val outOfRangeBias = mutableListOf<Float>()
+    private val heldBiasChanges = mutableListOf<() -> Unit>()
+    private val focusObservers = mutableListOf<() -> Unit>()
+    private val subjectAreaObservers = mutableListOf<() -> Unit>()
+
+    /** Bias set completions wait for [completeBiasChanges]. */
+    @Volatile
+    var holdBiasCompletions: Boolean = false
+
+    /** The bias the device reports once a set completes, from the one it was given. */
+    @Volatile
+    var biasReadBack: (Float) -> Float = { it }
 
     /** Below [maxVideoZoomFactor] on a virtual camera delivering depth data; tests lower it. */
     @Volatile
@@ -133,7 +165,7 @@ internal class FakeDevice(
         null
     } else {
         record("lockForConfiguration (refused)", null) {}
-        IllegalStateException("the device refused its configuration lock")
+        lockRefusal
     }
 
     override fun unlockForConfiguration() = record("unlockForConfiguration", null) { locked = false }
@@ -181,6 +213,76 @@ internal class FakeDevice(
         notify.forEach { it() }
     }
 
+    override val isAdjustingFocus: Boolean get() = guarded { adjusting }
+    override val exposureTargetBias: Float get() = guarded { bias }
+
+    /** The bias the device was last given; null before the first. */
+    val lastBiasSet: Float? get() = guarded { setBias }
+
+    /** Every bias set outside the device's range. */
+    val outOfRangeBiasSets: List<Float> get() = guarded { outOfRangeBias.toList() }
+
+    /** Focus and subject-area observers registered and not yet closed. */
+    val focusObserverCount: Int get() = guarded { focusObservers.size }
+    val subjectAreaObserverCount: Int get() = guarded { subjectAreaObservers.size }
+
+    override fun isFocusModeSupported(mode: AVCaptureFocusMode): Boolean = isFocusPointOfInterestSupported
+
+    override fun isExposureModeSupported(mode: AVCaptureExposureMode): Boolean = isExposurePointOfInterestSupported
+
+    override fun setFocusPointOfInterest(point: PointOfInterest) = record("setFocusPointOfInterest", point) {}
+
+    override fun setFocusMode(mode: AVCaptureFocusMode) = record("setFocusMode", mode) {}
+
+    override fun setExposurePointOfInterest(point: PointOfInterest) = record("setExposurePointOfInterest", point) {}
+
+    override fun setExposureMode(mode: AVCaptureExposureMode) = record("setExposureMode", mode) {}
+
+    override fun setSubjectAreaChangeMonitoringEnabled(enabled: Boolean) =
+        record("setSubjectAreaChangeMonitoringEnabled", enabled) {}
+
+    override fun setExposureTargetBias(bias: Float, completion: () -> Unit) {
+        val complete = {
+            guarded { this.bias = biasReadBack(bias) }
+            completion()
+        }
+        val held = record("setExposureTargetBias", bias) {
+            setBias = bias
+            if (bias < minExposureTargetBias || bias > maxExposureTargetBias) outOfRangeBias += bias
+            if (holdBiasCompletions) heldBiasChanges += complete
+            holdBiasCompletions
+        }
+        if (!held) complete()
+    }
+
+    /** Runs the bias completions held so far, in order. */
+    fun completeBiasChanges() {
+        val held = guarded { heldBiasChanges.toList().also { heldBiasChanges.clear() } }
+        held.forEach { it() }
+    }
+
+    override fun observeAdjustingFocus(onChange: () -> Unit): AutoCloseable {
+        guarded { focusObservers += onChange }
+        return AutoCloseable { guarded { focusObservers -= onChange } }
+    }
+
+    override fun observeSubjectAreaChange(onChange: () -> Unit): AutoCloseable {
+        guarded { subjectAreaObservers += onChange }
+        return AutoCloseable { guarded { subjectAreaObservers -= onChange } }
+    }
+
+    /** The device starts ([adjusting] true) or ends a focus, and tells its observers. */
+    fun adjustFocus(adjusting: Boolean) {
+        val notify = guarded {
+            this.adjusting = adjusting
+            focusObservers.toList()
+        }
+        notify.forEach { it() }
+    }
+
+    /** AVFoundation posts AVCaptureDeviceSubjectAreaDidChangeNotification for this device. */
+    fun subjectAreaChanged() = guarded { subjectAreaObservers.toList() }.forEach { it() }
+
     override fun makeInput(): Result<AVCaptureInput> = when {
         inputError != null -> Result.failure(NSErrorException(inputError))
         input != null -> Result.success(input)
@@ -189,7 +291,7 @@ internal class FakeDevice(
 
     fun callsOf(op: String): List<Call> = calls.filter { it.op == op }
 
-    private fun record(op: String, value: Any?, mutate: () -> Unit) = guarded {
+    private fun <T> record(op: String, value: Any?, mutate: () -> T): T = guarded {
         recorded += Call(op, value, currentQueueLabel(), NSThread.isMainThread, locked)
         mutate()
     }

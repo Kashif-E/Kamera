@@ -17,6 +17,7 @@ internal class ControllerSeams(
     photoCapturer: PhotoCapturer? = null,
     val previewOrienting: ((AVCaptureVideoPreviewLayer?, AVCaptureVideoOrientation) -> Unit)? = null,
     val previewRotating: ((AVCaptureVideoPreviewLayer, Double) -> Unit)? = null,
+    val previewPointConverting: PreviewPointConverter? = null,
 ) {
     val cameraDevices: CameraDeviceProvider = cameraDevices ?: DiscoveryCameraDeviceProvider()
     val photoCapturer: PhotoCapturer = photoCapturer ?: AVPhotoCapturer
