@@ -4,8 +4,10 @@ package com.kashif.cameraK.controller
 
 import android.content.Context
 import androidx.camera.core.Camera
+import androidx.camera.core.Preview
 import androidx.camera.core.TorchState
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.enums.DeviceOrientation
@@ -19,14 +21,17 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.Executor
 
 /**
  * The hardware [AndroidCameraEngine] reports and the commands that change it (design §2.3 rule 5,
  * §6.2). [hardware] and [zoom] are what CameraX reports: torch and zoom from the bound camera's
  * `torchState` and `zoomState`, flash from a read-back of the bound ImageCapture after each set and
- * each bind. The desired flash, torch and zoom are [HardwareControls]'s, applied once the camera
- * opens and after every bind made while it runs. The target orientation sets the capture rotation of
- * the bound ImageCapture and VideoCapture. Main thread.
+ * each bind, and the exposure index from `ExposureState` once CameraX completes a request. The
+ * desired flash, torch and zoom are [HardwareControls]'s and the desired exposure index
+ * [FocusMetering]'s, applied once the camera opens and after every bind made while it runs. The
+ * target orientation sets the capture rotation of the bound ImageCapture and VideoCapture. Main
+ * thread.
  */
 internal class EngineControls(
     context: Context,
@@ -37,6 +42,10 @@ internal class EngineControls(
     private val binder: UseCaseBinder,
     private val stillCapturer: StillCapturer,
     private val videoRecorder: VideoRecorder,
+    preview: () -> Preview?,
+    mirrored: () -> Boolean,
+    callbackExecutor: Executor,
+    isReleased: () -> Boolean,
 ) {
     private val hardwareControls = HardwareControls(
         context = context,
@@ -45,6 +54,16 @@ internal class EngineControls(
         camera = { binder.camera },
         imageCapture = { stillCapturer.imageCapture },
         readFlash = backend::flashModeOf,
+    )
+
+    private val metering = FocusMetering(
+        backend = backend,
+        camera = { binder.camera },
+        preview = preview,
+        mirrored = mirrored,
+        executor = callbackExecutor,
+        isReleased = isReleased,
+        publishExposure = { publishHardware(exposureCompensationIndex = it) },
     )
 
     private val _hardware = MutableStateFlow(HardwareState(FlashMode.OFF, TorchMode.OFF, null, null))
@@ -101,10 +120,17 @@ internal class EngineControls(
         }
     }
 
+    suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = metering.focusAt(point)
+
+    suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = metering.setExposureCompensation(index)
+
+    suspend fun resetFocusAndExposure(): CameraKResult<Unit> = metering.resetFocusAndExposure()
+
     // Stored only: the camera's control is inactive until it opens, which applies them. A start that
     // names no target orientation keeps the one stored while the engine was closed or stopped.
     fun store(desired: DesiredHardware) {
         hardwareControls.store(desired.flashMode, desired.torchMode, desired.zoomRatio)
+        metering.store(desired.exposureCompensationIndex)
         desired.targetOrientation?.let { orientation.targetOrientation = it }
     }
 
@@ -134,27 +160,32 @@ internal class EngineControls(
     }
 
     /**
-     * A bind of [camera] succeeded: flash is checked against the bound camera, and [hardware] reports
-     * the bound ImageCapture's flash, CameraX's torch, the bound [lens] and the target orientation.
+     * A bind of [camera] succeeded: flash is checked against the bound camera, focus and exposure
+     * requests in flight are superseded, and [hardware] reports the bound ImageCapture's flash,
+     * CameraX's torch and exposure index, the bound [lens] and the target orientation.
      */
     fun onBound(camera: Camera, lens: () -> LensInfo?) {
         hardwareControls.revalidateFlash()
+        metering.onBound()
         _hardware.value = HardwareState(
             flashMode = hardwareControls.boundFlashMode() ?: hardwareControls.flashMode,
             torchMode = if (camera.cameraInfo.torchState.value == TorchState.ON) TorchMode.ON else TorchMode.OFF,
             camera = lens(),
             targetOrientation = orientation.targetOrientation,
+            exposureCompensationIndex = metering.exposureIndexOf(camera),
         )
     }
 
-    /** Applies the desired flash, torch and zoom to [camera], whose control is active. */
+    /** Applies the desired flash, torch, zoom and exposure index to [camera], whose control is active. */
     fun applyDesiredTo(camera: Camera) {
         hardwareControls.applyDesiredHardwareState(camera)
+        metering.applyDesiredTo(camera)
     }
 
     /** [camera] opened: its control is active from here, so what is desired is applied and reported. */
     fun onOpened(camera: Camera) {
         hardwareControls.applyDesiredHardwareState(camera)
+        metering.applyDesiredTo(camera)
         publishHardware(
             flashMode = hardwareControls.boundFlashMode() ?: _hardware.value.flashMode,
             targetOrientation = orientation.targetOrientation,
@@ -177,7 +208,9 @@ internal class EngineControls(
         flashMode: FlashMode = _hardware.value.flashMode,
         torchMode: TorchMode = _hardware.value.torchMode,
         targetOrientation: DeviceOrientation? = _hardware.value.targetOrientation,
+        exposureCompensationIndex: Int = _hardware.value.exposureCompensationIndex,
     ) {
-        _hardware.value = HardwareState(flashMode, torchMode, _hardware.value.camera, targetOrientation)
+        _hardware.value =
+            HardwareState(flashMode, torchMode, _hardware.value.camera, targetOrientation, exposureCompensationIndex)
     }
 }

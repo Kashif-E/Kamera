@@ -30,6 +30,9 @@ internal class EnginePreviewSource(
     private var current: Attachment? = null
     private var preview: Preview? = null
 
+    /** The Preview use case of the latest bind, or null before the first. */
+    val boundPreview: Preview? get() = preview
+
     /** The display of the current attachment, or null when none is attached. */
     val display: Display? get() = current?.display
 

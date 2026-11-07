@@ -306,7 +306,7 @@ internal class EngineSession(
         framePipeline.onBound(framePipeline.analysis != null)
         if (video == null) videoRecorder.onBoundWithoutVideo()
         catalog.queryVideoQualities(camera)
-        controls.onBound(camera) { catalog.withFlashUnitOf(camera, catalog.reportedLens(resolved, camera, binding)) }
+        controls.onBound(camera) { catalog.describeBound(camera, catalog.reportedLens(resolved, camera, binding)) }
         observe(camera)
         // A bind while the engine runs attaches the use cases at once; the first bind of a start waits
         // for the camera to open, which applies them.

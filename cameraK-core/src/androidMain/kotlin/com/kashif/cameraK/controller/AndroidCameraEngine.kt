@@ -12,6 +12,7 @@ import com.kashif.cameraK.capabilities.LensEnumerator
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.CameraSelection
@@ -67,9 +68,10 @@ private const val TAG = "CameraK"
  * their capabilities; [EngineControls] the hardware commands and what CameraX reports back;
  * [RecordingBinding] the binds a recording makes or holds back.
  *
- * Flash, torch and zoom are commands for an open camera, NotReady otherwise; the target orientation
- * is configuration, taken in any state but closed. The desired hardware is re-applied once the
- * camera opens and after every bind made while it runs.
+ * Flash, torch, zoom, focus and exposure are commands for an open camera, NotReady otherwise; the
+ * focus point and exposure index are [EngineControls]'s, through [FocusMetering]. The target
+ * orientation is configuration, taken in any state but closed. The desired hardware is re-applied
+ * once the camera opens and after every bind made while it runs.
  *
  * Stills and recordings are files (Decision 10): `outputDirectory`, used as given, else the app-owned
  * `filesDir/CameraK`; publishing to the gallery is the media saver plugin's job. [capture] returns the
@@ -194,6 +196,11 @@ internal class AndroidCameraEngine(
         binder = binder,
         stillCapturer = stillCapturer,
         videoRecorder = videoRecorder,
+        preview = { previewSource.boundPreview },
+        // CameraXViewfinder mirrors the front camera's preview.
+        mirrored = { session.boundLens == CameraLens.FRONT },
+        callbackExecutor = mainExecutor,
+        isReleased = { closed.value },
     )
 
     private val catalog: LensCatalog = LensCatalog(
@@ -279,6 +286,16 @@ internal class AndroidCameraEngine(
 
     override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = openCommand {
         controls.setTorchMode(mode)
+    }
+
+    override suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = openCommand { controls.focusAt(point) }
+
+    override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = openCommand {
+        controls.setExposureCompensation(index)
+    }
+
+    override suspend fun resetFocusAndExposure(): CameraKResult<Unit> = openCommand {
+        controls.resetFocusAndExposure()
     }
 
     override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> = unlessClosed {

@@ -30,8 +30,9 @@ private const val TAG = "CameraK"
  * The cameras [AndroidCameraEngine] can open and what each can do (design §6.3). The lenses are
  * enumerated once, off Main, into [capabilities]; a [CameraSelection] resolves against that list,
  * and an external camera CameraX no longer offers is replaced by the back camera. After every bind
- * the engine has the bound lens's flash unit corrected from CameraX and its video qualities queried
- * off Main. Apart from the enumeration and that query, everything here runs on the main thread.
+ * the engine has the bound lens's flash unit corrected from CameraX, what it meters with read from
+ * CameraX, and its video qualities queried off Main. Apart from the enumeration and that query,
+ * everything here runs on the main thread.
  */
 internal class LensCatalog(
     lensSource: () -> List<AndroidLensDescriptor>,
@@ -55,6 +56,9 @@ internal class LensCatalog(
     // The bound camera's video qualities (§6.3), queried off Main after every bind.
     private var boundQualities: Set<VideoQuality> = emptySet()
     private var qualityQuery: Deferred<Set<VideoQuality>>? = null
+
+    // What each camera bound so far meters with, by lens id: CameraX describes a camera once it is bound.
+    private val metering = mutableMapOf<String, MeteringFeatures>()
 
     /** The camera [selection] names, or null when no enumerated camera matches it. */
     fun resolve(selection: CameraSelection): ResolvedCamera? = when (selection) {
@@ -105,9 +109,26 @@ internal class LensCatalog(
         return _capabilities.value.allLenses.firstOrNull { it.id == id }
     }
 
+    /**
+     * The bound camera [lens] as CameraX describes it: its flash unit ([withFlashUnitOf]), and whether
+     * it meters at a point and its exposure compensation range and step, which the capabilities then
+     * report for that lens (w13 Z-focus-android).
+     */
+    fun describeBound(camera: Camera, lens: LensInfo?): LensInfo? {
+        val described = withFlashUnitOf(camera, lens) ?: return null
+        val features = try {
+            meteringFeaturesOf(camera)
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Reading the bound camera's focus and exposure support failed", e)
+            return described
+        }
+        if (metering.put(described.id, features) != features) publish(_capabilities.value.allLenses)
+        return described
+    }
+
     // The bound camera, as CameraInfo.hasFlashUnit describes it: the value CameraX acts on, which the
     // enumeration's FLASH_INFO_AVAILABLE only estimated. A disagreement corrects the capabilities.
-    fun withFlashUnitOf(camera: Camera, lens: LensInfo?): LensInfo? {
+    private fun withFlashUnitOf(camera: Camera, lens: LensInfo?): LensInfo? {
         lens ?: return null
         val flashUnit = try {
             camera.cameraInfo.hasFlashUnit()
@@ -126,10 +147,7 @@ internal class LensCatalog(
             lens.isLogical,
             lens.isExternal,
         )
-        _capabilities.value = androidCapabilities(
-            _capabilities.value.allLenses.map { if (it.id == lens.id) corrected else it },
-            boundQualities,
-        )
+        publish(_capabilities.value.allLenses.map { if (it.id == lens.id) corrected else it })
         return corrected
     }
 
@@ -149,8 +167,12 @@ internal class LensCatalog(
             val qualities = query.await()
             if (isReleased() || camera !== boundCamera()) return@launch
             boundQualities = qualities
-            _capabilities.value = androidCapabilities(_capabilities.value.allLenses, qualities)
+            publish(_capabilities.value.allLenses)
         }
+    }
+
+    private fun publish(lenses: List<LensInfo>) {
+        _capabilities.value = androidCapabilities(lenses, boundQualities, metering)
     }
 
     private fun enumerateLenses(): List<LensInfo> = try {
@@ -167,13 +189,16 @@ internal class LensCatalog(
  * resume, which CameraX's Recorder supports; [videoQualities], the bound camera's own (empty before
  * the first bind), each recorded at its `VideoQuality.bitrateBps` as the encoder's target rate; JPEG
  * and PNG; every aspect ratio, 1:1 as the square file the 1:1 ViewPort crops from a 4:3 stream;
- * YUV_420 and RGBA_8888 analysis, the two formats ImageAnalysis outputs.
+ * YUV_420 and RGBA_8888 analysis, the two formats ImageAnalysis outputs; a focus point and exposure
+ * compensation for each camera [metering] describes as having them, which is each camera bound so far.
  */
 internal fun androidCapabilities(
     lenses: List<LensInfo>,
     videoQualities: Set<VideoQuality> = emptySet(),
+    metering: Map<String, MeteringFeatures> = emptyMap(),
 ): CameraCapabilities {
     val plain = capabilitiesOf(lenses)
+    val compensated = metering.filterValues { it.exposureRange != null && it.exposureStep != null }
     return CameraCapabilities(
         allLenses = lenses,
         flashModes = lenses.associate { it.id to plain.supportedFlashModes(it.id) },
@@ -185,5 +210,8 @@ internal fun androidCapabilities(
         supportedImageFormats = setOf(ImageFormat.JPEG, ImageFormat.PNG),
         supportedAnalysisFormats = setOf(FrameFormat.YUV_420, FrameFormat.RGBA_8888),
         supportsSquareCapture = true,
+        focusPointCameras = metering.filterValues { it.focusPoint }.keys,
+        exposureCompensationRanges = compensated.mapValues { checkNotNull(it.value.exposureRange) },
+        exposureCompensationSteps = compensated.mapValues { checkNotNull(it.value.exposureStep) },
     )
 }
