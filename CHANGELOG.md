@@ -112,7 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The platform engines are split by responsibility** (internal): `AndroidCameraEngine` delegates to its session, lens catalogue, controls and recording binding, and the iOS `AppleCameraEngine` and `CustomCameraController` to their session lifecycle and queue, inputs, still capture, controls, rotation and capabilities. No file is over 600 lines, which the build checks. Behaviour and the public API do not change.
 
 ### Added
-- **`camerak-bom`**: a bill of materials that pins the core and every plugin to one version. Import it with `platform("io.github.kashif-mehmood-km:camerak-bom:2.0")` and leave the versions off the other CameraK artifacts.
+- **`camerak-bom`**: a bill of materials that pins the core and every plugin to one version. Import it with `platform("dev.kashifmehmood:camerak-bom:2.0")` and leave the versions off the other CameraK artifacts.
 - **`MediaSaverPlugin.readBytes(saved: SavedImage)`**: reads an image the saver saved without blocking the calling thread. On iOS it streams the asset through `PHAssetResourceManager` into `Library/Caches/CameraK` and deletes that file once read, or once Photos has written it when the read is cancelled.
 - **`CameraCapabilities.externalLenses`**, `LensInfo.isExternal` and `VideoConfiguration.maxFileSizeBytes`.
 - **`CameraKEvent.PluginFailed`** from the QR, OCR and analyzer plugins when their platform start fails, and from the holder at a plugin attachment's first failure.
