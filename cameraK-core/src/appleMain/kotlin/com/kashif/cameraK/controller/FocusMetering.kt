@@ -99,7 +99,7 @@ internal class FocusMetering(
         val target = desiredExposure.coerceIn(range)
         if (device.exposureIndex == target) return
         withLock(device, "re-applying the exposure compensation") {
-            device.setExposureTargetBias(exposureBiasOf(target)) {
+            device.setExposureTargetBias(device.exposureTargetBiasOf(target)) {
                 afterCompletion("an exposure compensation report") {
                     if (custom.currentDevice === device && generations.isStartingOrLive) publishHardware()
                 }
@@ -195,7 +195,7 @@ internal class FocusMetering(
     private fun setBias(device: CaptureDeviceOps, index: Int, pending: Pending, onApplied: () -> Unit) {
         pendingExposure.getAndSet(pending)?.supersede()
         val refused = withLock(device, "setting the exposure compensation") {
-            device.setExposureTargetBias(exposureBiasOf(index)) {
+            device.setExposureTargetBias(device.exposureTargetBiasOf(index)) {
                 afterCompletion("an exposure compensation report") {
                     if (pendingExposure.compareAndSet(pending, null)) {
                         onApplied()

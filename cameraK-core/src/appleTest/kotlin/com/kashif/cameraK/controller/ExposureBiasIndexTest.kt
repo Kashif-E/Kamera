@@ -37,7 +37,7 @@ class ExposureBiasIndexTest {
         // A bound just short of a third of an EV: the index there would set a bias past it, and
         // AVFoundation raises an exception for that which Kotlin cannot catch.
         assertEquals(-2..2, exposureIndexRange(-0.9997f, 0.9997f), "a bound just short of 1 EV")
-        assertEquals(-5..5, exposureIndexRange(-1.6666f, 1.6666f), "a bound just short of 5/3 EV")
+        assertEquals(-4..4, exposureIndexRange(-1.6666f, 1.6666f), "a bound just short of 5/3 EV")
         val bounds =
             listOf(0.9997f, 1f, 1f / 3, 0.3333333f, 2f / 3, 0.6666666f, 1.3333333f, 1.6666666f, 1.9999f, 2f, 8f)
         for (max in bounds) {

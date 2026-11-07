@@ -80,16 +80,19 @@ internal const val EXPOSURE_STEP_EV: Float = 1f / EXPOSURE_STEPS_PER_EV
  */
 private const val MAX_EXPOSURE_EV = 2f
 
-// The device's bias bounds are floats: a bound a rounding error short of an index still reaches it.
-private const val BOUND_TOLERANCE = 1e-3f
-
 /**
- * The exposure indexes a camera whose `exposureTargetBias` runs from [minBias] to [maxBias] takes;
- * null when that is one index or none.
+ * The exposure indexes a camera whose `exposureTargetBias` runs from [minBias] to [maxBias] takes:
+ * those whose [exposureBiasOf] lies inside both bounds, so none is ever past one. Null when that is
+ * one index or none.
  */
 internal fun exposureIndexRange(minBias: Float, maxBias: Float): IntRange? {
-    val lowest = ceil(max(minBias, -MAX_EXPOSURE_EV) * EXPOSURE_STEPS_PER_EV - BOUND_TOLERANCE).toInt()
-    val highest = floor(min(maxBias, MAX_EXPOSURE_EV) * EXPOSURE_STEPS_PER_EV + BOUND_TOLERANCE).toInt()
+    val low = max(minBias, -MAX_EXPOSURE_EV)
+    val high = min(maxBias, MAX_EXPOSURE_EV)
+    var lowest = ceil(low * EXPOSURE_STEPS_PER_EV).toInt()
+    var highest = floor(high * EXPOSURE_STEPS_PER_EV).toInt()
+    // The product and the quotient round separately: an index the product admits can be a bias past the bound.
+    if (exposureBiasOf(lowest) < low) lowest++
+    if (exposureBiasOf(highest) > high) highest--
     return (lowest..highest).takeIf { lowest < highest }
 }
 
@@ -99,8 +102,17 @@ internal fun exposureIndexOf(bias: Float): Int = (bias * EXPOSURE_STEPS_PER_EV).
 /** The `exposureTargetBias` of [index]. */
 internal fun exposureBiasOf(index: Int): Float = index.toFloat() / EXPOSURE_STEPS_PER_EV
 
-/** The bias `setExposureTargetBias` is given for [index] on a device whose bias runs from [minBias] to [maxBias]. */
-internal fun exposureBiasOf(index: Int, minBias: Float, maxBias: Float): Float = TODO()
+/**
+ * The bias `setExposureTargetBias` is given for [index] on a device whose bias runs from [minBias] to
+ * [maxBias]: [index]'s, clamped into the bounds, since AVFoundation raises an exception nothing can
+ * catch outside them.
+ */
+internal fun exposureBiasOf(index: Int, minBias: Float, maxBias: Float): Float =
+    exposureBiasOf(index).coerceAtMost(maxBias).coerceAtLeast(minBias)
+
+/** The bias [this] camera is given for [index], inside its bounds. */
+internal fun CaptureDeviceOps.exposureTargetBiasOf(index: Int): Float =
+    exposureBiasOf(index, minExposureTargetBias, maxExposureTargetBias)
 
 /** [this] camera's exposure indexes; null without compensation. */
 internal val CaptureDeviceOps.exposureIndexes: IntRange?
