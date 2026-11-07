@@ -134,6 +134,16 @@ dependencies {
             if (javacppPlatform.startsWith("windows")) listOf(libs.videoinput) else emptyList()
     natives.forEach { add(desktopRuntimeOnly, variantOf(it) { classifier(javacppPlatform) }) }
 }
+// BenchmarkSelectorsTest reads the release-gate benchmark's selectors (design §12.4 W13, Z-sample), so
+// a change to them reruns the Sample's tests.
+tasks.named<Test>("desktopTest") {
+    val benchmarkSources =
+        rootProject.layout.projectDirectory.dir(
+            "benchmark/src/main/kotlin/com/kashif/cameraK/benchmark",
+        )
+    inputs.dir(benchmarkSources).withPropertyName("benchmarkSources").withPathSensitivity(PathSensitivity.RELATIVE)
+    systemProperty("camerak.benchmarkSources", benchmarkSources.asFile.absolutePath)
+}
 tasks.named("embedAndSignAppleFrameworkForXcode") {
     doFirst {
         if (gradle.startParameter.isConfigurationCacheRequested) {
