@@ -108,11 +108,14 @@ internal class CustomCameraController private constructor(
     private val cameraDevices = seams.cameraDevices
     private val photoCapturer = seams.photoCapturer
 
+    /** Every AVCaptureSession call runs on this serial queue. */
+    private val sessionQueue = SessionQueue()
+
     /** The preview layer, its mirroring and its orientation. */
     private val preview = PreviewLayers(seams.previewMirroring, seams.previewOrienting, seams.previewRotating)
 
-    /** Every AVCaptureSession call runs on this serial queue. */
-    private val sessionQueue = SessionQueue()
+    /** The torch and zoom of the camera in use. */
+    private val controls = CameraControls(sessionQueue, { currentCamera }, ::reportError)
 
     /** Bumped by [cleanupSession] so a setup requested before it never reports ready. */
     private val setupGeneration = atomic(0)
@@ -209,8 +212,11 @@ internal class CustomCameraController private constructor(
     var flashMode: AVCaptureFlashMode = AVCaptureFlashModeAuto
 
     /** The torch mode applied to the camera in use whenever the session starts or the lens changes. */
-    @Volatile
-    var torchMode: AVCaptureTorchMode = AVCaptureTorchModeOff
+    var torchMode: AVCaptureTorchMode
+        get() = controls.torchMode
+        set(value) {
+            controls.torchMode = value
+        }
 
     // Configuration changes for plugin outputs (Apple WWDC pattern). Touched only on sessionQueue.
     private val pendingConfigurations = mutableListOf<() -> Unit>()
@@ -450,7 +456,7 @@ internal class CustomCameraController private constructor(
         } ?: return false
 
         currentCamera = camera
-        requestedZoom = null
+        controls.forgetRequestedZoom()
         isUsingFrontCamera = camera.isFront
 
         val input = camera.makeInput().getOrElse { throw cameraInputFailure(it) }
@@ -708,7 +714,7 @@ internal class CustomCameraController private constructor(
         if (!ops.isRunning) {
             ops.startRunning()
             // A torch set before the session ran does not survive its start.
-            applyConfiguredTorch()
+            controls.applyConfiguredTorch()
             preparePhotoOutput()
         }
     }
@@ -742,7 +748,7 @@ internal class CustomCameraController private constructor(
         swapVideoInput(ops, camera)?.let { return it }
         if (camera.isFront) frontCamera = camera else backCamera = camera
         useCamera(camera)
-        if (ops.isRunning) applyConfiguredTorch()
+        if (ops.isRunning) controls.applyConfiguredTorch()
         return null
     }
 
@@ -766,7 +772,7 @@ internal class CustomCameraController private constructor(
             stillPreset = null
             currentCamera = null
             videoInput = null
-            requestedZoom = null
+            controls.forgetRequestedZoom()
             backCamera = null
             frontCamera = null
         }
@@ -798,101 +804,42 @@ internal class CustomCameraController private constructor(
         if (supportedFlashMode(mode) != before) sessionQueue.async { preparePhotoOutput() }
     }
 
-    fun setTorchMode(mode: AVCaptureTorchMode) {
-        torchMode = mode
-        sessionQueue.async {
-            currentCamera?.let { applyTorchMode(it, mode) }
-        }
-    }
+    fun setTorchMode(mode: AVCaptureTorchMode) = controls.setTorchMode(mode)
 
     /** Applies [torchMode] to the camera in use unless the camera already reports it. Session queue only. */
-    internal fun reapplyTorchOnQueue() = applyConfiguredTorch()
+    internal fun reapplyTorchOnQueue() = controls.applyConfiguredTorch()
 
     /**
      * Sets [mode] on [camera], which must have a torch that supports it, under its configuration lock.
      * Session queue only; returns why the camera could not be locked.
      */
     internal fun setTorchOnQueue(camera: CaptureDeviceOps, mode: AVCaptureTorchMode): CameraException? =
-        withConfigurationLock(camera, "set the torch") { camera.setTorchMode(mode) }
+        controls.setTorchOnQueue(camera, mode)
 
     /**
      * Sets [factor], which must lie in [camera]'s zoom range, under its configuration lock. Session queue
      * only; returns why the camera could not be locked.
      */
     internal fun setZoomOnQueue(camera: CaptureDeviceOps, factor: Double): CameraException? =
-        withConfigurationLock(camera, "set the zoom") { camera.setVideoZoomFactor(factor) }
-
-    /** Applies [torchMode] to the camera in use unless it is already set. Runs on the session queue. */
-    private fun applyConfiguredTorch() {
-        val camera = currentCamera ?: return
-        val mode = torchMode
-        if (camera.torchMode != mode) applyTorchMode(camera, mode)
-    }
-
-    /** Sets [mode] on [camera] when it has a torch that supports it. Runs on the session queue. */
-    private fun applyTorchMode(camera: CaptureDeviceOps, mode: AVCaptureTorchMode) {
-        if (!camera.hasTorch) return
-        if (!camera.isTorchModeSupported(mode)) {
-            CameraKLogger.w(TAG, "the camera does not support torch mode $mode; leaving the torch as it is")
-            return
-        }
-        withConfigurationLock(camera, "set the torch") { camera.setTorchMode(mode) }
-    }
-
-    /**
-     * Runs [change] holding [camera]'s configuration lock, which AVFoundation requires for every
-     * device property change; a refused lock is reported, the change skipped and the failure
-     * returned. Runs on the session queue.
-     */
-    private inline fun withConfigurationLock(
-        camera: CaptureDeviceOps,
-        operation: String,
-        change: () -> Unit,
-    ): CameraException? {
-        val refused = camera.lockForConfiguration()
-        if (refused != null) {
-            CameraKLogger.e(TAG, "could not lock the camera to $operation", refused)
-            val failure = CameraException.ConfigurationError("Could not lock the camera to $operation", refused)
-            reportError(failure)
-            return failure
-        }
-        try {
-            change()
-        } finally {
-            camera.unlockForConfiguration()
-        }
-        return null
-    }
-
-    /** The zoom last requested, so getZoom answers at once while the change runs on the session queue. */
-    @Volatile
-    private var requestedZoom: Float? = null
+        controls.setZoomOnQueue(camera, factor)
 
     /**
      * Sets the zoom level smoothly.
      * @param zoomFactor The desired zoom level (1.0 = no zoom), clamped to [1, getMaxZoom()]
      */
-    fun setZoom(zoomFactor: Float) {
-        val camera = currentCamera ?: return
-        val clampedZoom = zoomFactor.coerceIn(1.0f, getMaxZoom())
-        requestedZoom = clampedZoom
-        sessionQueue.async {
-            if (currentCamera !== camera) return@async
-            withConfigurationLock(camera, "set the zoom") { camera.setVideoZoomFactor(clampedZoom.toDouble()) }
-        }
-    }
+    fun setZoom(zoomFactor: Float) = controls.setZoom(zoomFactor)
 
     /**
      * Gets the current zoom level.
      * @return Current zoom factor (1.0 = no zoom)
      */
-    fun getZoom(): Float = requestedZoom ?: currentCamera?.videoZoomFactor?.toFloat() ?: 1.0f
+    fun getZoom(): Float = controls.getZoom()
 
     /**
      * Gets the maximum zoom level supported by the current camera.
      * @return Maximum zoom factor
      */
-    fun getMaxZoom(): Float = currentCamera?.maxAvailableVideoZoomFactor?.toFloat() ?: 1.0f
+    fun getMaxZoom(): Float = controls.getMaxZoom()
 
     /**
      * Capture an image. Output quality is governed by the configured [qualityPrioritization].
@@ -998,7 +945,7 @@ internal class CustomCameraController private constructor(
             }
             if (newDevice.isFront) frontCamera = newDevice else backCamera = newDevice
             useCamera(newDevice)
-            if (ops.isRunning) applyConfiguredTorch()
+            if (ops.isRunning) controls.applyConfiguredTorch()
         }
     }
 
@@ -1030,7 +977,7 @@ internal class CustomCameraController private constructor(
                 return@async
             }
             useCamera(camera!!)
-            if (ops.isRunning) applyConfiguredTorch()
+            if (ops.isRunning) controls.applyConfiguredTorch()
         }
     }
 
@@ -1080,7 +1027,7 @@ internal class CustomCameraController private constructor(
     /** Records [camera] as the one in use after a successful swap. Runs on the session queue. */
     private fun useCamera(camera: CaptureDeviceOps) {
         currentCamera = camera
-        requestedZoom = null
+        controls.forgetRequestedZoom()
         isUsingFrontCamera = camera.isFront
         applyPreviewMirroring()
         applyMaxPhotoDimensions()
