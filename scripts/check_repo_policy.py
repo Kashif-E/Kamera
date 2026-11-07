@@ -75,11 +75,12 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      and -framework with the baseName Sample/build.gradle.kts gives it, and builds
                      no x86_64 simulator slice, since the libraries have no Intel-simulator target.
   published-group    The published group is dev.kashifmehmood, the namespace verified on Maven Central
-                     (published_group_is_the_verified_namespace), and LEGACY_GROUP names the 1.x group
-                     the relocation POMs publish under. No tracked file or path names a retired group,
-                     dotted, regex-escaped, as a path or mangled into a Kotlin module name, outside the
-                     relocation projects, CHANGELOG.md, docs/migration/, the Play SDK Console token's
-                     META-INF directory and the LEGACY_GROUP line.
+                     (published_group_is_the_verified_namespace), and LEGACY_GROUP is exactly the 1.x
+                     group the relocation POMs publish under, this script's LEGACY_NAMESPACE. No tracked
+                     file or path names a retired group, dotted, regex-escaped, as a path or mangled into
+                     a Kotlin module name, outside the relocation projects, CHANGELOG.md,
+                     docs/migration/, the Play SDK Console token's META-INF directory, the LEGACY_GROUP
+                     line and the LEGACY_NAMESPACE line.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -1904,6 +1905,10 @@ def check_sample_app() -> List[str]:
 # verifies on the Central Portal with a DNS TXT record on that domain (design §12.4 W13,
 # published_group_is_the_verified_namespace).
 VERIFIED_NAMESPACE = "dev.kashifmehmood"
+# The 1.x group, which the relocation POMs must publish under for a 1.x build to find them. This line is
+# the one place outside the exempt paths allowed to spell it (LEGACY_NAMESPACE_LINE).
+LEGACY_NAMESPACE = "io.github.kashif-mehmood-km"
+LEGACY_NAMESPACE_LINE = ("scripts/check_repo_policy.py", "LEGACY_NAMESPACE = ")
 # Where a retired group may still be named: the relocation projects that publish under it, the
 # changelog and migration guide that tell 1.x users, and the Play SDK Console token for the 1.x
 # coordinate under META-INF/<group as a path>/, kept until the maintainer registers the new one.
@@ -1918,15 +1923,18 @@ def group_spellings(group: str) -> re.Pattern:
     return re.compile(r"(?<![A-Za-z0-9])" + r"\\?[./_-]".join(parts) + r"(?![A-Za-z0-9])")
 
 
-def published_group_problems(properties: Dict[str, str], files: Dict[str, str]) -> List[str]:
+def published_group_problems(
+    properties: Dict[str, str], files: Dict[str, str], legacy_namespace: str = LEGACY_NAMESPACE
+) -> List[str]:
     group = properties.get("GROUP")
     legacy = properties.get("LEGACY_GROUP")
     problems = []
     if group != VERIFIED_NAMESPACE:
         problems.append(f"gradle.properties: GROUP is {group}, not {VERIFIED_NAMESPACE}, the verified namespace")
-    if legacy is None or legacy == VERIFIED_NAMESPACE:
+    if legacy != legacy_namespace:
         problems.append(
-            f"gradle.properties: LEGACY_GROUP is {legacy}; it must name the 1.x group the relocation POMs publish under"
+            f"gradle.properties: LEGACY_GROUP is {legacy}, not {legacy_namespace}, the 1.x group the relocation "
+            "POMs publish under"
         )
     for retired in sorted({name for name in (group, legacy) if name and name != VERIFIED_NAMESPACE}):
         spelled = group_spellings(retired)
@@ -1938,6 +1946,8 @@ def published_group_problems(properties: Dict[str, str], files: Dict[str, str]) 
                 problems.append(f"{name}: its path names the retired group {retired}")
             for number, line in enumerate(text.splitlines(), 1):
                 if name == "gradle.properties" and line.startswith("LEGACY_GROUP="):
+                    continue
+                if (name, line[: len(LEGACY_NAMESPACE_LINE[1])]) == LEGACY_NAMESPACE_LINE:
                     continue
                 if spelled.search(line):
                     problems.append(f"{name}:{number}: names the retired group {retired}")
@@ -1969,7 +1979,7 @@ def check_published_group() -> List[str]:
         # The pin's own constant is the one line of this script that may spell the 1.x group.
         "scripts/check_repo_policy.py": f'LEGACY_NAMESPACE = "{old}"\nRETIRED = "{old}"\n',
     }
-    found = published_group_problems(properties, {**allowed, **named})
+    found = published_group_problems(properties, {**allowed, **named}, legacy_namespace=old)
     if sorted({problem.split(":")[0] for problem in found}) != sorted(named) or len(found) != len(named):
         raise CheckError(f"the published-group rule misjudges its fixture: {found}")
     found = published_group_problems({"GROUP": old}, {"gradle.properties": f"GROUP={old}\n"})
