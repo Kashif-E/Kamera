@@ -4,7 +4,7 @@ import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.InternalCameraKApi
 
-/** A preview source that crops its preview to one aspect ratio; CameraK's Android engine implements it. */
+/** A preview source that crops its preview to one aspect ratio; CameraK's Android and iOS engines implement it. */
 internal interface AspectRatioPreview {
     val aspectRatio: AspectRatio
 }

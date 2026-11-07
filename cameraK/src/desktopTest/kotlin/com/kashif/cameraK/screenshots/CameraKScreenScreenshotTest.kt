@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.kashif.cameraK.compose.CameraKScreen
@@ -119,7 +120,7 @@ class CameraKScreenScreenshotTest {
     @androidx.compose.runtime.Composable
     private fun UprightMarker(orientation: DeviceOrientation) {
         Box(Modifier.fillMaxSize().background(Color.White)) {
-            with(CameraPreviewScopeImpl(this, orientation)) {
+            with(CameraPreviewScopeImpl(this, orientation, Rect.Zero)) {
                 Box(
                     Modifier
                         .align(Alignment.Center)

@@ -25,27 +25,30 @@ public interface CameraPreviewScope : BoxScope {
 }
 
 /**
- * Runs [overlay] over this box with a [CameraPreviewScope]; every platform's EnginePreview calls it.
- * The scope is kept while the box and orientation stay the same, so the overlay skips when the
- * preview recomposes for anything else.
+ * Runs [overlay] over this box, the content rectangle of [contentBounds], with a [CameraPreviewScope];
+ * every platform's EnginePreview reaches it through PreviewContent. The scope is kept while the box,
+ * orientation and bounds stay the same, so the overlay skips when the preview recomposes for anything
+ * else.
  */
 @Suppress("NOTHING_TO_INLINE")
 @Composable
 internal inline fun BoxScope.CameraPreviewOverlay(
     deviceOrientation: DeviceOrientation,
+    contentBounds: Rect,
     noinline overlay: @Composable CameraPreviewScope.() -> Unit,
 ) {
-    val scope = remember(this, deviceOrientation) { CameraPreviewScopeImpl(this, deviceOrientation) }
+    val scope = remember(this, deviceOrientation, contentBounds) {
+        CameraPreviewScopeImpl(this, deviceOrientation, contentBounds)
+    }
     scope.overlay()
 }
 
 internal class CameraPreviewScopeImpl(
     private val boxScope: BoxScope,
     override val deviceOrientation: DeviceOrientation,
+    override val contentBounds: Rect,
 ) : CameraPreviewScope,
     BoxScope by boxScope {
-
-    override val contentBounds: Rect get() = TODO("Y-overlay")
 
     override fun Modifier.keepUpright(): Modifier = this.then(
         Modifier.graphicsLayer {

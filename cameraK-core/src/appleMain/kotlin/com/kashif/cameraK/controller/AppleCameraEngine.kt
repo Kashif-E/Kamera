@@ -6,6 +6,7 @@ import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.engine.AspectRatioPreview
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraKEnvironment
 import com.kashif.cameraK.engine.CameraSelection
@@ -230,7 +231,12 @@ internal class AppleCameraEngine(
         }
     }
 
-    override val preview: PlatformPreviewSource = object : PlatformPreviewSource, PreviewLayerLayout {
+    override val preview: PlatformPreviewSource = object :
+        PlatformPreviewSource,
+        PreviewLayerLayout,
+        AspectRatioPreview {
+        override val aspectRatio: AspectRatio get() = config.aspectRatio
+
         override fun createPreviewLayer(): AVCaptureVideoPreviewLayer {
             val avSession = session?.avSession
             val layer = avSession?.let { AVCaptureVideoPreviewLayer(session = it) } ?: AVCaptureVideoPreviewLayer()

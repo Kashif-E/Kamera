@@ -81,7 +81,8 @@ holder both show it; a preview never opens the camera itself.
 
 ### Overlay coordinates are off
 
-Each platform lays the overlay out differently; see
+The overlay is laid out over the image's content rectangle, not the whole preview box: draw in
+its coordinates, and use `contentBounds` for its size; see
 [CameraPreview](api/camera-k-screen.md#camerapreview).
 
 ## Capture

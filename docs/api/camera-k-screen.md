@@ -83,14 +83,11 @@ Column {
 }
 ```
 
-The frame is fitted into the preview's box, letterboxed where the aspect ratios differ. What the
-overlay's box covers depends on the platform:
-
-- **Android**: the viewfinder and the overlay share a centred box of the configured aspect ratio,
-  turned to the screen's orientation, so overlay coordinates map 1:1 to the camera image.
-- **iOS**: the preview fills a centred box of the configured aspect ratio, showing what a capture
-  keeps; the overlay's box is the whole preview box.
-- **Desktop**: the overlay's box is the frame's.
+The image fills the preview's content rectangle: the largest centred box of its aspect ratio inside
+the preview's box, with letterbox or pillarbox bars outside it where the ratios differ. On every
+platform the overlay is laid out over that rectangle, so overlay coordinates map 1:1 to the camera
+image. On Android and iOS the rectangle has the configured aspect ratio, turned to the screen's
+orientation; on desktop it has the frame's.
 
 Two previews of one holder, as in a crossfade, both show it. To run the camera with no preview at
 all, use the holder without `CameraPreview`.
@@ -101,6 +98,8 @@ The `content` of `CameraKScreen` and the `overlay` of `CameraPreview` run in a
 `CameraPreviewScope`, a `BoxScope` with:
 
 - `deviceOrientation`: the device's physical orientation.
+- `contentBounds`: the content rectangle in the overlay's coordinates, in pixels. The overlay is laid
+  out over it, so it runs from (0, 0) to the overlay's size.
 - `Modifier.keepUpright()`: turns a control to the device's orientation, for a screen locked to
   portrait.
 

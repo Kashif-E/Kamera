@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.geometry.Rect
 import com.kashif.cameraK.enums.DeviceOrientation
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -26,7 +27,7 @@ class CameraPreviewOverlayTest {
         private val scene = ImageComposeScene(width = 10, height = 10) {
             Box {
                 tick // recomposes the preview for a reason the overlay does not care about
-                CameraPreviewOverlay(orientation, overlay)
+                CameraPreviewOverlay(orientation, Rect(0f, 0f, 10f, 10f), overlay)
             }
         }
 
