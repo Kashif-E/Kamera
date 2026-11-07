@@ -11,11 +11,9 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
-import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AVFoundation.*
 import platform.Foundation.NSData
 import platform.Foundation.NSError
-import platform.Foundation.NSLock
 import platform.UIKit.UIView
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
@@ -106,7 +104,6 @@ internal class CustomCameraController private constructor(
     private val inputConfigurator = seams.inputConfigurator
     private val lensSwitcher = seams.lensSwitcher
     private val cameraDevices = seams.cameraDevices
-    private val photoCapturer = seams.photoCapturer
 
     /** Every AVCaptureSession call runs on this serial queue. */
     private val sessionQueue = SessionQueue()
@@ -116,6 +113,19 @@ internal class CustomCameraController private constructor(
 
     /** The torch and zoom of the camera in use. */
     private val controls = CameraControls(sessionQueue, { currentCamera }, ::reportError)
+
+    /** The photo output, the flash mode captures request and the captures themselves. */
+    private val stills = StillCapture(
+        qualityPrioritization = qualityPrioritization,
+        mirrorFrontCamera = mirrorFrontCamera,
+        photoCapturer = seams.photoCapturer,
+        queue = sessionQueue,
+        session = { session },
+        currentCamera = { currentCamera },
+        isUsingFrontCamera = { isUsingFrontCamera },
+        currentVideoOrientation = ::currentVideoOrientation,
+        reportError = ::reportError,
+    )
 
     /** Bumped by [cleanupSession] so a setup requested before it never reports ready. */
     private val setupGeneration = atomic(0)
@@ -158,9 +168,6 @@ internal class CustomCameraController private constructor(
     /** The camera's input in the session, so a switch removes it and nothing else. Session queue only. */
     private var videoInput: AVCaptureInput? = null
 
-    @Volatile
-    private var photoOutput: AVCapturePhotoOutput? = null
-
     /** A UIKit layer: read and written on main only. */
     var cameraPreviewLayer: AVCaptureVideoPreviewLayer?
         get() = preview.layer
@@ -175,27 +182,39 @@ internal class CustomCameraController private constructor(
      * The orientation photos are captured in; AppleCameraEngine answers with its target orientation
      * when one is set, otherwise the device's.
      */
-    @Volatile
-    internal var captureOrientation: () -> AVCaptureVideoOrientation = { currentVideoOrientation() }
+    internal var captureOrientation: () -> AVCaptureVideoOrientation
+        get() = stills.captureOrientation
+        set(value) {
+            stills.captureOrientation = value
+        }
 
     /**
      * How the photo connection is turned for a capture: the engine answers with the coordinator's angle
      * from iOS 17 when no target orientation is set, otherwise with [captureOrientation].
      */
-    @Volatile
-    internal var captureRotation: () -> VideoRotation = { VideoRotation.Orientation(captureOrientation()) }
+    internal var captureRotation: () -> VideoRotation
+        get() = stills.captureRotation
+        set(value) {
+            stills.captureRotation = value
+        }
 
     /** Whether a recording is in progress; the engine answers from its recorder. */
     @Volatile
     internal var recordingInProgress: () -> Boolean = { false }
 
     /** The format captures are taken in: HEIC asks the photo output for HEVC where it can encode it. */
-    @Volatile
-    internal var photoFormat: ImageFormat = ImageFormat.JPEG
+    internal var photoFormat: ImageFormat
+        get() = stills.photoFormat
+        set(value) {
+            stills.photoFormat = value
+        }
 
     /** Whether outputs get their deferred start turned off (iOS 26 and later); the engine sets it. */
-    @Volatile
-    internal var turnsDeferredStartOff: Boolean = false
+    internal var turnsDeferredStartOff: Boolean
+        get() = stills.turnsDeferredStartOff
+        set(value) {
+            stills.turnsDeferredStartOff = value
+        }
 
     var onPhotoCapture: ((NSData?) -> Unit)? = null
     var onError: ((CameraException) -> Unit)? = null
@@ -205,11 +224,14 @@ internal class CustomCameraController private constructor(
     internal val currentDevice: CaptureDeviceOps? get() = currentCamera
 
     /** The flash mode a capture's settings carry now: [flashMode], or off when the photo output lacks it. */
-    internal val captureFlashMode: AVCaptureFlashMode get() = supportedFlashMode(flashMode)
+    internal val captureFlashMode: AVCaptureFlashMode get() = stills.captureFlashMode
 
     /** The flash mode captures request; a mode the photo output lacks is turned off at capture time. */
-    @Volatile
-    var flashMode: AVCaptureFlashMode = AVCaptureFlashModeAuto
+    var flashMode: AVCaptureFlashMode
+        get() = stills.flashMode
+        set(value) {
+            stills.flashMode = value
+        }
 
     /** The torch mode applied to the camera in use whenever the session starts or the lens changes. */
     var torchMode: AVCaptureTorchMode
@@ -300,7 +322,7 @@ internal class CustomCameraController private constructor(
             val inputsReady =
                 inputConfigurator?.invoke(ops, cameraDeviceType) ?: setupInputs(lens, cameraDeviceType, device)
             if (inputsReady) {
-                setupPhotoOutput()
+                stills.setUpOutput(ops)
                 applySessionPreset(ops)
                 runPendingConfigurations()
                 null
@@ -319,10 +341,10 @@ internal class CustomCameraController private constructor(
 
         if (failure != null) {
             session = null
-            photoOutput = null
+            stills.discardOutput()
             return failure
         }
-        applyMaxPhotoDimensions()
+        stills.applyMaxPhotoDimensions()
         return null
     }
 
@@ -358,66 +380,14 @@ internal class CustomCameraController private constructor(
         stillPreset = preset
     }
 
-    /** Whether captures request high resolution; QUALITY is the only prioritization that does. */
-    private val highResolution: Boolean
-        get() = qualityPrioritization == QualityPrioritization.QUALITY
-
-    /** The size QUALITY captures ask for: the current camera's largest. Written on the session queue. */
-    @Volatile
-    private var maxPhotoDimensions: PhotoDimensions? = null
-
-    /**
-     * Opens the photo output up to the current camera's largest photo when QUALITY asks for high
-     * resolution. The size must be one the camera's active format supports, so this runs on the
-     * session queue once the camera (and its format) is settled: after setup and after each swap.
-     */
-    private fun applyMaxPhotoDimensions() {
-        if (!highResolution) return
-        val output = photoOutput ?: return
-        val largest = currentCamera?.supportedMaxPhotoDimensions?.maxByOrNull { it.pixels }
-        maxPhotoDimensions = largest
-        if (largest != null) photoCapturer.setMaxPhotoDimensions(output, largest)
-    }
-
-    /** The AVFoundation prioritization for [qualityPrioritization]; null for NONE, which leaves the default. */
-    private val avQualityPrioritization: AVCapturePhotoQualityPrioritization?
-        get() = when (qualityPrioritization) {
-            QualityPrioritization.QUALITY -> AVCapturePhotoQualityPrioritizationQuality
-            QualityPrioritization.BALANCED -> AVCapturePhotoQualityPrioritizationBalanced
-            QualityPrioritization.SPEED -> AVCapturePhotoQualityPrioritizationSpeed
-            QualityPrioritization.NONE -> null
-        }
-
     /** The flash modes the photo output supports with the camera now in use; none before setup. */
-    internal val captureFlashModes: List<AVCaptureFlashMode>
-        get() = photoOutput?.let(photoCapturer::supportedFlashModes).orEmpty()
+    internal val captureFlashModes: List<AVCaptureFlashMode> get() = stills.captureFlashModes
 
     /** The codecs the photo output can encode a photo in with the camera now in use; none before setup. */
-    internal val availablePhotoCodecs: List<String>
-        get() = photoOutput?.let(photoCapturer::availablePhotoCodecTypes).orEmpty()
+    internal val availablePhotoCodecs: List<String> get() = stills.availablePhotoCodecs
 
     /** Whether a HEIC capture can be taken: the photo output can encode HEVC with the camera now in use. */
-    internal val canCaptureHeic: Boolean get() = AVVideoCodecTypeHEVC in availablePhotoCodecs
-
-    /** The codec a capture asks for: HEVC for [photoFormat] HEIC where the output has it, JPEG otherwise. */
-    private val photoCodec: String
-        get() = if (photoFormat == ImageFormat.HEIC && canCaptureHeic) AVVideoCodecTypeHEVC!! else AVVideoCodecJPEG!!
-
-    /** [mode] when the photo output supports it, otherwise off (devices without a flash, such as iPads). */
-    private fun supportedFlashMode(mode: AVCaptureFlashMode): AVCaptureFlashMode =
-        if (mode in captureFlashModes) mode else AVCaptureFlashModeOff
-
-    private fun setupPhotoOutput() {
-        photoOutput = AVCapturePhotoOutput()
-        avQualityPrioritization?.let { photoOutput?.setMaxPhotoQualityPrioritization(it) }
-        if (turnsDeferredStartOff) photoOutput?.let(photoCapturer::disableDeferredStart)
-
-        if (session?.canAddOutput(photoOutput!!) == true) {
-            session?.addOutput(photoOutput!!)
-        } else {
-            throw CameraException.ConfigurationError("Cannot add photo output")
-        }
-    }
+    internal val canCaptureHeic: Boolean get() = stills.canCaptureHeic
 
     /**
      * Enumerates every built-in lens (wide, telephoto, ultra-wide) on both positions.
@@ -631,7 +601,7 @@ internal class CustomCameraController private constructor(
                 )
             }
             ops.addOutput(output)
-            if (turnsDeferredStartOff) photoCapturer.disableDeferredStart(output)
+            stills.disableDeferredStartIfAsked(output)
             val audio = microphone?.let { addMicrophone(ops, it) }
             when {
                 preset == null -> Unit
@@ -715,7 +685,7 @@ internal class CustomCameraController private constructor(
             ops.startRunning()
             // A torch set before the session ran does not survive its start.
             controls.applyConfiguredTorch()
-            preparePhotoOutput()
+            stills.prepareOnQueue()
         }
     }
 
@@ -767,8 +737,7 @@ internal class CustomCameraController private constructor(
             (session ?: preparedSession)?.tearDown()
             session = null
             preparedSession = null
-            photoOutput = null
-            maxPhotoDimensions = null
+            stills.releaseOnQueue()
             stillPreset = null
             currentCamera = null
             videoInput = null
@@ -795,14 +764,7 @@ internal class CustomCameraController private constructor(
      * Sets the flash mode later captures request. It is kept even before the photo output exists;
      * a capture turns off a mode the device lacks (devices without a flash, such as iPads).
      */
-    fun setFlashMode(mode: AVCaptureFlashMode) {
-        val before = supportedFlashMode(flashMode)
-        flashMode = mode
-        if (photoOutput != null && supportedFlashMode(mode) != mode) {
-            CameraKLogger.w(TAG, "flash mode $mode is not supported on this device; captures use OFF")
-        }
-        if (supportedFlashMode(mode) != before) sessionQueue.async { preparePhotoOutput() }
-    }
+    fun setFlashMode(mode: AVCaptureFlashMode) = stills.setFlashMode(mode)
 
     fun setTorchMode(mode: AVCaptureTorchMode) = controls.setTorchMode(mode)
 
@@ -859,67 +821,11 @@ internal class CustomCameraController private constructor(
     }
 
     /**
-     * New settings for one capture: codec, size, quality prioritization and flash. AVFoundation
-     * refuses a settings object it has seen before, so every capture (and every prepare) gets its own.
-     */
-    @OptIn(ExperimentalForeignApi::class)
-    private fun photoSettings(): AVCapturePhotoSettings {
-        val settings = AVCapturePhotoSettings.photoSettingsWithFormat(
-            mapOf(
-                AVVideoCodecKey to photoCodec,
-            ),
-        )
-
-        // iOS 16, CameraK's minimum, sizes photos with maxPhotoDimensions; the high-resolution flags are gone.
-        maxPhotoDimensions?.let { settings.maxPhotoDimensions = it.toCMVideoDimensions() }
-        avQualityPrioritization?.let { settings.photoQualityPrioritization = it }
-        settings.flashMode = supportedFlashMode(flashMode)
-
-        // Don't touch autoStillImageStabilizationEnabled: it's deprecated since iOS 13 and
-        // setting it together with photoQualityPrioritization (set above) raises -17281
-        // (invalid state). Stabilization is handled automatically by the prioritization level. (#113)
-        return settings
-    }
-
-    /**
      * Issues one capture whose photo and completion go only to [callbacks], through a delegate of its
-     * own that is kept alive until AVFoundation's last callback for it. Session queue only: the
-     * settings are built from the photo output as it is now, after every piece of session work queued
-     * before (a lens switch, a flash change), and handed to it in the same block (design §2.4). Returns
+     * own that is kept alive until AVFoundation's last callback for it. Session queue only; returns
      * false, without calling [callbacks], when the camera is not ready.
      */
-    @OptIn(ExperimentalForeignApi::class)
-    internal fun capturePhotoOnQueue(callbacks: PhotoCaptureCallbacks): Boolean {
-        val output = photoOutput
-        if (output == null || session?.isRunning != true) return false
-
-        // Do NOT reconfigure the session preset here. Switching the preset synchronously right
-        // before capturePhotoWithSettings disrupts auto-exposure, so the still is captured
-        // mid-reconfiguration and comes out underexposed (#138). The preset is chosen once at
-        // setup; memory pressure is handled by clearing buffer pools, not by downshifting capture.
-
-        val settings = photoSettings()
-
-        // The orientation the photo's metadata records, and the front-camera photo mirrored to match
-        // the mirrored preview when configured (#112).
-        val rotation = captureRotation()
-        val mirrored = mirrorFrontCamera && isUsingFrontCamera
-
-        lateinit var delegate: PhotoCaptureDelegate
-        delegate = PhotoCaptureDelegate(
-            object : PhotoCaptureCallbacks {
-                override fun photoProcessed(data: NSData?, error: NSError?) = callbacks.photoProcessed(data, error)
-
-                override fun captureFinished(error: NSError?) {
-                    releasePhotoDelegate(delegate)
-                    callbacks.captureFinished(error)
-                }
-            },
-        )
-        retainPhotoDelegate(delegate)
-        photoCapturer.capture(output, settings, rotation, mirrored, delegate)
-        return true
-    }
+    internal fun capturePhotoOnQueue(callbacks: PhotoCaptureCallbacks): Boolean = stills.captureOnQueue(callbacks)
 
     /**
      * Switches to a specific camera device type (e.g. wide-angle, telephoto, ultra-wide)
@@ -1030,28 +936,8 @@ internal class CustomCameraController private constructor(
         controls.forgetRequestedZoom()
         isUsingFrontCamera = camera.isFront
         applyPreviewMirroring()
-        applyMaxPhotoDimensions()
-        preparePhotoOutput()
-    }
-
-    /**
-     * Has the photo output allocate its capture buffers now for the settings captures use, rather
-     * than on the first shutter press. Runs on the session queue while the session runs: after it
-     * starts, after a camera swap, and when the flash mode captures use changes.
-     */
-    private fun preparePhotoOutput() {
-        val output = photoOutput ?: return
-        if (session?.isRunning != true) return
-        photoCapturer.prepare(output, listOf(photoSettings())) { _, error ->
-            if (error != null) {
-                val failure = CameraException.ConfigurationError(
-                    "Preparing the photo output failed: ${error.summary}",
-                    NSErrorException(error),
-                )
-                CameraKLogger.e(TAG, "preparing the photo output failed", failure)
-                reportError(failure)
-            }
-        }
+        stills.applyMaxPhotoDimensions()
+        stills.prepareOnQueue()
     }
 
     /** Mirrors the preview for the lens now in use. Called on the session queue after a swap. */
@@ -1065,41 +951,11 @@ internal class CustomCameraController private constructor(
         deliverPhoto(if (error == null) didFinishProcessingPhoto.fileDataRepresentation() else null, error)
     }
 
-    // AVCam keeps each capture's delegate alive until AVFoundation's last callback for it.
-    private val photoDelegatesLock = NSLock()
-    private val photoDelegates = mutableSetOf<PhotoCaptureDelegate>()
-
     /**
      * Capture delegates retained until AVFoundation's last callback for their capture: AVFoundation
      * does not retain a photo delegate, so a cancelled capture's delegate must outlive its caller.
      */
-    internal val outstandingPhotoDelegates: Int
-        get() {
-            photoDelegatesLock.lock()
-            try {
-                return photoDelegates.size
-            } finally {
-                photoDelegatesLock.unlock()
-            }
-        }
-
-    private fun retainPhotoDelegate(delegate: PhotoCaptureDelegate) {
-        photoDelegatesLock.lock()
-        try {
-            photoDelegates += delegate
-        } finally {
-            photoDelegatesLock.unlock()
-        }
-    }
-
-    private fun releasePhotoDelegate(delegate: PhotoCaptureDelegate) {
-        photoDelegatesLock.lock()
-        try {
-            photoDelegates -= delegate
-        } finally {
-            photoDelegatesLock.unlock()
-        }
-    }
+    internal val outstandingPhotoDelegates: Int get() = stills.outstandingDelegates
 
     private fun deliverPhoto(data: NSData?, error: NSError?) {
         if (error != null) {
