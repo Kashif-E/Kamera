@@ -1945,6 +1945,12 @@ def published_group_problems(properties: Dict[str, str], files: Dict[str, str]) 
 
 
 def check_published_group() -> List[str]:
+    found = published_group_problems(
+        {"GROUP": VERIFIED_NAMESPACE, "LEGACY_GROUP": "org.example.other-group"},
+        {"gradle.properties": f"GROUP={VERIFIED_NAMESPACE}\nLEGACY_GROUP=org.example.other-group\n"},
+    )
+    if not any(problem.startswith("gradle.properties: LEGACY_GROUP is") for problem in found):
+        raise CheckError(f"the published-group rule accepts a LEGACY_GROUP other than the 1.x group: {found}")
     old = "org.example.old-group"
     properties = {"GROUP": VERIFIED_NAMESPACE, "LEGACY_GROUP": old}
     allowed = {
@@ -1960,6 +1966,8 @@ def check_published_group() -> List[str]:
         "build.gradle.kts": 'Regex("""org\\.example\\.old-group:a""")\n',
         "a/api/android/a.api": "public final fun getLambda$1$org_example_old_group_a ()V\n",
         "a/src/main/resources/META-INF/org/example/old-group/x.properties": "",
+        # The pin's own constant is the one line of this script that may spell the 1.x group.
+        "scripts/check_repo_policy.py": f'LEGACY_NAMESPACE = "{old}"\nRETIRED = "{old}"\n',
     }
     found = published_group_problems(properties, {**allowed, **named})
     if sorted({problem.split(":")[0] for problem in found}) != sorted(named) or len(found) != len(named):
