@@ -118,20 +118,22 @@ continuous metering after its default 5 seconds.
 | A fixed-focus camera metered (no AF in the action) | `Success` |
 | AF did not lock | `Failure(Timeout(FOCUS_POINT))` |
 | A newer `focusAt`, a reset or a camera switch replaced it | `Failure(Busy(FOCUS_POINT))` |
-| The camera closed first | `Failure(Closed)` |
+| The camera stopped or closed first, even if `start` followed at once | `Failure(Closed)` |
 | The preview has no surface yet | `Failure(InvalidState(FOCUS_POINT))` |
 | CameraX failed it otherwise | `Failure(Hardware(null, cause))` |
 
 `setExposureCompensation` returns once CameraX has applied the index, and `uiState` shows the index
-`ExposureState` reads back. A newer call replaces one still in flight, which returns
-`Failure(Busy(EXPOSURE_COMPENSATION))`. A camera without compensation drops the held index, and
-`uiState` shows 0. `resetFocusAndExposure` cancels the focus point and sets index 0.
+`ExposureState` reads back. A newer call, a reset or a camera switch replaces one still in flight, which
+returns `Failure(Busy(EXPOSURE_COMPENSATION))` and leaves the held index as it was, even when the old camera
+applied it after the switch; stopped or closed first, it returns `Failure(Closed)`. A camera without
+compensation drops the held index, and `uiState` shows 0. `resetFocusAndExposure` cancels the focus point
+and sets index 0.
 
 ### iOS
 
 iOS has no exposure index, so CameraK defines one: each step is 1/3 EV, and a camera's
-`exposureCompensationRange` is its `exposureTargetBias` range cut to ±2 EV, which is -6 to 6 on every
-current iPhone. ±2 EV matches Android's typical range and the system Camera app. A camera whose range
+`exposureCompensationRange` is the indexes whose bias lies inside its `exposureTargetBias` range, cut to
+±2 EV, which is -6 to 6 on every current iPhone. CameraK never sets a bias outside the camera's range. ±2 EV matches Android's typical range and the system Camera app. A camera whose range
 holds no index but 0 reports no compensation. `exposureCompensationStep` is 1/3.
 
 Each camera's capabilities are known from the start: a focus point where the camera supports a focus
