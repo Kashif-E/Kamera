@@ -69,7 +69,6 @@ import platform.AVFoundation.AVCaptureSessionWasInterruptedNotification
 import platform.AVFoundation.AVCaptureTorchModeAuto
 import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVCaptureVideoOrientation
-import platform.AVFoundation.AVCaptureVideoOrientationPortrait
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
 import platform.CoreGraphics.CGRect
@@ -81,10 +80,7 @@ import platform.Foundation.NSNumber
 import platform.Foundation.NSUUID
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
-import platform.UIKit.UIDeviceOrientationDidChangeNotification
 import platform.UIKit.UIInterfaceOrientation
-import platform.darwin.dispatch_async
-import platform.darwin.dispatch_get_main_queue
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
 
@@ -121,13 +117,13 @@ internal class AppleCameraEngine(
     environment: CameraKEnvironment,
     internal val custom: CustomCameraController,
     /** How the device is held now; tests answer for the simulator, which cannot be turned. */
-    private val readDeviceOrientation: () -> UIDeviceOrientation = { UIDevice.currentDevice.orientation },
+    readDeviceOrientation: () -> UIDeviceOrientation = { UIDevice.currentDevice.orientation },
     /** Begins (true) or ends (false) UIDevice's orientation notifications; tests count the calls. */
-    private val generateOrientationNotifications: (Boolean) -> Unit = ::generateDeviceOrientationNotifications,
+    generateOrientationNotifications: (Boolean) -> Unit = ::generateDeviceOrientationNotifications,
     /** Whether the app's Info.plist has a key: a test bundle's cannot change per test. */
     private val hasUsageDescription: (key: String) -> Boolean = ::hasInfoPlistKey,
     /** The rotation coordinators of iOS 17 and later; tests answer for the simulator, which has no camera. */
-    private val rotationSources: RotationSourceFactory = CoordinatorRotationSources,
+    rotationSources: RotationSourceFactory = CoordinatorRotationSources,
     /** Locks analysis frames' pixel buffers; tests count the locks. */
     private val pixelBufferLocker: PixelBufferLocker = CoreVideoPixelBufferLocker,
     private val enumerateLenses: () -> List<LensInfo> = custom::getCameraCapabilities,
@@ -152,13 +148,6 @@ internal class AppleCameraEngine(
     private val _zoom = MutableStateFlow(ZoomState(1f, 1f, 1f))
     override val zoom: StateFlow<ZoomState> = _zoom.asStateFlow()
 
-    private val _deviceOrientation = MutableStateFlow(DeviceOrientation.PORTRAIT)
-    override val deviceOrientation: StateFlow<DeviceOrientation> = _deviceOrientation.asStateFlow()
-
-    /** The orientation captures and movies are locked to; null follows the device. */
-    private val target = atomic<DeviceOrientation?>(null)
-    internal val targetOrientation: DeviceOrientation? get() = target.value
-
     /** The zoom ratio the engine re-applies after each start and camera switch. */
     @Volatile
     private var desiredZoom = 1f
@@ -175,6 +164,19 @@ internal class AppleCameraEngine(
         EngineCapabilities(lock, generations, custom, osVersion, enumerateLenses)
     override val capabilities: StateFlow<CameraCapabilities> get() = capabilitySource.capabilities
 
+    private val rotation: EngineRotation = EngineRotation(
+        lock = lock,
+        generations = generations,
+        custom = custom,
+        osVersion = osVersion,
+        readDeviceOrientation = readDeviceOrientation,
+        generateOrientationNotifications = generateOrientationNotifications,
+        rotationSources = rotationSources,
+        boundDevice = { observedDevice },
+    )
+    override val deviceOrientation: StateFlow<DeviceOrientation> = rotation.deviceOrientation
+    internal val targetOrientation: DeviceOrientation? get() = rotation.targetOrientation
+
     /** Recordings on the movie file output. */
     internal val recorder = AppleRecorder(
         custom = custom,
@@ -182,7 +184,7 @@ internal class AppleCameraEngine(
         osVersion = osVersion,
         hasUsageDescription = hasUsageDescription,
         supportedQualities = capabilitySource::boundQualities,
-        videoRotation = ::captureRotation,
+        videoRotation = rotation::captureRotation,
     )
 
     override val recordingEvents: Flow<EngineRecordingEvent> = recorder.events
@@ -206,7 +208,7 @@ internal class AppleCameraEngine(
         custom = custom,
         keepOutput = config.frameAnalysis,
         recordingActive = { recorder.isActive },
-        rotationDegrees = ::frameRotationDegrees,
+        rotationDegrees = rotation::frameRotationDegrees,
         onSampleBuffer = generations::onSampleBuffer,
         locker = pixelBufferLocker,
     )
@@ -217,21 +219,9 @@ internal class AppleCameraEngine(
             CoroutineExceptionHandler { _, e -> CameraKLogger.e(TAG, "an iOS engine task failed", e) },
     )
 
-    // Everything below is read and written only while holding the lock.
-    private var orientationObserver: Any? = null
-
     // Session queue only: the device whose torch and zoom the engine observes, and the observation.
     private var observedDevice: CaptureDeviceOps? = null
     private var hardwareObservation: AutoCloseable? = null
-
-    /** The rotation coordinator of the bound camera and the newest preview layer, iOS 17 and later. Under [lock]. */
-    private var rotation: Rotation? = null
-
-    /** The preview layer made last, which the rotation coordinator turns. Under [lock]. */
-    private var newestPreviewLayer: AVCaptureVideoPreviewLayer? = null
-
-    /** The device orientation captures took last, kept while the device lies flat (#115, #109). */
-    private val lastDeviceVideoOrientation = atomic(AVCaptureVideoOrientationPortrait)
 
     /** The reason of the latest interruption, recorded when AVFoundation posts it, before the hop to the queue. */
     private val lastInterruption = atomic<InterruptionReason?>(null)
@@ -254,8 +244,8 @@ internal class AppleCameraEngine(
     private val observers: List<Any> = observeSession()
 
     init {
-        custom.captureOrientation = ::captureVideoOrientation
-        custom.captureRotation = ::captureRotation
+        custom.captureOrientation = rotation::captureVideoOrientation
+        custom.captureRotation = rotation::captureRotation
         custom.recordingInProgress = { recorder.isActive }
         custom.photoFormat = config.imageFormat
         custom.turnsDeferredStartOff = osVersion >= DEFERRED_START_IOS
@@ -282,12 +272,7 @@ internal class AppleCameraEngine(
             // is cropped as the still is, so the preview shows what gets captured (#119, w6 decision G1).
             layer.videoGravity = AVLayerVideoGravityResizeAspectFill
             custom.adoptPreviewLayer(layer)
-            if (coordinatesRotation) {
-                lock.locked { newestPreviewLayer = layer }
-                custom.afterQueuedSessionWork {
-                    platformCallback("binding the rotation coordinator") { bindRotationOnQueue() }
-                }
-            }
+            rotation.adoptPreviewLayer(layer)
             return layer
         }
 
@@ -309,7 +294,7 @@ internal class AppleCameraEngine(
         interfaceOrientation: UIInterfaceOrientation?,
     ) {
         layer.setFrame(previewFrame(bounds, config.aspectRatio, interfaceOrientation))
-        turnPreview(layer, interfaceOrientation?.toVideoOrientation())
+        rotation.turnPreview(layer, interfaceOrientation?.toVideoOrientation())
     }
 
     // ─── Lifecycle ──────────────────────────────────────────────────────────────────────────────
@@ -333,10 +318,10 @@ internal class AppleCameraEngine(
                 generations.isClosed -> ENGINE_CLOSED
                 generations.isLive -> CameraKResult.Success(Unit)
                 else -> {
-                    startObservingOrientation()
+                    rotation.startObservingOrientation()
                     val started = tracer.beginInterval(TraceNames.START).use { openGeneration(desired) }
                     // Observed between a start and a stop: a start that failed has nothing to stop.
-                    if (started is CameraKResult.Failure) stopObservingOrientation()
+                    if (started is CameraKResult.Failure) rotation.stopObservingOrientation()
                     started
                 }
             }
@@ -368,7 +353,7 @@ internal class AppleCameraEngine(
             else -> null
         }
         if (failure != null) return generations.fail(generation, engineErrorFor(failure, selection.lens()))
-        target.value = desired.targetOrientation
+        rotation.targetOrientation = desired.targetOrientation
         desiredZoom = desired.zoomRatio
         desiredTorch = desired.torchMode
         custom.setFlashMode(desired.flashMode.toAVCaptureFlashMode())
@@ -399,7 +384,7 @@ internal class AppleCameraEngine(
 
     private fun cancelStart(generation: Int) {
         if (generations.cancelStart(generation)) {
-            stopObservingOrientation()
+            rotation.stopObservingOrientation()
             custom.afterQueuedSessionWork {
                 platformCallback("stopping a cancelled start") { custom.stopRunningOnQueue() }
             }
@@ -415,12 +400,12 @@ internal class AppleCameraEngine(
         if (!generations.isClosed) recorder.finishForStop()
         val cut = generations.stop() ?: return
         cut.start?.continuation?.resume(ENGINE_CLOSED)
-        stopObservingOrientation()
+        rotation.stopObservingOrientation()
         suspendCancellableCoroutine { continuation ->
             custom.afterQueuedSessionWork {
                 platformCallback("releasing a prepared recording") { recorder.releasePreparedOnQueue() }
                 platformCallback("stopping the session") { custom.stopRunningOnQueue() }
-                platformCallback("closing the rotation coordinator") { unbindRotationOnQueue() }
+                platformCallback("closing the rotation coordinator") { rotation.unbindOnQueue() }
                 continuation.resume(Unit)
             }
         }
@@ -431,7 +416,7 @@ internal class AppleCameraEngine(
         cut.start?.continuation?.resume(ENGINE_CLOSED)
         lock.locked { pendingStills.toList().also { pendingStills.clear() } }.forEach { it.settle(ENGINE_CLOSED) }
         observers.forEach(center::removeObserver)
-        stopObservingOrientation()
+        rotation.stopObservingOrientation()
         capabilitySource.enumerated.complete(Unit)
         if (session != null) {
             // A recording is finalized before the session is released (contract rule 7).
@@ -439,7 +424,7 @@ internal class AppleCameraEngine(
                 custom.cleanupSession()
                 custom.afterQueuedSessionWork {
                     stopObservingHardware()
-                    unbindRotationOnQueue()
+                    rotation.unbindOnQueue()
                     closeDone.complete()
                 }
             }
@@ -554,21 +539,6 @@ internal class AppleCameraEngine(
                     }
                 }
             }
-        }
-    }
-
-    /**
-     * Clockwise degrees that turn a frame upright: the video data output delivers the sensor's
-     * landscape buffer, which the back camera shows upright with the device turned left and the front
-     * camera with it turned right (the front's mirroring is not part of the rotation).
-     */
-    private fun frameRotationDegrees(): Int {
-        val front = custom.currentDevice?.isFront == true
-        return when (_deviceOrientation.value) {
-            DeviceOrientation.PORTRAIT -> if (front) DEGREES_270 else DEGREES_90
-            DeviceOrientation.LANDSCAPE_LEFT -> if (front) DEGREES_180 else 0
-            DeviceOrientation.PORTRAIT_UPSIDE_DOWN -> if (front) DEGREES_90 else DEGREES_270
-            DeviceOrientation.LANDSCAPE_RIGHT -> if (front) 0 else DEGREES_180
         }
     }
 
@@ -820,7 +790,7 @@ internal class AppleCameraEngine(
      */
     override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> {
         generations.unusable()?.let { return it }
-        target.value = orientation
+        rotation.targetOrientation = orientation
         return generations.onSessionQueue("setting the target orientation") {
             publishHardware()
             CameraKResult.Success(Unit)
@@ -861,129 +831,13 @@ internal class AppleCameraEngine(
     }
 
     /** The orientation captures and movies take: the target when one is set, otherwise the device's. */
-    internal fun captureVideoOrientation(): AVCaptureVideoOrientation =
-        target.value?.toVideoOrientation() ?: deviceVideoOrientation()
+    internal fun captureVideoOrientation(): AVCaptureVideoOrientation = rotation.captureVideoOrientation()
 
     /**
      * How photos and movies are turned (design §2.4): the target orientation when one is set, else the
      * rotation coordinator's horizon-level capture angle from iOS 17, else the device's orientation.
      */
-    internal fun captureRotation(): VideoRotation {
-        target.value?.let { return VideoRotation.Orientation(it.toVideoOrientation()) }
-        lock.locked { rotation }?.let { return VideoRotation.Angle(it.source.captureAngle) }
-        return VideoRotation.Orientation(deviceVideoOrientation())
-    }
-
-    /**
-     * How the device is held, as a video orientation. Face up, face down and unknown name none, and
-     * mapping them to portrait would snap a landscape capture to portrait while the device lies flat
-     * (#115), so they keep the last one (#109).
-     */
-    private fun deviceVideoOrientation(): AVCaptureVideoOrientation {
-        val now = readDeviceOrientation().toVideoOrientation() ?: return lastDeviceVideoOrientation.value
-        lastDeviceVideoOrientation.value = now
-        return now
-    }
-
-    /** Main thread: [layer] by the coordinator's preview angle when it drives the layer, else to [interfaceOrientation]. */
-    private fun turnPreview(layer: AVCaptureVideoPreviewLayer, interfaceOrientation: AVCaptureVideoOrientation?) {
-        val driven = lock.locked { rotation }?.takeIf { it.layer === layer }
-        val turn = when {
-            driven != null -> VideoRotation.Angle(driven.source.previewAngle)
-            interfaceOrientation != null -> VideoRotation.Orientation(interfaceOrientation)
-            else -> return
-        }
-        custom.turnPreview(layer, turn)
-    }
-
-    // ─── Rotation coordinator (iOS 17 and later) ────────────────────────────────────────────────
-
-    /** The coordinator made for [device] and [layer]. */
-    private class Rotation(
-        val device: CaptureDeviceOps,
-        val layer: AVCaptureVideoPreviewLayer?,
-        val source: RotationSource,
-    )
-
-    private val coordinatesRotation: Boolean get() = osVersion >= ROTATION_COORDINATOR_IOS
-
-    /**
-     * Session queue: a coordinator for the bound camera and the newest preview layer, in place of one
-     * made for another camera or layer, and the layer turned to its preview angle. Nothing below iOS
-     * 17, before a camera is bound, or for a camera AVFoundation does not own.
-     */
-    private fun bindRotationOnQueue() {
-        if (!coordinatesRotation) return
-        val device = observedDevice ?: return
-        val layer = lock.locked { newestPreviewLayer }
-        val current = lock.locked { rotation }
-        if (current != null && current.device === device && current.layer === layer) return
-        val made = atomic<Rotation?>(null)
-        val source = try {
-            rotationSources.make(device, layer) { angle ->
-                made.value?.let { platformCallback("a preview angle report") { onPreviewAngle(it, angle) } }
-            }
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "making the rotation coordinator failed; rotation follows the device", e)
-            null
-        }
-        val next = source?.let { Rotation(device, layer, it) }
-        made.value = next
-        val replaced = lock.locked {
-            if (generations.closedLocked) {
-                next?.source?.close()
-                return
-            }
-            rotation.also { rotation = next }
-        }
-        replaced?.source?.close()
-        if (next?.layer != null) onPreviewAngle(next, next.source.previewAngle)
-    }
-
-    /** Session queue: the coordinator closed, so nothing reports angles for a camera that stopped. */
-    private fun unbindRotationOnQueue() {
-        lock.locked { rotation.also { rotation = null } }?.source?.close()
-    }
-
-    /** From any thread: [made]'s layer turned to [angle] on main, unless another coordinator replaced it since. */
-    private fun onPreviewAngle(made: Rotation, angle: Double) {
-        val layer = made.layer ?: return
-        dispatch_async(dispatch_get_main_queue()) {
-            platformCallback("turning the preview") {
-                if (lock.locked { rotation === made }) custom.turnPreview(layer, VideoRotation.Angle(angle))
-            }
-        }
-    }
-
-    // ─── Device orientation ─────────────────────────────────────────────────────────────────────
-
-    /** From start until stop or close: UIDeviceOrientationDidChangeNotification, read through the reader seam. */
-    private fun startObservingOrientation() {
-        val added = lock.locked {
-            if (generations.closedLocked || orientationObserver != null) return@locked false
-            orientationObserver = center.addObserverForName(UIDeviceOrientationDidChangeNotification, null, null) {
-                platformCallback("a device orientation change") { updateDeviceOrientation() }
-            }
-            true
-        }
-        if (!added) return
-        generateOrientationNotifications(true)
-        platformCallback("reading the device orientation") { updateDeviceOrientation() }
-    }
-
-    private fun stopObservingOrientation() {
-        val observer = lock.locked { orientationObserver.also { orientationObserver = null } } ?: return
-        center.removeObserver(observer)
-        generateOrientationNotifications(false)
-    }
-
-    /** Face up, face down and unknown name no orientation, so they keep the last one. */
-    private fun updateDeviceOrientation() {
-        val orientation = readDeviceOrientation().toDeviceOrientation() ?: return
-        lock.locked {
-            if (!generations.closedLocked) _deviceOrientation.value = orientation
-        }
-    }
+    internal fun captureRotation(): VideoRotation = rotation.captureRotation()
 
     // ─── Platform reads ─────────────────────────────────────────────────────────────────────────
 
@@ -1004,7 +858,7 @@ internal class AppleCameraEngine(
             stopObservingHardware()
             observeHardwareOf(device)
         }
-        bindRotationOnQueue()
+        rotation.bindOnQueue()
     }
 
     /** Session queue: [device]'s torch and zoom observed. */
@@ -1064,7 +918,7 @@ internal class AppleCameraEngine(
                 else -> TorchMode.OFF
             },
             camera = capabilitySource.lensInfo(device),
-            targetOrientation = target.value,
+            targetOrientation = rotation.targetOrientation,
         )
         _zoom.value = ZoomState(
             device.videoZoomFactor.toFloat(),
@@ -1076,10 +930,6 @@ internal class AppleCameraEngine(
     private companion object {
         const val TAG = "CameraK"
         const val MINIMUM_IOS = 16
-        const val ROTATION_COORDINATOR_IOS = 17
         const val DEFERRED_START_IOS = 26
-        const val DEGREES_90 = 90
-        const val DEGREES_180 = 180
-        const val DEGREES_270 = 270
     }
 }
