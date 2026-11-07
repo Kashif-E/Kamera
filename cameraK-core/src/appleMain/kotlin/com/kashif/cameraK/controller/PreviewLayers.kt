@@ -1,11 +1,13 @@
 package com.kashif.cameraK.controller
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.useContents
 import platform.AVFoundation.AVCaptureSession
 import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVCaptureVideoOrientationPortrait
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspect
+import platform.CoreGraphics.CGPointMake
 import platform.Foundation.NSThread
 import platform.UIKit.UIDevice
 import platform.UIKit.UIView
@@ -22,10 +24,12 @@ internal class PreviewLayers(
     mirroring: ((AVCaptureVideoPreviewLayer?, Boolean) -> Unit)?,
     orienting: ((AVCaptureVideoPreviewLayer?, AVCaptureVideoOrientation) -> Unit)?,
     rotating: ((AVCaptureVideoPreviewLayer, Double) -> Unit)?,
+    converting: PreviewPointConverter? = null,
 ) {
     private val mirroring = mirroring ?: ::mirrorPreview
     private val orienting = orienting ?: ::orientPreviewLayer
     private val rotating = rotating ?: ::rotatePreviewLayer
+    private val converting = converting ?: PreviewPointConverter(::pointOfInterestThroughConnection)
 
     /** A UIKit layer: read and written on main only. */
     var layer: AVCaptureVideoPreviewLayer? = null
@@ -67,6 +71,22 @@ internal class PreviewLayers(
         layer = newPreviewLayer
     }
 
+    /**
+     * Main only: the point of interest under content point ([x], [y]) of [layer], the newest adopted:
+     * the point scaled into the layer's bounds, which are the content rectangle, then converted by the
+     * layer, which accounts for its gravity's crop, its rotation and its mirroring. Null without a layer,
+     * with empty bounds, or when the layer cannot convert (no connection).
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    fun devicePoint(x: Float, y: Float): PointOfInterest? {
+        val layer = layer ?: return null
+        val (layerX, layerY) = layer.bounds.useContents {
+            if (size.width <= 0.0 || size.height <= 0.0) return null
+            origin.x + x * size.width to origin.y + y * size.height
+        }
+        return converting.convert(layer, layerX, layerY)
+    }
+
     /** Sets the preview's orientation. Call it on main: the preview layer belongs to UIKit. */
     fun orient(orientation: AVCaptureVideoOrientation) {
         orienting(layer, orientation)
@@ -98,6 +118,16 @@ internal class PreviewLayers(
         lastVideoOrientation = UIDevice.currentDevice.orientation.toVideoOrientation() ?: lastVideoOrientation
         return lastVideoOrientation
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun pointOfInterestThroughConnection(
+    layer: AVCaptureVideoPreviewLayer,
+    x: Double,
+    y: Double,
+): PointOfInterest? {
+    if (layer.connection == null) return null
+    return layer.captureDevicePointOfInterestForPoint(CGPointMake(x, y)).useContents { PointOfInterest(this.x, this.y) }
 }
 
 private fun rotatePreviewLayer(layer: AVCaptureVideoPreviewLayer, degrees: Double) {

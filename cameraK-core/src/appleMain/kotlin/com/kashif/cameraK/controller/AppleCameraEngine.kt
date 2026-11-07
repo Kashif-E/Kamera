@@ -6,6 +6,7 @@ import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.AspectRatioPreview
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraKEnvironment
@@ -70,7 +71,7 @@ private const val DEFERRED_START_IOS = 26
  * - [generations]: the start generations and the engine state;
  * - [events]: the session's did-start-running, interruption and runtime-error notifications;
  * - [inputs]: the camera a start binds and the lens switches;
- * - [controls]: flash, torch and zoom, read back by key-value observing;
+ * - [controls]: flash, torch, zoom, focus and exposure, read back by key-value observing or the platform;
  * - [rotation]: the target and device orientations and the iOS 17 rotation coordinator;
  * - [capabilitySource]: the lenses and what each bound camera reports;
  * - [stills]: captures, written to app-owned storage;
@@ -83,9 +84,9 @@ private const val DEFERRED_START_IOS = 26
  * - Below iOS 16 it makes no session, enumerates nothing and every call fails with
  *   `Unsupported(PLATFORM_VERSION)`: a Kotlin/Native library cannot raise its consumer's deployment
  *   target, and every iOS 16 call lives behind this check.
- * - Flash, torch and zoom commands need an Open camera; the target orientation is a stored value any
- *   time before close, which captures and movies read. The device orientation is observed from
- *   UIDeviceOrientationDidChangeNotification between start and stop.
+ * - Flash, torch, zoom, focus and exposure commands need an Open camera; the target orientation is a
+ *   stored value any time before close, which captures and movies read. The device orientation is
+ *   observed from UIDeviceOrientationDidChangeNotification between start and stop.
  */
 internal class AppleCameraEngine(
     private val config: CameraConfiguration,
@@ -133,8 +134,7 @@ internal class AppleCameraEngine(
     override val deviceOrientation: StateFlow<DeviceOrientation> = rotation.deviceOrientation
     internal val targetOrientation: DeviceOrientation? get() = rotation.targetOrientation
 
-    private val controls: EngineControls =
-        EngineControls(generations, capabilitySource, custom, targetOrientation = { rotation.targetOrientation })
+    private val controls: EngineControls = EngineControls(generations, capabilitySource, custom, rotation)
     override val hardware: StateFlow<HardwareState> = controls.hardware
     override val zoom: StateFlow<ZoomState> = controls.zoom
     internal val desiredZoomRatio: Float get() = controls.desiredZoom
@@ -332,6 +332,7 @@ internal class AppleCameraEngine(
         if (!generations.isClosed) recorder.finishForStop()
         val cut = generations.stop() ?: return
         cut.start?.continuation?.resume(ENGINE_CLOSED)
+        controls.endMetering()
         rotation.stopObservingOrientation()
         suspendCancellableCoroutine { continuation ->
             custom.afterQueuedSessionWork {
@@ -347,6 +348,7 @@ internal class AppleCameraEngine(
         val cut = generations.close() ?: return
         cut.start?.continuation?.resume(ENGINE_CLOSED)
         stills.closeAll()
+        controls.endMetering()
         events.removeObservers()
         rotation.stopObservingOrientation()
         capabilitySource.enumerated.complete(Unit)
@@ -385,6 +387,13 @@ internal class AppleCameraEngine(
     override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = controls.setZoom(ratio)
 
     override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = controls.setTorchMode(mode)
+
+    override suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = controls.focusAt(point)
+
+    override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> =
+        controls.setExposureCompensation(index)
+
+    override suspend fun resetFocusAndExposure(): CameraKResult<Unit> = controls.resetFocusAndExposure()
 
     /**
      * Stores the target in any state before close; while a camera is bound it is reported in

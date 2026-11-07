@@ -34,7 +34,7 @@ private const val TAG = "CameraK"
 internal class CustomCameraController private constructor(
     val qualityPrioritization: QualityPrioritization,
     private val initialCameraLens: CameraLens,
-    private val aspectRatio: AspectRatio,
+    internal val aspectRatio: AspectRatio,
     private val targetResolution: Pair<Int, Int>?,
     private val mirrorFrontCamera: Boolean,
     seams: ControllerSeams,
@@ -121,7 +121,12 @@ internal class CustomCameraController private constructor(
 
     /** The preview layer, its mirroring and its orientation. */
     private val preview: PreviewLayers =
-        PreviewLayers(seams.previewMirroring, seams.previewOrienting, seams.previewRotating)
+        PreviewLayers(
+            seams.previewMirroring,
+            seams.previewOrienting,
+            seams.previewRotating,
+            seams.previewPointConverting,
+        )
 
     /** The torch and zoom of the camera in use. */
     private val controls: CameraControls = CameraControls(sessionQueue, { inputs.currentCamera }, ::reportError)
@@ -400,6 +405,9 @@ internal class CustomCameraController private constructor(
 
     /** Shows [layer] as the preview: mirrored for the front camera, removed with the session. Main only. */
     internal fun adoptPreviewLayer(layer: AVCaptureVideoPreviewLayer) = preview.adopt(layer, inputs.isUsingFrontCamera)
+
+    /** Main only: the point of interest under content point ([x], [y]) of the preview layer; null without one. */
+    internal fun previewDevicePoint(x: Float, y: Float): PointOfInterest? = preview.devicePoint(x, y)
 
     /**
      * Stops and releases the session on the session queue, after any setup already queued, so a setup

@@ -2,6 +2,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
+import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
@@ -9,7 +10,10 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
 import platform.AVFoundation.*
+import platform.CoreGraphics.CGPointMake
+import platform.CoreMedia.CMVideoFormatDescriptionGetDimensions
 import platform.Foundation.NSError
+import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSValue
 
 /**
@@ -158,34 +162,56 @@ internal class AVCaptureDeviceOps(val device: AVCaptureDevice) : CaptureDeviceOp
     override fun observeHardware(onChange: () -> Unit): AutoCloseable =
         observeKeyPaths(device, listOf("torchMode", "torchActive", "videoZoomFactor"), onChange)
 
-    override val isFocusPointOfInterestSupported: Boolean get() = TODO("Z-focus-ios")
-    override val isExposurePointOfInterestSupported: Boolean get() = TODO("Z-focus-ios")
+    override val isFocusPointOfInterestSupported: Boolean get() = device.isFocusPointOfInterestSupported()
+    override val isExposurePointOfInterestSupported: Boolean get() = device.isExposurePointOfInterestSupported()
 
-    override fun isFocusModeSupported(mode: AVCaptureFocusMode): Boolean = TODO("Z-focus-ios")
+    override fun isFocusModeSupported(mode: AVCaptureFocusMode): Boolean = device.isFocusModeSupported(mode)
 
-    override fun isExposureModeSupported(mode: AVCaptureExposureMode): Boolean = TODO("Z-focus-ios")
+    override fun isExposureModeSupported(mode: AVCaptureExposureMode): Boolean = device.isExposureModeSupported(mode)
 
-    override val isAdjustingFocus: Boolean get() = TODO("Z-focus-ios")
-    override val minExposureTargetBias: Float get() = TODO("Z-focus-ios")
-    override val maxExposureTargetBias: Float get() = TODO("Z-focus-ios")
-    override val exposureTargetBias: Float get() = TODO("Z-focus-ios")
-    override val activeFormatDimensions: PhotoDimensions? get() = TODO("Z-focus-ios")
+    override val isAdjustingFocus: Boolean get() = device.isAdjustingFocus()
+    override val minExposureTargetBias: Float get() = device.minExposureTargetBias
+    override val maxExposureTargetBias: Float get() = device.maxExposureTargetBias
+    override val exposureTargetBias: Float get() = device.exposureTargetBias
+    override val activeFormatDimensions: PhotoDimensions?
+        get() = device.activeFormat.formatDescription
+            ?.let { CMVideoFormatDescriptionGetDimensions(it).toPhotoDimensions() }
+            ?.takeIf { it.width > 0 && it.height > 0 }
 
-    override fun setFocusPointOfInterest(point: PointOfInterest): Unit = TODO("Z-focus-ios")
+    override fun setFocusPointOfInterest(point: PointOfInterest) {
+        device.focusPointOfInterest = CGPointMake(point.x, point.y)
+    }
 
-    override fun setFocusMode(mode: AVCaptureFocusMode): Unit = TODO("Z-focus-ios")
+    override fun setFocusMode(mode: AVCaptureFocusMode) {
+        device.focusMode = mode
+    }
 
-    override fun setExposurePointOfInterest(point: PointOfInterest): Unit = TODO("Z-focus-ios")
+    override fun setExposurePointOfInterest(point: PointOfInterest) {
+        device.exposurePointOfInterest = CGPointMake(point.x, point.y)
+    }
 
-    override fun setExposureMode(mode: AVCaptureExposureMode): Unit = TODO("Z-focus-ios")
+    override fun setExposureMode(mode: AVCaptureExposureMode) {
+        device.exposureMode = mode
+    }
 
-    override fun setSubjectAreaChangeMonitoringEnabled(enabled: Boolean): Unit = TODO("Z-focus-ios")
+    override fun setSubjectAreaChangeMonitoringEnabled(enabled: Boolean) {
+        device.subjectAreaChangeMonitoringEnabled = enabled
+    }
 
-    override fun setExposureTargetBias(bias: Float, completion: () -> Unit): Unit = TODO("Z-focus-ios")
+    override fun setExposureTargetBias(bias: Float, completion: () -> Unit) =
+        device.setExposureTargetBias(bias) { _ -> completion() }
 
-    override fun observeAdjustingFocus(onChange: () -> Unit): AutoCloseable = TODO("Z-focus-ios")
+    override fun observeAdjustingFocus(onChange: () -> Unit): AutoCloseable =
+        observeKeyPaths(device, listOf("adjustingFocus"), onChange)
 
-    override fun observeSubjectAreaChange(onChange: () -> Unit): AutoCloseable = TODO("Z-focus-ios")
+    override fun observeSubjectAreaChange(onChange: () -> Unit): AutoCloseable {
+        val center = NSNotificationCenter.defaultCenter
+        val token = center.addObserverForName(AVCaptureDeviceSubjectAreaDidChangeNotification, device, null) {
+            onChange()
+        }
+        val removed = atomic(false)
+        return AutoCloseable { if (removed.compareAndSet(expect = false, update = true)) center.removeObserver(token) }
+    }
 
     override fun makeInput(): Result<AVCaptureInput> = memScoped {
         val error = alloc<ObjCObjectVar<NSError?>>()

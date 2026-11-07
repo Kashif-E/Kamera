@@ -2,9 +2,9 @@
 
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.HardwareState
-import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraFeature
@@ -23,16 +23,17 @@ import kotlin.concurrent.Volatile
 private const val TAG = "CameraK"
 
 /**
- * An iOS engine's flash, torch and zoom (contract rule 5): the commands, the zoom and torch the engine
- * re-applies after each start and switch, and [hardware] and [zoom] as the device reports them by
- * key-value observing, the flash as the photo output reads it back. The observed device and its
+ * An iOS engine's flash, torch, zoom, focus and exposure (contract rule 5): the commands, the zoom,
+ * torch and exposure index the engine re-applies after each start and switch, and [hardware] and [zoom]
+ * as the device reports them by key-value observing, the flash as the photo output reads it back and
+ * the exposure index as the device's bias reads back ([FocusMetering]). The observed device and its
  * observation are touched on the session queue only.
  */
 internal class EngineControls(
     private val generations: EngineGenerations,
     private val capabilities: EngineCapabilities,
     private val custom: CustomCameraController,
-    private val targetOrientation: () -> DeviceOrientation?,
+    private val rotation: EngineRotation,
 ) {
     private val _hardware = MutableStateFlow(HardwareState(FlashMode.OFF, TorchMode.OFF, null, null))
     val hardware: StateFlow<HardwareState> = _hardware.asStateFlow()
@@ -55,10 +56,13 @@ internal class EngineControls(
         private set
     private var hardwareObservation: AutoCloseable? = null
 
-    /** Session queue: the zoom, torch and flash a start asks for, stored for the camera to take. */
+    private val metering = FocusMetering(generations, custom, rotation::frameRotationDegrees, ::publishHardware)
+
+    /** Session queue: the zoom, torch, flash and exposure index a start asks for, stored for the camera to take. */
     fun takeDesired(desired: DesiredHardware) {
         desiredZoom = desired.zoomRatio
         desiredTorch = desired.torchMode
+        metering.desiredExposure = desired.exposureCompensationIndex
         custom.setFlashMode(desired.flashMode.toAVCaptureFlashMode())
         custom.torchMode = desiredTorch.toAVCaptureTorchMode()
     }
@@ -129,6 +133,18 @@ internal class EngineControls(
         }
     }
 
+    suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = metering.focusAt(point)
+
+    suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = metering.setExposureCompensation(index)
+
+    suspend fun resetFocusAndExposure(): CameraKResult<Unit> = metering.resetFocusAndExposure()
+
+    /** Session queue, after a start or a switch bound [device]: the desired exposure index, clamped (rule 6). */
+    fun applyDesiredExposure(device: CaptureDeviceOps) = metering.onBound(device)
+
+    /** Stop or close: focus and exposure requests in flight answer Closed. */
+    fun endMetering() = metering.end()
+
     private fun hardwareFailure(what: String, cause: CustomCameraController.CameraException): CameraKResult.Failure {
         CameraKLogger.e(TAG, "$what failed", cause)
         return engineFailure(engineErrorFor(cause, null))
@@ -193,7 +209,8 @@ internal class EngineControls(
                 else -> TorchMode.OFF
             },
             camera = capabilities.lensInfo(device),
-            targetOrientation = targetOrientation(),
+            targetOrientation = rotation.targetOrientation,
+            exposureCompensationIndex = device.exposureIndex,
         )
         _zoom.value = ZoomState(
             device.videoZoomFactor.toFloat(),

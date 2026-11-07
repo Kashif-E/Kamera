@@ -83,7 +83,7 @@ class FocusPointOfInterestTest {
             val driver = AppleEngineDriver(metering = true)
             driver.deviceOrientation = orientation
             driver.runCase {
-                val engine = driver.createEngine()
+                val engine = driver.createEngine(FOUR_THREE_PREVIEW)
                 driver.settle()
                 assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
                 assertEquals(
@@ -159,7 +159,7 @@ class FocusPointOfInterestTest {
     fun aLayerWithoutAConnectionOrBoundsTakesTheFallback() {
         val driver = AppleEngineDriver(metering = true)
         driver.runCase {
-            val engine = driver.createEngine(CameraConfiguration { aspectRatio = AspectRatio.RATIO_4_3 })
+            val engine = driver.createEngine(FOUR_THREE_PREVIEW)
             driver.settle()
             assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
             // A layer over no session has no connection to convert through.
@@ -182,7 +182,7 @@ class FocusPointOfInterestTest {
             PointOfInterest(0.25, 0.75)
         }
         withSeam.runCase {
-            val engine = withSeam.createEngine()
+            val engine = withSeam.createEngine(FOUR_THREE_PREVIEW)
             withSeam.settle()
             assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
             val layer = AVCaptureVideoPreviewLayer()
@@ -203,7 +203,7 @@ class FocusPointOfInterestTest {
     fun anOrientationChangeTurnsTheFallback() {
         val driver = AppleEngineDriver(metering = true)
         driver.runCase {
-            val engine = driver.createEngine()
+            val engine = driver.createEngine(FOUR_THREE_PREVIEW)
             driver.settle()
             assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
             driver.deviceOrientation = UIDeviceOrientation.UIDeviceOrientationLandscapeLeft
@@ -214,6 +214,23 @@ class FocusPointOfInterestTest {
                 PointOfInterest(0.0, 0.0),
                 driver.back.lastPointOfInterest("setFocusPointOfInterest"),
                 "the back camera turned left shows the buffer as it is",
+            )
+            engine.closeAndJoin()
+        }
+    }
+
+    @Test
+    fun theFallbackCropsToTheConfiguredRatio() {
+        val driver = AppleEngineDriver(metering = true)
+        driver.runCase {
+            val engine = driver.createEngine(CameraConfiguration { aspectRatio = AspectRatio.RATIO_16_9 })
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            assertEquals(CameraKResult.Success(Unit), engine.focusAt(NormalizedPoint(0f, 0f)))
+            assertClose(
+                PointOfInterest(0.0, 0.875),
+                driver.back.lastPointOfInterest("setFocusPointOfInterest"),
+                "16:9 over the 4:3 format, held in portrait",
             )
             engine.closeAndJoin()
         }
@@ -236,6 +253,9 @@ class FocusPointOfInterestTest {
         const val BACK = "back"
         const val FRONT = "front"
         val FOUR_THREE = PhotoDimensions(4032, 3024)
+
+        // The fake's active format is 4:3, so a 4:3 preview shows the whole frame and the corners need no crop.
+        val FOUR_THREE_PREVIEW = CameraConfiguration { aspectRatio = AspectRatio.RATIO_4_3 }
         val SIXTEEN_NINE = PhotoDimensions(3840, 2160)
 
         // Where (0, 0) lands once the front camera's mirror is undone and the frame rotation is turned back.

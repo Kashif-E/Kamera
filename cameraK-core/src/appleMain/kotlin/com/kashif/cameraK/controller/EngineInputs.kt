@@ -23,7 +23,7 @@ private const val TAG = "CameraK"
  * Which camera an iOS engine's session runs: the camera a start binds, configuring the session the
  * first time, and the lens switches after it. A camera that becomes the session's is bound: its
  * capabilities read, its torch and zoom observed, the rotation coordinator made for it, and the
- * desired zoom applied.
+ * desired zoom and exposure index applied.
  */
 internal class EngineInputs(
     private val generations: EngineGenerations,
@@ -60,6 +60,7 @@ internal class EngineInputs(
         // Starting the session applies the torch; one already running keeps the torch it had.
         if (session?.isRunning == true) custom.reapplyTorchOnQueue() else custom.startRunningOnQueue()
         controls.applyDesiredZoom(device)
+        controls.applyDesiredExposure(device)
         controls.publishHardware()
         events.confirm(generation)
     }
@@ -118,6 +119,7 @@ internal class EngineInputs(
         custom.useDeviceOnQueue(device)?.let { return engineFailure(engineErrorFor(it, selection.lens())) }
         bindHardware(device)
         controls.applyDesiredZoom(device)
+        controls.applyDesiredExposure(device)
         controls.publishHardware()
         return CameraKResult.Success(capabilities.lensInfo(device))
     }

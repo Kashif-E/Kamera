@@ -25,8 +25,11 @@ private const val PAUSE_RESUME_IOS = 18
 
 /**
  * An iOS engine's [capabilities] (design §6.3): the lenses enumerated once at construction, their torch
- * modes, and what each camera bound so far reports through the photo output (flash modes) and the
- * device (image formats, recording qualities). Its state is kept under [lock].
+ * modes and what each meters with, and what each camera bound so far reports through the photo output
+ * (flash modes) and the device (image formats, recording qualities). Its state is kept under [lock].
+ *
+ * A camera reports FOCUS_POINT where it meters focus or exposure at a point, and exposure compensation
+ * where its bias range holds more than one of CameraK's 1/3 EV indexes within ±2 EV (w13 Z-focus-ios).
  */
 internal class EngineCapabilities(
     private val lock: EngineLock,
@@ -44,6 +47,9 @@ internal class EngineCapabilities(
     private var enumeratedLenses: List<LensInfo> = emptyList()
     private var torchModesById: Map<String, Set<TorchMode>> = emptyMap()
 
+    /** What each camera meters with, by id: from the enumeration, and again when it is bound. */
+    private val meteringById = mutableMapOf<String, Metering>()
+
     /** Each bound camera's flash modes, as the photo output reported them with that camera behind it. */
     private val boundFlashModes = mutableMapOf<String, Set<FlashMode>>()
 
@@ -59,9 +65,16 @@ internal class EngineCapabilities(
             CameraKLogger.e(TAG, "enumerating the cameras failed; reporting none", e)
             emptyList<LensInfo>() to emptyMap()
         }
+        val metering = try {
+            lenses.mapNotNull { lens -> custom.findCameraById(lens.id)?.let { lens.id to Metering.of(it) } }.toMap()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "reading what the cameras meter with failed; reporting it once each is bound", e)
+            emptyMap()
+        }
         lock.locked {
             enumeratedLenses = lenses
             torchModesById = torchModes
+            meteringById.putAll(metering)
         }
         publish()
         enumerated.complete(Unit)
@@ -85,6 +98,7 @@ internal class EngineCapabilities(
                 boundFlashModes.toMap(),
                 boundImageFormats,
                 boundVideoQualities,
+                meteringById.toMap(),
             )
         }
         _capabilities.value = capabilities
@@ -101,6 +115,7 @@ internal class EngineCapabilities(
         boundFlash: Map<String, Set<FlashMode>>,
         imageFormats: Set<ImageFormat>,
         videoQualities: Set<VideoQuality>,
+        metering: Map<String, Metering>,
     ) = CameraCapabilities(
         allLenses = lenses,
         flashModes = lenses.associate {
@@ -123,6 +138,9 @@ internal class EngineCapabilities(
         // AVCaptureVideoDataOutput delivers CameraK's frames in 420f only (design §8).
         supportedAnalysisFormats = setOf(FrameFormat.YUV_420),
         supportsSquareCapture = true,
+        focusPointCameras = metering.filterValues { it.focusPoint }.keys,
+        exposureCompensationRanges = metering.mapNotNull { (id, of) -> of.exposureRange?.let { id to it } }.toMap(),
+        exposureCompensationSteps = metering.filterValues { it.exposureRange != null }.mapValues { EXPOSURE_STEP_EV },
     )
 
     /**
@@ -134,7 +152,9 @@ internal class EngineCapabilities(
         val formats =
             setOf(ImageFormat.JPEG, ImageFormat.PNG) + listOfNotNull(ImageFormat.HEIC.takeIf { custom.canCaptureHeic })
         val qualities = boundQualities()
+        val metering = Metering.of(device)
         lock.locked {
+            meteringById[device.uniqueId] = metering
             boundFlashModes[device.uniqueId] = flash
             boundImageFormats = formats
             boundVideoQualities = qualities
@@ -159,4 +179,11 @@ internal class EngineCapabilities(
             hasFlash = false,
             isLogical = false,
         )
+}
+
+/** What a camera meters with: a point of focus or exposure, and its exposure indexes. */
+private class Metering(val focusPoint: Boolean, val exposureRange: IntRange?) {
+    companion object {
+        fun of(device: CaptureDeviceOps) = Metering(device.metersAtAPoint, device.exposureIndexes)
+    }
 }
