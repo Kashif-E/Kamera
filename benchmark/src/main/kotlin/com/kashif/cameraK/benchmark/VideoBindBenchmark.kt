@@ -33,9 +33,9 @@ class VideoBindBenchmark {
             selectVideoMode()
         },
     ) {
-        pressShutter()
+        startRecording()
         awaitRecording(true)
-        pressShutter()
+        stopRecording()
         awaitRecording(false)
     }
 }

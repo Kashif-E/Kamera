@@ -28,9 +28,11 @@ all five. The results are under `benchmark/build/outputs/connected_android_test_
   `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.VideoBindBenchmark#videoBindMainThreadTime`
 
 The benchmarks drive these Sample controls, by their labels: the camera screen's `Flip Camera` button
-(the camera is Ready once it shows), the unlabelled shutter midway between `Flip Camera` and
-`Settings`, the settings panel's `QR Scanner` switch (off unregisters the QR plugin's analyzer, on
-registers it), the top bar's aspect-ratio chip (`4:3`, `16:9`, `9:16`, `1:1`), and the `VIDEO` mode.
+(the camera is Ready once it shows), the shutter (`Take photo`, and in the video mode `Start recording`
+and `Stop recording`), the top bar's `Settings` button and the settings sheet's `QR Scanner` switch
+(off unregisters the QR plugin's analyzer, on registers it), the top bar's aspect-ratio chip (`4:3`,
+`16:9`, `1:1`), and the `VIDEO` mode. The Sample's `BenchmarkSelectorsTest` finds each of them on the
+redesigned screen; if a benchmark cannot find a control, run it first.
 `TimeToFirstFrameBenchmark` also launches the Sample's `BareCameraXActivity`, which uses no CameraK.
 
 `exactlyOneBindToFirstFrame` and `zeroRebindsOnAnalyzerRegisterAndUnregister` pass or fail.
@@ -43,7 +45,7 @@ the main thread.
 ## Android: Pixel 7
 
 - [ ] **Preview.** The Sample's preview runs at once, with no black frame and no stretch, in the
-      default 16:9 and in 4:3 and 1:1.
+      default 4:3 and in 16:9 and 1:1, chosen with the top bar's ratio chip.
 - [ ] **Turning the device.** Rotating it keeps the preview running, keeps the holder (the camera does
       not reopen and the state does not go back to Starting) and turns the controls upright.
 - [ ] **Letterboxing.** In portrait and landscape the preview is the configured aspect ratio,
@@ -136,7 +138,7 @@ the main thread.
       Discard a switch that logged `CameraK.lensSwitch.failed` or `.noFrame`.
 - [ ] **Engine contract, by hand.** In the Sample:
     - the preview runs and the Sample reports Ready after opening;
-    - after a lens switch, the preview and the reported lens are the other camera;
+    - after a lens switch with `Flip Camera`, the preview and the reported lens are the other camera;
     - torch on and zoom 2x come back after the app goes to the background and returns;
     - leaving the camera screen turns the camera indicator off, and the camera reopens.
 - [ ] **Reading back an add-only save.** With only add-only Photos access granted, save a capture

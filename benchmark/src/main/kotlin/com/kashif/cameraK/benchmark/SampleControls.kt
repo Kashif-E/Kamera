@@ -38,8 +38,13 @@ private const val SETTINGS = "Settings"
 private const val QR_SCANNER = "QR Scanner"
 private const val VIDEO_MODE = "VIDEO"
 
-/** The top bar's aspect-ratio chip, in the order a tap cycles it. */
-private val ASPECT_RATIOS = listOf("4:3", "16:9", "9:16", "1:1")
+// The shutter's description says what a tap does.
+private const val TAKE_PHOTO = "Take photo"
+private const val START_RECORDING = "Start recording"
+private const val STOP_RECORDING = "Stop recording"
+
+/** The top bar's aspect-ratio chip, in the order a tap cycles it. The Sample does not offer the deprecated 9:16. */
+private val ASPECT_RATIOS = listOf("4:3", "16:9", "1:1")
 
 /** Recording needs the microphone too: the Sample records with audio. */
 internal fun MacrobenchmarkScope.grantSamplePermissions() {
@@ -66,14 +71,19 @@ internal fun MacrobenchmarkScope.openCameraScreen() {
     awaitFirstFrame()
 }
 
-/**
- * The shutter has no label. It sits on Flip Camera's row, midway between Flip Camera and Settings,
- * which keep their places in both modes.
- */
+/** Takes a photo with the photo mode's shutter. */
 internal fun MacrobenchmarkScope.pressShutter() {
-    val flip = requireObject(By.desc(FLIP_CAMERA), "the Flip Camera button").visibleCenter
-    val settings = requireObject(By.desc(SETTINGS), "the Settings button").visibleCenter
-    device.click((flip.x + settings.x) / 2, flip.y)
+    requireObject(By.desc(TAKE_PHOTO), "the shutter").click()
+}
+
+/** Starts a recording with the video mode's shutter. */
+internal fun MacrobenchmarkScope.startRecording() {
+    requireObject(By.desc(START_RECORDING), "the shutter").click()
+}
+
+/** Stops the recording with the shutter, which shows a stop button while the Sample records. */
+internal fun MacrobenchmarkScope.stopRecording() {
+    requireObject(By.desc(STOP_RECORDING), "the shutter").click()
 }
 
 internal fun MacrobenchmarkScope.awaitCaptureSaved() {
