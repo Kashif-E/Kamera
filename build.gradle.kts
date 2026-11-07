@@ -1872,7 +1872,8 @@ registerRepoPolicyCheck(
 registerRepoPolicyCheck(
     "checkSampleApp",
     "sample-app",
-    "Fails if the Sample asks for storage on Android 10 and later, or an iOS usage description is empty or missing",
+    "Fails if the Sample asks for storage on Android 10 and later, an iOS usage description is empty or missing, " +
+        "or the iOS app does not search and link the Sample's framework",
 )
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────

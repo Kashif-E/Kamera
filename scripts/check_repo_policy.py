@@ -69,6 +69,9 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      manifest caps WRITE_EXTERNAL_STORAGE at API 28, the last level that needs it to
                      add to the gallery, and every privacy usage description in the iOS app's build
                      configurations has text, the microphone's in each one that has the camera's.
+                     Each of the iOS app target's build configurations finds and links the Sample's
+                     framework: the search path where embedAndSignAppleFrameworkForXcode puts it,
+                     and -framework with the baseName Sample/build.gradle.kts gives it.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -1686,6 +1689,10 @@ USES_PERMISSION = re.compile(r"<uses-permission\b[^>]*>", re.DOTALL)
 MAX_SDK_VERSION = re.compile(r'android:maxSdkVersion\s*=\s*"(\d+)"')
 BUILD_CONFIGURATION = re.compile(r"(\w+) /\* ([^*]+) \*/ = \{\s*isa = XCBuildConfiguration;(.*?)\n\t\t\};", re.DOTALL)
 USAGE_DESCRIPTION = re.compile(r'\bINFOPLIST_KEY_(NS\w+UsageDescription)\s*=\s*("(?:[^"\\]|\\.)*"|[^;]*);')
+SAMPLE_BUILD = "Sample/build.gradle.kts"
+FRAMEWORK_BASE_NAME = re.compile(r'\bbaseName\s*=\s*"([^"]+)"')
+# Where embedAndSignAppleFrameworkForXcode copies the framework the Xcode build links.
+SAMPLE_FRAMEWORK_SEARCH_PATH = "$(SRCROOT)/../Sample/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
 
 
 def sample_manifest_problems(manifest: str) -> List[str]:
@@ -1718,6 +1725,38 @@ def sample_usage_description_problems(project: str) -> List[str]:
                 problems.append(f"{where} has an empty {key}")
         if "NSCameraUsageDescription" in keys and "NSMicrophoneUsageDescription" not in keys:
             problems.append(f"{where} has no NSMicrophoneUsageDescription")
+    return problems
+
+
+def build_setting_words(settings: str, key: str) -> List[str]:
+    """The words of one build setting, a quoted or bare scalar or a parenthesised list, as Xcode splits them."""
+    match = re.search(r"\b" + key + r'\s*=\s*(\((?:[^()"]|"(?:[^"\\]|\\.)*")*\)|"(?:[^"\\]|\\.)*"|[^;]*);', settings)
+    if match is None:
+        return []
+    value = match.group(1)
+    items = value[1:-1].split(",") if value.startswith("(") else [value]
+    return [word for item in items for word in item.strip().strip('"').split()]
+
+
+def sample_framework_link_problems(project: str, framework: str) -> List[str]:
+    """ios_sample_links_the_compose_framework: every build configuration of the app target (the ones that
+    set PRODUCT_BUNDLE_IDENTIFIER) searches SAMPLE_FRAMEWORK_SEARCH_PATH and passes `-framework <framework>`
+    to the linker. Without them the Swift `import` of the Sample's framework fails in Xcode."""
+    problems = []
+    targets = [
+        (identifier, name, settings)
+        for identifier, name, settings in BUILD_CONFIGURATION.findall(project)
+        if "PRODUCT_BUNDLE_IDENTIFIER" in settings
+    ]
+    if not targets:
+        return [f"{SAMPLE_XCODE_PROJECT} has no app target build configuration"]
+    for identifier, name, settings in targets:
+        where = f"{SAMPLE_XCODE_PROJECT}: build configuration {identifier} ({name})"
+        if SAMPLE_FRAMEWORK_SEARCH_PATH not in build_setting_words(settings, "FRAMEWORK_SEARCH_PATHS"):
+            problems.append(f"{where} does not search {SAMPLE_FRAMEWORK_SEARCH_PATH}")
+        flags = build_setting_words(settings, "OTHER_LDFLAGS")
+        if not any(flag == "-framework" and after == framework for flag, after in zip(flags, flags[1:])):
+            problems.append(f"{where} does not link -framework {framework}")
     return problems
 
 
@@ -1758,11 +1797,42 @@ def check_sample_app() -> List[str]:
         if len(found) != 1 or "NSMicrophoneUsageDescription" not in found[0]:
             raise CheckError(f"ios_sample_usage_descriptions_are_written misjudges {name}: {found}")
 
+    def app_configuration(keys: str) -> str:
+        return configuration('\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = com.example.app;\n' + keys)
+
+    search = f'\t\t\t\tFRAMEWORK_SEARCH_PATHS = (\n\t\t\t\t\t"$(inherited)",\n\t\t\t\t\t"{SAMPLE_FRAMEWORK_SEARCH_PATH}",\n\t\t\t\t);\n'
+    link = '\t\t\t\tOTHER_LDFLAGS = (\n\t\t\t\t\t"$(inherited)",\n\t\t\t\t\t"-framework",\n\t\t\t\t\t{},\n\t\t\t\t);\n'
+    linked = app_configuration(search + link.format("ComposeApp"))
+    project_level = configuration("\t\t\t\tSDKROOT = iphoneos;\n")
+    if sample_framework_link_problems(project_level + linked + app_configuration(
+        f'\t\t\t\tFRAMEWORK_SEARCH_PATHS = "{SAMPLE_FRAMEWORK_SEARCH_PATH}";\n'
+        '\t\t\t\tOTHER_LDFLAGS = "-framework ComposeApp";\n'
+    ), "ComposeApp"):
+        raise CheckError("ios_sample_links_the_compose_framework rejects a target that searches and links the framework")
+    for name, project, expected in (
+        ("no search path", linked + app_configuration(link.format("ComposeApp")), "does not search"),
+        ("no link flag", app_configuration(search) + linked, "does not link"),
+        ("another framework's name", linked + app_configuration(search + link.format("Shared")), "does not link"),
+        ("a project with no app target", project_level, "no app target"),
+    ):
+        found = sample_framework_link_problems(project, "ComposeApp")
+        if len(found) != 1 or expected not in found[0]:
+            raise CheckError(f"ios_sample_links_the_compose_framework misjudges {name}: {found}")
+
     manifest = ROOT / SAMPLE_MANIFEST
     project = ROOT / SAMPLE_XCODE_PROJECT
-    if not manifest.is_file() or not project.is_file():
-        raise CheckError(f"{SAMPLE_MANIFEST} or {SAMPLE_XCODE_PROJECT} is missing")
-    return sample_manifest_problems(manifest.read_text()) + sample_usage_description_problems(project.read_text())
+    build = ROOT / SAMPLE_BUILD
+    if not manifest.is_file() or not project.is_file() or not build.is_file():
+        raise CheckError(f"{SAMPLE_MANIFEST}, {SAMPLE_XCODE_PROJECT} or {SAMPLE_BUILD} is missing")
+    frameworks = set(FRAMEWORK_BASE_NAME.findall(build.read_text()))
+    if len(frameworks) != 1:
+        raise CheckError(f"{SAMPLE_BUILD} gives its framework {len(frameworks)} base names, not one: {sorted(frameworks)}")
+    project_text = project.read_text()
+    return (
+        sample_manifest_problems(manifest.read_text())
+        + sample_usage_description_problems(project_text)
+        + sample_framework_link_problems(project_text, frameworks.pop())
+    )
 
 
 POLICIES: Dict[str, Callable[[], List[str]]] = {
