@@ -16,8 +16,6 @@ import platform.AVFoundation.*
 import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
-import platform.Foundation.NSThread
-import platform.UIKit.UIDevice
 import platform.UIKit.UIView
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
@@ -37,25 +35,29 @@ internal fun CameraDeviceType.toAVCaptureDeviceType(): String? = when (this) {
     CameraDeviceType.DEFAULT -> AVCaptureDeviceTypeBuiltInWideAngleCamera
 }
 
-internal class CustomCameraController(
+internal class CustomCameraController private constructor(
     val qualityPrioritization: QualityPrioritization,
-    private var initialCameraLens: CameraLens = CameraLens.BACK,
-    private val aspectRatio: AspectRatio = AspectRatio.RATIO_4_3,
-    private val targetResolution: Pair<Int, Int>? = null,
-    private val mirrorFrontCamera: Boolean = false,
+    private val initialCameraLens: CameraLens,
+    private val aspectRatio: AspectRatio,
+    private val targetResolution: Pair<Int, Int>?,
+    private val mirrorFrontCamera: Boolean,
+    seams: ControllerSeams,
 ) : NSObject(),
     AVCapturePhotoCaptureDelegateProtocol {
-    private var sessionFactory: () -> CaptureSessionOps = { AVCaptureSessionOps() }
-    private var inputConfigurator: ((CaptureSessionOps, CameraDeviceType) -> Boolean)? = null
-    private var lensSwitcher: ((CaptureSessionOps, Boolean) -> Unit)? = null
-    private var cameraDevices: CameraDeviceProvider = DiscoveryCameraDeviceProvider()
-    private var previewMirroring: (AVCaptureVideoPreviewLayer?, Boolean) -> Unit = ::mirrorPreview
-    private var photoCapturer: PhotoCapturer = AVPhotoCapturer
-    private var previewOrienting: (
-        AVCaptureVideoPreviewLayer?,
-        AVCaptureVideoOrientation,
-    ) -> Unit = ::orientPreviewLayer
-    private var previewRotating: (AVCaptureVideoPreviewLayer, Double) -> Unit = ::rotatePreviewLayer
+    constructor(
+        qualityPrioritization: QualityPrioritization,
+        initialCameraLens: CameraLens = CameraLens.BACK,
+        aspectRatio: AspectRatio = AspectRatio.RATIO_4_3,
+        targetResolution: Pair<Int, Int>? = null,
+        mirrorFrontCamera: Boolean = false,
+    ) : this(
+        qualityPrioritization,
+        initialCameraLens,
+        aspectRatio,
+        targetResolution,
+        mirrorFrontCamera,
+        ControllerSeams(),
+    )
 
     /**
      * Test seam: [sessionFactory] supplies the session, and [inputConfigurator], when set, adds the
@@ -82,16 +84,32 @@ internal class CustomCameraController(
         photoCapturer: PhotoCapturer? = null,
         previewOrienting: ((AVCaptureVideoPreviewLayer?, AVCaptureVideoOrientation) -> Unit)? = null,
         previewRotating: ((AVCaptureVideoPreviewLayer, Double) -> Unit)? = null,
-    ) : this(qualityPrioritization, initialCameraLens, aspectRatio, targetResolution, mirrorFrontCamera) {
-        this.sessionFactory = sessionFactory
-        this.inputConfigurator = inputConfigurator
-        this.lensSwitcher = lensSwitcher
-        previewMirroring?.let { this.previewMirroring = it }
-        cameraDevices?.let { this.cameraDevices = it }
-        photoCapturer?.let { this.photoCapturer = it }
-        previewOrienting?.let { this.previewOrienting = it }
-        previewRotating?.let { this.previewRotating = it }
-    }
+    ) : this(
+        qualityPrioritization,
+        initialCameraLens,
+        aspectRatio,
+        targetResolution,
+        mirrorFrontCamera,
+        ControllerSeams(
+            sessionFactory = sessionFactory,
+            inputConfigurator = inputConfigurator,
+            lensSwitcher = lensSwitcher,
+            previewMirroring = previewMirroring,
+            cameraDevices = cameraDevices,
+            photoCapturer = photoCapturer,
+            previewOrienting = previewOrienting,
+            previewRotating = previewRotating,
+        ),
+    )
+
+    private val sessionFactory = seams.sessionFactory
+    private val inputConfigurator = seams.inputConfigurator
+    private val lensSwitcher = seams.lensSwitcher
+    private val cameraDevices = seams.cameraDevices
+    private val photoCapturer = seams.photoCapturer
+
+    /** The preview layer, its mirroring and its orientation. */
+    private val preview = PreviewLayers(seams.previewMirroring, seams.previewOrienting, seams.previewRotating)
 
     /** Every AVCaptureSession call runs on this serial queue. */
     private val sessionQueue = SessionQueue()
@@ -141,7 +159,11 @@ internal class CustomCameraController(
     private var photoOutput: AVCapturePhotoOutput? = null
 
     /** A UIKit layer: read and written on main only. */
-    var cameraPreviewLayer: AVCaptureVideoPreviewLayer? = null
+    var cameraPreviewLayer: AVCaptureVideoPreviewLayer?
+        get() = preview.layer
+        set(value) {
+            preview.layer = value
+        }
 
     @Volatile
     private var isUsingFrontCamera = false
@@ -725,10 +747,7 @@ internal class CustomCameraController(
     }
 
     /** Shows [layer] as the preview: mirrored for the front camera, removed with the session. Main only. */
-    internal fun adoptPreviewLayer(layer: AVCaptureVideoPreviewLayer) {
-        cameraPreviewLayer = layer
-        previewMirroring(layer, isUsingFrontCamera)
-    }
+    internal fun adoptPreviewLayer(layer: AVCaptureVideoPreviewLayer) = preview.adopt(layer, isUsingFrontCamera)
 
     /**
      * Stops and releases the session on the session queue, after any setup already queued, so a setup
@@ -737,16 +756,7 @@ internal class CustomCameraController(
      */
     fun cleanupSession() {
         setupGeneration.incrementAndGet()
-        val layer = cameraPreviewLayer
-        cameraPreviewLayer = null
-        // The layer belongs to UIKit; the engine may close from any thread.
-        if (layer != null) {
-            if (NSThread.isMainThread) {
-                layer.removeFromSuperlayer()
-            } else {
-                dispatch_async(dispatch_get_main_queue()) { layer.removeFromSuperlayer() }
-            }
-        }
+        preview.remove()
         sessionQueue.async {
             (session ?: preparedSession)?.tearDown()
             session = null
@@ -762,56 +772,18 @@ internal class CustomCameraController(
         }
     }
 
-    @OptIn(ExperimentalForeignApi::class)
     fun setupPreviewLayer(view: UIView) {
         val session = session?.avSession ?: return
-
-        val newPreviewLayer = AVCaptureVideoPreviewLayer(session = session).apply {
-            // ResizeAspect (letterbox) so the preview shows the exact frame that gets captured — WYSIWYG (#119).
-            // ResizeAspectFill would crop the preview to fill the view, mismatching the full-frame captured photo.
-            videoGravity = AVLayerVideoGravityResizeAspect
-            setFrame(view.bounds)
-        }
-        previewOrienting(newPreviewLayer, currentVideoOrientation())
-
-        view.layer.addSublayer(newPreviewLayer)
-        cameraPreviewLayer = newPreviewLayer
+        preview.setUp(view, session)
     }
 
     /** Sets the preview's orientation. Call it on main: the preview layer belongs to UIKit. */
-    internal fun orientPreview(orientation: AVCaptureVideoOrientation) {
-        previewOrienting(cameraPreviewLayer, orientation)
-    }
+    internal fun orientPreview(orientation: AVCaptureVideoOrientation) = preview.orient(orientation)
 
     /** Turns [layer] by [rotation]. Call it on main: the preview layer belongs to UIKit. */
-    internal fun turnPreview(layer: AVCaptureVideoPreviewLayer, rotation: VideoRotation) {
-        when (rotation) {
-            is VideoRotation.Orientation -> previewOrienting(layer, rotation.orientation)
-            is VideoRotation.Angle -> previewRotating(layer, rotation.degrees)
-        }
-    }
+    internal fun turnPreview(layer: AVCaptureVideoPreviewLayer, rotation: VideoRotation) = preview.turn(layer, rotation)
 
-    private fun rotatePreviewLayer(layer: AVCaptureVideoPreviewLayer, degrees: Double) {
-        layer.connection?.turn(VideoRotation.Angle(degrees))
-    }
-
-    private fun orientPreviewLayer(layer: AVCaptureVideoPreviewLayer?, orientation: AVCaptureVideoOrientation) {
-        layer?.connection?.let { connection ->
-            if (connection.isVideoOrientationSupported()) connection.videoOrientation = orientation
-        }
-    }
-
-    @Volatile
-    private var lastVideoOrientation: AVCaptureVideoOrientation = AVCaptureVideoOrientationPortrait
-
-    fun currentVideoOrientation(): AVCaptureVideoOrientation {
-        // FaceUp / FaceDown / Unknown don't correspond to a video orientation. Mapping them to
-        // Portrait snaps a landscape preview to portrait and distorts it when the device lies flat
-        // (#115). Keep the last valid orientation in those cases so portrait/landscape tracking
-        // stays stable as the device tilts (#109).
-        lastVideoOrientation = UIDevice.currentDevice.orientation.toVideoOrientation() ?: lastVideoOrientation
-        return lastVideoOrientation
-    }
+    fun currentVideoOrientation(): AVCaptureVideoOrientation = preview.currentVideoOrientation()
 
     /**
      * Sets the flash mode later captures request. It is kept even before the photo output exists;
@@ -1135,25 +1107,8 @@ internal class CustomCameraController(
         }
     }
 
-    /**
-     * Mirrors the preview for the lens now in use. Called on the session queue after a swap; the
-     * preview layer belongs to UIKit, so it is read and changed on main (AVCam does the same).
-     */
-    private fun applyPreviewMirroring() {
-        val mirrored = isUsingFrontCamera
-        dispatch_async(dispatch_get_main_queue()) {
-            previewMirroring(cameraPreviewLayer, mirrored)
-        }
-    }
-
-    private fun mirrorPreview(layer: AVCaptureVideoPreviewLayer?, mirrored: Boolean) {
-        layer?.connection?.let { connection ->
-            if (connection.isVideoMirroringSupported()) {
-                connection.automaticallyAdjustsVideoMirroring = false
-                connection.setVideoMirrored(mirrored)
-            }
-        }
-    }
+    /** Mirrors the preview for the lens now in use. Called on the session queue after a swap. */
+    private fun applyPreviewMirroring() = preview.mirrorOnMain(isUsingFrontCamera)
 
     override fun captureOutput(
         output: AVCapturePhotoOutput,
