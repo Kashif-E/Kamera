@@ -265,12 +265,85 @@ def release_workflow_problems(release: dict, build: dict) -> List[str]:
     return problems
 
 
+# Fixture workflows the rules must judge before they judge the real ones: the split release, and each way
+# of breaking it (design §12.4 W13, the release-workflow gate).
+FIXTURE_BUILD = {
+    "on": {"workflow_call": None},
+    "jobs": {"full": {"runs-on": "macos-15", "steps": [{"run": "scripts/verify.sh --full"}]}},
+}
+FIXTURE_TAG_GUARD = '      - run: scripts/check_release_tag.sh "$GITHUB_REF_NAME"\n'
+FIXTURE_LIBRARIES = "      - run: ./gradlew publishLibraries --no-configuration-cache\n"
+FIXTURE_RELOCATIONS = "      - run: ./gradlew publishLegacyRelocations --no-configuration-cache\n"
+
+
+def fixture_release(steps: List[str], extra_jobs: str = "") -> dict:
+    head = (
+        "on:\n  push:\n    tags:\n      - 'v*'\n"
+        "permissions:\n  contents: read\n"
+        "concurrency:\n  group: publish\n  cancel-in-progress: false\n"
+        "jobs:\n  verify:\n    uses: ./.github/workflows/build.yml\n"
+        "  publish:\n    needs: verify\n    runs-on: macos-15\n    environment: maven-central\n    steps:\n"
+    )
+    document = parse_yaml(head + "".join(steps) + extra_jobs)
+    if True in document:
+        document["on"] = document.pop(True)
+    return document
+
+
+def self_test() -> None:
+    """Raises CheckError when the rules misjudge a fixture, so a rule that matches nothing cannot pass."""
+    correct = release_workflow_problems(
+        fixture_release([FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]), FIXTURE_BUILD
+    )
+    if correct:
+        raise CheckError(f"the release rules reject the split release: {correct}")
+    broken = {
+        "the two publish steps swapped": [FIXTURE_TAG_GUARD, FIXTURE_RELOCATIONS, FIXTURE_LIBRARIES],
+        "publishLegacyRelocations before the tag guard": [FIXTURE_RELOCATIONS, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES],
+        "publishLibraries alone": [FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES],
+        "one publishAllPublicationsToMavenCentralRepository step": [
+            FIXTURE_TAG_GUARD,
+            "      - run: ./gradlew publishAllPublicationsToMavenCentralRepository\n",
+        ],
+        "both tasks in one step": [
+            FIXTURE_TAG_GUARD,
+            "      - run: ./gradlew publishLibraries publishLegacyRelocations\n",
+        ],
+        "the second step with if: always()": [
+            FIXTURE_TAG_GUARD,
+            FIXTURE_LIBRARIES,
+            FIXTURE_RELOCATIONS + "        if: always()\n",
+        ],
+        "the second step with continue-on-error: true": [
+            FIXTURE_TAG_GUARD,
+            FIXTURE_LIBRARIES,
+            FIXTURE_RELOCATIONS + "        continue-on-error: true\n",
+        ],
+    }
+    accepted = [
+        name
+        for name, steps in broken.items()
+        if not release_workflow_problems(fixture_release(steps), FIXTURE_BUILD)
+    ]
+    second_job = (
+        "  relocations:\n    needs: [verify, publish]\n    runs-on: macos-15\n    environment: maven-central\n"
+        "    steps:\n" + FIXTURE_TAG_GUARD + FIXTURE_RELOCATIONS
+    )
+    if not release_workflow_problems(
+        fixture_release([FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES], second_job), FIXTURE_BUILD
+    ):
+        accepted.append("the second step in a second job")
+    if accepted:
+        raise CheckError(f"the release rules accept a broken split release: {', '.join(accepted)}")
+
+
 def check_release_workflow() -> List[str]:
     return release_workflow_problems(load(RELEASE_WORKFLOW), load(BUILD_WORKFLOW))
 
 
 def main() -> int:
     try:
+        self_test()
         problems = check_release_workflow() + check_tag_guard()
     except (CheckError, OSError) as error:
         print(f"check_release_workflow: cannot run: {error}", file=sys.stderr)
