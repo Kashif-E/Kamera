@@ -6,6 +6,8 @@ import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.CameraEngine
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraDeviceType
@@ -316,6 +318,32 @@ class ContractKitCapabilitiesTest {
         assertEquals(2, driver.last.appliedExposureCompensationIndex, "6 clamped into the selfie camera's -2..2")
     }
 
+    @Test
+    fun exposureStepOverAReadBackDriverExpectsTheReadBackWhenTheCommandReturns() = runTest {
+        val skips = ContractSkips()
+        val driver = ReadBackExposureFakeDriver(twoFullCameras)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.exposureCompensationFollowsTheCapability()
+
+        assertEquals(emptyList(), skips.skipped, "the exposure step ran")
+        assertEquals(emptyList(), driver.exposureReports, "the kit reported exposure through changeHardware")
+    }
+
+    // Android reads a camera's exposure range from CameraX once it is bound, so the camera switched to has none
+    // in the capabilities until the switch: the kit reads the range the engine publishes after it.
+    @Test
+    fun theExposureSwitchStepReadsTheRangeTheEnginePublishesOnceTheCameraIsBound() = runTest {
+        val skips = ContractSkips()
+        val driver = PublishesExposureOnBindDriver()
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.desiredHardwareReappliedAfterRestartAndCameraSwitch()
+
+        assertEquals(emptyList(), skips.skipped)
+        assertEquals(2, driver.last.appliedExposureCompensationIndex, "6 clamped into the selfie camera's -2..2")
+    }
+
     // The fake driver, keeping the engine it built last.
     private class LastEngineDriver(capabilities: CameraCapabilities) : FakeEngineDriver(capabilities) {
         val last: FakeCameraEngine get() = fake
@@ -335,6 +363,50 @@ class ContractKitCapabilitiesTest {
 
         override suspend fun resetFocusAndExposure(): CameraKResult<Unit> = super<CameraEngine>.resetFocusAndExposure()
     }
+
+    // An engine that publishes a camera's exposure range once it has bound that camera, as Android reads it from
+    // CameraX's ExposureState; the fake platform behind it knows every range, so it clamps as a camera would.
+    private inner class PublishesExposureOnBindDriver : FakeEngineDriver(twoFullCameras) {
+        val last: FakeCameraEngine get() = fake
+
+        override fun createEngine(config: CameraConfiguration): CameraEngine =
+            PublishesExposureOnBind(super.createEngine(config) as FakeCameraEngine)
+    }
+
+    private inner class PublishesExposureOnBind(private val fake: FakeCameraEngine) : CameraEngine by fake {
+        private val bound = mutableSetOf<String>()
+        private val _capabilities = MutableStateFlow(withExposureOf(bound))
+        override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
+
+        override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> =
+            fake.start(desired).also { publishBound() }
+
+        override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> =
+            fake.selectCamera(selection).also { publishBound() }
+
+        private fun publishBound() {
+            fake.appliedCameraId?.let(bound::add)
+            _capabilities.value = withExposureOf(bound)
+        }
+    }
+
+    // [twoFullCameras] with exposure compensation on the cameras [ids] only.
+    private fun withExposureOf(ids: Set<String>) = CameraCapabilities(
+        allLenses = twoFullCameras.allLenses,
+        flashModes = twoFullCameras.allLenses.associate { it.id to twoFullCameras.supportedFlashModes(it.id) },
+        torchModes = twoFullCameras.allLenses.associate { it.id to twoFullCameras.supportedTorchModes(it.id) },
+        supportsPauseResume = twoFullCameras.supportsPauseResume,
+        supportedVideoQualities = twoFullCameras.supportedVideoQualities,
+        supportsVideoBitrate = twoFullCameras.supportsVideoBitrate,
+        supportedAspectRatios = twoFullCameras.supportedAspectRatios,
+        supportedImageFormats = twoFullCameras.supportedImageFormats,
+        supportedAnalysisFormats = twoFullCameras.supportedAnalysisFormats,
+        supportsSquareCapture = twoFullCameras.supportsSquareCapture,
+        focusPointCameras = twoFullCameras.allLenses.filter { twoFullCameras.supportsFocusPoint(it.id) }.map { it.id }
+            .toSet(),
+        exposureCompensationRanges = ids.associateWith { checkNotNull(twoFullCameras.exposureCompensationRange(it)) },
+        exposureCompensationSteps = ids.associateWith { checkNotNull(twoFullCameras.exposureCompensationStep(it)) },
+    )
 
     // The fake driver as K1 left it, listing the flash values the kit reports as platform observer reports.
     private class ReportsRecordingDriver(capabilities: CameraCapabilities) : FakeEngineDriver(capabilities) {

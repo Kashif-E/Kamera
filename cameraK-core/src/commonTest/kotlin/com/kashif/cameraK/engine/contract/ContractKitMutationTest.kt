@@ -226,6 +226,24 @@ class ContractKitMutationTest {
         assertContains(failure.message.orEmpty(), "setExposureCompensation did not reach the platform")
     }
 
+    // Rule 5 broken on a read-back exposure engine (Android, iOS): the platform took the index, but the engine never
+    // publishes its read-back.
+    @Test
+    fun readBackExposureEngineThatNeverPublishesFailsTheExposureStep() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            readBackExposureCases(::NeverPublishesExposure).exposureCompensationFollowsTheCapability()
+        }
+        assertContains(failure.message.orEmpty(), "hardware is the platform's exposure read-back")
+    }
+
+    @Test
+    fun readBackExposureCommandThatMovesTheTorchFailsTheExposureStep() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            readBackExposureCases(::MovesTorchOnExposure).exposureCompensationFollowsTheCapability()
+        }
+        assertContains(failure.message.orEmpty(), "moved the torch")
+    }
+
     @Test
     fun aRestartThatDropsTheHeldExposureFailsTheReapplyCase() = runTest {
         val failure = assertFailsWith<AssertionError> {
@@ -244,6 +262,12 @@ class ContractKitMutationTest {
 
     private fun readBackCases(moved: Moved) = ContractCases(
         ReadBackBrokenDriver { MovesOnFlash(it, moved) },
+        requires = emptySet(),
+        skips = ContractSkips(),
+    )
+
+    private fun readBackExposureCases(breakIt: (FakeCameraEngine) -> BrokenEngine) = ContractCases(
+        ReadBackExposureBrokenDriver(breakIt),
         requires = emptySet(),
         skips = ContractSkips(),
     )
@@ -279,6 +303,23 @@ class ContractKitMutationTest {
     private class ReadBackBrokenDriver(private val breakIt: (FakeCameraEngine) -> BrokenEngine) :
         FakeEngineDriver(),
         ReadBackFlashDriver {
+        private lateinit var engine: BrokenEngine
+
+        override fun createEngine(config: CameraConfiguration): CameraEngine =
+            breakIt(super.createEngine(config) as FakeCameraEngine).also { engine = it }
+
+        override fun releaseCount(): Int = engine.releaseCount
+
+        override suspend fun settle() {
+            super.settle()
+            engine.sync()
+        }
+    }
+
+    // A read-back exposure engine (Android, iOS) with one rule broken.
+    private class ReadBackExposureBrokenDriver(private val breakIt: (FakeCameraEngine) -> BrokenEngine) :
+        FakeEngineDriver(),
+        ReadBackExposureDriver {
         private lateinit var engine: BrokenEngine
 
         override fun createEngine(config: CameraConfiguration): CameraEngine =
@@ -395,6 +436,42 @@ class ContractKitMutationTest {
                         movedZoom = ZoomState(zoom.ratio + 0.5f, zoom.minRatio, zoom.maxRatio + 1f)
                     }
                 }
+            }
+            sync()
+            return result
+        }
+    }
+
+    // Rule 5 broken on a read-back exposure engine: the index reaches the platform and nothing publishes it.
+    private class NeverPublishesExposure(fake: FakeCameraEngine) : BrokenEngine(fake)
+
+    // Rule 5 broken on a read-back exposure engine: setExposureCompensation publishes the platform's read-back, and
+    // moves the torch too.
+    private class MovesTorchOnExposure(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        private val _hardware = MutableStateFlow(fake.hardware.value)
+        override val hardware: StateFlow<HardwareState> = _hardware.asStateFlow()
+        private var torch: TorchMode? = null
+
+        override fun sync() {
+            val reported = fake.hardware.value
+            _hardware.value = torch?.let {
+                HardwareState(
+                    reported.flashMode,
+                    it,
+                    reported.camera,
+                    reported.targetOrientation,
+                    reported.exposureCompensationIndex,
+                )
+            } ?: reported
+        }
+
+        override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> = fake.start(desired).also { sync() }
+
+        override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> {
+            val result = fake.setExposureCompensation(index)
+            if (result is CameraKResult.Success) {
+                fake.reportExposureIndex(fake.appliedExposureCompensationIndex)
+                torch = TorchMode.entries.first { it != fake.hardware.value.torchMode }
             }
             sync()
             return result

@@ -93,6 +93,16 @@ internal data class BoundSettings(
  */
 internal interface ReadBackFlashDriver : EngineContractDriver
 
+/**
+ * Exposure compensation has no platform observer (Android's `ExposureState`, iOS's
+ * `exposureTargetBias` read in the completion handler): the engine reads the platform's index back
+ * once the platform call completes and publishes that read-back before `setExposureCompensation`
+ * returns. Over a driver that implements it, the kit's exposure step expects
+ * [EngineContractDriver.boundSettings]' exposure index in `hardware` right after the command, and
+ * reports no exposure change through [EngineContractDriver.changeHardware].
+ */
+internal interface ReadBackExposureDriver : EngineContractDriver
+
 internal interface ThrowingCallbackDriver : EngineContractDriver {
     /** The next scripted platform callback throws inside the engine's callback boundary. */
     fun throwFromNextCallback()
