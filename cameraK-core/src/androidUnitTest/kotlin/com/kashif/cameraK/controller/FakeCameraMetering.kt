@@ -81,6 +81,13 @@ internal class FakeMeteringControl(private val metering: FakeMetering, private v
     /** The index the device applies for a requested one: by default the request. */
     var applies: (Int) -> Int = { it }
 
+    /**
+     * When true, the camera's closing leaves what is pending to the test, as CameraX's camera thread can
+     * finish or fail a request after a stop, a start or a switch has gone on: [failPending] fails it as
+     * the close would, [completeExposure] and [FocusRequest.complete] finish it.
+     */
+    var closeLeavesPending = false
+
     private var exposureIndex = 0
     private val pendingExposure = mutableListOf<ResolvableFuture<Int>>()
 
@@ -144,6 +151,11 @@ internal class FakeMeteringControl(private val metering: FakeMetering, private v
     /** The camera closed: CameraX fails what is pending and returns the exposure index to 0. */
     fun onClosed() {
         exposureIndex = 0
+        if (!closeLeavesPending) failPending()
+    }
+
+    /** CameraX fails what is pending, as the camera's closing does. */
+    fun failPending() {
         supersedeFocus("Camera is not active.")
         pendingExposure.toList().forEach { it.setException(notActive()) }
         pendingExposure.clear()

@@ -11,6 +11,7 @@ import com.kashif.cameraK.controller.MeteringPointBuild
 import com.kashif.cameraK.controller.PreviewGeometry
 import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.FakeAndroidPlatform.Companion.CONTRACT_CAMERAS
+import com.kashif.cameraK.engine.FakeAndroidPlatform.Companion.desired
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.error.CameraFeature
@@ -166,6 +167,65 @@ class FocusAtTest {
     }
 
     @Test
+    fun aStopUnderAPendingFocusIsClosedEvenWhenAStartOnAnotherCameraFollowsAtOnce() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+        // CameraX cancels the request on its own thread, after the restart has bound the front camera.
+        metering.closeLeavesPending = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        engine.stop()
+        platform.settle(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired.onLens(CameraLens.FRONT)))
+        platform.settle(testScheduler)
+        assertEquals(FRONT.id, engine.hardware.value.camera?.id, "the restart bound the front camera")
+        metering.failPending()
+        platform.settle(testScheduler)
+
+        assertIs<CameraKError.Closed>(failure(focus.await()), "the stop cut the request short, not the start")
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aStopUnderAPendingFocusIsClosedWhenTheSameCameraStartsAgain() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+        metering.closeLeavesPending = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        engine.stop()
+        platform.settle(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        metering.failPending()
+        platform.settle(testScheduler)
+
+        assertIs<CameraKError.Closed>(failure(focus.await()))
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aSwitchWhoseCancellationArrivesLateIsBusy() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+        metering.closeLeavesPending = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        selectFront(engine)
+        metering.failPending()
+        platform.settle(testScheduler)
+
+        assertEquals(CameraOperation.FOCUS_POINT, assertIs<CameraKError.Busy>(failure(focus.await())).operation)
+        engine.closeAndJoin()
+    }
+
+    @Test
     fun aCloseUnderAPendingFocusIsClosed() = runTest {
         val engine = open()
         platform.camera!!.metering.holdFocus = true
@@ -256,6 +316,15 @@ class FocusAtTest {
     }
 
     private fun failure(result: CameraKResult<*>): CameraKError = assertIs<CameraKResult.Failure>(result).error
+
+    private fun DesiredHardware.onLens(lens: CameraLens) = DesiredHardware(
+        CameraSelection.ByLens(lens, CameraDeviceType.DEFAULT),
+        flashMode,
+        torchMode,
+        zoomRatio,
+        targetOrientation,
+        exposureCompensationIndex,
+    )
 
     private companion object {
         val CENTRE = NormalizedPoint(0.5f, 0.5f)

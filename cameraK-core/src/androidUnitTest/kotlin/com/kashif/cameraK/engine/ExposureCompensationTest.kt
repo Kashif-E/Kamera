@@ -120,6 +120,81 @@ class ExposureCompensationTest {
     }
 
     @Test
+    fun aStopUnderAPendingRequestIsClosedEvenWhenAStartOnAnotherCameraFollowsAtOnce() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdExposure = true
+        // CameraX cancels the request on its own thread, after the restart has bound the front camera.
+        metering.closeLeavesPending = true
+
+        val set = async { engine.setExposureCompensation(4) }
+        platform.settle(testScheduler)
+        engine.stop()
+        platform.settle(testScheduler)
+        val front = DesiredHardware(
+            CameraSelection.ByLens(CameraLens.FRONT, CameraDeviceType.DEFAULT),
+            desired.flashMode,
+            desired.torchMode,
+            desired.zoomRatio,
+            desired.targetOrientation,
+            desired.exposureCompensationIndex,
+        )
+        assertEquals(CameraKResult.Success(Unit), engine.start(front))
+        platform.settle(testScheduler)
+        assertEquals(CameraLens.FRONT, engine.hardware.value.camera?.lens, "the restart bound the front camera")
+        metering.failPending()
+        platform.settle(testScheduler)
+
+        assertIs<CameraKError.Closed>(failure(set.await()), "the stop cut the request short, not the start")
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aRequestTheOldCameraAppliesAfterASwitchIsBusyAndLeavesTheHeldIndex() = runTest {
+        val engine = open()
+        assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(2))
+        val back = platform.camera!!.metering
+        back.holdExposure = true
+        back.closeLeavesPending = true
+
+        val set = async { engine.setExposureCompensation(4) }
+        platform.settle(testScheduler)
+        select(engine, CameraLens.FRONT)
+        assertEquals(listOf(2), platform.camera!!.metering.exposureRequests, "the held index on the front camera")
+        // The old camera applies the request after the switch has re-applied the held index.
+        back.completeExposure()
+        platform.settle(testScheduler)
+
+        val error = assertIs<CameraKError.Busy>(failure(set.await()), "a request the switch cut off")
+        assertEquals(CameraOperation.EXPOSURE_COMPENSATION, error.operation)
+        assertEquals(2, engine.hardware.value.exposureCompensationIndex, "the front camera's read-back")
+        select(engine, CameraLens.BACK)
+        assertEquals(listOf(2), platform.camera!!.metering.exposureRequests, "the held index after the late request")
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aResetTheOldCameraAppliesAfterASwitchIsBusyAndLeavesTheHeldIndex() = runTest {
+        val engine = open()
+        assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(2))
+        val back = platform.camera!!.metering
+        back.holdExposure = true
+        back.closeLeavesPending = true
+
+        val reset = async { engine.resetFocusAndExposure() }
+        platform.settle(testScheduler)
+        select(engine, CameraLens.FRONT)
+        back.completeExposure()
+        platform.settle(testScheduler)
+
+        val error = assertIs<CameraKError.Busy>(failure(reset.await()), "a reset the switch cut off")
+        assertEquals(CameraOperation.FOCUS_POINT, error.operation)
+        select(engine, CameraLens.BACK)
+        assertEquals(listOf(2), platform.camera!!.metering.exposureRequests, "the held index after the late reset")
+        engine.closeAndJoin()
+    }
+
+    @Test
     fun theIndexIsReappliedClampedIntoTheNextCamerasRange() = runTest {
         val engine = open()
         assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(12))
