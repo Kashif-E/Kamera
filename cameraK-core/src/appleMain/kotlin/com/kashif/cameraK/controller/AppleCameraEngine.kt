@@ -16,13 +16,11 @@ import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.engine.PlatformPreviewSource
 import com.kashif.cameraK.engine.PreviewLayerLayout
 import com.kashif.cameraK.engine.TraceNames
-import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
-import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.frames.AppleFrameSource
 import com.kashif.cameraK.frames.CoreVideoPixelBufferLocker
 import com.kashif.cameraK.frames.FrameFormat
@@ -56,36 +54,36 @@ import platform.CoreGraphics.CGRect
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIInterfaceOrientation
-import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
+
+private const val TAG = "CameraK"
+private const val MINIMUM_IOS = 16
+private const val DEFERRED_START_IOS = 26
 
 /**
  * The iOS engine: an AVCaptureSession behind the engine contract (design §2.4). A plain class; the
- * session, its serial queue and the camera inputs belong to [custom], which this engine owns.
+ * session, its serial queue and the camera inputs belong to [custom], which this engine owns. It
+ * implements [CameraEngine] and delegates to its collaborators, which share one lock:
+ *
+ * - [generations]: the start generations and the engine state;
+ * - [events]: the session's did-start-running, interruption and runtime-error notifications;
+ * - [inputs]: the camera a start binds and the lens switches;
+ * - [controls]: flash, torch and zoom, read back by key-value observing;
+ * - [rotation]: the target and device orientations and the iOS 17 rotation coordinator;
+ * - [capabilitySource]: the lenses and what each bound camera reports;
+ * - [stills]: captures, written to app-owned storage;
+ * - [recorder]: recordings on the movie file output, finalized by stop and close before the camera closes.
  *
  * - The session is made in the constructor and kept across stop and start, so a preview layer made
  *   before the first start already shows it. Inputs and outputs are configured by the first start.
  * - [start] confirms the session runs, or that the system holds it interrupted; otherwise it waits
  *   for AVFoundation's did-start-running, interruption or runtime-error notification.
- * - Those notifications are observed with the session as their object and no queue, then hop to the
- *   session queue and apply only to the start generation they arrived in. [close] removes them.
- * - A runtime error ends its generation with Failed, except a media-services reset, which interrupts
- *   the session and restarts it. A second failure before the restart ran, or a restart that does not
- *   run within the start timeout, gives Failed(Hardware).
  * - Below iOS 16 it makes no session, enumerates nothing and every call fails with
  *   `Unsupported(PLATFORM_VERSION)`: a Kotlin/Native library cannot raise its consumer's deployment
  *   target, and every iOS 16 call lives behind this check.
- *
- * - Torch and zoom are what the device reports by key-value observing, flash the photo output's mode
- *   read back on the session queue after each set and each input swap (contract rule 5). Flash, torch
- *   and zoom commands need an Open camera; the target orientation is a stored value any time before
- *   close, which captures and movies read.
- * - The device orientation is observed from UIDeviceOrientationDidChangeNotification between start
- *   and stop.
- *
- * - A capture is one session-queue block, written to app-owned storage ([capture]).
- * - Recordings are [recorder]'s, on the movie file output; stop and close finalize a running one
- *   before the camera closes.
+ * - Flash, torch and zoom commands need an Open camera; the target orientation is a stored value any
+ *   time before close, which captures and movies read. The device orientation is observed from
+ *   UIDeviceOrientationDidChangeNotification between start and stop.
  */
 internal class AppleCameraEngine(
     private val config: CameraConfiguration,
@@ -101,7 +99,7 @@ internal class AppleCameraEngine(
     rotationSources: RotationSourceFactory = CoordinatorRotationSources,
     /** Locks analysis frames' pixel buffers; tests count the locks. */
     private val pixelBufferLocker: PixelBufferLocker = CoreVideoPixelBufferLocker,
-    private val enumerateLenses: () -> List<LensInfo> = custom::getCameraCapabilities,
+    enumerateLenses: () -> List<LensInfo> = custom::getCameraCapabilities,
 ) : CameraEngine {
     private val osVersion: Int = environment.runtime.osVersion ?: runningIosMajorVersion()
     private val tracer = environment.runtime.tracer ?: signpostTracer()
@@ -182,19 +180,34 @@ internal class AppleCameraEngine(
             CoroutineExceptionHandler { _, e -> CameraKLogger.e(TAG, "an iOS engine task failed", e) },
     )
 
-    private val closeDone = Job()
-    private val starts = Mutex()
-
     private val stills: EngineStills = EngineStills(lock, generations, custom, config, tracer, environment.dispatchers)
 
-    /** Test seam: runs on the session queue between a lens switch's live check and its commit. */
-    @Volatile
-    internal var afterSwitchLiveCheck: () -> Unit = {}
+    private val closeDone = Job()
+    private val starts = Mutex()
 
     /** The session, made now so the preview has it before the first start; null below iOS 16. */
     private val session: CaptureSessionOps? = if (unsupported == null) custom.prepareSession() else null
 
     private val events: EngineSessionEvents = EngineSessionEvents(generations, custom, session, scope)
+
+    private val inputs: EngineInputs = EngineInputs(
+        generations = generations,
+        custom = custom,
+        session = session,
+        capabilities = capabilitySource,
+        controls = controls,
+        rotation = rotation,
+        events = events,
+        tracer = tracer,
+        frameOutputAttached = { frameSource.outputAttached },
+    )
+
+    /** Test seam: runs on the session queue between a lens switch's live check and its commit. */
+    internal var afterSwitchLiveCheck: () -> Unit
+        get() = inputs.afterSwitchLiveCheck
+        set(value) {
+            inputs.afterSwitchLiveCheck = value
+        }
 
     init {
         custom.captureOrientation = rotation::captureVideoOrientation
@@ -290,33 +303,9 @@ internal class AppleCameraEngine(
             }
             continuation.invokeOnCancellation { cancelStart(generation) }
             custom.afterQueuedSessionWork {
-                platformCallback("starting the session") { startOnQueue(generation, desired) }
+                platformCallback("starting the session") { inputs.startOnQueue(generation, desired) }
             }
         }
-
-    /** Session queue: configures the session or moves it to the selected camera, then starts it. */
-    private fun startOnQueue(generation: Int, desired: DesiredHardware) {
-        if (!generations.isCurrent(generation, EnginePhase.STARTING)) return
-        val selection = desired.selection
-        val device = resolve(selection)
-            ?: return generations.fail(generation, CameraKError.NoCamera(selection.lens()))
-        val failure = when {
-            !custom.isConfigured -> custom.configureOnQueue(device, device.lens(), selection.deviceType())
-            device !== custom.currentDevice -> custom.useDeviceOnQueue(device)
-            else -> null
-        }
-        if (failure != null) return generations.fail(generation, engineErrorFor(failure, selection.lens()))
-        rotation.targetOrientation = desired.targetOrientation
-        controls.takeDesired(desired)
-        bindHardware(device)
-        // A stop or close since the block was queued wins: the session is not started for nobody.
-        if (!generations.isCurrent(generation, EnginePhase.STARTING)) return
-        // Starting the session applies the torch; one already running keeps the torch it had.
-        if (session?.isRunning == true) custom.reapplyTorchOnQueue() else custom.startRunningOnQueue()
-        controls.applyDesiredZoom(device)
-        controls.publishHardware()
-        events.confirm(generation)
-    }
 
     private fun cancelStart(generation: Int) {
         if (generations.cancelStart(generation)) {
@@ -375,63 +364,12 @@ internal class AppleCameraEngine(
 
     // ─── Commands ───────────────────────────────────────────────────────────────────────────────
 
-    override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> {
-        generations.unusable()?.let { return it }
-        capabilitySource.enumerated.await()
-        return suspendCancellableCoroutine { continuation -> switchCamera(selection) { continuation.resume(it) } }
-    }
+    override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> =
+        inputs.selectCamera(selection)
 
-    /**
-     * Moves the open session to the camera [selection] names, with the 1.x lens switch, and passes
-     * the camera live afterwards to [done] on the session queue. The work is queued before this
-     * returns, so it runs after any session work already requested. The switch is one
-     * `CameraK.lensSwitch` interval. With no frame output attached it ends when the swap has
-     * committed (the session keeps running through it); with one, at the first sample buffer through
-     * the new camera's input, or, marked noFrame, at the engine's stop, close, failure or next switch.
-     * A switch whose generation a stop or close cut while it was committing ends at once, marked noFrame;
-     * a refused switch ends at once, marked failed.
-     */
-    internal fun switchCamera(selection: CameraSelection, done: (CameraKResult<LensInfo>) -> Unit) {
-        generations.endPendingSwitch()
-        val interval = tracer.beginInterval(TraceNames.LENS_SWITCH)
-        custom.afterQueuedSessionWork {
-            val generation = generations.current
-            val result = try {
-                switchOnQueue(selection, generation)
-            } catch (e: Exception) {
-                CameraKLogger.e(TAG, "switching the camera failed", e)
-                engineFailure(CameraKError.Internal(e))
-            }
-            // The input whose first sample buffer ends the interval, when a frame output is attached.
-            val awaited = custom.currentVideoInput
-                .takeIf { result is CameraKResult.Success && frameSource.outputAttached }
-            // The phase and generation are checked under the lock that publishes the switch, so a stop
-            // since the live check ends the switch here instead of leaving it waiting.
-            val pending = awaited != null && generations.awaitSwitchFrame(generation, interval, awaited)
-            if (!pending) {
-                when {
-                    result is CameraKResult.Failure -> tracer.marker(AppleTraceNames.LENS_SWITCH_FAILED)
-                    awaited != null -> tracer.marker(AppleTraceNames.LENS_SWITCH_NO_FRAME)
-                }
-                interval.close()
-            }
-            done(result)
-        }
-    }
-
-    private fun switchOnQueue(selection: CameraSelection, generation: Int): CameraKResult<LensInfo> {
-        generations.unusable()?.let { return it }
-        if (!generations.isCurrent(generation, EnginePhase.LIVE)) return engineFailure(CameraKError.NotReady)
-        afterSwitchLiveCheck()
-        val device = resolve(selection) ?: return engineFailure(CameraKError.NoCamera(selection.lens()))
-        if (custom.recordingInProgress()) return engineFailure(CameraKError.Busy(CameraOperation.LENS))
-        // A refused input puts the previous camera back, inside the same transaction.
-        custom.useDeviceOnQueue(device)?.let { return engineFailure(engineErrorFor(it, selection.lens())) }
-        bindHardware(device)
-        controls.applyDesiredZoom(device)
-        controls.publishHardware()
-        return CameraKResult.Success(capabilitySource.lensInfo(device))
-    }
+    /** The lens switch [selectCamera] makes, passing its result to [done] on the session queue. */
+    internal fun switchCamera(selection: CameraSelection, done: (CameraKResult<LensInfo>) -> Unit) =
+        inputs.switchCamera(selection, done)
 
     override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = controls.setFlashMode(mode)
 
@@ -490,29 +428,4 @@ internal class AppleCameraEngine(
      * rotation coordinator's horizon-level capture angle from iOS 17, else the device's orientation.
      */
     internal fun captureRotation(): VideoRotation = rotation.captureRotation()
-
-    // ─── Platform reads ─────────────────────────────────────────────────────────────────────────
-
-    private fun resolve(selection: CameraSelection): CaptureDeviceOps? = when (selection) {
-        is CameraSelection.ById -> custom.findCameraById(selection.id)
-        is CameraSelection.ByLens -> custom.findCamera(selection.lens, selection.deviceType)
-        is CameraSelection.Default -> custom.findCamera(CameraLens.BACK, selection.deviceType)
-    }
-
-    /**
-     * Session queue, after [device] became the session's camera: its flash modes, image formats and
-     * recording qualities from the photo output and the device now behind it, and the device's torch and
-     * zoom observed in place of the previous camera's.
-     */
-    private fun bindHardware(device: CaptureDeviceOps) {
-        capabilitySource.bind(device)
-        controls.observe(device)
-        rotation.bindOnQueue()
-    }
-
-    private companion object {
-        const val TAG = "CameraK"
-        const val MINIMUM_IOS = 16
-        const val DEFERRED_START_IOS = 26
-    }
 }
