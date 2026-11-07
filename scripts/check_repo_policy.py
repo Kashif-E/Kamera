@@ -57,7 +57,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      sources' packages or a parent of one, and no main source imports the JDK's or the
                      standard library's atomics: atomics are AtomicFU's. Every CameraKLogger call
                      in a published module's main sources passes that artifact's one tag, and its
-                     message does not open by naming the tag, CameraK or a plugin again.
+                     message does not open by naming the tag, CameraK or a plugin again. Each engine
+                     file W12 split (SPLIT_ENGINE_FILES) exists and stays within 600 lines.
   release-gate       The release gate's device harness is built (design §12.4 B1): settings include
                      :benchmark, verify.sh's android target compiles cameraK-core's instrumented
                      sources, its sample target builds :benchmark against the Sample app, and the
@@ -1265,6 +1266,34 @@ def apple_internal_problems(files: Dict[str, str], internals: Dict[str, str] = A
     return problems
 
 
+# The engine files W12 split by responsibility (w12-design-decisions.md, Y-android-split and Y-ios-split):
+# each stays a facade that delegates. DesktopCameraEngine.kt and cameraK-testing's FakeCameraEngine.kt
+# are over the limit too and outside W12's splits; splitting them would add their paths here.
+SPLIT_ENGINE_FILES = [
+    "cameraK-core/src/androidMain/kotlin/com/kashif/cameraK/controller/AndroidCameraEngine.kt",
+]
+ENGINE_FILE_LINE_LIMIT = 600
+
+
+def engine_file_size_problems(
+    files: Dict[str, str | None],
+    listed: List[str] = SPLIT_ENGINE_FILES,
+    limit: int = ENGINE_FILE_LINE_LIMIT,
+) -> List[str]:
+    """engine_files_stay_small: every listed engine file exists and has at most `limit` lines. A listed
+    path that is gone fails too, so a rename cannot empty the list without anyone noticing."""
+    problems = []
+    for path in listed:
+        text = files.get(path)
+        if text is None:
+            problems.append(f"{path} does not exist; SPLIT_ENGINE_FILES names it, so update the list with the rename")
+            continue
+        lines = len(text.splitlines())
+        if lines > limit:
+            problems.append(f"{path} has {lines} lines, over {limit}; move a responsibility into a collaborator")
+    return problems
+
+
 KOTLIN_PACKAGE = re.compile(r"^package\s+([A-Za-z0-9_.]+)", re.MULTILINE)
 
 
@@ -1417,6 +1446,11 @@ def check_module_sources() -> List[str]:
     kept = {fixture_path: "package x\n\n@Suppress(\"x\")\ninternal class CustomCameraController(\n    a: Int,\n)\n"}
     if not apple_internal_problems(planted, fixture_internals) or apple_internal_problems(kept, fixture_internals):
         raise CheckError("apple_engine_internals_are_internal misjudges its fixture")
+    engine_paths = ["a/BigCameraEngine.kt", "b/SmallCameraEngine.kt", "c/GoneCameraEngine.kt"]
+    engine_texts = {"a/BigCameraEngine.kt": "x\n" * 4, "b/SmallCameraEngine.kt": "x\n" * 3}
+    found = engine_file_size_problems(engine_texts, engine_paths, limit=3)
+    if [problem.split(" ", 1)[0] for problem in found] != ["a/BigCameraEngine.kt", "c/GoneCameraEngine.kt"]:
+        raise CheckError(f"engine_files_stay_small misjudges its fixture: {found}")
     clashing = {"a/X.kt": "package com.kashif.ocrPlugin\n", "b/Y.kt": "// x\npackage com.kashif.ocrplugin\n"}
     distinct = {"a/X.kt": "package com.kashif.ocrplugin\n", "b/Y.kt": "package com.kashif.qrscannerplugin\n"}
     model = "ocrPlugin/model/com/kashif/{}/tessdata/eng.traineddata"
@@ -1500,6 +1534,7 @@ def check_module_sources() -> List[str]:
         raise CheckError(f"log_message_repeats_its_tag misjudges its fixture: {found}")
     files = [path.relative_to(ROOT).as_posix() for path in tracked("*.kt")]
     sources = {path: (ROOT / path).read_text() for path in APPLE_ENGINE_INTERNALS if (ROOT / path).is_file()}
+    engines = {path: (ROOT / path).read_text() for path in SPLIT_ENGINE_FILES if (ROOT / path).is_file()}
     kotlin = {path: (ROOT / path).read_text() for path in files}
     module_scripts = {module: (ROOT / module / "build.gradle.kts").read_text() for module in LIBRARY_MODULES}
     module_packages: Dict[str, List[str]] = {}
@@ -1516,6 +1551,7 @@ def check_module_sources() -> List[str]:
     return (
         sources_outside_modules((ROOT / "settings.gradle.kts").read_text(), files)
         + apple_internal_problems(sources)
+        + engine_file_size_problems(engines)
         + case_only_package_clashes(kotlin, resources)
         + android_namespace_problems(module_scripts, module_packages)
         + stdlib_atomics_problems(kotlin, LIBRARY_MODULES)
