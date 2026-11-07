@@ -71,6 +71,20 @@ the main thread.
 - [ ] **VideoCapture bind on Main.** Record the `CameraK.videoBind` time from the benchmark above,
       and check that the preview does not stall when recording starts.
 
+### Focus and exposure (Android)
+
+- [ ] **Focus.** Tap a near object; the reticle shows FOCUSED and the object is sharp.
+- [ ] **Focus that cannot lock.** Tap with the lens covered; the reticle shows FAILED, from
+      `Timeout(FOCUS_POINT)`.
+- [ ] **Where the tap lands.** At 1:1 and at 16:9, tap a small object near each corner of the
+      preview; the reticle and the in-focus area match.
+- [ ] **Exposure.** Move the exposure slider; the brightness changes and the index shown is the one
+      read back.
+- [ ] **Lens switch.** Set the index to the end of the back camera's range, then switch to the front
+      camera; the index is clamped into its range, or 0 on a camera without compensation.
+- [ ] **Background and foreground.** With an index set, background the app and bring it back; the
+      same index is applied again.
+
 ## iOS Sample in Xcode (Mac)
 
 - [ ] **The Xcode build.** From the repository root, the iOS Sample builds for the simulator with no

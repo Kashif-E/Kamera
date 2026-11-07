@@ -1,9 +1,9 @@
 # Focus and Exposure
 
 !!! note "Platforms"
-    The API below is common, and the Compose tap is in place on every platform. Android and iOS
-    implement it in the next wave; until then their cameras report no focus point and no exposure
-    compensation, so the calls return `Unsupported`. Desktop cameras do not support either.
+    The API below is common, and the Compose tap is in place on every platform. Android supports
+    it. iOS implements it in the next wave; until then its cameras report no focus point and no
+    exposure compensation, so the calls return `Unsupported`. Desktop cameras do not support either.
 
 ## Tap to focus
 
@@ -99,9 +99,34 @@ Clamped into the camera's range; a camera without compensation ignores it.
 
 | Platform | Focus point | Exposure compensation |
 |----------|-------------|-----------------------|
-| Android | In the next wave | In the next wave |
+| Android | Supported, where CameraX meters at a point | Supported, where CameraX reports a range |
 | iOS | In the next wave | In the next wave |
 | Desktop | `Unsupported(FOCUS_POINT)` | `Unsupported(EXPOSURE_COMPENSATION)` |
+
+### Android
+
+Each camera's capabilities fill in once it has been bound, from CameraX: a focus point where
+`CameraInfo.isFocusMeteringSupported` accepts a centre AF and AE action, and the range and step of
+`ExposureState` where it supports compensation. A camera never opened yet reports neither.
+
+`focusAt` maps the point through the preview's crop, rotation and, on the front camera, its mirror,
+then meters there with AF, AE and AWB, keeping each the camera supports. CameraX returns to
+continuous metering after its default 5 seconds.
+
+| What happened | `focusAt` returns |
+|---------------|-------------------|
+| The camera focused | `Success` |
+| A fixed-focus camera metered (no AF in the action) | `Success` |
+| AF did not lock | `Failure(Timeout(FOCUS_POINT))` |
+| A newer `focusAt`, a reset or a camera switch replaced it | `Failure(Busy(FOCUS_POINT))` |
+| The camera closed first | `Failure(Closed)` |
+| The preview has no surface yet | `Failure(InvalidState(FOCUS_POINT))` |
+| CameraX failed it otherwise | `Failure(Hardware(null, cause))` |
+
+`setExposureCompensation` returns once CameraX has applied the index, and `uiState` shows the index
+`ExposureState` reads back. A newer call replaces one still in flight, which returns
+`Failure(Busy(EXPOSURE_COMPENSATION))`. A camera without compensation drops the held index, and
+`uiState` shows 0. `resetFocusAndExposure` cancels the focus point and sets index 0.
 
 ## Testing
 
