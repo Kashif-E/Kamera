@@ -71,6 +71,16 @@ the main thread.
 - [ ] **VideoCapture bind on Main.** Record the `CameraK.videoBind` time from the benchmark above,
       and check that the preview does not stall when recording starts.
 
+## iOS Sample in Xcode (Mac)
+
+- [ ] **The Xcode build.** From the repository root, the iOS Sample builds for the simulator with no
+      simulator booted (`verify.sh` does not run it, because it needs Xcode):
+      ```
+      xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -destination 'generic/platform=iOS Simulator' -configuration Debug build
+      ```
+      It ends in `** BUILD SUCCEEDED **`. Its Gradle phase builds the `ComposeApp` framework under
+      dependency verification, so a failure there names a dependency the verification metadata is missing.
+
 ## iPhone
 
 - [ ] **QR preview with analysis (Decision 3).** With the QR plugin at its default configuration,
