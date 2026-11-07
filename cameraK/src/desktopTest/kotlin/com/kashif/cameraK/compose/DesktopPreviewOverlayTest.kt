@@ -53,13 +53,17 @@ class DesktopPreviewOverlayTest {
             }
         }
         try {
-            // Render until the frame has been drawn, then once more so the layout has settled.
+            // Render until the frame has been drawn, then once more so the layout has settled. The preview
+            // collects the fake's frame on Dispatchers.Default, outside the test's virtual time.
+            val deadline = System.nanoTime() + AWAIT_NANOS
             var drawn: IntRect? = null
-            repeat(RENDERS) {
-                if (drawn == null) {
-                    runCurrent()
-                    drawn = drawnFrameBounds(scene)
+            while (drawn == null) {
+                if (System.nanoTime() > deadline) {
+                    fail("the fake\'s frame did not reach the preview in ${AWAIT_NANOS / 1_000_000} ms")
                 }
+                runCurrent()
+                drawn = drawnFrameBounds(scene)
+                if (drawn == null) Thread.sleep(5)
             }
             runCurrent()
             drawn = drawnFrameBounds(scene)
