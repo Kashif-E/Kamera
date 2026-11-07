@@ -26,7 +26,12 @@ internal fun PhotoThumb(image: ImageBitmap?, modifier: Modifier = Modifier) {
             .semantics { contentDescription = if (image == null) "No photo yet" else "Last photo" },
     ) {
         if (image != null) {
-            Image(bitmap = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+            Image(
+                bitmap = image,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
         }
     }
 }

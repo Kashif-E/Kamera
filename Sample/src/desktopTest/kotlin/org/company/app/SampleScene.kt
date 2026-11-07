@@ -22,19 +22,20 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * [content] in the Sample's theme on an [ImageComposeScene] that recomposes on the test's scheduler,
- * one dp to a pixel: the screens' and atoms' tests read its semantics and tap it.
+ * [content] in the Sample's theme on an [ImageComposeScene] of [width] by [height] dp that recomposes
+ * on the test's scheduler: the screens' and atoms' tests read its semantics and tap it.
  */
 internal class SampleScene(
     private val scope: TestScope,
     width: Int = PHONE_WIDTH,
     height: Int = PHONE_HEIGHT,
+    density: Float = 1f,
     content: @Composable () -> Unit,
 ) : AutoCloseable {
     private val scene = ImageComposeScene(
-        width = width,
-        height = height,
-        density = Density(1f),
+        width = (width * density).toInt(),
+        height = (height * density).toInt(),
+        density = Density(density),
         coroutineContext = StandardTestDispatcher(scope.testScheduler),
     ) { SampleTheme(content) }
     private var frameTime = Duration.ZERO
@@ -87,9 +88,8 @@ internal class SampleScene(
 }
 
 /** A node's texts and content descriptions. */
-internal fun SemanticsNode.labels(): List<String> =
-    config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() +
-        config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
+internal fun SemanticsNode.labels(): List<String> = config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() +
+    config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
 
 /** Whether a node is marked selected; null when it has no selected state. */
 internal fun SemanticsNode.selected(): Boolean? = config.getOrNull(SemanticsProperties.Selected)

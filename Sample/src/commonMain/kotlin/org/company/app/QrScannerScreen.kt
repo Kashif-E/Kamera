@@ -3,7 +3,10 @@ package org.company.app
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -13,12 +16,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import com.kashif.qrscannerplugin.BarcodeFormat
 import com.kashif.qrscannerplugin.QRScannerPlugin
 import com.kashif.qrscannerplugin.rememberQRScannerPlugin
 import org.company.app.designsystem.Eyebrow
+import org.company.app.designsystem.OverlayLabel
 import org.company.app.designsystem.PrimaryButton
 import org.company.app.designsystem.SampleTheme
 import org.company.app.designsystem.ScanReticle
@@ -77,20 +80,15 @@ internal fun QrScanningEffect(qrScanner: QrScannerFeature, isQRScanningEnabled: 
 @Composable
 internal fun QrOverlay(qrScanner: QrScannerFeature, modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier,
+        modifier = modifier.fillMaxSize().padding(SampleTheme.spacing.lg),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(SampleTheme.spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(SampleTheme.spacing.lg, Alignment.CenterVertically),
     ) {
-        ScanReticle()
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = qrScanner.hint, style = SampleTheme.typography.bodySmall, color = SampleTheme.colors.ink)
-            Text(
-                text = qrScanner.formatsLine,
-                style = SampleTheme.typography.caption,
-                color = SampleTheme.colors.inkOnPreview,
-                textAlign = TextAlign.Center,
-            )
-        }
+        // Its own size where the preview has room, smaller where it has not.
+        ScanReticle(Modifier.weight(1f, fill = false).aspectRatio(1f))
+        // A single format is already named by the hint.
+        val detail = qrScanner.formatsLine.takeIf { qrScanner.plugin.config.formats.size > 1 }
+        OverlayLabel(text = qrScanner.hint, detail = detail)
     }
 }
 

@@ -1,13 +1,13 @@
 package org.company.app.designsystem
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
@@ -72,16 +72,17 @@ internal fun Sheet(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val shape = SampleTheme.shapes.sheet
+    // The edge colour shows only above the sheet: a hairline along its top and round its corners.
     val edged = if (style.edge) {
-        Modifier.border(SampleTheme.sizes.hairline, SampleTheme.colors.sheetEdge, shape)
+        Modifier.clip(shape).background(SampleTheme.colors.sheetEdge).padding(top = SampleTheme.sizes.hairline)
     } else {
         Modifier
     }
     Column(
         modifier = modifier
+            .then(edged)
             .clip(shape)
             .background(style.container)
-            .then(edged)
             .padding(style.contentPadding),
         verticalArrangement = Arrangement.spacedBy(style.spacing),
     ) {
@@ -118,7 +119,7 @@ internal fun SheetHeader(
 ) {
     val eyebrow = emphasis == SheetHeaderEmphasis.Eyebrow
     Row(
-        modifier = modifier,
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = if (eyebrow) Arrangement.spacedBy(SampleTheme.spacing.sm) else Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -136,5 +137,10 @@ internal fun SheetHeader(
 /** The quiet detail beside a sheet's title, as "4 lines". */
 @Composable
 internal fun SheetMeta(text: String, modifier: Modifier = Modifier) {
-    Text(text = text, modifier = modifier, style = SampleTheme.typography.caption, color = SampleTheme.colors.inkSecondary)
+    Text(
+        text = text,
+        modifier = modifier,
+        style = SampleTheme.typography.caption,
+        color = SampleTheme.colors.inkSecondary,
+    )
 }

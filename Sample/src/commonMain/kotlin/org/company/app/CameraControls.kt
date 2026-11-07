@@ -65,7 +65,12 @@ internal fun TorchButton(torchMode: TorchMode, onClick: () -> Unit, modifier: Mo
 /** The way back from the QR, Text and Analyze modes to the photo camera. */
 @Composable
 internal fun BackToCameraButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    CircleIconButton(icon = Lucide.ChevronLeft, contentDescription = "Back to camera", onClick = onClick, modifier = modifier)
+    CircleIconButton(
+        icon = Lucide.ChevronLeft,
+        contentDescription = "Back to camera",
+        onClick = onClick,
+        modifier = modifier,
+    )
 }
 
 /**
@@ -99,7 +104,13 @@ internal fun CaptureTopBar(
         ),
         trailing = listOf(
             { TorchButton(torchMode = torchMode, onClick = onTorchToggle) },
-            { CircleIconButton(icon = Lucide.SlidersHorizontal, contentDescription = "Settings", onClick = onOpenSettings) },
+            {
+                CircleIconButton(
+                    icon = Lucide.SlidersHorizontal,
+                    contentDescription = "Settings",
+                    onClick = onOpenSettings,
+                )
+            },
         ),
     )
 }

@@ -15,7 +15,8 @@ internal actual fun rememberAppSettingsOpener(): (() -> Unit)? {
     return remember(context) {
         {
             val appPage = Uri.fromParts("package", context.packageName, null)
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, appPage).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, appPage)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             try {
                 context.startActivity(intent)
             } catch (e: ActivityNotFoundException) {

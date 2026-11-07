@@ -82,7 +82,12 @@ internal fun IconBadge(icon: ImageVector, modifier: Modifier = Modifier) {
             .background(SampleTheme.colors.control),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = SampleTheme.colors.primary, modifier = Modifier.size(BADGE_ICON))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = SampleTheme.colors.primary,
+            modifier = Modifier.size(BADGE_ICON),
+        )
     }
 }
 
@@ -113,6 +118,26 @@ internal fun DetectionChip(label: String, value: String, onClick: () -> Unit, mo
     }
 }
 
+/**
+ * A line, and a quieter [detail] under it, on a pale card over the preview, readable over any image,
+ * as the QR mode's "Point at a QR code".
+ */
+@Composable
+internal fun OverlayLabel(text: String, modifier: Modifier = Modifier, detail: String? = null) {
+    Column(
+        modifier = modifier
+            .clip(SampleTheme.shapes.option)
+            .background(SampleTheme.colors.background.copy(alpha = OVERLAY_ALPHA))
+            .padding(horizontal = SampleTheme.spacing.md, vertical = SampleTheme.spacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text = text, style = SampleTheme.typography.bodySmall, color = SampleTheme.colors.ink)
+        if (detail != null) {
+            Text(text = detail, style = SampleTheme.typography.caption, color = SampleTheme.colors.inkOnPreview)
+        }
+    }
+}
+
 /** The Sample's snackbars: dark ink on the light screens. */
 @Composable
 internal fun SampleSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modifier) {
@@ -127,4 +152,5 @@ internal fun SampleSnackbarHost(hostState: SnackbarHostState, modifier: Modifier
 }
 
 private val BULLET = 6.dp
+private const val OVERLAY_ALPHA = 0.85f
 private val BADGE_ICON = 30.dp

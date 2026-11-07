@@ -32,7 +32,9 @@ internal fun SwitchRow(
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(SampleTheme.spacing.xxs)) {
             Text(text = title, style = SampleTheme.typography.label, color = colors.ink)
-            if (subtitle != null) Text(text = subtitle, style = SampleTheme.typography.caption, color = colors.inkSecondary)
+            if (subtitle != null) {
+                Text(text = subtitle, style = SampleTheme.typography.caption, color = colors.inkSecondary)
+            }
         }
         Switch(
             checked = checked,

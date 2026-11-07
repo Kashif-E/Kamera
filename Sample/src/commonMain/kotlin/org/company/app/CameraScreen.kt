@@ -137,7 +137,9 @@ internal fun SampleCameraKScreen(
     CameraKScreen(
         holder = holder,
         modifier = modifier,
-        loading = { StatusMessage(text = "Initializing Camera...", modifier = Modifier.fillMaxSize().wrapContentSize()) },
+        loading = {
+            StatusMessage(text = "Initializing Camera...", modifier = Modifier.fillMaxSize().wrapContentSize())
+        },
         error = { error, _ ->
             StatusMessage(
                 text = error.displayText(),
@@ -244,7 +246,7 @@ internal fun CameraScreen(
     val cameraLive = cameraState is CameraKState.Ready || cameraState is CameraKState.Interrupted
     val sheetWidth = Modifier.widthIn(max = SampleTheme.sizes.contentMaxWidth).fillMaxWidth()
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().background(SampleTheme.colors.background)) {
         Column(Modifier.fillMaxSize()) {
             when (mode) {
                 CameraMode.Photo, CameraMode.Video -> CaptureTopBar(
@@ -266,7 +268,10 @@ internal fun CameraScreen(
                     title = "QR Scanner",
                     onBack = toPhoto,
                     trailing = listOf({
-                        TorchButton(uiState.torchMode ?: TorchMode.OFF, onClick = { scope.launch { holder.toggleTorch() } })
+                        TorchButton(
+                            torchMode = uiState.torchMode ?: TorchMode.OFF,
+                            onClick = { scope.launch { holder.toggleTorch() } },
+                        )
                     }),
                 )
                 CameraMode.Text -> ToolTopBar(
@@ -290,7 +295,7 @@ internal fun CameraScreen(
                 SampleCameraKScreen(holder, Modifier.fillMaxSize()) {
                     when (mode) {
                         CameraMode.Photo -> ThirdsGrid()
-                        CameraMode.Qr -> QrOverlay(qrScanner, Modifier.align(Alignment.Center))
+                        CameraMode.Qr -> QrOverlay(qrScanner)
                         else -> Unit
                     }
                 }

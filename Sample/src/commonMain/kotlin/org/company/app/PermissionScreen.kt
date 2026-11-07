@@ -1,5 +1,6 @@
 package org.company.app
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,7 +37,7 @@ internal fun PermissionScreen(
     val spacing = SampleTheme.spacing
     val colors = SampleTheme.colors
     Column(
-        modifier = modifier.padding(
+        modifier = modifier.background(colors.background).padding(
             start = spacing.xxxl,
             end = spacing.xxxl,
             bottom = spacing.controlsBottom - spacing.sm,

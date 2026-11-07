@@ -98,7 +98,11 @@ internal fun TextResultSheet(text: String?, onCopy: (String) -> Unit, modifier: 
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
         )
-        PrimaryButton(text = "Copy all", onClick = { onCopy(lines.joinToString("\n")) }, modifier = Modifier.fillMaxWidth())
+        PrimaryButton(
+            text = "Copy all",
+            onClick = { onCopy(lines.joinToString("\n")) },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

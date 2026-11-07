@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -50,6 +51,7 @@ internal fun ShutterButton(
             .size(sizes.shutter)
             .alpha(if (enabled) 1f else DISABLED_ALPHA)
             .border(sizes.strokeBold, ring, SampleTheme.shapes.circle)
+            .clip(SampleTheme.shapes.circle)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = variant.label },
         contentAlignment = Alignment.Center,
