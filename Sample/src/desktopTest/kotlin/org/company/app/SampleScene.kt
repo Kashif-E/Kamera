@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -18,6 +19,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import org.company.app.designsystem.SampleTheme
 import org.jetbrains.skia.Image
+import kotlin.test.fail
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -61,7 +63,10 @@ internal class SampleScene(
     fun nodes(): List<SemanticsNode> = scene.semanticsOwners.flatMap { it.rootSemanticsNode.withDescendants() }
 
     /** The node whose text or content description is [label]. */
-    fun node(label: String): SemanticsNode = nodes().single { label in it.labels() }
+    fun node(label: String): SemanticsNode {
+        val matches = nodes().filter { label in it.labels() }
+        return matches.singleOrNull() ?: fail("expected one node reading \"$label\", found ${matches.size}")
+    }
 
     /** Whether any node reads [label]. */
     fun shows(label: String): Boolean = nodes().any { label in it.labels() }
@@ -74,6 +79,26 @@ internal class SampleScene(
         settle()
     }
 
+    /** Taps [position], in the scene's pixels, then settles. */
+    fun tapAt(position: Offset) {
+        scene.sendPointerEvent(PointerEventType.Press, position)
+        scene.sendPointerEvent(PointerEventType.Release, position)
+        settle()
+    }
+
+    /** Presses the middle of [node], moves the pointer by [by] pixels in [steps] moves, releases, then settles. */
+    fun drag(node: SemanticsNode, by: Offset, steps: Int = DRAG_STEPS) {
+        val start = node.boundsInRoot.center
+        scene.sendPointerEvent(PointerEventType.Press, start)
+        settle(frames = 1)
+        for (step in 1..steps) {
+            scene.sendPointerEvent(PointerEventType.Move, start + by * (step.toFloat() / steps))
+            settle(frames = 1)
+        }
+        scene.sendPointerEvent(PointerEventType.Release, start + by)
+        settle()
+    }
+
     override fun close() = scene.close()
 
     private fun SemanticsNode.withDescendants(): List<SemanticsNode> =
@@ -83,6 +108,7 @@ internal class SampleScene(
         const val PHONE_WIDTH = 390
         const val PHONE_HEIGHT = 844
         private const val SETTLE_FRAMES = 5
+        private const val DRAG_STEPS = 8
         private val FRAME = 16.milliseconds
     }
 }
