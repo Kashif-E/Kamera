@@ -74,6 +74,12 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      framework: the search path where embedAndSignAppleFrameworkForXcode puts it,
                      and -framework with the baseName Sample/build.gradle.kts gives it, and builds
                      no x86_64 simulator slice, since the libraries have no Intel-simulator target.
+  published-group    The published group is dev.kashifmehmood, the namespace verified on Maven Central
+                     (published_group_is_the_verified_namespace), and LEGACY_GROUP names the 1.x group
+                     the relocation POMs publish under. No tracked file or path names a retired group,
+                     dotted, regex-escaped, as a path or mangled into a Kotlin module name, outside the
+                     relocation projects, CHANGELOG.md, docs/migration/, the Play SDK Console token's
+                     META-INF directory and the LEGACY_GROUP line.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -1892,6 +1898,93 @@ def check_sample_app() -> List[str]:
     )
 
 
+# ─── published-group ────────────────────────────────────────────────────────────────────────────
+
+# The Maven group CameraK publishes under: kashifmehmood.dev reversed, the namespace the maintainer
+# verifies on the Central Portal with a DNS TXT record on that domain (design §12.4 W13,
+# published_group_is_the_verified_namespace).
+VERIFIED_NAMESPACE = "dev.kashifmehmood"
+# Where a retired group may still be named: the relocation projects that publish under it, the
+# changelog and migration guide that tell 1.x users, and the Play SDK Console token for the 1.x
+# coordinate under META-INF/<group as a path>/, kept until the maintainer registers the new one.
+RETIRED_GROUP_ALLOWED = ("relocations/", "CHANGELOG.md", "docs/migration/")
+PLAY_SDK_TOKEN_DIR = "cameraK/src/androidMain/resources/META-INF/{}/"
+
+
+def group_spellings(group: str) -> re.Pattern:
+    """[group] however a tracked file spells it: dotted, regex-escaped, as a path, or mangled into a
+    Kotlin module name (dots and hyphens as underscores)."""
+    parts = [re.escape(part) for part in re.split(r"[.-]", group)]
+    return re.compile(r"(?<![A-Za-z0-9])" + r"\\?[./_-]".join(parts) + r"(?![A-Za-z0-9])")
+
+
+def published_group_problems(properties: Dict[str, str], files: Dict[str, str]) -> List[str]:
+    group = properties.get("GROUP")
+    legacy = properties.get("LEGACY_GROUP")
+    problems = []
+    if group != VERIFIED_NAMESPACE:
+        problems.append(f"gradle.properties: GROUP is {group}, not {VERIFIED_NAMESPACE}, the verified namespace")
+    if legacy is None or legacy == VERIFIED_NAMESPACE:
+        problems.append(
+            f"gradle.properties: LEGACY_GROUP is {legacy}; it must name the 1.x group the relocation POMs publish under"
+        )
+    for retired in sorted({name for name in (group, legacy) if name and name != VERIFIED_NAMESPACE}):
+        spelled = group_spellings(retired)
+        allowed = RETIRED_GROUP_ALLOWED + (PLAY_SDK_TOKEN_DIR.format(retired.replace(".", "/")),)
+        for name, text in sorted(files.items()):
+            if name.startswith(allowed):
+                continue
+            if spelled.search(name):
+                problems.append(f"{name}: its path names the retired group {retired}")
+            for number, line in enumerate(text.splitlines(), 1):
+                if name == "gradle.properties" and line.startswith("LEGACY_GROUP="):
+                    continue
+                if spelled.search(line):
+                    problems.append(f"{name}:{number}: names the retired group {retired}")
+    return problems
+
+
+def check_published_group() -> List[str]:
+    old = "org.example.old-group"
+    properties = {"GROUP": VERIFIED_NAMESPACE, "LEGACY_GROUP": old}
+    allowed = {
+        "gradle.properties": f"GROUP={VERIFIED_NAMESPACE}\nLEGACY_GROUP={old}\n",
+        "relocations/a/gradle.properties": f"POM_DESCRIPTION=Relocated from {old}:a\n",
+        "CHANGELOG.md": f"- Published under `{VERIFIED_NAMESPACE}`; `{old}` relocates.\n",
+        "docs/migration/2.0.md": f'implementation("{old}:a:1.2")\n',
+        "cameraK/src/androidMain/resources/META-INF/org/example/old-group/a/verification.properties": f"#{old}:a\n",
+        "README.MD": f'implementation("{VERIFIED_NAMESPACE}:a:2.0")\nhttps://example.org/{old}x\n',
+    }
+    named = {
+        "docs/index.md": f'implementation("{old}:a:2.0")\n',
+        "build.gradle.kts": 'Regex("""org\\.example\\.old-group:a""")\n',
+        "a/api/android/a.api": "public final fun getLambda$1$org_example_old_group_a ()V\n",
+        "a/src/main/resources/META-INF/org/example/old-group/x.properties": "",
+    }
+    found = published_group_problems(properties, {**allowed, **named})
+    if sorted({problem.split(":")[0] for problem in found}) != sorted(named) or len(found) != len(named):
+        raise CheckError(f"the published-group rule misjudges its fixture: {found}")
+    found = published_group_problems({"GROUP": old}, {"gradle.properties": f"GROUP={old}\n"})
+    if not any(problem.startswith("gradle.properties: GROUP is") for problem in found) or not any(
+        problem.startswith("gradle.properties:1:") for problem in found
+    ):
+        raise CheckError(f"the published-group rule accepts the retired group as GROUP: {found}")
+    properties = {
+        key: value.strip()
+        for key, _, value in (
+            line.partition("=") for line in (ROOT / "gradle.properties").read_text().splitlines() if "=" in line
+        )
+        if key in ("GROUP", "LEGACY_GROUP")
+    }
+    files = {}
+    for path in tracked("*"):
+        try:
+            files[path.relative_to(ROOT).as_posix()] = path.read_text()
+        except UnicodeDecodeError:
+            files[path.relative_to(ROOT).as_posix()] = ""
+    return published_group_problems(properties, files)
+
+
 POLICIES: Dict[str, Callable[[], List[str]]] = {
     "agent-permissions": check_agent_permissions,
     "security-policy": check_security_policy,
@@ -1903,6 +1996,7 @@ POLICIES: Dict[str, Callable[[], List[str]]] = {
     "module-sources": check_module_sources,
     "release-gate": check_release_gate,
     "sample-app": check_sample_app,
+    "published-group": check_published_group,
 }
 
 

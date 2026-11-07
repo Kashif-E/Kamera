@@ -1889,6 +1889,12 @@ registerRepoPolicyCheck(
     "Fails if the Sample asks for storage on Android 10 and later, an iOS usage description is empty or missing, " +
         "or the iOS app does not search and link the Sample's framework",
 )
+registerRepoPolicyCheck(
+    "checkPublishedGroup",
+    "published-group",
+    "Fails unless GROUP is the namespace verified on Maven Central and no tracked file outside the relocations, " +
+        "the changelog and the migration guide names the 1.x group",
+)
 
 // ─── Release 2.0 build conventions ──────────────────────────────────────────────────────────────
 // Each check below runs in the lint target and enforces one decision for the 2.0 line.
@@ -2751,6 +2757,7 @@ val requiredLintChecks =
         ":checkNoIntelSimulatorTarget",
         ":checkNoLibraryFrameworks",
         ":checkPluginSources",
+        ":checkPublishedGroup",
         ":checkPublishedVariants",
         ":checkReleaseGateHarness",
         ":checkReleaseMetadata",

@@ -33,6 +33,7 @@ checks=(
     :checkNoIntelSimulatorTarget
     :checkNoLibraryFrameworks
     :checkPluginSources
+    :checkPublishedGroup
     :checkPublishedVariants
     :checkReleaseGateHarness
     :checkReleaseMetadata
