@@ -50,7 +50,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadFactory
@@ -70,8 +69,7 @@ private const val TAG = "CameraK"
  * state it needs, and releases everything in order on [close]. [EngineSession] owns the lifecycle,
  * each start's generation, the bind and the state CameraX reports; [LensCatalog] the cameras and
  * their capabilities; [EngineControls] the hardware commands and what CameraX reports back;
- * VideoCapture's bind and the rebinds a recording
- * holds back stay here.
+ * [RecordingBinding] the binds a recording makes or holds back.
  *
  * Flash, torch and zoom are commands for an open camera, NotReady otherwise; the target orientation
  * is configuration, taken in any state but closed. The desired hardware is re-applied once the
@@ -234,12 +232,19 @@ internal class AndroidCameraEngine(
         controls = controls,
     )
 
-    // Set when a portrait↔landscape flip is detected during recording (when rebinding would tear
-    // down the recording). The deferred rebind runs once the recording finalizes.
-    private var pendingViewPortRebind = false
-
-    // A late bind of the ImageAnalysis a registration asked for is queued. Main thread.
-    private var analysisBindPending = false
+    private val recordingBinding: RecordingBinding = RecordingBinding(
+        session = session,
+        controls = controls,
+        orientation = orientation,
+        binder = binder,
+        framePipeline = framePipeline,
+        videoRecorder = videoRecorder,
+        tracer = tracer,
+        scope = scope,
+        main = main,
+        mainImmediate = mainImmediate,
+        isReleased = { closed.value },
+    )
 
     private var teardown: Job? = null
 
@@ -247,7 +252,7 @@ internal class AndroidCameraEngine(
         // Declared up front, so the first bind includes the ImageAnalysis and a plugin that registers
         // later only joins it (Decision 14).
         if (config.frameAnalysis) framePipeline.requestAnalysis()
-        framePipeline.onConsumersChanged = { onMain(::bindAnalysisOrApplyConsumers) }
+        framePipeline.onConsumersChanged = { onMain(recordingBinding::bindAnalysisOrApplyConsumers) }
     }
 
     override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> {
@@ -395,64 +400,7 @@ internal class AndroidCameraEngine(
     }
 
     private fun onDisplayChanged() {
-        if (closed.value || binder.camera == null) return
-        // Auto mode only; an explicit target orientation stays as set.
-        if (orientation.targetOrientation == null) controls.applyCaptureRotation()
-        rebindIfViewPortOrientationChanged()
-    }
-
-    /**
-     * Rebinds the camera when the display flips between portrait and landscape or its rotation turns
-     * a quarter, so the (immutable) ViewPort is rebuilt with the matching Rational and rotation.
-     */
-    internal fun rebindIfViewPortOrientationChanged() {
-        if (binder.camera == null || !binder.viewPortOrientationChanged()) return
-        if (videoRecorder.isRecording) {
-            // Unbinding to rebind would tear down the VideoCapture session; the recording's Finalize
-            // performs the rebind once it is safe.
-            pendingViewPortRebind = true
-            return
-        }
-        scope.launch(mainImmediate) { session.rebind() }
-    }
-
-    /**
-     * Attaches or detaches the frame multiplexer for the current consumers, or, when a registration
-     * asked for an ImageAnalysis the bind lacks, binds it once (Decision 14's late bind). Before the
-     * first bind, and during a recording, it waits: that bind, or the one the recording's end makes
-     * ([VideoHost.onNoActiveRecording]), includes it. Main thread.
-     */
-    private fun bindAnalysisOrApplyConsumers() {
-        if (closed.value) return
-        if (!framePipeline.analysisMissing) {
-            framePipeline.applyConsumers()
-            return
-        }
-        if (!session.isLive || !session.isBound || videoRecorder.isRecording || analysisBindPending) return
-        analysisBindPending = true
-        scope.launch(mainImmediate) {
-            try {
-                if (framePipeline.analysisMissing) session.rebind()
-            } finally {
-                analysisBindPending = false
-            }
-        }
-    }
-
-    /**
-     * Rebinds the bound camera with VideoCapture in the group, its main-thread part one
-     * `CameraK.videoBind` interval (B1 records it). When CameraX refuses the group, the photo session
-     * is bound again without VideoCapture and the error is returned.
-     */
-    private fun bindWithVideo(): CameraKError? {
-        val target = session.bindTarget() ?: return CameraKError.NotReady
-        val error = tracer.beginInterval(VIDEO_BIND_TRACE).use { session.bind(target) } ?: return null
-        videoRecorder.dropVideoCapture()
-        session.bind(target)?.let { rollback ->
-            session.fail(target, rollback)
-            return rollback
-        }
-        return error
+        recordingBinding.onDisplayChanged()
     }
 
     /** Mirrors the saved image for the front camera when configured, so it matches the preview (#112). */
@@ -460,35 +408,21 @@ internal class AndroidCameraEngine(
         isReversedHorizontal = config.mirrorFrontCamera && session.boundLens == CameraLens.FRONT
     }
 
+    // VideoRecorder is built before the collaborators its host calls, so the host reads them per call.
     private inner class VideoHost : VideoSessionHost {
         override val isReleased: Boolean get() = closed.value
 
         override val isBound: Boolean get() = session.isBound
 
-        override fun bindWithVideo(): CameraKError? = this@AndroidCameraEngine.bindWithVideo()
+        override fun bindWithVideo(): CameraKError? = recordingBinding.bindWithVideo()
 
         override suspend fun videoQualities(): Set<VideoQuality> = catalog.videoQualities()
 
-        // Dispatched, never run inline: a caller that gives up before the bind runs leaves nothing bound.
-        override suspend fun rebindAndAwait() {
-            withTimeoutOrNull(STOP_FINALIZE_TIMEOUT_MS) { withContext(main) { session.rebind() } }
-        }
+        override suspend fun rebindAndAwait() = recordingBinding.rebindAndAwait()
 
-        override fun rebindAfterRecordingEndedByCameraX() {
-            pendingViewPortRebind = false
-            scope.launch(mainImmediate) { session.rebind() }
-        }
+        override fun rebindAfterRecordingEndedByCameraX() = recordingBinding.rebindAfterRecordingEndedByCameraX()
 
-        // Applies any rotation flip that was deferred while recording was in progress, then binds an
-        // ImageAnalysis a registration made during the recording asked for, unless that rebind or the
-        // recording's own included it.
-        override fun onNoActiveRecording() {
-            if (pendingViewPortRebind && !closed.value) {
-                pendingViewPortRebind = false
-                rebindIfViewPortOrientationChanged()
-            }
-            if (framePipeline.analysisMissing) scope.launch(mainImmediate) { bindAnalysisOrApplyConsumers() }
-        }
+        override fun onNoActiveRecording() = recordingBinding.onNoActiveRecording()
     }
 
     // ── Close ──────────────────────────────────────────────────────────────────────────────────
