@@ -254,3 +254,14 @@ internal class CameraInputs(
         stills.prepareOnQueue()
     }
 }
+
+/**
+ * Convert CameraDeviceType enum to AVFoundation device type string
+ */
+internal fun CameraDeviceType.toAVCaptureDeviceType(): String? = when (this) {
+    CameraDeviceType.WIDE_ANGLE -> AVCaptureDeviceTypeBuiltInWideAngleCamera
+    CameraDeviceType.TELEPHOTO -> AVCaptureDeviceTypeBuiltInTelephotoCamera
+    CameraDeviceType.ULTRA_WIDE -> AVCaptureDeviceTypeBuiltInUltraWideCamera
+    CameraDeviceType.MACRO -> null // Macro camera would need iOS 15+ check
+    CameraDeviceType.DEFAULT -> AVCaptureDeviceTypeBuiltInWideAngleCamera
+}
