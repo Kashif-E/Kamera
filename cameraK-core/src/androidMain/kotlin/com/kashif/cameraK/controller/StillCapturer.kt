@@ -1,3 +1,5 @@
+@file:kotlin.OptIn(CameraKEngineApi::class)
+
 package com.kashif.cameraK.controller
 
 import androidx.annotation.OptIn
@@ -7,6 +9,7 @@ import androidx.camera.core.ExperimentalZeroShutterLag
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.engine.TraceNames
 import com.kashif.cameraK.engine.Tracer
 import com.kashif.cameraK.enums.CameraLens
@@ -16,9 +19,12 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.result.CameraKResult
+import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -57,6 +63,8 @@ internal class StillCapturer(
     private val inFlight: MutableSet<CancellableContinuation<CameraKResult<File>>> =
         Collections.newSetFromMap(ConcurrentHashMap())
 
+    private val imageProcessing = imageProcessingExecutor.asCoroutineDispatcher()
+
     /**
      * Builds the image capture use case for the next bind. [QualityPrioritization.NONE] states no
      * preference and captures at maximum quality, as it always did on a device that was not short
@@ -77,6 +85,19 @@ internal class StillCapturer(
             .setResolutionSelector(resolutionSelector)
             .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
             .build()
+    }
+
+    /**
+     * Takes one still as [capture] does and reports its file with the upright size read from the
+     * written file, so a 1:1 capture reports the square CameraX wrote. Main thread.
+     */
+    suspend fun captureImage(): CameraKResult<CapturedImage> = when (val saved = capture()) {
+        is CameraKResult.Failure -> saved
+        is CameraKResult.Success -> {
+            val file = saved.value
+            val (width, height) = withContext(imageProcessing) { uprightSize(file, jpeg = format != ImageFormat.PNG) }
+            CameraKResult.Success(CapturedImage(file.absolutePath, format, width, height))
+        }
     }
 
     /**

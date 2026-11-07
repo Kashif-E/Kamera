@@ -24,7 +24,6 @@ import com.kashif.cameraK.engine.Tracer
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
-import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.frames.FrameSource
@@ -40,10 +39,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.MainCoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
@@ -52,7 +49,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.ThreadFactory
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -158,7 +154,6 @@ internal class AndroidCameraEngine(
     )
 
     private val files = OutputFileFactory(context, config.outputDirectory, environment.dispatchers.io)
-    private val imageProcessing = imageProcessingExecutor.asCoroutineDispatcher()
     internal val stillCapturer: StillCapturer = StillCapturer(
         backend = backend,
         files = files,
@@ -274,43 +269,25 @@ internal class AndroidCameraEngine(
         return withContext(mainImmediate) { session.select(selection) }
     }
 
-    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = command {
+    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = openCommand {
         controls.setFlashMode(mode)
     }
 
-    override suspend fun capture(): CameraKResult<CapturedImage> = openCommand {
-        when (val saved = stillCapturer.capture()) {
-            is CameraKResult.Failure -> saved
-            is CameraKResult.Success -> {
-                val file = saved.value
-                // Read from the written file, so a 1:1 capture reports the square CameraX wrote.
-                val (width, height) = withContext(imageProcessing) {
-                    uprightSize(file, jpeg = stillCapturer.format != ImageFormat.PNG)
-                }
-                CameraKResult.Success(CapturedImage(file.absolutePath, stillCapturer.format, width, height))
-            }
-        }
-    }
+    override suspend fun capture(): CameraKResult<CapturedImage> = openCommand { stillCapturer.captureImage() }
 
-    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = command { controls.setZoom(ratio) }
+    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = openCommand { controls.setZoom(ratio) }
 
-    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = command {
+    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = openCommand {
         controls.setTorchMode(mode)
     }
 
-    override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> {
-        if (closed.value) return CLOSED
-        return withContext(mainImmediate) {
-            if (closed.value) {
-                CLOSED
-            } else {
-                applyTargetOrientation(orientation)
-                CameraKResult.Success(Unit)
-            }
-        }
-    }
+    override suspend fun setTargetOrientation(orientation: DeviceOrientation?): CameraKResult<Unit> = unlessClosed {
+        applyTargetOrientation(orientation)
+        CameraKResult.Success(Unit)
+    } ?: CLOSED
 
-    // A command that needs the camera open, which may suspend: on the main thread, NotReady otherwise.
+    // A command that needs the camera open (a hardware command, a capture, a recording's start): on
+    // the main thread, NotReady otherwise.
     private suspend fun <T> openCommand(block: suspend () -> CameraKResult<T>): CameraKResult<T> {
         if (closed.value) return CLOSED
         return withContext(mainImmediate) {
@@ -322,22 +299,11 @@ internal class AndroidCameraEngine(
         }
     }
 
-    // A command on what is already recording, in any state but closed: on the main thread.
-    private suspend fun <T> recordingCommand(block: suspend () -> T): T? {
+    // A command taken in any state but closed (the target orientation, what is already recording):
+    // on the main thread, null once closed.
+    private suspend fun <T> unlessClosed(block: suspend () -> T): T? {
         if (closed.value) return null
         return withContext(mainImmediate) { if (closed.value) null else block() }
-    }
-
-    // A hardware command: run on the main thread while the camera is open, NotReady otherwise.
-    private suspend fun <T> command(block: () -> CameraKResult<T>): CameraKResult<T> {
-        if (closed.value) return CLOSED
-        return withContext(mainImmediate) {
-            when {
-                closed.value -> CLOSED
-                !isOpen -> NOT_READY
-                else -> block()
-            }
-        }
     }
 
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> =
@@ -356,12 +322,11 @@ internal class AndroidCameraEngine(
     override suspend fun startRecording(config: VideoConfiguration): CameraKResult<String> =
         openCommand { videoRecorder.start(config) }
 
-    override suspend fun stopRecording(): CameraKResult<RecordedVideo> =
-        recordingCommand { videoRecorder.stop() } ?: CLOSED
+    override suspend fun stopRecording(): CameraKResult<RecordedVideo> = unlessClosed { videoRecorder.stop() } ?: CLOSED
 
-    override suspend fun pauseRecording(): CameraKResult<Unit> = recordingCommand { videoRecorder.pause() } ?: CLOSED
+    override suspend fun pauseRecording(): CameraKResult<Unit> = unlessClosed { videoRecorder.pause() } ?: CLOSED
 
-    override suspend fun resumeRecording(): CameraKResult<Unit> = recordingCommand { videoRecorder.resume() } ?: CLOSED
+    override suspend fun resumeRecording(): CameraKResult<Unit> = unlessClosed { videoRecorder.resume() } ?: CLOSED
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
@@ -471,22 +436,5 @@ internal class AndroidCameraEngine(
 
         val CLOSED = CameraKResult.Failure(CameraKError.Closed)
         private val NOT_READY = CameraKResult.Failure(CameraKError.NotReady)
-
-        private fun immediateFormOf(dispatcher: CoroutineDispatcher): CoroutineDispatcher {
-            val main = dispatcher as? MainCoroutineDispatcher ?: return dispatcher
-            return try {
-                main.immediate
-            } catch (e: UnsupportedOperationException) {
-                CameraKLogger.w(TAG, "The main dispatcher has no immediate form; dispatching every call", e)
-                main
-            }
-        }
-
-        fun cameraKThreads(name: String): ThreadFactory {
-            val count = atomic(0)
-            return ThreadFactory { runnable ->
-                Thread(runnable, "$name-${count.incrementAndGet()}").apply { isDaemon = true }
-            }
-        }
     }
 }
