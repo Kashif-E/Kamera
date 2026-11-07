@@ -34,7 +34,7 @@ Tests live in each module's `commonTest` (e.g. `cameraK-core/src/commonTest`). T
 - **ocrPlugin/** - Text recognition (`camerak-ocr`; ML Kit / Vision / Tesseract)
 - **analyzerPlugin/** - JPEG-encoded analysis frames (`camerak-analyzer`)
 - **camerak-bom/** - Bill of materials (`camerak-bom`)
-- **relocations/** - Relocation POMs from the 1.x plugin artifact ids to the 2.0 ones
+- **relocations/** - Relocation POMs from the 1.x coordinates to the 2.0 ones
 - **Sample/** - Multiplatform demo app (Android, iOS, Desktop)
 - **cameraKScreenshotTests/** - Paparazzi screenshot tests of the Compose UI on Android; not published
 - **benchmark/** - The release gate's Macrobenchmark (`com.android.test`) against the Sample's `benchmark` build; built by verify.sh, run by the maintainer on a device; not published
