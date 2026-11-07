@@ -2,8 +2,10 @@
 
 package com.kashif.cameraK.engine.contract
 
+import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
@@ -15,6 +17,7 @@ import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.recording.RecordingEndReason
@@ -188,16 +191,77 @@ class ContractKitMutationTest {
         assertContains(failure.message.orEmpty(), "Finalized after a stop of nothing")
     }
 
+    @Test
+    fun focusAtThatSucceedsOnACameraWithoutAFocusPointFailsTheFocusCase() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(neither, ::ClaimsFocusAndExposure).focusAtFollowsTheCapability()
+        }
+        assertContains(failure.message.orEmpty(), "which does not report FOCUS_POINT")
+    }
+
+    @Test
+    fun exposureThatSucceedsOnACameraWithoutARangeFailsTheExposureCase() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(neither, ::ClaimsFocusAndExposure).exposureCompensationFollowsTheCapability()
+        }
+        assertContains(failure.message.orEmpty(), "which has no exposure compensation")
+    }
+
+    @Test
+    fun exposureCommandMirroredIntoHardwareFailsTheExposureCase() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases { MirroringEngine(it, Mirrored.EXPOSURE) }.exposureCompensationFollowsTheCapability()
+        }
+        assertContains(
+            failure.message.orEmpty(),
+            "setExposureCompensation changed hardware before the platform reported it",
+        )
+    }
+
+    @Test
+    fun exposureCommandThatNeverReachesThePlatformFailsTheExposureCase() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(::SwallowsExposureCommands).exposureCompensationFollowsTheCapability()
+        }
+        assertContains(failure.message.orEmpty(), "setExposureCompensation did not reach the platform")
+    }
+
+    @Test
+    fun aRestartThatDropsTheHeldExposureFailsTheReapplyCase() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(::DropsTheHeldExposure).desiredHardwareReappliedAfterRestartAndCameraSwitch()
+        }
+        assertContains(failure.message.orEmpty(), "exposure after restart")
+    }
+
+    @Test
+    fun anEngineThatReportsFocusButAnswersUnsupportedAfterCloseFailsTheClosedCase() = runTest {
+        val failure = assertFailsWith<AssertionError> {
+            cases(::UnsupportedAfterClose).callsAfterCloseReturnClosed()
+        }
+        assertContains(failure.message.orEmpty(), "focusAt")
+    }
+
     private fun readBackCases(moved: Moved) = ContractCases(
         ReadBackBrokenDriver { MovesOnFlash(it, moved) },
         requires = emptySet(),
         skips = ContractSkips(),
     )
 
-    private fun cases(breakIt: (FakeCameraEngine) -> BrokenEngine) =
-        ContractCases(BrokenDriver(breakIt), requires = emptySet(), skips = ContractSkips())
+    // The fake's cameras with neither a focus point nor exposure compensation.
+    private val neither =
+        FakeCapabilities.backAndFront(setOf(ImageFormat.JPEG, ImageFormat.PNG), focusAndExposure = false)
 
-    private class BrokenDriver(private val breakIt: (FakeCameraEngine) -> BrokenEngine) : FakeEngineDriver() {
+    private fun cases(breakIt: (FakeCameraEngine) -> BrokenEngine) =
+        cases(FakeCapabilities.backAndFront(setOf(ImageFormat.JPEG, ImageFormat.PNG)), breakIt)
+
+    private fun cases(capabilities: CameraCapabilities, breakIt: (FakeCameraEngine) -> BrokenEngine) =
+        ContractCases(BrokenDriver(breakIt, capabilities), requires = emptySet(), skips = ContractSkips())
+
+    private class BrokenDriver(
+        private val breakIt: (FakeCameraEngine) -> BrokenEngine,
+        capabilities: CameraCapabilities,
+    ) : FakeEngineDriver(capabilities) {
         private lateinit var engine: BrokenEngine
 
         override fun createEngine(config: CameraConfiguration): CameraEngine =
@@ -235,7 +299,7 @@ class ContractKitMutationTest {
         open fun sync() = Unit
     }
 
-    private enum class Mirrored { TORCH, ZOOM, FLASH }
+    private enum class Mirrored { TORCH, ZOOM, FLASH, EXPOSURE }
 
     // Rule 5 broken: a successful command writes the requested value into hardware or zoom.
     private class MirroringEngine(fake: FakeCameraEngine, private val mirrored: Mirrored) : BrokenEngine(fake) {
@@ -246,6 +310,7 @@ class ContractKitMutationTest {
         private var torch: TorchMode? = null
         private var flash: FlashMode? = null
         private var ratio: ZoomState? = null
+        private var exposure: Int? = null
 
         override fun sync() {
             val reported = fake.hardware.value
@@ -254,8 +319,16 @@ class ContractKitMutationTest {
                 torch ?: reported.torchMode,
                 reported.camera,
                 reported.targetOrientation,
+                exposure ?: reported.exposureCompensationIndex,
             )
             _zoom.value = ratio ?: fake.zoom.value
+        }
+
+        override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> {
+            val result = fake.setExposureCompensation(index)
+            if (mirrored == Mirrored.EXPOSURE && result is CameraKResult.Success) exposure = index
+            sync()
+            return result
         }
 
         override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> {
@@ -406,6 +479,42 @@ class ContractKitMutationTest {
     // Rule 5 broken: setTorchMode reports success without passing the command to the platform.
     private class SwallowsTorchCommands(fake: FakeCameraEngine) : BrokenEngine(fake) {
         override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = CameraKResult.Success(mode)
+    }
+
+    // The capability broken: focus and exposure commands succeed on a camera that reports neither, without
+    // reaching the platform.
+    private class ClaimsFocusAndExposure(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        override suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = CameraKResult.Success(Unit)
+
+        override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = CameraKResult.Success(Unit)
+    }
+
+    // Rule 5 broken: setExposureCompensation reports success without passing the index to the platform.
+    private class SwallowsExposureCommands(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = CameraKResult.Success(Unit)
+    }
+
+    // Rule 6 broken: a start binds without the held exposure index.
+    private class DropsTheHeldExposure(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> = fake.start(
+            DesiredHardware(
+                desired.selection,
+                desired.flashMode,
+                desired.torchMode,
+                desired.zoomRatio,
+                desired.targetOrientation,
+            ),
+        )
+    }
+
+    // Rule 3 broken for a camera that reports a focus point: after close it answers Unsupported, not Closed.
+    private class UnsupportedAfterClose(fake: FakeCameraEngine) : BrokenEngine(fake) {
+        override suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> =
+            if (fake.state.value == EngineState.Closed) {
+                CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.FOCUS_POINT))
+            } else {
+                fake.focusAt(point)
+            }
     }
 
     // Rule 5 broken the other way: setFlashMode is refused while Open, so a camera with one flash mode never takes it.

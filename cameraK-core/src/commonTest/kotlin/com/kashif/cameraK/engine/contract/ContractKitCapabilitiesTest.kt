@@ -4,6 +4,7 @@ package com.kashif.cameraK.engine.contract
 
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.EngineState
 import com.kashif.cameraK.enums.AspectRatio
@@ -14,6 +15,7 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.frames.FrameFormat
+import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -25,6 +27,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 
 /**
  * The hardware cases take their values from the engine's capabilities: an engine runs the steps
@@ -55,8 +58,9 @@ class ContractKitCapabilitiesTest {
         supportsSquareCapture = false,
     )
 
-    // Two cameras that both take every flash and torch mode and share a zoom range, so a camera switch
-    // can re-apply everything the first camera was given.
+    // Two cameras that both take every flash and torch mode, share a zoom range, meter at a focus point
+    // and take exposure compensation, so a camera switch can re-apply everything the first camera was
+    // given; the selfie camera's narrower exposure range clamps the wide one's index.
     private val twoFullCameras = CameraCapabilities(
         allLenses = listOf(
             fullLens("wide", CameraLens.BACK, maxZoom = 10f),
@@ -71,6 +75,9 @@ class ContractKitCapabilitiesTest {
         supportedImageFormats = setOf(ImageFormat.JPEG),
         supportedAnalysisFormats = setOf(FrameFormat.YUV_420),
         supportsSquareCapture = false,
+        focusPointCameras = setOf("wide", "selfie"),
+        exposureCompensationRanges = mapOf("wide" to -6..6, "selfie" to -2..2),
+        exposureCompensationSteps = mapOf("wide" to 1f / 3, "selfie" to 1f / 3),
     )
 
     private fun fullLens(id: String, lens: CameraLens, maxZoom: Float) = LensInfo(
@@ -126,6 +133,7 @@ class ContractKitCapabilitiesTest {
                 "desiredHardwareReappliedAfterRestartAndCameraSwitch: flash after restart",
                 "desiredHardwareReappliedAfterRestartAndCameraSwitch: torch after restart",
                 "desiredHardwareReappliedAfterRestartAndCameraSwitch: zoom after restart",
+                "desiredHardwareReappliedAfterRestartAndCameraSwitch: exposure after restart",
                 "desiredHardwareReappliedAfterRestartAndCameraSwitch: camera switch",
             ),
             skips.skipped.map { it.substringBefore(" skipped (") },
@@ -245,6 +253,87 @@ class ContractKitCapabilitiesTest {
         cases.hardwareChangesOnlyFromPlatformObserver()
 
         assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun focusAndExposureCasesRunTheSupportedBranchOverACameraThatReportsThem() = runTest {
+        val skips = ContractSkips()
+        val driver = LastEngineDriver(twoFullCameras)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.focusAtFollowsTheCapability()
+        assertEquals(NormalizedPoint(0.5f, 0.5f), driver.last.lastFocusPoint, "the focus point reached the platform")
+        cases.exposureCompensationFollowsTheCapability()
+        assertEquals(6, driver.last.appliedExposureCompensationIndex, "the exposure index reached the platform")
+        cases.callsAfterCloseReturnClosed()
+        listOf("focusAt", "setExposureCompensation", "resetFocusAndExposure").forEach {
+            assertContains(driver.last.calls, it, "the closed engine was not asked for $it")
+        }
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun focusAndExposureCasesAssertUnsupportedOverACameraThatReportsNeither() = runTest {
+        val skips = ContractSkips()
+        val driver = LastEngineDriver(oneFixedCamera)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.focusAtFollowsTheCapability()
+        assertContains(driver.last.calls, "focusAt", "the unsupported branch made no call")
+        assertNull(driver.last.lastFocusPoint, "a camera without a focus point received one")
+        cases.exposureCompensationFollowsTheCapability()
+        assertContains(driver.last.calls, "setExposureCompensation", "the unsupported branch made no call")
+        assertEquals(0, driver.last.appliedExposureCompensationIndex)
+        cases.callsAfterCloseReturnClosed()
+        val focusAndExposure = setOf("focusAt", "setExposureCompensation", "resetFocusAndExposure")
+        assertEquals(emptyList(), driver.last.calls.filter { it in focusAndExposure }, "calls after close")
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun anEngineOnTheInterfaceDefaultsPassesTheUnsupportedBranch() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(InterfaceDefaultsDriver(oneFixedCamera), requires = emptySet(), skips = skips)
+
+        cases.focusAtFollowsTheCapability()
+        cases.exposureCompensationFollowsTheCapability()
+        cases.callsAfterCloseReturnClosed()
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun theExposureStepsReapplyTheIndexClampedIntoTheOtherCamerasRange() = runTest {
+        val skips = ContractSkips()
+        val driver = LastEngineDriver(twoFullCameras)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.desiredHardwareReappliedAfterRestartAndCameraSwitch()
+
+        assertEquals(emptyList(), skips.skipped)
+        assertEquals(2, driver.last.appliedExposureCompensationIndex, "6 clamped into the selfie camera's -2..2")
+    }
+
+    // The fake driver, keeping the engine it built last.
+    private class LastEngineDriver(capabilities: CameraCapabilities) : FakeEngineDriver(capabilities) {
+        val last: FakeCameraEngine get() = fake
+    }
+
+    // An engine on CameraEngine's own focus and exposure methods, as the Android and iOS engines are until W13.
+    private class InterfaceDefaultsDriver(capabilities: CameraCapabilities) : FakeEngineDriver(capabilities) {
+        override fun createEngine(config: CameraConfiguration): CameraEngine =
+            InterfaceDefaults(super.createEngine(config) as FakeCameraEngine)
+    }
+
+    private class InterfaceDefaults(fake: FakeCameraEngine) : CameraEngine by fake {
+        override suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = super<CameraEngine>.focusAt(point)
+
+        override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> =
+            super<CameraEngine>.setExposureCompensation(index)
+
+        override suspend fun resetFocusAndExposure(): CameraKResult<Unit> = super<CameraEngine>.resetFocusAndExposure()
     }
 
     // The fake driver as K1 left it, listing the flash values the kit reports as platform observer reports.

@@ -28,7 +28,8 @@ internal open class FakeEngineDriver(
     RecordingDriver,
     CaptureDriver,
     UnsupportedConfigurationDriver {
-    private lateinit var fake: FakeCameraEngine
+    /** The engine [createEngine] built last. */
+    protected lateinit var fake: FakeCameraEngine
 
     override fun createEngine(config: CameraConfiguration): CameraEngine = FakeCameraEngine(capabilities).also {
         it.configuration = config
@@ -55,10 +56,16 @@ internal open class FakeEngineDriver(
         change.torchMode?.let(fake::reportTorch)
         change.zoomRatio?.let { fake.reportZoom(it, fake.zoom.value.minRatio, fake.zoom.value.maxRatio) }
         change.flashMode?.let(fake::reportFlash)
+        change.exposureCompensationIndex?.let(fake::reportExposureIndex)
     }
 
-    override fun boundSettings(): BoundSettings =
-        BoundSettings(fake.appliedFlashMode, fake.appliedTorchMode, fake.appliedZoomRatio, fake.appliedCameraId)
+    override fun boundSettings(): BoundSettings = BoundSettings(
+        fake.appliedFlashMode,
+        fake.appliedTorchMode,
+        fake.appliedZoomRatio,
+        fake.appliedCameraId,
+        fake.appliedExposureCompensationIndex,
+    )
 
     override fun releaseCount(): Int = fake.releaseCount
 

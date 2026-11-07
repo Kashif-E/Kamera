@@ -88,6 +88,13 @@ internal abstract class CameraEngineContractTest(
         driver.runCase { cases.desiredHardwareReappliedAfterRestartAndCameraSwitch() }
 
     @Test
+    fun focusAtFollowsTheCapability(): TestResult = driver.runCase { cases.focusAtFollowsTheCapability() }
+
+    @Test
+    fun exposureCompensationFollowsTheCapability(): TestResult =
+        driver.runCase { cases.exposureCompensationFollowsTheCapability() }
+
+    @Test
     fun noCallbackOfAFailedGenerationChangesState(): TestResult =
         driver.runCase { cases.noCallbackOfAFailedGenerationChangesState() }
 

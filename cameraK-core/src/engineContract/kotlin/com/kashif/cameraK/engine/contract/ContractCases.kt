@@ -4,6 +4,7 @@ package com.kashif.cameraK.engine.contract
 
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capture.RecordedVideo
+import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.CameraEngine
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
@@ -13,6 +14,7 @@ import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.InterruptionReason
@@ -217,6 +219,8 @@ internal class ContractCases(
     suspend fun callsAfterCloseReturnClosed() = withEngine { engine ->
         open(engine)
         val zoom = engine.zoom.value.ratio
+        val lens = currentLens(engine)
+        val capabilities = engine.capabilities.value
         engine.close()
         driver.settle()
 
@@ -232,6 +236,15 @@ internal class ContractCases(
         assertEquals(closed, engine.stopRecording(), "stopRecording")
         assertEquals(closed, engine.pauseRecording(), "pauseRecording")
         assertEquals(closed, engine.resumeRecording(), "resumeRecording")
+        // An engine whose camera reports neither may answer the focus and exposure calls Unsupported
+        // after close (rule 3, w12 G3); one that reports them answers Closed.
+        val focus = lens != null && capabilities.supportsFocusPoint(lens.id)
+        val exposure = lens?.let { capabilities.exposureCompensationRange(it.id) }
+        if (focus) assertEquals(closed, engine.focusAt(CENTRE), "focusAt")
+        if (exposure != null) {
+            assertEquals(closed, engine.setExposureCompensation(exposure.first), "setExposureCompensation")
+        }
+        if (focus || exposure != null) assertEquals(closed, engine.resetFocusAndExposure(), "resetFocusAndExposure")
         engine.stop()
         assertEquals(EngineState.Closed, engine.state.value)
     }
@@ -457,12 +470,14 @@ internal class ContractCases(
             val flash = lens?.let { flashTarget(engine, it, other) }
             val torch = torchTarget(engine, lens, other)
             val zoom = zoomTarget(engine, lens, other)
+            val exposure = lens?.let { exposureTarget(engine, it, desired.exposureCompensationIndex) }
             val restarted = DesiredHardware(
                 selection = desired.selection,
                 flashMode = flash ?: desired.flashMode,
                 torchMode = torch ?: desired.torchMode,
                 zoomRatio = zoom ?: desired.zoomRatio,
                 targetOrientation = null,
+                exposureCompensationIndex = exposure ?: desired.exposureCompensationIndex,
             )
             val steps = Steps(case)
 
@@ -481,6 +496,9 @@ internal class ContractCases(
             }
             steps.step("zoom after restart", skipIf = skipReason(lens, zoom) { fixedZoom(it) }) {
                 assertEquals(zoom, driver.boundSettings().zoomRatio)
+            }
+            steps.step("exposure after restart", skipIf = skipReason(lens, exposure) { fixedExposure(engine, it) }) {
+                assertEquals(exposure, driver.boundSettings().exposureCompensationIndex, "exposure after restart")
             }
             steps.step("camera switch", skipIf = if (other == null) "the engine has fewer than two cameras" else null) {
                 val target = other!!
@@ -506,6 +524,90 @@ internal class ContractCases(
                 val zoomSkip = skipReason(lens, zoom) { fixedZoom(it) } ?: notTaken(target, "zoom $zoom", zoomTaken)
                 steps.step("zoom after the switch", skipIf = zoomSkip) {
                     assertEquals(zoom, bound.zoomRatio, "zoom after the switch")
+                }
+                // A held index is clamped into the new camera's range, never refused (design §12.4 "W12").
+                val targetRange = capabilities.exposureCompensationRange(target.id)
+                val exposureSkip = skipReason(lens, exposure) { fixedExposure(engine, it) }
+                    ?: "camera '${target.id}' has no exposure compensation".takeIf { targetRange == null }
+                steps.step("exposure after the switch", skipIf = exposureSkip) {
+                    assertEquals(
+                        exposure!!.coerceIn(targetRange!!),
+                        bound.exposureCompensationIndex,
+                        "exposure after the switch, clamped into camera '${target.id}''s $targetRange",
+                    )
+                }
+            }
+            steps.requireSomethingRan()
+        }
+    }
+
+    // A focus point follows the bound camera's capability: Success where it reports FOCUS_POINT, and
+    // Unsupported(FOCUS_POINT) otherwise, which is what the engine interface's default returns. Neither moves
+    // hardware.
+    suspend fun focusAtFollowsTheCapability() {
+        val case = "focusAtFollowsTheCapability"
+        withEngine { engine ->
+            open(engine)
+            val lens = currentLens(engine)
+            val steps = Steps(case)
+            steps.step("focusAt", skipIf = noLens(lens)) {
+                val hardware = engine.hardware.value
+                val result = engine.focusAt(CENTRE)
+                driver.settle()
+                if (engine.capabilities.value.supportsFocusPoint(lens!!.id)) {
+                    assertEquals(success, result, "focusAt on camera '${lens.id}', which reports FOCUS_POINT")
+                } else {
+                    assertUnsupported(
+                        CameraFeature.FOCUS_POINT,
+                        result,
+                        "focusAt on camera '${lens.id}', which does not report FOCUS_POINT",
+                    )
+                }
+                assertEquals(hardware, engine.hardware.value, "focusAt changed hardware")
+            }
+            steps.requireSomethingRan()
+        }
+    }
+
+    // Exposure compensation follows the bound camera's range: an index in it other than the current one
+    // succeeds and reaches hardware only once the platform reports it (rule 5); a camera without a range
+    // answers Unsupported(EXPOSURE_COMPENSATION), the interface's default, and hardware stays.
+    suspend fun exposureCompensationFollowsTheCapability() {
+        val case = "exposureCompensationFollowsTheCapability"
+        withEngine { engine ->
+            open(engine)
+            val lens = currentLens(engine)
+            val range = lens?.let { engine.capabilities.value.exposureCompensationRange(it.id) }
+            val target = lens?.let { exposureTarget(engine, it, engine.hardware.value.exposureCompensationIndex) }
+            val singleIndex = if (range != null && target == null) fixedExposure(engine, lens) else null
+            val steps = Steps(case)
+            steps.step("setExposureCompensation", skipIf = noLens(lens) ?: singleIndex) {
+                if (range == null) {
+                    val hardware = engine.hardware.value
+                    val result = engine.setExposureCompensation(1)
+                    driver.settle()
+                    assertUnsupported(
+                        CameraFeature.EXPOSURE_COMPENSATION,
+                        result,
+                        "setExposureCompensation on camera '${lens!!.id}', which has no exposure compensation",
+                    )
+                    assertEquals(hardware, engine.hardware.value, "an unsupported exposure command changed hardware")
+                } else {
+                    val index = target!!
+                    commandThenReport(
+                        engine,
+                        "setExposureCompensation",
+                        HardwareChange(exposureCompensationIndex = index),
+                        index,
+                        { it.exposureCompensationIndex },
+                    ) {
+                        assertEquals(success, engine.setExposureCompensation(index), "setExposureCompensation($index)")
+                    }
+                    assertEquals(
+                        index,
+                        engine.hardware.value.exposureCompensationIndex,
+                        "hardware follows the platform's exposure report",
+                    )
                 }
             }
             steps.requireSomethingRan()
@@ -770,6 +872,23 @@ internal class ContractCases(
         return if (middle != current) middle else min + (max - min) / 4
     }
 
+    // An index in [lens]'s exposure range other than [avoid], from its ends, or null when there is none.
+    private fun exposureTarget(engine: CameraEngine, lens: LensInfo, avoid: Int): Int? {
+        val range = engine.capabilities.value.exposureCompensationRange(lens.id) ?: return null
+        return listOf(range.last, range.first).firstOrNull { it != avoid }
+    }
+
+    private fun fixedExposure(engine: CameraEngine, lens: LensInfo): String =
+        when (val range = engine.capabilities.value.exposureCompensationRange(lens.id)) {
+            null -> "camera '${lens.id}' has no exposure compensation"
+            else -> "camera '${lens.id}' takes only exposure index ${range.first}"
+        }
+
+    private fun assertUnsupported(feature: CameraFeature, result: CameraKResult<*>, message: String) {
+        val error = assertIs<CameraKResult.Failure>(result, message).error
+        assertEquals(feature, assertIs<CameraKError.Unsupported>(error, message).feature, message)
+    }
+
     private fun notTaken(target: LensInfo, value: String, taken: Boolean): String? =
         if (taken) null else "camera '${target.id}' does not take $value"
 
@@ -796,6 +915,7 @@ internal class ContractCases(
 
     private companion object {
         const val NO_LENS = "the platform reports no bound camera that the capabilities list"
+        val CENTRE = NormalizedPoint(0.5f, 0.5f)
     }
 
     private inner class Steps(private val case: String) {

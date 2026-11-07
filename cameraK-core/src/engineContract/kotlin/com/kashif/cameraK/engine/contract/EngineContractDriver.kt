@@ -68,14 +68,20 @@ internal class HardwareChange(
     val torchMode: TorchMode? = null,
     val zoomRatio: Float? = null,
     val flashMode: FlashMode? = null,
+    val exposureCompensationIndex: Int? = null,
 )
 
-/** What the fake platform last received. [cameraId] is a `LensInfo.id`; null before the first open. */
+/**
+ * What the fake platform last received. [cameraId] is a `LensInfo.id`; null before the first open.
+ * [exposureCompensationIndex] is read only on a camera whose capabilities give it a range, so a driver
+ * whose engine has none leaves it at 0.
+ */
 internal data class BoundSettings(
     val flashMode: FlashMode,
     val torchMode: TorchMode,
     val zoomRatio: Float,
     val cameraId: String?,
+    val exposureCompensationIndex: Int = 0,
 )
 
 /**
