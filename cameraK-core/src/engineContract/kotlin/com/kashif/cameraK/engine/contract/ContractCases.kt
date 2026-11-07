@@ -10,6 +10,7 @@ import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineRecordingEvent
 import com.kashif.cameraK.engine.EngineState
+import com.kashif.cameraK.engine.HardwareState
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
@@ -371,31 +372,53 @@ internal class ContractCases(
     // and nothing reports it afterwards. Every other engine takes it as a platform observer report.
     private suspend fun flashCommand(engine: CameraEngine, name: String, mode: FlashMode, command: suspend () -> Unit) {
         if (driver is ReadBackFlashDriver) {
-            commandThenReadBack(engine, name, mode, command)
+            commandThenReadBack(engine, name, "flash", mode, { it.flashMode }, { it.flashMode }, command)
         } else {
             commandThenReport(engine, name, HardwareChange(flashMode = mode), mode, { it.flashMode }, command)
         }
     }
 
-    // Issues the flash [command] and checks that it reached the platform as [applied], that hardware already holds
-    // the platform's read-back, and that torch, zoom and camera did not move.
-    private suspend fun commandThenReadBack(
+    // Exposure compensation has no observer on a read-back engine either, and is checked the way flash is.
+    private suspend fun exposureCommand(engine: CameraEngine, name: String, index: Int, command: suspend () -> Unit) {
+        val bound: (BoundSettings) -> Int = { it.exposureCompensationIndex }
+        if (driver is ReadBackExposureDriver) {
+            commandThenReadBack(engine, name, "exposure", index, bound, { it.exposureCompensationIndex }, command)
+        } else {
+            commandThenReport(engine, name, HardwareChange(exposureCompensationIndex = index), index, bound, command)
+        }
+    }
+
+    // Issues [command] and checks that it reached the platform as [applied], that hardware's [published] field
+    // already holds the platform's read-back, and that flash, torch, camera, target orientation and zoom did not
+    // move, except for the field being set.
+    private suspend fun <T> commandThenReadBack(
         engine: CameraEngine,
         name: String,
-        applied: FlashMode,
+        field: String,
+        applied: T,
+        bound: (BoundSettings) -> T,
+        published: (HardwareState) -> T,
         command: suspend () -> Unit,
     ) {
         val hardware = engine.hardware.value
         val zoom = engine.zoom.value
         command()
         driver.settle()
-        val platform = driver.boundSettings().flashMode
+        val platform = bound(driver.boundSettings())
         assertEquals(applied, platform, "$name did not reach the platform")
         val after = engine.hardware.value
-        assertEquals(platform, after.flashMode, "$name: hardware is the platform's flash read-back")
+        assertEquals(platform, published(after), "$name: hardware is the platform's $field read-back")
+        if (field != "flash") assertEquals(hardware.flashMode, after.flashMode, "$name moved the flash")
         assertEquals(hardware.torchMode, after.torchMode, "$name moved the torch")
         assertEquals(hardware.camera, after.camera, "$name moved the camera")
         assertEquals(hardware.targetOrientation, after.targetOrientation, "$name moved the target orientation")
+        if (field != "exposure") {
+            assertEquals(
+                hardware.exposureCompensationIndex,
+                after.exposureCompensationIndex,
+                "$name moved the exposure index",
+            )
+        }
         assertEquals(zoom, engine.zoom.value, "$name changed zoom")
     }
 
@@ -525,8 +548,9 @@ internal class ContractCases(
                 steps.step("zoom after the switch", skipIf = zoomSkip) {
                     assertEquals(zoom, bound.zoomRatio, "zoom after the switch")
                 }
-                // A held index is clamped into the new camera's range, never refused (design §12.4 "W12").
-                val targetRange = capabilities.exposureCompensationRange(target.id)
+                // A held index is clamped into the new camera's range, never refused (design §12.4 "W12"). The range
+                // is read after the switch: an engine may publish it only once it has bound the camera (Android).
+                val targetRange = engine.capabilities.value.exposureCompensationRange(target.id)
                 val exposureSkip = skipReason(lens, exposure) { fixedExposure(engine, it) }
                     ?: "camera '${target.id}' has no exposure compensation".takeIf { targetRange == null }
                 steps.step("exposure after the switch", skipIf = exposureSkip) {
@@ -570,7 +594,8 @@ internal class ContractCases(
     }
 
     // Exposure compensation follows the bound camera's range: an index in it other than the current one
-    // succeeds and reaches hardware only once the platform reports it (rule 5); a camera without a range
+    // succeeds and reaches hardware only once the platform reports it, which a read-back engine does before the
+    // command returns (rule 5); a camera without a range
     // answers Unsupported(EXPOSURE_COMPENSATION), the interface's default, and hardware stays.
     suspend fun exposureCompensationFollowsTheCapability() {
         val case = "exposureCompensationFollowsTheCapability"
@@ -594,13 +619,7 @@ internal class ContractCases(
                     assertEquals(hardware, engine.hardware.value, "an unsupported exposure command changed hardware")
                 } else {
                     val index = target!!
-                    commandThenReport(
-                        engine,
-                        "setExposureCompensation",
-                        HardwareChange(exposureCompensationIndex = index),
-                        index,
-                        { it.exposureCompensationIndex },
-                    ) {
+                    exposureCommand(engine, "setExposureCompensation", index) {
                         assertEquals(success, engine.setExposureCompensation(index), "setExposureCompensation($index)")
                     }
                     assertEquals(
