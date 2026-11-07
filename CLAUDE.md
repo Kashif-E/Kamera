@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CameraK is a Kotlin Multiplatform (KMP) camera library for Compose Multiplatform, targeting Android (CameraX), iOS (AVFoundation), and Desktop/JVM (JavaCV). Published to Maven Central under `io.github.kashif-mehmood-km`.
+CameraK is a Kotlin Multiplatform (KMP) camera library for Compose Multiplatform, targeting Android (CameraX), iOS (AVFoundation), and Desktop/JVM (JavaCV). Published to Maven Central under `dev.kashifmehmood`; the 1.x coordinates, in the 1.x group (`LEGACY_GROUP` in gradle.properties), relocate to it.
 
 ## Build Commands
 
@@ -71,6 +71,6 @@ All published library modules target: `androidTarget`, `jvm("desktop")`, `iosArm
 
 ## Publishing
 
-Uses vanniktech maven-publish plugin to Maven Central (Sonatype Central Portal). Coordinates: `io.github.kashif-mehmood-km:{artifactId}:{version}`. GPG-signed releases. Publishing credentials live only in `~/.gradle/gradle.properties` or `ORG_GRADLE_PROJECT_*` environment variables, never in a file in this repository; the tracked root properties file holds build settings only. See CONTRIBUTING.md, "Publishing credentials".
+Uses vanniktech maven-publish plugin to Maven Central (Sonatype Central Portal). Coordinates: `dev.kashifmehmood:{artifactId}:{version}`. The `relocations/` projects publish relocation POMs under the 1.x group (`LEGACY_GROUP` in the root properties file), one per 1.x artifact id with a 2.0 successor; the release runs `publishLibraries`, then `publishLegacyRelocations`, one Central Portal deployment per namespace. GPG-signed releases. Publishing credentials live only in `~/.gradle/gradle.properties` or `ORG_GRADLE_PROJECT_*` environment variables, never in a file in this repository; the tracked root properties file holds build settings only. See CONTRIBUTING.md, "Publishing credentials".
 
 Release metadata lives in one place: `VERSION_NAME`, `GROUP` and the shared `POM_*` keys in the root `gradle.properties`, and each module's `POM_ARTIFACT_ID`, `POM_NAME` and `POM_DESCRIPTION` in its own `gradle.properties`. Android SDK levels are `android-compileSdk` / `android-minSdk` in `gradle/libs.versions.toml`. `checkReleaseMetadata` and `checkAndroidSdkFloor` (lint target) fail when they drift.

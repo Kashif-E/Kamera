@@ -95,9 +95,10 @@ the main thread.
 - [ ] **Vision barcodes.** The QR plugin reads QR codes and EAN-13 at Vision's default request
       revision, with bounding boxes on the code.
 - [ ] **Lens-switch signpost.** Record the `CameraK.lensSwitch` interval (subsystem
-      `io.github.kashif-mehmood-km.camerak`, category `CameraK`) while switching lenses in the Sample.
+      `dev.kashifmehmood.camerak`, category `CameraK`) while switching lenses in the Sample.
       With the Sample open on the iPhone (its UDID from `xcrun xctrace list devices`), record a
-      minute of switching, then export the signpost intervals:
+      minute of switching, then export the signpost intervals and keep the rows whose subsystem is
+      `dev.kashifmehmood.camerak`:
       ```
       xcrun xctrace record --template Logging --device <UDID> --attach "Compose Multiplatform Camera App" --time-limit 60s --output lens-switch.trace
       xcrun xctrace export --input lens-switch.trace --xpath '/trace-toc/run[@number="1"]/data/table[@schema="OSSignpostIntervals"]'

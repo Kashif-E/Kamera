@@ -10,11 +10,12 @@ CameraKLogger.enabled = true
 
 ## Installation
 
-### "Could not find io.github.kashif-mehmood-km:camerak"
+### "Could not find dev.kashifmehmood:camerak"
 
-Check that `mavenCentral()` is in your repositories and that the version is `2.0`. The 1.x plugin
-ids (`qr_scanner_plugin` and the others) still resolve, through a relocation, to the 2.0 artifacts;
-switch to the new ids (see the [migration guide](migration/2.0.md)).
+Check that `mavenCentral()` is in your repositories and that the version is `2.0`. CameraK 2.0 is
+published under the group `dev.kashifmehmood`. The 1.x coordinates (`camerak` and the plugin ids such
+as `qr_scanner_plugin`, in the 1.x group) still resolve, through a relocation, to the 2.0 artifacts;
+switch to the new group and ids (see the [migration guide](migration/2.0.md)).
 
 ### Unresolved references after upgrading
 

@@ -39,7 +39,8 @@ target runs the Sample's own tests (`:Sample:desktopTest`) and counts them as `S
 BOM and the relocation POMs, unsigned, to `build/verify/m2`, which it empties first; nothing goes to
 `~/.m2` or Maven Central. The run is RED unless every coordinate a release uploads is there: each
 artifact's root and its `android`, `desktop`, `iosarm64` and `iossimulatorarm64` variants (`.module`
-and `.pom`), the BOM's root, and each relocation POM pointing at its 2.0 id. Compiling the tests never
+and `.pom`), the BOM's root, all under `GROUP`, and each relocation POM, under the 1.x group (`LEGACY_GROUP`
+in gradle.properties), pointing at its 2.0 coordinate. Compiling the tests never
 builds the metadata compilations behind a root artifact, so only publishing shows they work.
 `./gradlew verifyAll` runs the same tasks without the summary.
 
@@ -122,7 +123,7 @@ until the file is regenerated, in the same commit, over everything CI and a rele
 rm gradle/verification-metadata.xml
 ./gradlew --write-verification-metadata sha256 --continue verifyAll -Pcamerak.verify.rerunTests=true \
     -Pcamerak.verify.publishRepo="$PWD/build/verify/m2" -PsignAllPublications=false
-./gradlew --write-verification-metadata sha256 --dry-run publishAllPublicationsToMavenCentralRepository
+./gradlew --write-verification-metadata sha256 --dry-run publishLibraries publishLegacyRelocations
 mv gradle/verification-metadata.dryrun.xml gradle/verification-metadata.xml
 ```
 
@@ -150,6 +151,22 @@ A release is a pushed tag named `v` plus the `VERSION_NAME` in `gradle.propertie
 `build.yml` (`scripts/verify.sh --full`) on the tagged commit, then `scripts/check_release_tag.sh`
 refuses a tag that does not match `VERSION_NAME`, and the upload job waits in the `maven-central`
 environment. Nothing can start a publish by hand or from a branch, and only one publish runs at a time.
+
+CameraK 2.0 publishes under `dev.kashifmehmood` (`GROUP`). The 1.x coordinates stay in the 1.x group
+(`LEGACY_GROUP` in gradle.properties), where the `relocations/` projects publish a relocation POM for
+each 1.x artifact id with a 2.0 successor. The upload job runs two builds, so each namespace is its own
+Central Portal deployment: `./gradlew publishLibraries` (everything under `GROUP`), then
+`./gradlew publishLegacyRelocations` (the relocation POMs). If the first fails, the second does not run.
+
+Before the first 2.0 release, the maintainer:
+
+- [ ] adds the namespace `dev.kashifmehmood` on central.sonatype.com (Namespaces, Add Namespace),
+      publishes the DNS TXT record it gives on `kashifmehmood.dev`, and verifies it. The same account
+      keeps the 1.x group for the relocation POMs; the same Central user token and signing key serve both.
+- [ ] registers `dev.kashifmehmood:camerak` in the Google Play SDK Console and replaces
+      `cameraK/src/androidMain/resources/META-INF/<1.x group as a path>/camerak/verification.properties`
+      with the new token at `META-INF/dev/kashifmehmood/camerak/verification.properties`. Until then the
+      1.x token ships unchanged, which is harmless in the new artifact.
 
 The `maven-central` environment is configured in the repository settings, not in a file: it needs
 required reviewers, a deployment rule allowing only `v*` tags, and the five publishing secrets

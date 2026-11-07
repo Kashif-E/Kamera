@@ -10,7 +10,7 @@ A camera library for Kotlin Multiplatform and Compose Multiplatform: Android (Ca
 
 <p align="center">
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.kashif-mehmood-km/camerak?label=Maven%20Central&color=blue)](https://search.maven.org/search?q=g:io.github.kashif-mehmood-km)
+[![Maven Central](https://img.shields.io/maven-central/v/dev.kashifmehmood/camerak?label=Maven%20Central&color=blue)](https://search.maven.org/search?q=g:dev.kashifmehmood)
 [![GitHub Release](https://img.shields.io/github/v/release/kashif-e/Kamera)](https://github.com/Kashif-E/Kamera/releases)
 [![Kotlin Weekly](https://img.shields.io/badge/Kotlin_Weekly-425-7F52FF)](https://mailchi.mp/kotlinweekly/kotlin-weekly-425)
 [![Kotlin Weekly](https://img.shields.io/badge/Kotlin_Weekly-517-7F52FF)](https://mailchi.mp/kotlinweekly/kotlin-weekly-517)
@@ -39,23 +39,23 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // The camera with its Compose UI; camerak-core alone for an app without Compose
-            implementation("io.github.kashif-mehmood-km:camerak:2.0")
+            implementation("dev.kashifmehmood:camerak:2.0")
 
             // Optional plugins
-            implementation("io.github.kashif-mehmood-km:camerak-media-saver:2.0")
-            implementation("io.github.kashif-mehmood-km:camerak-qr-scanner:2.0")
-            implementation("io.github.kashif-mehmood-km:camerak-ocr:2.0")
-            implementation("io.github.kashif-mehmood-km:camerak-analyzer:2.0")
+            implementation("dev.kashifmehmood:camerak-media-saver:2.0")
+            implementation("dev.kashifmehmood:camerak-qr-scanner:2.0")
+            implementation("dev.kashifmehmood:camerak-ocr:2.0")
+            implementation("dev.kashifmehmood:camerak-analyzer:2.0")
         }
         commonTest.dependencies {
             // The fake camera, for tests only
-            implementation("io.github.kashif-mehmood-km:camerak-testing:2.0")
+            implementation("dev.kashifmehmood:camerak-testing:2.0")
         }
     }
 }
 ```
 
-`camerak-bom` pins every CameraK artifact to one version: add `implementation(project.dependencies.platform("io.github.kashif-mehmood-km:camerak-bom:2.0"))` and leave the versions off the others. The [installation guide](docs/getting-started/installation.md) also covers version catalogs.
+`camerak-bom` pins every CameraK artifact to one version: add `implementation(project.dependencies.platform("dev.kashifmehmood:camerak-bom:2.0"))` and leave the versions off the others. The [installation guide](docs/getting-started/installation.md) also covers version catalogs.
 
 ### Platform Setup
 

@@ -17,17 +17,17 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // The camera with its Compose UI; camerak-core alone for an app without Compose
-            implementation("io.github.kashif-mehmood-km:camerak:2.0")
+            implementation("dev.kashifmehmood:camerak:2.0")
 
             // Optional plugins
-            implementation("io.github.kashif-mehmood-km:camerak-media-saver:2.0")
-            implementation("io.github.kashif-mehmood-km:camerak-qr-scanner:2.0")
-            implementation("io.github.kashif-mehmood-km:camerak-ocr:2.0")
-            implementation("io.github.kashif-mehmood-km:camerak-analyzer:2.0")
+            implementation("dev.kashifmehmood:camerak-media-saver:2.0")
+            implementation("dev.kashifmehmood:camerak-qr-scanner:2.0")
+            implementation("dev.kashifmehmood:camerak-ocr:2.0")
+            implementation("dev.kashifmehmood:camerak-analyzer:2.0")
         }
         commonTest.dependencies {
             // The fake camera, for tests only
-            implementation("io.github.kashif-mehmood-km:camerak-testing:2.0")
+            implementation("dev.kashifmehmood:camerak-testing:2.0")
         }
     }
 }
@@ -49,9 +49,9 @@ Import the BOM once and leave the versions off the CameraK artifacts:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation(project.dependencies.platform("io.github.kashif-mehmood-km:camerak-bom:2.0"))
-            implementation("io.github.kashif-mehmood-km:camerak")
-            implementation("io.github.kashif-mehmood-km:camerak-qr-scanner")
+            implementation(project.dependencies.platform("dev.kashifmehmood:camerak-bom:2.0"))
+            implementation("dev.kashifmehmood:camerak")
+            implementation("dev.kashifmehmood:camerak-qr-scanner")
         }
     }
 }
@@ -66,12 +66,12 @@ Add to `gradle/libs.versions.toml`:
 camerak = "2.0"
 
 [libraries]
-camerak = { module = "io.github.kashif-mehmood-km:camerak", version.ref = "camerak" }
-camerak-media-saver = { module = "io.github.kashif-mehmood-km:camerak-media-saver", version.ref = "camerak" }
-camerak-qr-scanner = { module = "io.github.kashif-mehmood-km:camerak-qr-scanner", version.ref = "camerak" }
-camerak-ocr = { module = "io.github.kashif-mehmood-km:camerak-ocr", version.ref = "camerak" }
-camerak-analyzer = { module = "io.github.kashif-mehmood-km:camerak-analyzer", version.ref = "camerak" }
-camerak-testing = { module = "io.github.kashif-mehmood-km:camerak-testing", version.ref = "camerak" }
+camerak = { module = "dev.kashifmehmood:camerak", version.ref = "camerak" }
+camerak-media-saver = { module = "dev.kashifmehmood:camerak-media-saver", version.ref = "camerak" }
+camerak-qr-scanner = { module = "dev.kashifmehmood:camerak-qr-scanner", version.ref = "camerak" }
+camerak-ocr = { module = "dev.kashifmehmood:camerak-ocr", version.ref = "camerak" }
+camerak-analyzer = { module = "dev.kashifmehmood:camerak-analyzer", version.ref = "camerak" }
+camerak-testing = { module = "dev.kashifmehmood:camerak-testing", version.ref = "camerak" }
 ```
 
 Then use `implementation(libs.camerak)` and the others in the source sets above.

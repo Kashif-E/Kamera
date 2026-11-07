@@ -7,7 +7,7 @@ headers = os/log.h os/signpost.h
 headerFilter = os/log.h os/signpost.h
 ---
 static inline os_log_t camerak_signpost_log(void) {
-    return os_log_create("io.github.kashif-mehmood-km.camerak", "CameraK");
+    return os_log_create("dev.kashifmehmood.camerak", "CameraK");
 }
 
 static inline uint64_t camerak_signpost_id(os_log_t log) {
