@@ -71,7 +71,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      configurations has text, the microphone's in each one that has the camera's.
                      Each of the iOS app target's build configurations finds and links the Sample's
                      framework: the search path where embedAndSignAppleFrameworkForXcode puts it,
-                     and -framework with the baseName Sample/build.gradle.kts gives it.
+                     and -framework with the baseName Sample/build.gradle.kts gives it, and builds
+                     no x86_64 simulator slice, since the libraries have no Intel-simulator target.
 
 Each policy also runs its rule against a fixture it must reject, so a rule that matches nothing
 cannot pass. Standard library only; run with `python3 -I`. Exits 1 on any violation, 2 if a check
@@ -1693,6 +1694,8 @@ SAMPLE_BUILD = "Sample/build.gradle.kts"
 FRAMEWORK_BASE_NAME = re.compile(r'\bbaseName\s*=\s*"([^"]+)"')
 # Where embedAndSignAppleFrameworkForXcode copies the framework the Xcode build links.
 SAMPLE_FRAMEWORK_SEARCH_PATH = "$(SRCROOT)/../Sample/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+# The libraries have no Intel-simulator target since 2.0, so the framework has no x86_64 simulator slice.
+SIMULATOR_EXCLUDED_ARCHS = "EXCLUDED_ARCHS[sdk=iphonesimulator*]"
 
 
 def sample_manifest_problems(manifest: str) -> List[str]:
@@ -1730,7 +1733,7 @@ def sample_usage_description_problems(project: str) -> List[str]:
 
 def build_setting_words(settings: str, key: str) -> List[str]:
     """The words of one build setting, a quoted or bare scalar or a parenthesised list, as Xcode splits them."""
-    match = re.search(r"\b" + key + r'\s*=\s*(\((?:[^()"]|"(?:[^"\\]|\\.)*")*\)|"(?:[^"\\]|\\.)*"|[^;]*);', settings)
+    match = re.search(r'(?:^|\s)"?' + re.escape(key) + r'"?\s*=\s*(\((?:[^()"]|"(?:[^"\\]|\\.)*")*\)|"(?:[^"\\]|\\.)*"|[^;]*);', settings)
     if match is None:
         return []
     value = match.group(1)
@@ -1741,7 +1744,8 @@ def build_setting_words(settings: str, key: str) -> List[str]:
 def sample_framework_link_problems(project: str, framework: str) -> List[str]:
     """ios_sample_links_the_compose_framework: every build configuration of the app target (the ones that
     set PRODUCT_BUNDLE_IDENTIFIER) searches SAMPLE_FRAMEWORK_SEARCH_PATH and passes `-framework <framework>`
-    to the linker. Without them the Swift `import` of the Sample's framework fails in Xcode."""
+    to the linker, and builds no x86_64 simulator slice, which the framework lacks. Without them the Swift
+    `import` of the Sample's framework fails in Xcode, and a generic simulator build asks Gradle for x86_64."""
     problems = []
     targets = [
         (identifier, name, settings)
@@ -1757,6 +1761,8 @@ def sample_framework_link_problems(project: str, framework: str) -> List[str]:
         flags = build_setting_words(settings, "OTHER_LDFLAGS")
         if not any(flag == "-framework" and after == framework for flag, after in zip(flags, flags[1:])):
             problems.append(f"{where} does not link -framework {framework}")
+        if "x86_64" not in build_setting_words(settings, SIMULATOR_EXCLUDED_ARCHS):
+            problems.append(f"{where} does not exclude x86_64 from simulator builds ({SIMULATOR_EXCLUDED_ARCHS})")
     return problems
 
 
@@ -1802,17 +1808,19 @@ def check_sample_app() -> List[str]:
 
     search = f'\t\t\t\tFRAMEWORK_SEARCH_PATHS = (\n\t\t\t\t\t"$(inherited)",\n\t\t\t\t\t"{SAMPLE_FRAMEWORK_SEARCH_PATH}",\n\t\t\t\t);\n'
     link = '\t\t\t\tOTHER_LDFLAGS = (\n\t\t\t\t\t"$(inherited)",\n\t\t\t\t\t"-framework",\n\t\t\t\t\t{},\n\t\t\t\t);\n'
-    linked = app_configuration(search + link.format("ComposeApp"))
+    intel = f'\t\t\t\t"{SIMULATOR_EXCLUDED_ARCHS}" = x86_64;\n'
+    linked = app_configuration(intel + search + link.format("ComposeApp"))
     project_level = configuration("\t\t\t\tSDKROOT = iphoneos;\n")
     if sample_framework_link_problems(project_level + linked + app_configuration(
-        f'\t\t\t\tFRAMEWORK_SEARCH_PATHS = "{SAMPLE_FRAMEWORK_SEARCH_PATH}";\n'
+        intel + f'\t\t\t\tFRAMEWORK_SEARCH_PATHS = "{SAMPLE_FRAMEWORK_SEARCH_PATH}";\n'
         '\t\t\t\tOTHER_LDFLAGS = "-framework ComposeApp";\n'
     ), "ComposeApp"):
         raise CheckError("ios_sample_links_the_compose_framework rejects a target that searches and links the framework")
     for name, project, expected in (
-        ("no search path", linked + app_configuration(link.format("ComposeApp")), "does not search"),
-        ("no link flag", app_configuration(search) + linked, "does not link"),
-        ("another framework's name", linked + app_configuration(search + link.format("Shared")), "does not link"),
+        ("no search path", linked + app_configuration(intel + link.format("ComposeApp")), "does not search"),
+        ("no link flag", app_configuration(intel + search) + linked, "does not link"),
+        ("another framework's name", linked + app_configuration(intel + search + link.format("Shared")), "does not link"),
+        ("an x86_64 simulator slice", linked + app_configuration(search + link.format("ComposeApp")), "x86_64"),
         ("a project with no app target", project_level, "no app target"),
     ):
         found = sample_framework_link_problems(project, "ComposeApp")
