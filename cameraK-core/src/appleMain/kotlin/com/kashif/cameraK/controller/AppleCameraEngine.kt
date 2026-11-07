@@ -23,7 +23,6 @@ import com.kashif.cameraK.enums.TorchMode
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
-import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.frames.AppleFrameSource
 import com.kashif.cameraK.frames.CoreVideoPixelBufferLocker
 import com.kashif.cameraK.frames.FrameFormat
@@ -32,12 +31,10 @@ import com.kashif.cameraK.frames.PixelBufferLocker
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
-import com.kashif.cameraK.state.START_TIMEOUT
 import com.kashif.cameraK.state.ZoomState
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
-import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -45,7 +42,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -53,20 +49,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import platform.AVFoundation.AVCaptureInput
-import platform.AVFoundation.AVCaptureSessionDidStartRunningNotification
-import platform.AVFoundation.AVCaptureSessionErrorKey
-import platform.AVFoundation.AVCaptureSessionInterruptionEndedNotification
-import platform.AVFoundation.AVCaptureSessionInterruptionReasonKey
-import platform.AVFoundation.AVCaptureSessionRuntimeErrorNotification
-import platform.AVFoundation.AVCaptureSessionWasInterruptedNotification
 import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
 import platform.CoreGraphics.CGRect
-import platform.Foundation.NSError
-import platform.Foundation.NSNotification
-import platform.Foundation.NSNotificationCenter
-import platform.Foundation.NSNumber
 import platform.UIKit.UIDevice
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIInterfaceOrientation
@@ -196,9 +182,6 @@ internal class AppleCameraEngine(
             CoroutineExceptionHandler { _, e -> CameraKLogger.e(TAG, "an iOS engine task failed", e) },
     )
 
-    /** The reason of the latest interruption, recorded when AVFoundation posts it, before the hop to the queue. */
-    private val lastInterruption = atomic<InterruptionReason?>(null)
-
     private val closeDone = Job()
     private val starts = Mutex()
 
@@ -211,8 +194,7 @@ internal class AppleCameraEngine(
     /** The session, made now so the preview has it before the first start; null below iOS 16. */
     private val session: CaptureSessionOps? = if (unsupported == null) custom.prepareSession() else null
 
-    private val center = NSNotificationCenter.defaultCenter
-    private val observers: List<Any> = observeSession()
+    private val events: EngineSessionEvents = EngineSessionEvents(generations, custom, session, scope)
 
     init {
         custom.captureOrientation = rotation::captureVideoOrientation
@@ -333,21 +315,7 @@ internal class AppleCameraEngine(
         if (session?.isRunning == true) custom.reapplyTorchOnQueue() else custom.startRunningOnQueue()
         controls.applyDesiredZoom(device)
         controls.publishHardware()
-        confirm(generation)
-    }
-
-    /** Session queue: Open when the session runs, Interrupted when the system holds it; otherwise waits. */
-    private fun confirm(generation: Int) {
-        val ops = session ?: return
-        val interrupted = ops.isInterrupted
-        val running = ops.isRunning
-        when {
-            interrupted -> generations.becomeLive(
-                generation,
-                EngineState.Interrupted(lastInterruption.value ?: InterruptionReason.OTHER),
-            )
-            running -> generations.becomeLive(generation, EngineState.Open)
-        }
+        events.confirm(generation)
     }
 
     private fun cancelStart(generation: Int) {
@@ -383,7 +351,7 @@ internal class AppleCameraEngine(
         val cut = generations.close() ?: return
         cut.start?.continuation?.resume(ENGINE_CLOSED)
         stills.closeAll()
-        observers.forEach(center::removeObserver)
+        events.removeObservers()
         rotation.stopObservingOrientation()
         capabilitySource.enumerated.complete(Unit)
         if (session != null) {
@@ -403,111 +371,6 @@ internal class AppleCameraEngine(
     override suspend fun closeAndJoin() {
         close()
         closeDone.join()
-    }
-
-    // ─── Platform callbacks ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Registers the four session observers with the session as their object and no queue. Each
-     * reads what it needs on the posting thread, then hops to the session queue carrying the
-     * generation it arrived in.
-     */
-    private fun observeSession(): List<Any> {
-        val avSession = session?.avSession ?: return emptyList()
-        fun observe(name: String?, what: String, handle: (Int, NSNotification) -> Unit): Any =
-            center.addObserverForName(name, avSession, null) { notification ->
-                platformCallback(what) {
-                    val generation = generations.current
-                    if (notification != null) {
-                        custom.afterQueuedSessionWork { platformCallback(what) { handle(generation, notification) } }
-                    }
-                }
-            }
-        return listOf(
-            center.addObserverForName(AVCaptureSessionWasInterruptedNotification, avSession, null) { notification ->
-                platformCallback("a session interruption") {
-                    val code = notification?.userInfo?.get(AVCaptureSessionInterruptionReasonKey) as? NSNumber
-                    val reason = interruptionReasonFor(code?.longValue)
-                    lastInterruption.value = reason
-                    val generation = generations.current
-                    custom.afterQueuedSessionWork {
-                        platformCallback("a session interruption") { onInterrupted(generation, reason) }
-                    }
-                }
-            },
-            observe(AVCaptureSessionInterruptionEndedNotification, "an interruption ending") { generation, _ ->
-                onInterruptionEnded(generation)
-            },
-            observe(AVCaptureSessionDidStartRunningNotification, "the session starting") { generation, _ ->
-                onDidStartRunning(generation)
-            },
-            observe(AVCaptureSessionRuntimeErrorNotification, "a session runtime error") { generation, notification ->
-                onRuntimeError(generation, notification.userInfo?.get(AVCaptureSessionErrorKey) as? NSError)
-            },
-        )
-    }
-
-    private fun onInterrupted(generation: Int, reason: InterruptionReason) {
-        if (generations.isLiveOrStarting(
-                generation,
-            )
-        ) {
-            generations.becomeLive(generation, EngineState.Interrupted(reason))
-        }
-    }
-
-    private fun onInterruptionEnded(generation: Int) {
-        if (!generations.isLiveOrStarting(generation)) return
-        if (session?.isRunning == true) generations.becomeLive(generation, EngineState.Open)
-    }
-
-    private fun onDidStartRunning(generation: Int) {
-        if (generations.isStopped(generation)) {
-            // An open that arrives after the start it belonged to was stopped: the camera stays closed.
-            custom.stopRunningOnQueue()
-            return
-        }
-        if (generations.isLiveOrStarting(generation)) confirm(generation)
-    }
-
-    private fun onRuntimeError(generation: Int, error: NSError?) {
-        if (!generations.isLiveOrStarting(generation)) return
-        if (error == null) {
-            CameraKLogger.e(TAG, "the session reported a runtime error without an NSError")
-            return generations.fail(generation, CameraKError.Hardware(null))
-        }
-        val next = sessionErrorState(error)
-        if (next is EngineState.Failed) return generations.fail(generation, next.error)
-        val hardware = CameraKError.Hardware(error.code.toInt(), NSErrorException(error))
-        // A reset restarts the session once; a second failure in a row, before the restart ran, ends the generation.
-        val restart = generations.claimResetRestart() ?: return generations.fail(generation, hardware)
-        generations.becomeLive(generation, next)
-        custom.startRunningOnQueue()
-        confirm(generation)
-        failUnlessRunningWithinTheStartTimeout(generation, restart, hardware)
-    }
-
-    /**
-     * A restart that leaves the session neither running nor interrupted may still run on its own, so the
-     * engine waits for did-start-running as a start does, for [START_TIMEOUT], and then fails with [error].
-     */
-    private fun failUnlessRunningWithinTheStartTimeout(generation: Int, restart: Int, error: CameraKError) {
-        scope.launch {
-            delay(START_TIMEOUT)
-            custom.afterQueuedSessionWork {
-                platformCallback("a restart after a media-services reset") {
-                    val pending = generations.isResetRestartPending(restart)
-                    val ops = session
-                    if (pending &&
-                        ops != null &&
-                        !ops.isRunning &&
-                        !ops.isInterrupted
-                    ) {
-                        generations.fail(generation, error)
-                    }
-                }
-            }
-        }
     }
 
     // ─── Commands ───────────────────────────────────────────────────────────────────────────────
