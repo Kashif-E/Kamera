@@ -211,6 +211,17 @@ def shell_commands(script: List[Tuple[int, str]]) -> Iterator[str]:
         yield command
 
 
+def publish_env_violations(name: str, text: str) -> List[Violation]:
+    """A workflow that runs a publish task takes every publishing credential from a secret through env:."""
+    if not any(PUBLISH_TASK.search(line) for _, line in run_blocks(text.splitlines())):
+        return []
+    return [
+        f"{name}: publishes without `{variable}` set from a secret in env:"
+        for variable in PUBLISH_ENV
+        if not re.search(rf"^\s*{variable}:\s*\$\{{\{{\s*secrets\.\w+\s*\}}\}}\s*$", text, re.MULTILINE)
+    ]
+
+
 def check_workflows() -> List[Violation]:
     workflows = sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))
     if not workflows:
@@ -220,7 +231,6 @@ def check_workflows() -> List[Violation]:
     for path in workflows:
         text = path.read_text()
         lines = text.splitlines()
-        publishes = False
         for number, line in run_blocks(lines):
             if SECRET_EXPRESSION.search(line):
                 violations.append(
@@ -230,8 +240,6 @@ def check_workflows() -> List[Violation]:
                 violations.append(
                     f"{rel(path)}:{number}: passes a credential as a -P flag; use ORG_GRADLE_PROJECT_* env vars"
                 )
-            if PUBLISH_TASK.search(line):
-                publishes = True
         for number, line in enumerate(lines, 1):
             if KEY_FILE.search(line):
                 violations.append(
@@ -241,10 +249,7 @@ def check_workflows() -> List[Violation]:
             match = GITLEAKS_ACTION.search(line)
             if match:
                 gitleaks_refs.append((path, match.group("ref")))
-        if publishes:
-            for name in PUBLISH_ENV:
-                if not re.search(rf"^\s*{name}:\s*\$\{{\{{\s*secrets\.\w+\s*\}}\}}\s*$", text, re.MULTILINE):
-                    violations.append(f"{rel(path)}: publishes without `{name}` set from a secret in env:")
+        violations += publish_env_violations(rel(path), text)
     if not gitleaks_refs:
         violations.append(".github/workflows: no job runs gitleaks/gitleaks-action")
     violations += check_full_history_scan(workflows)

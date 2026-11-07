@@ -191,9 +191,9 @@ def check_tag_guard() -> List[str]:
     return problems
 
 
-def check_release_workflow() -> List[str]:
-    release = load(RELEASE_WORKFLOW)
-    build = load(BUILD_WORKFLOW)
+def release_workflow_problems(release: dict, build: dict) -> List[str]:
+    """What lets [release], the publish workflow, publish a commit [build]'s harness did not test, a tag
+    other than VERSION_NAME, or an upload nobody approved."""
     name = RELEASE_WORKFLOW.relative_to(ROOT)
     problems: List[str] = []
 
@@ -263,6 +263,10 @@ def check_release_workflow() -> List[str]:
                 f"{name}: job {job_id} interpolates an expression into the tag check; pass \"$GITHUB_REF_NAME\""
             )
     return problems
+
+
+def check_release_workflow() -> List[str]:
+    return release_workflow_problems(load(RELEASE_WORKFLOW), load(BUILD_WORKFLOW))
 
 
 def main() -> int:
