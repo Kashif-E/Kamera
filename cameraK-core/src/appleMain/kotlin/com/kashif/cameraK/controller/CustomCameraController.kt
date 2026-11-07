@@ -11,13 +11,7 @@ import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
-import kotlinx.cinterop.ByteVar
-import kotlinx.cinterop.CPointed
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.nativeHeap
-import kotlinx.cinterop.ptr
-import kotlinx.cinterop.toCPointer
 import platform.AVFoundation.*
 import platform.Foundation.NSData
 import platform.Foundation.NSError
@@ -25,24 +19,12 @@ import platform.Foundation.NSLock
 import platform.Foundation.NSThread
 import platform.UIKit.UIDevice
 import platform.UIKit.UIView
-import platform.darwin.DISPATCH_TIME_NOW
 import platform.darwin.NSObject
-import platform.darwin.dispatch_after
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
-import platform.darwin.dispatch_get_specific
-import platform.darwin.dispatch_queue_create
-import platform.darwin.dispatch_queue_set_specific
-import platform.darwin.dispatch_sync
-import platform.darwin.dispatch_time
 import kotlin.concurrent.Volatile
 
 private const val TAG = "CameraK"
-
-/** Queue-specific key every controller tags its session queue with; the value is unique per controller. */
-@OptIn(ExperimentalForeignApi::class)
-private val sessionQueueKey = nativeHeap.alloc<ByteVar>().ptr
-private val sessionQueueIds = atomic(0L)
 
 /**
  * Convert CameraDeviceType enum to AVFoundation device type string
@@ -111,26 +93,8 @@ internal class CustomCameraController(
         previewRotating?.let { this.previewRotating = it }
     }
 
-    /**
-     * Every AVCaptureSession call (begin/commit, inputs, outputs, preset, start, stop) runs on this
-     * serial queue, Apple's AVCam pattern: the session is not thread-safe, and startRunning between
-     * begin and commitConfiguration raises NSGenericException, which aborts a Kotlin/Native process.
-     * Only preview-layer work and callbacks hop to main.
-     */
-    @OptIn(ExperimentalForeignApi::class)
-    private val sessionQueue = dispatch_queue_create("com.kashif.cameraK.session", null)
-
-    @OptIn(ExperimentalForeignApi::class)
-    private val sessionQueueContext = sessionQueueIds.incrementAndGet().toCPointer<CPointed>()
-
-    init {
-        @OptIn(ExperimentalForeignApi::class)
-        dispatch_queue_set_specific(sessionQueue, sessionQueueKey, sessionQueueContext, null)
-    }
-
-    @OptIn(ExperimentalForeignApi::class)
-    private val isOnSessionQueue: Boolean
-        get() = dispatch_get_specific(sessionQueueKey) == sessionQueueContext
+    /** Every AVCaptureSession call runs on this serial queue. */
+    private val sessionQueue = SessionQueue()
 
     /** Bumped by [cleanupSession] so a setup requested before it never reports ready. */
     private val setupGeneration = atomic(0)
@@ -157,7 +121,7 @@ internal class CustomCameraController(
             val replace = { session = value?.let(::AVCaptureSessionOps) }
             // Synchronous so the next read returns the new session; already on the queue, waiting on
             // it would deadlock.
-            if (isOnSessionQueue) replace() else dispatch_sync(sessionQueue, replace)
+            if (sessionQueue.isCurrent) replace() else sessionQueue.sync(replace)
         }
 
     /** Whether setupSession has created the session (and cleanupSession not yet released it). */
@@ -260,12 +224,12 @@ internal class CustomCameraController(
         val generation = setupGeneration.value
         // Off the main thread to avoid UI stalls (#73), and on the session queue so nothing else
         // touches the session while it is being built.
-        dispatch_async(sessionQueue) {
-            if (setupGeneration.value != generation) return@dispatch_async
+        sessionQueue.async {
+            if (setupGeneration.value != generation) return@async
             val failure = configureOnQueue(device = null, lens = initialCameraLens, cameraDeviceType = cameraDeviceType)
             if (failure != null) {
                 reportError(failure)
-                return@dispatch_async
+                return@async
             }
             val ops = session
             dispatch_async(dispatch_get_main_queue()) {
@@ -489,9 +453,9 @@ internal class CustomCameraController(
      * @param change Lambda to execute within beginConfiguration/commitConfiguration block
      */
     fun queueConfigurationChange(change: () -> Unit) {
-        dispatch_async(sessionQueue) {
+        sessionQueue.async {
             pendingConfigurations.add(change)
-            val ops = session ?: return@dispatch_async
+            val ops = session ?: return@async
             processPendingConfigurations(ops)
         }
     }
@@ -530,7 +494,7 @@ internal class CustomCameraController(
      * queues the addition as a configuration change.
      */
     fun safeAddOutput(output: AVCaptureOutput) {
-        if (!isOnSessionQueue) {
+        if (!sessionQueue.isCurrent) {
             queueConfigurationChange { safeAddOutput(output) }
             return
         }
@@ -608,13 +572,12 @@ internal class CustomCameraController(
 
     /** Runs [block] on the session queue after every piece of session work already requested. */
     internal fun afterQueuedSessionWork(block: () -> Unit) {
-        dispatch_async(sessionQueue, block)
+        sessionQueue.async(block)
     }
 
     /** Runs [block] on the session queue once [delayMs] have passed. */
-    @OptIn(ExperimentalForeignApi::class)
     internal fun onSessionQueueAfter(delayMs: Long, block: () -> Unit) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delayMs * 1_000_000), sessionQueue, block)
+        sessionQueue.after(delayMs, block)
     }
 
     /**
@@ -710,11 +673,11 @@ internal class CustomCameraController(
     }
 
     fun startSession() {
-        dispatch_async(sessionQueue) { startRunningOnQueue() }
+        sessionQueue.async { startRunningOnQueue() }
     }
 
     fun stopSession() {
-        dispatch_async(sessionQueue) { stopRunningOnQueue() }
+        sessionQueue.async { stopRunningOnQueue() }
     }
 
     /** Starts the configured session unless it runs, then applies the torch and prepares the photo output. */
@@ -784,7 +747,7 @@ internal class CustomCameraController(
                 dispatch_async(dispatch_get_main_queue()) { layer.removeFromSuperlayer() }
             }
         }
-        dispatch_async(sessionQueue) {
+        sessionQueue.async {
             (session ?: preparedSession)?.tearDown()
             session = null
             preparedSession = null
@@ -860,12 +823,12 @@ internal class CustomCameraController(
         if (photoOutput != null && supportedFlashMode(mode) != mode) {
             CameraKLogger.w(TAG, "flash mode $mode is not supported on this device; captures use OFF")
         }
-        if (supportedFlashMode(mode) != before) dispatch_async(sessionQueue) { preparePhotoOutput() }
+        if (supportedFlashMode(mode) != before) sessionQueue.async { preparePhotoOutput() }
     }
 
     fun setTorchMode(mode: AVCaptureTorchMode) {
         torchMode = mode
-        dispatch_async(sessionQueue) {
+        sessionQueue.async {
             currentCamera?.let { applyTorchMode(it, mode) }
         }
     }
@@ -941,8 +904,8 @@ internal class CustomCameraController(
         val camera = currentCamera ?: return
         val clampedZoom = zoomFactor.coerceIn(1.0f, getMaxZoom())
         requestedZoom = clampedZoom
-        dispatch_async(sessionQueue) {
-            if (currentCamera !== camera) return@dispatch_async
+        sessionQueue.async {
+            if (currentCamera !== camera) return@async
             withConfigurationLock(camera, "set the zoom") { camera.setVideoZoomFactor(clampedZoom.toDouble()) }
         }
     }
@@ -964,7 +927,7 @@ internal class CustomCameraController(
      * The photo goes to [onPhotoCapture], a failure to [onError].
      */
     fun captureImage() {
-        dispatch_async(sessionQueue) {
+        sessionQueue.async {
             val issued = capturePhotoOnQueue(
                 object : PhotoCaptureCallbacks {
                     override fun photoProcessed(data: NSData?, error: NSError?) = deliverPhoto(data, error)
@@ -1044,22 +1007,22 @@ internal class CustomCameraController(
      * while keeping the same camera position (front/back).
      */
     fun switchToDeviceType(deviceType: CameraDeviceType) {
-        dispatch_async(sessionQueue) {
-            val ops = session ?: return@dispatch_async
-            if (deviceType.toAVCaptureDeviceType() == null) return@dispatch_async
-            if (refusedWhileRecording("change the camera device type")) return@dispatch_async
+        sessionQueue.async {
+            val ops = session ?: return@async
+            if (deviceType.toAVCaptureDeviceType() == null) return@async
+            if (refusedWhileRecording("change the camera device type")) return@async
 
             // The requested type facing the current way, falling back to either way
             val lens = if (isUsingFrontCamera) CameraLens.FRONT else CameraLens.BACK
             val newDevice = cameraDevices.find(lens, deviceType)
                 ?: cameraDevices.find(null, deviceType)
-                ?: return@dispatch_async
+                ?: return@async
 
             val failure = swapVideoInput(ops, newDevice)
             if (failure != null) {
                 CameraKLogger.e(TAG, "switching camera device type failed", failure)
                 reportError(failure)
-                return@dispatch_async
+                return@async
             }
             if (newDevice.isFront) frontCamera = newDevice else backCamera = newDevice
             useCamera(newDevice)
@@ -1068,9 +1031,9 @@ internal class CustomCameraController(
     }
 
     fun switchCamera() {
-        dispatch_async(sessionQueue) {
-            val ops = session ?: return@dispatch_async
-            if (refusedWhileRecording("switch the lens")) return@dispatch_async
+        sessionQueue.async {
+            val ops = session ?: return@async
+            if (refusedWhileRecording("switch the lens")) return@async
             val toFront = !isUsingFrontCamera
 
             val switcher = lensSwitcher
@@ -1084,7 +1047,7 @@ internal class CustomCameraController(
                 }
                 isUsingFrontCamera = toFront
                 applyPreviewMirroring()
-                return@dispatch_async
+                return@async
             }
 
             val camera = if (toFront) frontCamera else backCamera
@@ -1092,7 +1055,7 @@ internal class CustomCameraController(
             if (failure != null) {
                 CameraKLogger.e(TAG, "switching camera failed", failure)
                 reportError(failure)
-                return@dispatch_async
+                return@async
             }
             useCamera(camera!!)
             if (ops.isRunning) applyConfiguredTorch()
