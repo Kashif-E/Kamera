@@ -50,9 +50,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -66,8 +64,6 @@ import platform.AVFoundation.AVCaptureSessionInterruptionEndedNotification
 import platform.AVFoundation.AVCaptureSessionInterruptionReasonKey
 import platform.AVFoundation.AVCaptureSessionRuntimeErrorNotification
 import platform.AVFoundation.AVCaptureSessionWasInterruptedNotification
-import platform.AVFoundation.AVCaptureTorchModeAuto
-import platform.AVFoundation.AVCaptureTorchModeOn
 import platform.AVFoundation.AVCaptureVideoOrientation
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
@@ -142,24 +138,6 @@ internal class AppleCameraEngine(
         EngineGenerations(lock, tracer, custom, unsupported, frameOutputAttached = { frameSource.outputAttached })
     override val state: StateFlow<EngineState> = generations.state
 
-    private val _hardware = MutableStateFlow(HardwareState(FlashMode.OFF, TorchMode.OFF, null, null))
-    override val hardware: StateFlow<HardwareState> = _hardware.asStateFlow()
-
-    private val _zoom = MutableStateFlow(ZoomState(1f, 1f, 1f))
-    override val zoom: StateFlow<ZoomState> = _zoom.asStateFlow()
-
-    /** The zoom ratio the engine re-applies after each start and camera switch. */
-    @Volatile
-    private var desiredZoom = 1f
-
-    internal val desiredZoomRatio: Float get() = desiredZoom
-
-    /** The torch the engine applies at start and after each camera switch. */
-    @Volatile
-    private var desiredTorch = TorchMode.OFF
-
-    internal val desiredTorchMode: TorchMode get() = desiredTorch
-
     private val capabilitySource: EngineCapabilities =
         EngineCapabilities(lock, generations, custom, osVersion, enumerateLenses)
     override val capabilities: StateFlow<CameraCapabilities> get() = capabilitySource.capabilities
@@ -172,10 +150,17 @@ internal class AppleCameraEngine(
         readDeviceOrientation = readDeviceOrientation,
         generateOrientationNotifications = generateOrientationNotifications,
         rotationSources = rotationSources,
-        boundDevice = { observedDevice },
+        boundDevice = { controls.observedDevice },
     )
     override val deviceOrientation: StateFlow<DeviceOrientation> = rotation.deviceOrientation
     internal val targetOrientation: DeviceOrientation? get() = rotation.targetOrientation
+
+    private val controls: EngineControls =
+        EngineControls(generations, capabilitySource, custom, targetOrientation = { rotation.targetOrientation })
+    override val hardware: StateFlow<HardwareState> = controls.hardware
+    override val zoom: StateFlow<ZoomState> = controls.zoom
+    internal val desiredZoomRatio: Float get() = controls.desiredZoom
+    internal val desiredTorchMode: TorchMode get() = controls.desiredTorch
 
     /** Recordings on the movie file output. */
     internal val recorder = AppleRecorder(
@@ -218,10 +203,6 @@ internal class AppleCameraEngine(
         SupervisorJob(environment.parentJob) + environment.dispatchers.default +
             CoroutineExceptionHandler { _, e -> CameraKLogger.e(TAG, "an iOS engine task failed", e) },
     )
-
-    // Session queue only: the device whose torch and zoom the engine observes, and the observation.
-    private var observedDevice: CaptureDeviceOps? = null
-    private var hardwareObservation: AutoCloseable? = null
 
     /** The reason of the latest interruption, recorded when AVFoundation posts it, before the hop to the queue. */
     private val lastInterruption = atomic<InterruptionReason?>(null)
@@ -354,17 +335,14 @@ internal class AppleCameraEngine(
         }
         if (failure != null) return generations.fail(generation, engineErrorFor(failure, selection.lens()))
         rotation.targetOrientation = desired.targetOrientation
-        desiredZoom = desired.zoomRatio
-        desiredTorch = desired.torchMode
-        custom.setFlashMode(desired.flashMode.toAVCaptureFlashMode())
-        custom.torchMode = desiredTorch.toAVCaptureTorchMode()
+        controls.takeDesired(desired)
         bindHardware(device)
         // A stop or close since the block was queued wins: the session is not started for nobody.
         if (!generations.isCurrent(generation, EnginePhase.STARTING)) return
         // Starting the session applies the torch; one already running keeps the torch it had.
         if (session?.isRunning == true) custom.reapplyTorchOnQueue() else custom.startRunningOnQueue()
-        applyDesiredZoom(device)
-        publishHardware()
+        controls.applyDesiredZoom(device)
+        controls.publishHardware()
         confirm(generation)
     }
 
@@ -423,7 +401,7 @@ internal class AppleCameraEngine(
             recorder.finishForClose {
                 custom.cleanupSession()
                 custom.afterQueuedSessionWork {
-                    stopObservingHardware()
+                    controls.stopObservingHardware()
                     rotation.unbindOnQueue()
                     closeDone.complete()
                 }
@@ -597,28 +575,12 @@ internal class AppleCameraEngine(
         // A refused input puts the previous camera back, inside the same transaction.
         custom.useDeviceOnQueue(device)?.let { return engineFailure(engineErrorFor(it, selection.lens())) }
         bindHardware(device)
-        applyDesiredZoom(device)
-        publishHardware()
+        controls.applyDesiredZoom(device)
+        controls.publishHardware()
         return CameraKResult.Success(capabilitySource.lensInfo(device))
     }
 
-    /**
-     * Validates [mode] against the camera's flash modes, stores it on the session queue, and returns
-     * and publishes the mode the photo output will use, read back after the store (contract rule 5).
-     */
-    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> {
-        generations.notOpen()?.let { return it }
-        val camera = custom.currentDevice?.let(capabilitySource::lensInfo)
-        if (camera != null && mode !in capabilities.value.supportedFlashModes(camera.id)) {
-            val feature = if (mode == FlashMode.AUTO) CameraFeature.FLASH_AUTO else CameraFeature.FLASH_ON
-            return engineFailure(CameraKError.Unsupported(feature))
-        }
-        return generations.onSessionQueue("setting the flash mode") {
-            custom.setFlashMode(mode.toAVCaptureFlashMode())
-            publishHardware()
-            CameraKResult.Success(custom.captureFlashMode.toFlashMode())
-        }
-    }
+    override suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode> = controls.setFlashMode(mode)
 
     /**
      * Takes one still (design §2.4): a session-queue block builds the settings from the photo output
@@ -736,53 +698,9 @@ internal class AppleCameraEngine(
         return cameraKErrorFor(error)
     }
 
-    /**
-     * Clamps [ratio] into the camera's available zoom range on the session queue before the device sees
-     * it, since AVFoundation raises an exception nothing can catch beyond the format's range and clamps
-     * silently to the available one ([CaptureDeviceOps.minVideoZoomFactor]), and returns the clamped
-     * ratio without waiting for the device's report. A camera with a fixed zoom takes only that ratio.
-     */
-    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> {
-        generations.notOpen()?.let { return it }
-        if (ratio.isNaN()) return engineFailure(CameraKError.Unsupported(CameraFeature.ZOOM))
-        return generations.onSessionQueue("setting the zoom") {
-            val device = custom.currentDevice ?: return@onSessionQueue engineFailure(CameraKError.NotReady)
-            val min = device.minVideoZoomFactor
-            val max = device.maxAvailableVideoZoomFactor
-            if (max <= min) {
-                return@onSessionQueue if (ratio.toDouble() == min) {
-                    CameraKResult.Success(ZoomState(min.toFloat(), min.toFloat(), max.toFloat()))
-                } else {
-                    engineFailure(CameraKError.Unsupported(CameraFeature.ZOOM))
-                }
-            }
-            val factor = ratio.toDouble().coerceIn(min, max)
-            custom.setZoomOnQueue(device, factor)?.let { return@onSessionQueue hardwareFailure("setting the zoom", it) }
-            desiredZoom = factor.toFloat()
-            CameraKResult.Success(ZoomState(factor.toFloat(), min.toFloat(), max.toFloat()))
-        }
-    }
+    override suspend fun setZoom(ratio: Float): CameraKResult<ZoomState> = controls.setZoom(ratio)
 
-    /**
-     * Sets the torch on the session queue when the camera's device supports [mode], the source of its
-     * torch capabilities; [hardware] follows when the device reports it lit or dark.
-     */
-    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> {
-        generations.notOpen()?.let { return it }
-        return generations.onSessionQueue("setting the torch") {
-            val device = custom.currentDevice ?: return@onSessionQueue engineFailure(CameraKError.NotReady)
-            val avMode = mode.toAVCaptureTorchMode()
-            if (!device.hasTorch || !device.isTorchModeSupported(avMode)) {
-                return@onSessionQueue engineFailure(CameraKError.Unsupported(CameraFeature.TORCH))
-            }
-            custom.setTorchOnQueue(device, avMode)?.let {
-                return@onSessionQueue hardwareFailure("setting the torch", it)
-            }
-            desiredTorch = mode
-            custom.torchMode = avMode
-            CameraKResult.Success(mode)
-        }
-    }
+    override suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> = controls.setTorchMode(mode)
 
     /**
      * Stores the target in any state before close; while a camera is bound it is reported in
@@ -792,7 +710,7 @@ internal class AppleCameraEngine(
         generations.unusable()?.let { return it }
         rotation.targetOrientation = orientation
         return generations.onSessionQueue("setting the target orientation") {
-            publishHardware()
+            controls.publishHardware()
             CameraKResult.Success(Unit)
         }
     }
@@ -825,11 +743,6 @@ internal class AppleCameraEngine(
         return recorder.resume()
     }
 
-    private fun hardwareFailure(what: String, cause: CustomCameraController.CameraException): CameraKResult.Failure {
-        CameraKLogger.e(TAG, "$what failed", cause)
-        return engineFailure(engineErrorFor(cause, null))
-    }
-
     /** The orientation captures and movies take: the target when one is set, otherwise the device's. */
     internal fun captureVideoOrientation(): AVCaptureVideoOrientation = rotation.captureVideoOrientation()
 
@@ -854,77 +767,8 @@ internal class AppleCameraEngine(
      */
     private fun bindHardware(device: CaptureDeviceOps) {
         capabilitySource.bind(device)
-        if (observedDevice !== device) {
-            stopObservingHardware()
-            observeHardwareOf(device)
-        }
+        controls.observe(device)
         rotation.bindOnQueue()
-    }
-
-    /** Session queue: [device]'s torch and zoom observed. */
-    private fun observeHardwareOf(device: CaptureDeviceOps) {
-        observedDevice = device
-        hardwareObservation = device.observeHardware {
-            platformCallback("a torch or zoom report") {
-                custom.afterQueuedSessionWork {
-                    platformCallback("a torch or zoom report") { onHardwareReport() }
-                }
-            }
-        }
-    }
-
-    // Session queue only.
-    private fun stopObservingHardware() {
-        hardwareObservation?.close()
-        hardwareObservation = null
-        observedDevice = null
-    }
-
-    /**
-     * Session queue: a key-value report, published while a generation is starting or live. A report from
-     * a camera switched away from, queued before its observation closed, publishes the live camera's
-     * values again, which [publishHardware] reads from the device in use, so it changes nothing.
-     */
-    private fun onHardwareReport() {
-        if (!generations.isStartingOrLive) return
-        publishHardware()
-    }
-
-    /** Session queue: the desired zoom, clamped into [device]'s range, unless the device reports it already. */
-    private fun applyDesiredZoom(device: CaptureDeviceOps) {
-        val min = device.minVideoZoomFactor
-        val max = device.maxAvailableVideoZoomFactor
-        if (max < min) return
-        val factor = desiredZoom.toDouble().coerceIn(min, max)
-        if (device.videoZoomFactor == factor) return
-        custom.setZoomOnQueue(device, factor)?.let { failure ->
-            CameraKLogger.e(TAG, "re-applying the zoom failed", failure)
-        }
-    }
-
-    /**
-     * Session queue: the camera, torch and zoom as the device reports them, the flash the photo output
-     * will use, and the target orientation.
-     */
-    private fun publishHardware() {
-        val device = custom.currentDevice ?: return
-        if (generations.isClosed) return
-        _hardware.value = HardwareState(
-            flashMode = custom.captureFlashMode.toFlashMode(),
-            torchMode = when {
-                device.torchMode == AVCaptureTorchModeAuto -> TorchMode.AUTO
-                // A torch the system shut off for heat keeps its mode but is dark.
-                device.torchMode == AVCaptureTorchModeOn && device.isTorchActive -> TorchMode.ON
-                else -> TorchMode.OFF
-            },
-            camera = capabilitySource.lensInfo(device),
-            targetOrientation = rotation.targetOrientation,
-        )
-        _zoom.value = ZoomState(
-            device.videoZoomFactor.toFloat(),
-            device.minVideoZoomFactor.toFloat(),
-            device.maxAvailableVideoZoomFactor.toFloat(),
-        )
     }
 
     private companion object {
