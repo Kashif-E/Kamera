@@ -152,7 +152,10 @@ public class FakeCameraEngine(
     public var appliedExposureCompensationIndex: Int = 0
         private set
 
-    /** The point the last successful [focusAt] sent to the fake platform; null before one and after a reset. */
+    /**
+     * The point the last successful [focusAt] sent to the fake platform; null before one, and after a
+     * reset or a bind (an open or a camera switch), which drop it.
+     */
     public var lastFocusPoint: NormalizedPoint? = null
         private set
 
@@ -168,6 +171,7 @@ public class FakeCameraEngine(
     private var unpublishedStartFailure: CameraKError? = null
     private var throwFromNext = false
     private var holdNext = false
+    private var nextFocusFailure: CameraKError? = null
     private var heldCapture: CompletableDeferred<Unit>? = null
     private var recording: ActiveRecording? = null
     private var recordingCount = 0
@@ -327,11 +331,58 @@ public class FakeCameraEngine(
         return CameraKResult.Success(Unit)
     }
 
-    override suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = TODO("Y-focus-api")
+    /**
+     * Sends [point] to the fake platform, as [lastFocusPoint]. A camera whose capabilities do not list
+     * it in `supportsFocusPoint` refuses with `Unsupported(FOCUS_POINT)`; [failNextFocus] fails one call.
+     */
+    override suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> {
+        callLog += "focusAt"
+        refusal()?.let { return it }
+        val camera = selectedCamera ?: return CameraKResult.Failure(CameraKError.NotReady)
+        if (!_capabilities.value.supportsFocusPoint(camera.id)) {
+            return CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.FOCUS_POINT))
+        }
+        nextFocusFailure?.let {
+            nextFocusFailure = null
+            return CameraKResult.Failure(it)
+        }
+        lastFocusPoint = point
+        return CameraKResult.Success(Unit)
+    }
 
-    override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = TODO("Y-focus-api")
+    /**
+     * Sends [index], clamped into the bound camera's range, to the fake platform. A camera without a
+     * range refuses with `Unsupported(EXPOSURE_COMPENSATION)`. [hardware] changes only through
+     * [reportExposureIndex].
+     */
+    override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> {
+        callLog += "setExposureCompensation"
+        refusal()?.let { return it }
+        val camera = selectedCamera ?: return CameraKResult.Failure(CameraKError.NotReady)
+        val range = _capabilities.value.exposureCompensationRange(camera.id)
+            ?: return CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.EXPOSURE_COMPENSATION))
+        appliedExposureCompensationIndex = index.coerceIn(range)
+        updateDesired(exposureCompensationIndex = index)
+        return CameraKResult.Success(Unit)
+    }
 
-    override suspend fun resetFocusAndExposure(): CameraKResult<Unit> = TODO("Y-focus-api")
+    /**
+     * Drops the focus point and sends index 0, for what the bound camera supports;
+     * `Unsupported(FOCUS_POINT)` on a camera with neither.
+     */
+    override suspend fun resetFocusAndExposure(): CameraKResult<Unit> {
+        callLog += "resetFocusAndExposure"
+        refusal()?.let { return it }
+        val camera = selectedCamera ?: return CameraKResult.Failure(CameraKError.NotReady)
+        val offered = _capabilities.value
+        val focus = offered.supportsFocusPoint(camera.id)
+        val exposure = offered.exposureCompensationRange(camera.id) != null
+        if (!focus && !exposure) return CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.FOCUS_POINT))
+        if (focus) lastFocusPoint = null
+        if (exposure) appliedExposureCompensationIndex = 0
+        updateDesired(exposureCompensationIndex = 0)
+        return CameraKResult.Success(Unit)
+    }
 
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> {
         callLog += "prepareRecording"
@@ -511,12 +562,14 @@ public class FakeCameraEngine(
 
     /** The platform reports the exposure compensation index it applied (rule 5). */
     public fun reportExposureIndex(index: Int) {
-        TODO("Y-focus-api")
+        callback("reportExposureIndex") {
+            if (isLive()) _hardware.value = _hardware.value.with(exposureCompensationIndex = index)
+        }
     }
 
     /** The next [focusAt] the camera supports fails with [error] instead of reaching the fake platform. */
     public fun failNextFocus(error: CameraKError) {
-        TODO("Y-focus-api")
+        nextFocusFailure = error
     }
 
     /** [lensId] is a `LensInfo.id` from the capabilities; an unknown one is ignored. */
@@ -568,7 +621,11 @@ public class FakeCameraEngine(
         appliedFlashMode = wanted.flashMode
         appliedTorchMode = wanted.torchMode
         appliedZoomRatio = wanted.zoomRatio
+        // A held index is clamped into the bound camera's range; a camera without one ignores it.
+        val range = selectedCamera?.id?.let(_capabilities.value::exposureCompensationRange)
+        appliedExposureCompensationIndex = range?.let { wanted.exposureCompensationIndex.coerceIn(it) } ?: 0
         appliedCameraId = selectedCamera?.id
+        lastFocusPoint = null
         _hardware.value = _hardware.value.with(camera = selectedCamera)
     }
 
@@ -578,6 +635,7 @@ public class FakeCameraEngine(
         torchMode: TorchMode? = null,
         zoomRatio: Float? = null,
         targetOrientation: DeviceOrientation? = desired?.targetOrientation,
+        exposureCompensationIndex: Int? = null,
     ) {
         val current = desired ?: return
         desired = DesiredHardware(
@@ -586,6 +644,7 @@ public class FakeCameraEngine(
             torchMode = torchMode ?: current.torchMode,
             zoomRatio = zoomRatio ?: current.zoomRatio,
             targetOrientation = targetOrientation,
+            exposureCompensationIndex = exposureCompensationIndex ?: current.exposureCompensationIndex,
         )
     }
 
@@ -665,7 +724,8 @@ private fun HardwareState.with(
     flashMode: FlashMode = this.flashMode,
     torchMode: TorchMode = this.torchMode,
     camera: LensInfo? = this.camera,
-): HardwareState = HardwareState(flashMode, torchMode, camera, targetOrientation)
+    exposureCompensationIndex: Int = this.exposureCompensationIndex,
+): HardwareState = HardwareState(flashMode, torchMode, camera, targetOrientation, exposureCompensationIndex)
 
 private fun CameraCapabilities.withPauseResume(supported: Boolean): CameraCapabilities = CameraCapabilities(
     allLenses = allLenses,
@@ -678,4 +738,10 @@ private fun CameraCapabilities.withPauseResume(supported: Boolean): CameraCapabi
     supportedImageFormats = supportedImageFormats,
     supportedAnalysisFormats = supportedAnalysisFormats,
     supportsSquareCapture = supportsSquareCapture,
+    focusPointCameras = allLenses.filter { supportsFocusPoint(it.id) }.mapTo(mutableSetOf()) { it.id },
+    exposureCompensationRanges = allLenses.perLens(::exposureCompensationRange),
+    exposureCompensationSteps = allLenses.perLens(::exposureCompensationStep),
 )
+
+private fun <T : Any> List<LensInfo>.perLens(value: (String) -> T?): Map<String, T> =
+    mapNotNull { lens -> value(lens.id)?.let { lens.id to it } }.toMap()

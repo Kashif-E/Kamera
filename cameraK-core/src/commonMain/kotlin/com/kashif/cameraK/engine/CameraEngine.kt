@@ -8,6 +8,8 @@ import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraFeature
+import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.frames.FrameSource
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.result.CameraKResult
@@ -133,7 +135,8 @@ public interface CameraEngine {
      * [0, 1]. A camera whose capabilities do not list it in `supportsFocusPoint` returns
      * `Failure(Unsupported(FOCUS_POINT))`, which is the default.
      */
-    public suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = TODO("Y-focus-api")
+    public suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> =
+        CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.FOCUS_POINT))
 
     /**
      * Sets the exposure compensation [index], which the holder has checked against the bound camera's
@@ -141,14 +144,16 @@ public interface CameraEngine {
      * camera without a range returns `Failure(Unsupported(EXPOSURE_COMPENSATION))`, which is the
      * default.
      */
-    public suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = TODO("Y-focus-api")
+    public suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> =
+        CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.EXPOSURE_COMPENSATION))
 
     /**
      * Returns the bound camera to the platform's metering and exposure index 0, for what it supports.
      * A camera that supports neither a focus point nor exposure compensation returns
      * `Failure(Unsupported(FOCUS_POINT))`, which is the default.
      */
-    public suspend fun resetFocusAndExposure(): CameraKResult<Unit> = TODO("Y-focus-api")
+    public suspend fun resetFocusAndExposure(): CameraKResult<Unit> =
+        CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.FOCUS_POINT))
 
     /** Adds the recording outputs ahead of time, so startRecording commits no configuration change. */
     public suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit>

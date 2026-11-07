@@ -21,6 +21,7 @@ import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
+import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.frames.FrameSource
@@ -514,7 +515,13 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
      * `Failure(Unsupported(FOCUS_POINT))` on a camera whose capabilities do not list it in
      * `supportsFocusPoint`.
      */
-    public suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = TODO("Y-focus-api")
+    public suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> {
+        commands.refused()?.let { return it }
+        if (point.x !in UNIT || point.y !in UNIT) {
+            return CameraKResult.Failure(CameraKError.InvalidArgument(CameraOperation.FOCUS_POINT))
+        }
+        return commands.run(CameraOperation.FOCUS_POINT) { engine.focusAt(point) }
+    }
 
     /**
      * Sets the exposure compensation [index], in the bound camera's
@@ -524,13 +531,24 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
      * after a camera switch or a restart it is applied again, clamped into the new camera's range.
      * [uiState] shows it once the platform has applied it.
      */
-    public suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> = TODO("Y-focus-api")
+    public suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> {
+        commands.refused()?.let { return it }
+        val range = engine.hardware.value.camera?.id?.let(capabilities.value::exposureCompensationRange)
+            ?: return CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.EXPOSURE_COMPENSATION))
+        if (index !in range) {
+            return CameraKResult.Failure(CameraKError.InvalidArgument(CameraOperation.EXPOSURE_COMPENSATION))
+        }
+        return commands.run(CameraOperation.EXPOSURE_COMPENSATION) { engine.setExposureCompensation(index) }
+            .onSuccess { desire { it.with(exposureCompensationIndex = index) } }
+    }
 
     /**
      * Returns the camera to the platform's metering and exposure index 0, for what it supports;
      * `Failure(Unsupported(FOCUS_POINT))` on a camera that supports neither.
      */
-    public suspend fun resetFocusAndExposure(): CameraKResult<Unit> = TODO("Y-focus-api")
+    public suspend fun resetFocusAndExposure(): CameraKResult<Unit> =
+        commands.run(CameraOperation.FOCUS_POINT) { engine.resetFocusAndExposure() }
+            .onSuccess { desire { it.with(exposureCompensationIndex = 0) } }
 
     /**
      * Where the recording is: Idle, then Starting, Recording, Paused and Stopping, and Finished after
@@ -624,6 +642,7 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         pendingCaptures = capturing,
         cameraId = hardware.camera?.id,
         targetOrientation = hardware.targetOrientation,
+        exposureCompensationIndex = hardware.exposureCompensationIndex,
     )
 
     // ═══════════════════════════════════════════════════════════════
@@ -691,6 +710,9 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         const val TAG = "CameraK"
         const val EVENT_BUFFER = 64
         const val CAPTURE_BUFFER = 64
+
+        // A focus point's coordinates; NaN is outside it.
+        val UNIT = 0f..1f
     }
 }
 
@@ -719,6 +741,7 @@ private fun CameraConfiguration.toDesiredHardware(): DesiredHardware = DesiredHa
     torchMode = torchMode,
     zoomRatio = initialZoomRatio,
     targetOrientation = targetOrientation,
+    exposureCompensationIndex = initialExposureCompensationIndex,
 )
 
 private fun DesiredHardware.with(
@@ -727,7 +750,9 @@ private fun DesiredHardware.with(
     torchMode: TorchMode = this.torchMode,
     zoomRatio: Float = this.zoomRatio,
     targetOrientation: DeviceOrientation? = this.targetOrientation,
-): DesiredHardware = DesiredHardware(selection, flashMode, torchMode, zoomRatio, targetOrientation)
+    exposureCompensationIndex: Int = this.exposureCompensationIndex,
+): DesiredHardware =
+    DesiredHardware(selection, flashMode, torchMode, zoomRatio, targetOrientation, exposureCompensationIndex)
 
 /**
  * A state flow whose value is computed from other state flows on every read, so it is never stale,

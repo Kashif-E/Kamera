@@ -92,6 +92,13 @@ public class CameraCapabilities @CameraKEngineApi constructor(
     private val exposureCompensationRanges: Map<String, IntRange> = exposureCompensationRanges.toMap()
     private val exposureCompensationSteps: Map<String, Float> = exposureCompensationSteps.toMap()
 
+    init {
+        require(this.exposureCompensationRanges.keys == this.exposureCompensationSteps.keys) {
+            "exposure compensation ranges for ${this.exposureCompensationRanges.keys} but steps for " +
+                "${this.exposureCompensationSteps.keys}"
+        }
+    }
+
     /** Built-in lenses facing [lens], in enumeration order. External cameras are not included. */
     public fun lenses(lens: CameraLens): List<LensInfo> = allLenses.filter { it.lens == lens && !it.isExternal }
 
@@ -114,16 +121,18 @@ public class CameraCapabilities @CameraKEngineApi constructor(
      * Whether the camera [cameraId] meters focus and exposure at a point; false for an id that is not
      * in [allLenses].
      */
-    public fun supportsFocusPoint(cameraId: String): Boolean = TODO("Y-focus-api")
+    public fun supportsFocusPoint(cameraId: String): Boolean = cameraId in focusPointCameras && isLens(cameraId)
 
     /**
      * The exposure compensation indexes the camera [cameraId] takes, 0 being the platform's default
      * exposure; null when it has no compensation or the id is not in [allLenses].
      */
-    public fun exposureCompensationRange(cameraId: String): IntRange? = TODO("Y-focus-api")
+    public fun exposureCompensationRange(cameraId: String): IntRange? =
+        exposureCompensationRanges[cameraId]?.takeIf { isLens(cameraId) }
 
     /** The exposure value, in EV, of one index step of the camera [cameraId]; null exactly when its range is null. */
-    public fun exposureCompensationStep(cameraId: String): Float? = TODO("Y-focus-api")
+    public fun exposureCompensationStep(cameraId: String): Float? =
+        exposureCompensationSteps[cameraId]?.takeIf { isLens(cameraId) }
 
     private fun isLens(cameraId: String): Boolean = allLenses.any { it.id == cameraId }
 
@@ -138,7 +147,10 @@ public class CameraCapabilities @CameraKEngineApi constructor(
         supportedAspectRatios == other.supportedAspectRatios &&
         supportedImageFormats == other.supportedImageFormats &&
         supportedAnalysisFormats == other.supportedAnalysisFormats &&
-        supportsSquareCapture == other.supportsSquareCapture
+        supportsSquareCapture == other.supportsSquareCapture &&
+        focusPointCameras == other.focusPointCameras &&
+        exposureCompensationRanges == other.exposureCompensationRanges &&
+        exposureCompensationSteps == other.exposureCompensationSteps
 
     override fun hashCode(): Int = listOf(
         allLenses,
@@ -151,6 +163,9 @@ public class CameraCapabilities @CameraKEngineApi constructor(
         supportedImageFormats,
         supportedAnalysisFormats,
         supportsSquareCapture,
+        focusPointCameras,
+        exposureCompensationRanges,
+        exposureCompensationSteps,
     ).hashCode()
 
     override fun toString(): String = "CameraCapabilities(" +
@@ -163,7 +178,10 @@ public class CameraCapabilities @CameraKEngineApi constructor(
         "supportedAspectRatios=$supportedAspectRatios, " +
         "supportedImageFormats=$supportedImageFormats, " +
         "supportedAnalysisFormats=$supportedAnalysisFormats, " +
-        "supportsSquareCapture=$supportsSquareCapture)"
+        "supportsSquareCapture=$supportsSquareCapture, " +
+        "focusPointCameras=$focusPointCameras, " +
+        "exposureCompensationRanges=$exposureCompensationRanges, " +
+        "exposureCompensationSteps=$exposureCompensationSteps)"
 
     public companion object {
         public val EMPTY: CameraCapabilities = capabilitiesOf(emptyList())
