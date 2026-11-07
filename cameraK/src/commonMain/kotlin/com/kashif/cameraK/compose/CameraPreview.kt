@@ -54,13 +54,12 @@ public fun CameraPreview(
     } else {
         modifier.semantics { this.contentDescription = contentDescription }
     }
-    EnginePreview(holder.previewSource, deviceOrientation, described, overlay)
-}
-
-/** A ring at the tap, which fades when the camera did not take the point. */
-@Composable
-internal fun DefaultFocusIndicator(tap: FocusTap) {
-    TODO("Y-focus-api")
+    val content: @Composable CameraPreviewScope.() -> Unit = if (tapToFocus) {
+        { TapToFocus(holder, focusIndicator, overlay) }
+    } else {
+        overlay
+    }
+    EnginePreview(holder.previewSource, deviceOrientation, described, content)
 }
 
 /**

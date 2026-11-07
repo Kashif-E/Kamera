@@ -146,9 +146,9 @@ internal fun rememberLifecycleHolder(
             ) {
                 null
             } else if (platformDefault) {
-                CameraUserState(null, null, flash, torch, zoom.ratio)
+                CameraUserState(null, null, flash, torch, zoom.ratio, ui.exposureCompensationIndex)
             } else {
-                CameraUserState(lens, ui.cameraDeviceType, flash, torch, zoom.ratio)
+                CameraUserState(lens, ui.cameraDeviceType, flash, torch, zoom.ratio, ui.exposureCompensationIndex)
             }
         }.collect { reported -> if (reported != null) userState.value = reported }
     }

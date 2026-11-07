@@ -9,7 +9,8 @@ import com.kashif.cameraK.state.CameraConfiguration
 
 /**
  * The user's camera choices, as the platform last reported them, saved with rememberSaveable so a
- * holder built in a new process after process death starts where the user left it (design §7.3).
+ * holder built in a new process after process death starts where the user left it (design §7.3),
+ * the exposure compensation index included (w12 Y-focus-api).
  * [lens] and [deviceType] are null while the holder asks for the platform default camera, so a
  * configuration with no lens keeps meaning the platform default (§6.1 "Default lens"). The camera id
  * is not saved (w7 G5).
@@ -20,7 +21,7 @@ internal data class CameraUserState(
     val flashMode: FlashMode,
     val torchMode: TorchMode,
     val zoomRatio: Float,
-    val exposureCompensationIndex: Int = 0,
+    val exposureCompensationIndex: Int,
 )
 
 /** [this] with the saved choices; unchanged when nothing was saved, and the configured camera while none was picked. */
@@ -33,14 +34,25 @@ internal fun CameraConfiguration.seededBy(state: CameraUserState?): CameraConfig
         flashMode = state.flashMode
         torchMode = state.torchMode
         initialZoomRatio = state.zoomRatio
+        initialExposureCompensationIndex = state.exposureCompensationIndex
     }
 }
 
-/** Saves to the names of the choices and the zoom ratio, which every platform's saved state can hold. */
+/**
+ * Saves to the names of the choices, the zoom ratio and the exposure index, which every platform's
+ * saved state can hold.
+ */
 internal val CameraUserStateSaver: Saver<CameraUserState?, Any> = Saver(
     save = { state ->
         state?.let {
-            listOf(it.lens?.name, it.deviceType?.name, it.flashMode.name, it.torchMode.name, it.zoomRatio)
+            listOf(
+                it.lens?.name,
+                it.deviceType?.name,
+                it.flashMode.name,
+                it.torchMode.name,
+                it.zoomRatio,
+                it.exposureCompensationIndex,
+            )
         }
     },
     restore = ::restoreCameraUserState,
@@ -56,10 +68,11 @@ private fun restoreCameraUserState(saved: Any): CameraUserState? {
         flashMode = FlashMode.entries.firstOrNull { it.name == values[2] } ?: return null,
         torchMode = TorchMode.entries.firstOrNull { it.name == values[3] } ?: return null,
         zoomRatio = values[4] as? Float ?: return null,
+        exposureCompensationIndex = values[5] as? Int ?: return null,
     )
 }
 
-private const val SAVED_FIELDS = 5
+private const val SAVED_FIELDS = 6
 
 /** The latest [CameraUserState] of one call site; rememberSaveable saves whatever it holds then. */
 internal class CameraUserStateBox(var value: CameraUserState?) {
