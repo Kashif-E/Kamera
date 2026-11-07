@@ -73,7 +73,7 @@ class SelectCameraTest {
     }
 
     // Characterization: the engine's selectCamera has returned Busy(LENS) while recording since A1'
-    // (AndroidCameraEngine.kt, the videoRecorder.isRecording branch).
+    // (EngineSession.kt, the videoRecorder.isRecording branch).
     @Test
     fun selectDuringRecordingIsBusyAndNothingRebinds() = runTest {
         val platform = FakeAndroidPlatform(listOf(BACK, FRONT))
