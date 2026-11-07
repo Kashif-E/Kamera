@@ -11,7 +11,7 @@ internal class MatrixRecord(
     val measures: List<Pair<String, Any?>>,
 )
 
-/** The file operations the report and the checks need; [PlatformFiles] on a device. */
+/** The file operations the report and the checks need; [platformFiles] on a device. */
 internal interface MatrixFiles {
     fun exists(path: String): Boolean
 
@@ -82,9 +82,16 @@ internal fun MatrixRecord.toJson(): String = jsonObject(
 // Measures are an object even when empty; a bare empty list would print as an array.
 private class Measures(val fields: List<Pair<String, Any?>>)
 
-internal fun MatrixRecord.toMarkdownRow(): String =
-    listOf(index.toString(), verdict.label, id, reason.orEmpty(), measures.joinToString(", ") { "${it.first}=${markdownValue(it.second)}" })
-        .joinToString(" | ", "| ", " |") { it.replace("|", "\\|").replace('\n', ' ') }
+internal fun MatrixRecord.toMarkdownRow(): String = listOf(
+    index.toString(),
+    verdict.label,
+    id,
+    reason.orEmpty(),
+    measures.joinToString(", ") {
+        "${it.first}=${markdownValue(it.second)}"
+    },
+)
+    .joinToString(" | ", "| ", " |") { it.replace("|", "\\|").replace('\n', ' ') }
 
 private fun markdownValue(value: Any?): String = when (value) {
     is List<*> -> if (value.isNotEmpty() && value.all { it is Pair<*, *> }) {
@@ -129,7 +136,8 @@ internal class ReportWriter(private val files: MatrixFiles, private val director
         files.appendText(jsonPath, "\n,{\"summary\":" + jsonObject(summary) + "}\n]\n")
         files.appendText(
             markdownPath,
-            "\n## Summary\n\n" + summary.joinToString("\n", postfix = "\n") { "- ${it.first}: ${markdownValue(it.second)}" },
+            "\n## Summary\n\n" +
+                summary.joinToString("\n", postfix = "\n") { "- ${it.first}: ${markdownValue(it.second)}" },
         )
     }
 
@@ -139,4 +147,4 @@ internal class ReportWriter(private val files: MatrixFiles, private val director
 }
 
 /** [MatrixFiles] over this platform's file system. */
-internal expect object PlatformFiles : MatrixFiles
+internal expect val platformFiles: MatrixFiles

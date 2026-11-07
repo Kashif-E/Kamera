@@ -51,7 +51,13 @@ class MatrixEnumerationTest {
     fun theFlashModeVariesInnermost_soCasesSharingAHolderAreContiguous() {
         val photos = cases.map { it.spec }.filterIsInstance<PhotoSpec>()
         val runs = photos.fold(mutableListOf<MutableList<PhotoSpec>>()) { acc, spec ->
-            if (acc.lastOrNull()?.last()?.holderKey == spec.holderKey) acc.last() += spec else acc += mutableListOf(spec)
+            if (acc.lastOrNull()?.last()?.holderKey ==
+                spec.holderKey
+            ) {
+                acc.last() += spec
+            } else {
+                acc += mutableListOf(spec)
+            }
             acc
         }
         assertEquals(photos.size / FlashMode.entries.size, runs.size, "one run per holder")
@@ -81,7 +87,13 @@ class MatrixEnumerationTest {
     @Test
     fun theSectionsRunInOrder_andTheIndexesAreContiguousAndStable() {
         assertEquals(cases.indices.toList(), cases.map { it.index })
-        assertEquals(cases.map { it.id }, enumerateCases(backAndFront).map { it.id }, "the same capabilities, the same matrix")
+        assertEquals(
+            cases.map {
+                it.id
+            },
+            enumerateCases(backAndFront).map { it.id },
+            "the same capabilities, the same matrix",
+        )
         assertEquals(cases.size, cases.map { it.id }.toSet().size, "every id is unique")
         val order = cases.map { it.spec.section }.distinct()
         assertEquals(MatrixSection.entries, order)

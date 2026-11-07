@@ -3,7 +3,9 @@ package org.company.app.devicematrix
 import java.io.File
 import java.io.RandomAccessFile
 
-internal actual object PlatformFiles : MatrixFiles {
+internal actual val platformFiles: MatrixFiles = JvmFiles
+
+private object JvmFiles : MatrixFiles {
     override fun exists(path: String): Boolean = File(path).exists()
 
     override fun size(path: String): Long? = File(path).takeIf { it.isFile }?.length()

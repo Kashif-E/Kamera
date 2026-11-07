@@ -153,8 +153,7 @@ private fun ByteArray.u8(at: Int): Int = this[at].toInt() and 0xFF
 
 private fun ByteArray.u16(at: Int): Int = if (at + 2 <= size) (u8(at) shl 8) or u8(at + 1) else 0
 
-private fun ByteArray.u32(at: Int): Long =
-    if (at + 4 <= size) (u16(at).toLong() shl 16) or u16(at + 2).toLong() else 0L
+private fun ByteArray.u32(at: Int): Long = if (at + 4 <= size) (u16(at).toLong() shl 16) or u16(at + 2).toLong() else 0L
 
 private fun ByteArray.ascii(at: Int, count: Int): String? =
     if (at >= 0 && at + count <= size) decodeToString(at, at + count) else null

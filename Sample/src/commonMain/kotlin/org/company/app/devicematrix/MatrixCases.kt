@@ -182,7 +182,11 @@ internal fun enumerateCases(capabilities: CameraCapabilities): List<MatrixCase> 
         PluginKind.entries.forEach { add(PluginSpec(it)) }
         for (lens in lenses) {
             for (ratio in AspectRatio.entries) {
-                for (quality in VideoQuality.entries) listOf(false, true).forEach { add(VideoSpec(lens, ratio, quality, it)) }
+                for (quality in VideoQuality.entries) {
+                    listOf(false, true).forEach {
+                        add(VideoSpec(lens, ratio, quality, it))
+                    }
+                }
             }
         }
         LifecycleKind.entries.forEach { add(LifecycleSpec(it)) }

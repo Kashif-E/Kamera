@@ -26,7 +26,9 @@ import platform.Foundation.writeData
 import platform.Foundation.writeToFile
 import platform.posix.memcpy
 
-internal actual object PlatformFiles : MatrixFiles {
+internal actual val platformFiles: MatrixFiles = FoundationFiles
+
+private object FoundationFiles : MatrixFiles {
     private val manager: NSFileManager get() = NSFileManager.defaultManager
 
     override fun exists(path: String): Boolean = manager.fileExistsAtPath(path)

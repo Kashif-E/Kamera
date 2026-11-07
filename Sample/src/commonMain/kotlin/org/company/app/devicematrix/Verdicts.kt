@@ -27,7 +27,7 @@ internal enum class Verdict(val label: String) {
 
 /**
  * What the capabilities say a case will be refused for: [unsupported] features, or [noCamera]. With
- * [mayStillSucceed] a success is as acceptable as the refusal, as for a device type a lens lacks,
+ * [mayStillSucceed] a success is as acceptable as the NoCamera, as for a device type a lens lacks,
  * where Android documents a fallback to the lens's default camera.
  */
 internal data class Prediction(
@@ -68,10 +68,11 @@ internal class Judgement(val verdict: Verdict, val reason: String?)
 /** The verdict for [outcome], given what the capabilities [predicted] and the checks that failed. */
 internal fun judge(outcome: Outcome, predicted: Prediction, failedChecks: List<String>): Judgement {
     val checks = failedChecks.joinToString("; ")
-    fun failing(reason: String) = Judgement(Verdict.FAIL, listOf(reason, checks).filter { it.isNotEmpty() }.joinToString("; "))
+    fun failing(reason: String) =
+        Judgement(Verdict.FAIL, listOf(reason, checks).filter { it.isNotEmpty() }.joinToString("; "))
     return when (outcome) {
         Outcome.Completed -> when {
-            predicted.refuses && !predicted.mayStillSucceed ->
+            predicted.unsupported.isNotEmpty() || (predicted.noCamera && !predicted.mayStillSucceed) ->
                 failing("succeeded although the capabilities predicted ${predicted.describe()}")
             failedChecks.isEmpty() -> Judgement(Verdict.PASS, null)
             else -> Judgement(Verdict.FAIL, checks)
@@ -114,21 +115,25 @@ internal fun describe(error: CameraKError): String {
         is CameraKError.Internal -> "(${error.cause?.let { "${it::class.simpleName}: ${it.message}" }})"
         else -> ""
     }
-    val cause = error.cause?.takeIf { error !is CameraKError.Internal }?.let { " [cause ${it::class.simpleName}: ${it.message}]" }
+    val cause = error.cause?.takeIf {
+        error !is CameraKError.Internal
+    }?.let { " [cause ${it::class.simpleName}: ${it.message}]" }
     return (error::class.simpleName ?: "CameraKError") + fields + cause.orEmpty()
 }
 
 /** What a photo start is predicted to be refused for: the lens, the device type, the format and the ratio. */
 internal fun photoStartPrediction(capabilities: CameraCapabilities, spec: PhotoSpec): Prediction {
     val lens = lensPrediction(capabilities, spec.lens)
-    val type = if (!lens.noCamera && spec.deviceType != CameraDeviceType.DEFAULT &&
+    val type = if (!lens.noCamera &&
+        spec.deviceType != CameraDeviceType.DEFAULT &&
         spec.deviceType !in capabilities.availableDeviceTypes(spec.lens)
     ) {
         Prediction(noCamera = true, mayStillSucceed = true)
     } else {
         Prediction.NONE
     }
-    return lens + type + formatPrediction(capabilities, spec.imageFormat) + ratioPrediction(capabilities, spec.aspectRatio)
+    return lens + type + formatPrediction(capabilities, spec.imageFormat) +
+        ratioPrediction(capabilities, spec.aspectRatio)
 }
 
 private fun formatPrediction(capabilities: CameraCapabilities, format: ImageFormat): Prediction =

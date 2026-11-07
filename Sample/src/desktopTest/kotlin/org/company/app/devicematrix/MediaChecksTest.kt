@@ -100,8 +100,7 @@ private class Bytes {
     fun build(): ByteArray = out.toByteArray()
 }
 
-private fun box(type: String, body: ByteArray): ByteArray =
-    Bytes().u32(8L + body.size).ascii(type).bytes(body).build()
+private fun box(type: String, body: ByteArray): ByteArray = Bytes().u32(8L + body.size).ascii(type).bytes(body).build()
 
 /** A JPEG with an EXIF APP1 that holds a thumbnail's frame header, then the image's own SOF0. */
 internal fun testJpeg(width: Int, height: Int, orientation: Int? = 1, littleEndian: Boolean = false): ByteArray {

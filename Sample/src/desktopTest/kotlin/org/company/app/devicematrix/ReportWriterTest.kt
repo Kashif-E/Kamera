@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 /** The report is written as the run goes, so a crash keeps every finished case, and a resume appends. */
 class ReportWriterTest {
     private val directory = kotlin.io.path.createTempDirectory("matrix-report").toFile()
-    private val writer = ReportWriter(PlatformFiles, directory.path)
+    private val writer = ReportWriter(platformFiles, directory.path)
     private val json get() = File(directory, "report.json").readText()
     private val markdown get() = File(directory, "report.md").readText()
 
@@ -45,7 +45,8 @@ class ReportWriterTest {
     fun aRecordIsOneJsonObject_andOneMarkdownRow() {
         assertEquals(
             "{\"index\":3,\"id\":\"photo/BACK/3\",\"section\":\"photo\"," +
-                "\"params\":{\"lens\":\"BACK\",\"imageFormat\":\"JPEG\"},\"verdict\":\"FAIL\",\"reason\":\"ratio | off\"," +
+                "\"params\":{\"lens\":\"BACK\",\"imageFormat\":\"JPEG\"}," +
+                "\"verdict\":\"FAIL\",\"reason\":\"ratio | off\"," +
                 "\"measures\":{\"readyMs\":412,\"size\":{\"w\":4032,\"h\":3024},\"fps\":29.5,\"file\":null}}",
             record(3, Verdict.FAIL, "ratio | off").toJson(),
         )
@@ -78,7 +79,7 @@ class ReportWriterTest {
         writer.append(record(0))
         writer.finish(listOf("PASS" to 1))
 
-        val resumed = ReportWriter(PlatformFiles, directory.path)
+        val resumed = ReportWriter(platformFiles, directory.path)
         resumed.begin(resume = true, header = listOf("resumedAt" to 1))
         resumed.append(record(1))
         resumed.finish(listOf("PASS" to 1))

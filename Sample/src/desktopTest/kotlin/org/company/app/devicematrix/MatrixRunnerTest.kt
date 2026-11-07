@@ -5,12 +5,13 @@ package org.company.app.devicematrix
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.CameraLens
+import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
-import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.testing.FakeCapabilities
@@ -50,7 +51,7 @@ class MatrixRunnerTest {
         override val platformName = "test"
         override val deviceDescription = "fake engine"
         override val reportDirectory: String = directory.path
-        override val files: MatrixFiles = PlatformFiles
+        override val files: MatrixFiles = platformFiles
 
         init {
             // Plays the platform reporting the flash mode it applied, as a real engine does.
@@ -106,7 +107,13 @@ class MatrixRunnerTest {
         assertTrue(text.trimEnd().endsWith("]"), "the finished report is closed")
         assertEquals(3, platform.captures.size)
         assertTrue(platform.captures.none { File(it).exists() }, "every capture is deleted after its checks")
-        assertEquals(listOf(1), platform.engines.map { it.releaseCount }, "one holder for the group, closed")
+        assertEquals(
+            listOf(1, 1),
+            platform.engines.map {
+                it.releaseCount
+            },
+            "the probe's holder and the group's, each closed",
+        )
         assertTrue(platform.lines.any { "PASS" in it && "photo/BACK" in it }, platform.lines.joinToString("\n"))
     }
 
@@ -125,7 +132,10 @@ class MatrixRunnerTest {
     @Test
     fun anImageOfTheWrongRatio_fails() = runTest {
         val platform = TestPlatform(this)
-        val offset = firstPhotoIndex(FakeCapabilities.backAndFront()) { it.aspectRatio == AspectRatio.RATIO_16_9 }
+        // The back lens with the flash off: the ratio is the only check that can fail.
+        val offset = firstPhotoIndex(FakeCapabilities.backAndFront()) {
+            it.aspectRatio == AspectRatio.RATIO_16_9 && it.lens == CameraLens.BACK && it.flashMode == FlashMode.OFF
+        }
 
         MatrixRunner(platform, MatrixArgs(offset = offset, sections = setOf(MatrixSection.PHOTO), limit = 1)).run()
 
@@ -151,7 +161,10 @@ class MatrixRunnerTest {
         val cases = enumerateCases(FakeCapabilities.backAndFront())
         val startStop = cases.first { (it.spec as? LifecycleSpec)?.kind == LifecycleKind.START_STOP_20 }.index
 
-        MatrixRunner(platform, MatrixArgs(offset = startStop, sections = setOf(MatrixSection.LIFECYCLE), limit = 2)).run()
+        MatrixRunner(
+            platform,
+            MatrixArgs(offset = startStop, sections = setOf(MatrixSection.LIFECYCLE), limit = 2),
+        ).run()
 
         assertEquals(2, Regex(""""verdict":"PASS"""").findAll(report).count(), report)
         assertTrue(report.contains(""""cycles":20"""), report)

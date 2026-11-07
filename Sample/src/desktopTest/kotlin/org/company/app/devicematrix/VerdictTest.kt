@@ -62,7 +62,10 @@ class VerdictTest {
         val timedOut = Outcome.Refused("capture", CameraKError.Timeout(CameraOperation.CAPTURE))
         assertEquals("capture: Timeout(CAPTURE)", judge(timedOut, heicUnsupported, emptyList()).reason)
         val denied = CameraKError.Permission(CameraKPermission.MICROPHONE, PermissionStatus.Denied(false))
-        assertEquals(Verdict.BLOCKED, judge(Outcome.Refused("startRecording", denied), Prediction.NONE, emptyList()).verdict)
+        assertEquals(
+            Verdict.BLOCKED,
+            judge(Outcome.Refused("startRecording", denied), Prediction.NONE, emptyList()).verdict,
+        )
     }
 
     @Test
@@ -90,16 +93,29 @@ class VerdictTest {
         )
         assertEquals(heicUnsupported, photoStartPrediction(caps, heic))
         assertEquals(Prediction.NONE, photoStartPrediction(caps, heic.copy(imageFormat = ImageFormat.JPEG)))
-        val telephoto = photoStartPrediction(caps, heic.copy(imageFormat = ImageFormat.JPEG, deviceType = CameraDeviceType.TELEPHOTO))
+        val telephoto =
+            photoStartPrediction(
+                caps,
+                heic.copy(imageFormat = ImageFormat.JPEG, deviceType = CameraDeviceType.TELEPHOTO),
+            )
         assertEquals(Prediction(noCamera = true, mayStillSucceed = true), telephoto, "the fake has no telephoto")
         assertEquals(
             Prediction.NONE,
-            photoStartPrediction(caps, heic.copy(imageFormat = ImageFormat.JPEG, deviceType = CameraDeviceType.DEFAULT)),
+            photoStartPrediction(
+                caps,
+                heic.copy(imageFormat = ImageFormat.JPEG, deviceType = CameraDeviceType.DEFAULT),
+            ),
         )
 
         val front = FakeCapabilities.FRONT_ID
-        assertEquals(Prediction(unsupported = setOf(CameraFeature.FLASH_ON)), flashPrediction(caps, front, FlashMode.ON))
-        assertEquals(Prediction(unsupported = setOf(CameraFeature.FLASH_AUTO)), flashPrediction(caps, front, FlashMode.AUTO))
+        assertEquals(
+            Prediction(unsupported = setOf(CameraFeature.FLASH_ON)),
+            flashPrediction(caps, front, FlashMode.ON),
+        )
+        assertEquals(
+            Prediction(unsupported = setOf(CameraFeature.FLASH_AUTO)),
+            flashPrediction(caps, front, FlashMode.AUTO),
+        )
         assertEquals(Prediction.NONE, flashPrediction(caps, front, FlashMode.OFF))
         assertEquals(Prediction(unsupported = setOf(CameraFeature.TORCH)), torchPrediction(caps, front, TorchMode.ON))
         assertEquals(Prediction(unsupported = setOf(CameraFeature.FOCUS_POINT)), focusPrediction(caps, front))
@@ -114,6 +130,9 @@ class VerdictTest {
             Prediction.NONE,
             videoPrediction(caps, VideoSpec(CameraLens.BACK, AspectRatio.RATIO_16_9, VideoQuality.UHD, true)),
         )
-        assertEquals(Prediction.NONE, analysisPrediction(caps, AnalysisSpec(CameraLens.BACK, FrameFormat.RGBA_8888, null)))
+        assertEquals(
+            Prediction.NONE,
+            analysisPrediction(caps, AnalysisSpec(CameraLens.BACK, FrameFormat.RGBA_8888, null)),
+        )
     }
 }
