@@ -47,6 +47,8 @@ internal data class SampleColors(
     val onRecording: Color = Color(0xFFFFFFFF),
     val previewPlaceholder: Color = Color(0xFFCFD0D6),
     val thumbPlaceholder: Color = Color(0xFFBFC0C7),
+    /** Marks drawn straight on the camera image: the focus reticle and the exposure slider. */
+    val onCamera: Color = Color(0xFFFFFFFF),
 ) {
     /** The dimming behind a sheet that covers the camera. */
     val scrim: Color get() = ink.copy(alpha = 0.35f)

@@ -126,7 +126,9 @@ internal fun CameraContent(
 }
 
 /**
- * [CameraKScreen] with the Sample's starting and error screens, and [content] over the preview.
+ * [CameraKScreen] with the Sample's starting and error screens, and [content] over the preview. A tap
+ * on the preview focuses there and shows the focus reticle, with the exposure slider beside it on a
+ * camera that has exposure compensation.
  */
 @Composable
 internal fun SampleCameraKScreen(
@@ -134,9 +136,11 @@ internal fun SampleCameraKScreen(
     modifier: Modifier = Modifier,
     content: @Composable CameraPreviewScope.() -> Unit,
 ) {
+    val focusTaps = remember(holder) { FocusTapRecord() }
     CameraKScreen(
         holder = holder,
         modifier = modifier,
+        focusIndicator = { SampleFocusIndicator(it, focusTaps) },
         loading = {
             StatusMessage(text = "Initializing Camera...", modifier = Modifier.fillMaxSize().wrapContentSize())
         },
@@ -148,7 +152,10 @@ internal fun SampleCameraKScreen(
                 iconDescription = "Error",
             )
         },
-        content = content,
+        content = {
+            content()
+            ExposureControl(holder, focusTaps)
+        },
     )
 }
 
@@ -216,6 +223,8 @@ internal fun CameraScreen(
         }
         if (holder.uiState.value.targetOrientation != latestLock) holder.setTargetOrientation(latestLock)
     }
+
+    ResetFocusOnSwitch(holder, mode)
 
     // The QR and Text modes always scan; Photo and Video only with their switches on.
     QrScanningEffect(qrScanner, choices.qrScanning || mode == CameraMode.Qr)
