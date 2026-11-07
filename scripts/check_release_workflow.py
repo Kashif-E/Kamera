@@ -9,8 +9,8 @@ A Maven Central upload cannot be undone. The publish workflow must therefore:
 - wait for the full verification harness, reused from build.yml rather than copied;
 - publish from the protected `maven-central` environment, on the runner image CI uses;
 - publish in two steps of that one job, `publishLibraries` then `publishLegacyRelocations`, after the tag
-  check, neither conditional, so each namespace is its own deployment and a failed first step stops
-  the second;
+  check, neither conditional nor masking its exit status, in a job without continue-on-error, so each
+  namespace is its own deployment and a failed first step stops the second;
 - hold only `contents: read`, and never run two publishes at once (`publish` concurrency group).
 
 Credentials travelling as env variables only is checked by check_credential_hygiene.py.
@@ -38,6 +38,12 @@ CONCURRENCY_GROUP = "publish"
 RELEASE_TASKS = ("publishLibraries", "publishLegacyRelocations")
 PUBLISH_TASK = re.compile(r"\bpublish(?:\w*MavenCentral\w*|Libraries|LegacyRelocations)\b", re.IGNORECASE)
 FULL_HARNESS = re.compile(r"scripts/verify\.sh\s+--full\b")
+# A publish step's script that exits 0 after its upload failed: an `||` fallback that succeeds, a `true`
+# after the command, or errexit switched off.
+MASKED_EXIT = re.compile(
+    r"\|\|\s*(?:true\b|:(?=\s|;|$)|echo\b|exit\s+0\b)|;\s*true\b|\bset\s+\+[a-z]*e|\bset\s+\+o\s+errexit\b",
+    re.MULTILINE,
+)
 
 
 class CheckError(Exception):
@@ -197,9 +203,12 @@ def check_tag_guard() -> List[str]:
     return problems
 
 
-def release_step_problems(steps: List[dict], uploads: List[int]) -> List[str]:
-    """What is wrong with the publishing steps [uploads] (indexes into [steps]) of the one publishing job."""
+def release_step_problems(job: dict, steps: List[dict], uploads: List[int]) -> List[str]:
+    """What is wrong with the publishing steps [uploads] (indexes into [steps]) of [job], the one publishing
+    job."""
     problems = []
+    if "continue-on-error" in job:
+        problems.append("sets continue-on-error, so a failed publish need not stop the release")
     found = {task: [] for task in RELEASE_TASKS}
     for index in uploads:
         step = steps[index]
@@ -213,6 +222,12 @@ def release_step_problems(steps: List[dict], uploads: List[int]) -> List[str]:
         for key in ("if", "continue-on-error"):
             if key in step:
                 problems.append(f"step {index + 1} sets {key}, so a failed publish need not stop the release")
+        masked = MASKED_EXIT.search(run)
+        if masked:
+            problems.append(
+                f"step {index + 1} masks its exit status with '{masked.group(0).strip()}', "
+                "so a failed publish need not stop the release"
+            )
     for task, indexes in found.items():
         if len(indexes) != 1:
             problems.append(f"runs {task} in {len(indexes)} steps, not one")
@@ -286,7 +301,7 @@ def release_workflow_problems(release: dict, build: dict) -> List[str]:
         )
         uploads = [index for index, step in enumerate(steps) if PUBLISH_TASK.search(str(step.get("run", "")))]
         upload = uploads[0] if uploads else None
-        problems += [f"{name}: job {job_id} {problem}" for problem in release_step_problems(steps, uploads)]
+        problems += [f"{name}: job {job_id} {problem}" for problem in release_step_problems(job, steps, uploads)]
         if guard is None or upload is None or guard > upload:
             problems.append(f"{name}: job {job_id} does not run scripts/check_release_tag.sh before publishing")
         elif "${{" in str(steps[guard].get("run", "")):
