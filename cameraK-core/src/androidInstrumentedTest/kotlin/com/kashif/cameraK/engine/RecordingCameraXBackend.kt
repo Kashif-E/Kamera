@@ -25,9 +25,9 @@ import java.util.concurrent.TimeUnit
 
 /**
  * [real], with every bind and unbind recorded: the owner, the use cases and the camera each bind
- * returned. The engine gets a delegating [Camera] whose [CameraControl] records each `enableTorch`
- * and `setZoomRatio` before passing it on, so [boundSettings] is what the platform last received
- * (design §12.4 B1).
+ * returned. The engine gets a delegating [Camera] whose [CameraControl] records each `enableTorch`,
+ * `setZoomRatio` and `setExposureCompensationIndex` before passing it on, so [boundSettings] is what
+ * the platform last received (design §12.4 B1).
  */
 internal class RecordingCameraXBackend(private val real: CameraXBackend) : CameraXBackend by real {
     private val lock = Any()
@@ -43,9 +43,9 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
     }
 
     /**
-     * Flash from the bound ImageCapture; torch and zoom as the engine last sent them to the bound
-     * camera, which starts, as CameraX opens one, with the torch off and zoom 1x; the camera is the
-     * last bound one.
+     * Flash from the bound ImageCapture; torch, zoom and the exposure index as the engine last sent
+     * them to the bound camera, which starts, as CameraX opens one, with the torch off, zoom 1x and
+     * index 0; the camera is the last bound one.
      */
     fun boundSettings(): BoundSettings = synchronized(lock) {
         val camera = lastBound
@@ -59,6 +59,7 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
             torchMode = camera?.torchMode ?: TorchMode.OFF,
             zoomRatio = camera?.zoomRatio ?: 1f,
             cameraId = camera?.id,
+            exposureCompensationIndex = camera?.exposureIndex ?: 0,
         )
     }
 
@@ -89,7 +90,8 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
                 useCases.forEach { owners -= it }
                 val unbound = useCases.toSet()
                 cameras.values.forEach { camera ->
-                    // CameraX closes a camera with nothing bound; the next open starts with the torch off and zoom 1x.
+                    // CameraX closes a camera with nothing bound; the next open starts with the torch off, zoom 1x and
+                    // exposure index 0.
                     if (camera.useCases.removeAll(unbound) && camera.useCases.isEmpty()) camera.reset()
                 }
             }
@@ -114,7 +116,7 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
         private fun record(owner: LifecycleOwner, useCases: List<UseCase>, bound: Camera): Camera {
             val id = binding.cameraIdOf(bound)
             if (observedOwners.add(owner)) {
-                // Stopping the owner closes its cameras, and the torch and zoom with them.
+                // Stopping the owner closes its cameras, and the torch, zoom and exposure index with them.
                 owner.lifecycle.addObserver(
                     LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_STOP) {
@@ -133,11 +135,15 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
         }
     }
 
-    /** [real], with a [CameraControl] that records torch and zoom. Same object for the same CameraX camera. */
+    /**
+     * [real], with a [CameraControl] that records torch, zoom and the exposure index. Same object for
+     * the same CameraX camera.
+     */
     private inner class RecordingCamera(val real: Camera, val id: String, val owner: LifecycleOwner) : Camera by real {
         val useCases = mutableListOf<UseCase>()
         var torchMode = TorchMode.OFF
         var zoomRatio = 1f
+        var exposureIndex = 0
 
         private val control = object : CameraControl by real.cameraControl {
             override fun enableTorch(torch: Boolean): ListenableFuture<Void> = synchronized(lock) {
@@ -149,6 +155,11 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
                 zoomRatio = ratio
                 real.cameraControl.setZoomRatio(ratio).also { pendingControlCalls += it }
             }
+
+            override fun setExposureCompensationIndex(value: Int): ListenableFuture<Int> = synchronized(lock) {
+                exposureIndex = value
+                real.cameraControl.setExposureCompensationIndex(value).also { pendingControlCalls += it }
+            }
         }
 
         override fun getCameraControl(): CameraControl = control
@@ -156,6 +167,7 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
         fun reset() {
             torchMode = TorchMode.OFF
             zoomRatio = 1f
+            exposureIndex = 0
         }
     }
 
