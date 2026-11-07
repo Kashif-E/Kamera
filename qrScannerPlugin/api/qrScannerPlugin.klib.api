@@ -5,7 +5,7 @@
 // - Show manifest properties: true
 // - Show declarations: true
 
-// Library unique name: <io.github.kashif-mehmood-km:qrScannerPlugin>
+// Library unique name: <dev.kashifmehmood:qrScannerPlugin>
 final class com.kashif.qrscannerplugin/Barcode { // com.kashif.qrscannerplugin/Barcode|null[0]
     constructor <init>(kotlin/String?, kotlin/ByteArray?, com.kashif.qrscannerplugin/BarcodeFormat, com.kashif.cameraK.frames/FrameRect?) // com.kashif.qrscannerplugin/Barcode.<init>|<init>(kotlin.String?;kotlin.ByteArray?;com.kashif.qrscannerplugin.BarcodeFormat;com.kashif.cameraK.frames.FrameRect?){}[0]
 

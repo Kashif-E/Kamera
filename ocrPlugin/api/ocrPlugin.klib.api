@@ -5,7 +5,7 @@
 // - Show manifest properties: true
 // - Show declarations: true
 
-// Library unique name: <io.github.kashif-mehmood-km:ocrPlugin>
+// Library unique name: <dev.kashifmehmood:ocrPlugin>
 final class com.kashif.ocrplugin/OcrConfig { // com.kashif.ocrplugin/OcrConfig|null[0]
     final val level // com.kashif.ocrplugin/OcrConfig.level|{}level[0]
         final fun <get-level>(): com.kashif.ocrplugin/OcrLevel // com.kashif.ocrplugin/OcrConfig.level.<get-level>|<get-level>(){}[0]

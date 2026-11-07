@@ -5,7 +5,7 @@
 // - Show manifest properties: true
 // - Show declarations: true
 
-// Library unique name: <io.github.kashif-mehmood-km:ImageSaverPlugin>
+// Library unique name: <dev.kashifmehmood:ImageSaverPlugin>
 final enum class com.kashif.mediasaverplugin/GalleryDestination : kotlin/Enum<com.kashif.mediasaverplugin/GalleryDestination> { // com.kashif.mediasaverplugin/GalleryDestination|null[0]
     enum entry DCIM // com.kashif.mediasaverplugin/GalleryDestination.DCIM|null[0]
     enum entry DOCUMENTS // com.kashif.mediasaverplugin/GalleryDestination.DOCUMENTS|null[0]

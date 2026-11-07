@@ -5,7 +5,7 @@
 // - Show manifest properties: true
 // - Show declarations: true
 
-// Library unique name: <io.github.kashif-mehmood-km:cameraK-core>
+// Library unique name: <dev.kashifmehmood:cameraK-core>
 open annotation class com.kashif.cameraK.utils/CameraKEngineApi : kotlin/Annotation { // com.kashif.cameraK.utils/CameraKEngineApi|null[0]
     constructor <init>() // com.kashif.cameraK.utils/CameraKEngineApi.<init>|<init>(){}[0]
 }

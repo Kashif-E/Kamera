@@ -5,7 +5,7 @@
 // - Show manifest properties: true
 // - Show declarations: true
 
-// Library unique name: <io.github.kashif-mehmood-km:analyzerPlugin>
+// Library unique name: <dev.kashifmehmood:analyzerPlugin>
 final class com.kashif.analyzerplugin/AnalyzerConfig { // com.kashif.analyzerplugin/AnalyzerConfig|null[0]
     final val jpegQuality // com.kashif.analyzerplugin/AnalyzerConfig.jpegQuality|{}jpegQuality[0]
         final fun <get-jpegQuality>(): kotlin/Int // com.kashif.analyzerplugin/AnalyzerConfig.jpegQuality.<get-jpegQuality>|<get-jpegQuality>(){}[0]

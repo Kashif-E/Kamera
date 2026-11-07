@@ -16,18 +16,18 @@ public abstract interface class com/kashif/cameraK/compose/CameraPreviewScope : 
 public final class com/kashif/cameraK/compose/ComposableSingletons$CameraKScreenKt {
 	public static final field INSTANCE Lcom/kashif/cameraK/compose/ComposableSingletons$CameraKScreenKt;
 	public fun <init> ()V
-	public final fun getLambda$-774068693$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function2;
-	public final fun getLambda$1068247279$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function2;
-	public final fun getLambda$1247929777$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$280984956$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$988121835$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-774068693$dev_kashifmehmood_cameraK ()Lkotlin/jvm/functions/Function2;
+	public final fun getLambda$1068247279$dev_kashifmehmood_cameraK ()Lkotlin/jvm/functions/Function2;
+	public final fun getLambda$1247929777$dev_kashifmehmood_cameraK ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$280984956$dev_kashifmehmood_cameraK ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$988121835$dev_kashifmehmood_cameraK ()Lkotlin/jvm/functions/Function3;
 }
 
 public final class com/kashif/cameraK/compose/ComposableSingletons$CameraPreviewKt {
 	public static final field INSTANCE Lcom/kashif/cameraK/compose/ComposableSingletons$CameraPreviewKt;
 	public fun <init> ()V
-	public final fun getLambda$-667599046$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$1531233671$io_github_kashif_mehmood_km_cameraK ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-667599046$dev_kashifmehmood_cameraK ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$1531233671$dev_kashifmehmood_cameraK ()Lkotlin/jvm/functions/Function3;
 }
 
 public final class com/kashif/cameraK/compose/FocusOutcome : java/lang/Enum {

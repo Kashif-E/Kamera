@@ -76,9 +76,11 @@ val bomModule = "camerak-bom"
 // Dokka, publishing) is build-logic's convention plugins: camerak.kmp-library, camerak.publish and
 // camerak.relocation (scripts/check_repo_policy.py module_build_files_use_convention_plugins).
 
-// The 1.x artifact ids 2.0 renamed (design §9.4), each to the module whose POM_ARTIFACT_ID is its 2.0
-// id. Each old id is a POM-only project under relocations/ whose POM relocates it there, so a build
-// that still names the old id resolves the new one. video_recorder_plugin has no 2.0 successor.
+// The 1.x artifact ids that have a 2.0 successor (design §9.4, w13 Z-namespace), each to the module whose
+// POM_ARTIFACT_ID is its 2.0 id. Each old id is a POM-only project under relocations/ that publishes under
+// LEGACY_GROUP, the 1.x group, and relocates to its successor under GROUP, so a build that still names the
+// 1.x coordinate resolves the 2.0 one. camerak keeps its id and only changes group. video_recorder_plugin
+// has no 2.0 successor.
 val relocatedArtifacts =
     mapOf(
         "qr_scanner_plugin" to "qrScannerPlugin",
@@ -126,19 +128,18 @@ extra["javacppPlatform"] =
     }
 
 // One version and group for every published module, from gradle.properties (vanniktech reads the
-// same keys for the published coordinates).
+// same keys for the published coordinates). The relocation projects take LEGACY_GROUP instead, which
+// camerak.relocation also gives their publication.
+val relocationPaths = relocatedArtifacts.keys.map { ":relocations:$it" }
 subprojects {
-    if (name in publishedModules + resourceModules ||
-        name == bomModule ||
-        path in relocatedArtifacts.keys.map { ":relocations:$it" }
-    ) {
-        group = providers.gradleProperty("GROUP").get()
+    if (name in publishedModules + resourceModules || name == bomModule || path in relocationPaths) {
+        group = providers.gradleProperty(if (path in relocationPaths) "LEGACY_GROUP" else "GROUP").get()
         version = providers.gradleProperty("VERSION_NAME").get()
     }
 }
 
 // The BOM constrains every published library, so consumers can declare
-// platform("io.github.kashif-mehmood-km:camerak-bom:<version>") and leave the versions off the rest.
+// platform("dev.kashifmehmood:camerak-bom:<version>") and leave the versions off the rest.
 project(":$bomModule") {
     plugins.withId("java-platform") {
         dependencies {
@@ -148,6 +149,9 @@ project(":$bomModule") {
         }
     }
 }
+// The migration guide on the docs site, which a relocation's message names: it says the group changed.
+val migrationGuideUrl = "https://kashif-e.github.io/Kamera/migration/2.0/"
+
 // Each relocation project publishes a POM and nothing else: its <relocation> names the 2.0 coordinate.
 // camerak.relocation publishes no Gradle module metadata beside it, because Gradle would read that instead.
 relocatedArtifacts.forEach { (oldId, module) ->
@@ -163,7 +167,9 @@ relocatedArtifacts.forEach { (oldId, module) ->
                                 artifactId.set(newId)
                                 version.set(providers.gradleProperty("VERSION_NAME"))
                                 message.set(
-                                    providers.gradleProperty("GROUP").map { "$oldId is now $it:$newId in CameraK 2.0" },
+                                    providers.gradleProperty("GROUP").map {
+                                        "$oldId is now $it:$newId in CameraK 2.0; see $migrationGuideUrl"
+                                    },
                                 )
                             }
                         }
@@ -185,7 +191,36 @@ val publishedCoordinatesFile = layout.buildDirectory.file("verify/published-coor
 val publishingProjects =
     (publishedModules + resourceModules).map { ":$it" } +
         ":$bomModule" +
-        relocatedArtifacts.keys.map { ":relocations:$it" }
+        relocationPaths
+
+// The release publishes in two Central Portal deployments, one per namespace (w13 Z-namespace).
+// vanniktech uploads everything one build publishes as one deployment, and Sonatype's documentation does
+// not say a deployment may mix namespaces, so UploadLibToCentral.yml runs these two tasks as two builds:
+// publishLibraries for every project under GROUP, then publishLegacyRelocations for those under
+// LEGACY_GROUP, the relocation POMs.
+val centralPublishTask = "publishAllPublicationsToMavenCentralRepository"
+
+fun publishingProjectsIn(groupProperty: String): List<String> =
+    providers.gradleProperty(groupProperty).get().let { wanted ->
+        publishingProjects.filter { project(it).group.toString() == wanted }
+    }
+
+val unreleasedProjects = publishingProjects - publishingProjectsIn("GROUP") - publishingProjectsIn("LEGACY_GROUP")
+require(unreleasedProjects.isEmpty()) {
+    "$unreleasedProjects publish under neither GROUP nor LEGACY_GROUP, so no release task uploads them"
+}
+tasks.register("publishLibraries") {
+    group = "publishing"
+    description = "Publishes the libraries, the resource jars and the BOM, everything under GROUP, to Maven Central"
+    dependsOn(publishingProjectsIn("GROUP").map { "$it:$centralPublishTask" })
+}
+tasks.register("publishLegacyRelocations") {
+    group = "publishing"
+    description =
+        "Publishes the relocation POMs of the 1.x coordinates, everything under LEGACY_GROUP, to Maven Central"
+    dependsOn(publishingProjectsIn("LEGACY_GROUP").map { "$it:$centralPublishTask" })
+}
+
 if (verifyPublishRepository != null) {
     publishingProjects.forEach { path ->
         project(path).plugins.withId("maven-publish") {
@@ -219,6 +254,7 @@ fun expectedPublishedCoordinates(): Map<String, Any> {
         }
     return mapOf(
         "group" to providers.gradleProperty("GROUP").get(),
+        "legacyGroup" to providers.gradleProperty("LEGACY_GROUP").get(),
         "version" to providers.gradleProperty("VERSION_NAME").get(),
         "modules" to modules,
         "resourceArtifacts" to resourceModules.map(::pomArtifactId),
@@ -407,7 +443,10 @@ val forbiddenOnPublishedClasspath =
             ClasspathRule(
                 it,
                 publishedGraphs,
-                Regex("""^io\.github\.kashif-mehmood-km:camerak-testing$""", RegexOption.IGNORE_CASE),
+                Regex(
+                    "^${Regex.escape(providers.gradleProperty("GROUP").get())}:camerak-testing$",
+                    RegexOption.IGNORE_CASE,
+                ),
                 "camerak-testing is for test source sets only",
             )
         }
@@ -675,12 +714,15 @@ fun stabilityConfigProblems(
             }
         }
 
-// What is wrong with the relocation POMs of the renamed artifacts. [expected] maps each old id to its new
+// What is wrong with the relocation POMs of the 1.x coordinates. [expected] maps each old id to its new
 // id, [poms] each old id to the POM text its relocation project generates (null when there is none), and
 // [moduleMetadata] holds the old ids whose Gradle module metadata is still generated, which Gradle would
-// read instead of the POM and so never see the relocation.
+// read instead of the POM and so never see the relocation. Each POM publishes under [legacyGroup] and
+// relocates to [group]; a relocation must name a different coordinate, so with two groups the same id
+// may move to the new one.
 fun relocationPomProblems(
     expected: Map<String, String>,
+    legacyGroup: String,
     group: String,
     version: String,
     poms: Map<String, String?>,
@@ -702,7 +744,10 @@ fun relocationPomProblems(
                 ?.takeUnless { it == "<missing>" }
         val target = "{groupId=$group, artifactId=$newId, version=$version}"
         listOfNotNull(
-            "$oldId relocates to itself; its successor must have a new id".takeIf { newId == oldId },
+            "$oldId relocates to itself; its successor must have a new group or id"
+                .takeIf { newId == oldId && group == legacyGroup },
+            "$oldId: POM's own groupId is ${pomField(pom, "groupId")}, not $legacyGroup"
+                .takeIf { pomField(pom, "groupId") != legacyGroup },
             "$oldId: POM packaging is ${pomField(pom, "packaging")}, not pom"
                 .takeIf { pomField(pom, "packaging") != "pom" },
             "$oldId: POM has no <relocation>".takeIf { relocation == null },
@@ -1209,6 +1254,7 @@ tasks.register("checkBuildGateRules") {
                 }.toSet()
         }
     val releaseGroup = providers.gradleProperty("GROUP")
+    val releaseLegacyGroup = providers.gradleProperty("LEGACY_GROUP")
     val releaseVersion = providers.gradleProperty("VERSION_NAME")
     val dokkaFacts =
         provider {
@@ -1282,7 +1328,7 @@ tasks.register("checkBuildGateRules") {
                     }
                 },
                 "camerak_testing_on_plugin_runtime_graph_fails" to {
-                    val testing = "io.github.kashif-mehmood-km:cameraK-testing"
+                    val testing = "${releaseGroup.get()}:cameraK-testing"
                     if (publishedClasspathProblems(
                             "qrScannerPlugin",
                             graphs("desktopRuntimeClasspath" to listOf(testing)),
@@ -1469,13 +1515,15 @@ tasks.register("checkBuildGateRules") {
                         group: String = "g",
                     ) = "<groupId>$group</groupId><artifactId>$artifactId</artifactId><version>$version</version>"
 
+                    // The fixture POM publishes under the legacy group l and relocates into the group g.
                     fun pom(
                         relocation: String? = relocationTo("new-id"),
                         packaging: String = "pom",
+                        ownGroup: String = "l",
                     ) = listOfNotNull(
                         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
                         "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">",
-                        "<modelVersion>4.0.0</modelVersion><groupId>g</groupId><artifactId>old_id</artifactId>",
+                        "<modelVersion>4.0.0</modelVersion><groupId>$ownGroup</groupId><artifactId>old_id</artifactId>",
                         "<version>2.0</version><packaging>$packaging</packaging><name>old_id</name>",
                         "<description>Relocated to g:new-id</description><url>https://example.org</url>",
                         "<licenses><license><name>L</name></license></licenses>",
@@ -1490,7 +1538,8 @@ tasks.register("checkBuildGateRules") {
                         pom: String?,
                         metadata: Set<String> = emptySet(),
                         expected: Map<String, String> = mapOf("old_id" to "new-id"),
-                    ) = relocationPomProblems(expected, "g", "2.0", mapOf("old_id" to pom), metadata)
+                        legacyGroup: String = "l",
+                    ) = relocationPomProblems(expected, legacyGroup, "g", "2.0", mapOf("old_id" to pom), metadata)
                     val correct = judged(pom())
                     listOfNotNull(
                         "a correct relocation POM is rejected: $correct".takeIf { correct.isNotEmpty() },
@@ -1507,19 +1556,29 @@ tasks.register("checkBuildGateRules") {
                         "a POM without its licence is accepted"
                             .takeIf { judged(pom().replace(Regex("<licenses>.*</licenses>"), "")).isEmpty() },
                         "an old id expected to relocate to itself is accepted".takeIf {
-                            judged(pom(relocationTo("old_id")), expected = mapOf("old_id" to "old_id")).isEmpty()
+                            judged(
+                                pom(relocationTo("old_id"), ownGroup = "g"),
+                                expected = mapOf("old_id" to "old_id"),
+                                legacyGroup = "g",
+                            ).isEmpty()
                         },
+                        "a same-id relocation into the new group is rejected".takeIf {
+                            judged(pom(relocationTo("old_id")), expected = mapOf("old_id" to "old_id")).isNotEmpty()
+                        },
+                        "a POM whose own groupId is not the legacy group is accepted"
+                            .takeIf { judged(pom(ownGroup = "g")).isEmpty() },
                     ) +
                         listOfNotNull(
-                            "relocatedArtifacts relocates ${relocatedArtifacts.keys}, not the four 1.x plugin ids"
+                            "relocatedArtifacts relocates ${relocatedArtifacts.keys}, not the four 1.x plugin ids and camerak"
                                 .takeIf {
                                     relocatedArtifacts.keys !=
                                         setOf("qr_scanner_plugin", "ocr_plugin", "analyzer_plugin") +
-                                        "image_saver_plugin"
+                                        "image_saver_plugin" + "camerak"
                                 },
                         ) +
                         relocationPomProblems(
                             relocationTargets,
+                            releaseLegacyGroup.get(),
                             releaseGroup.get(),
                             releaseVersion.get(),
                             relocationPoms.get(),
@@ -2276,7 +2335,8 @@ val repositoryUrl = "https://github.com/Kashif-E/Kamera"
 val expectedScm =
     "{connection=scm:git:$repositoryUrl.git, " +
         "developerConnection=scm:git:ssh://git@github.com/Kashif-E/Kamera.git, url=$repositoryUrl}"
-val installSnippet = Regex("""io\.github\.kashif-mehmood-km:([A-Za-z0-9_.-]+):([0-9][A-Za-z0-9_.-]*)""")
+val installSnippet =
+    Regex("""${Regex.escape(providers.gradleProperty("GROUP").get())}:([A-Za-z0-9_.-]+):([0-9][A-Za-z0-9_.-]*)""")
 val catalogVersion = Regex("""^\s*camerak\s*=\s*"([^"]+)"""")
 
 fun pomField(

@@ -5,7 +5,7 @@
 // - Show manifest properties: true
 // - Show declarations: true
 
-// Library unique name: <io.github.kashif-mehmood-km:cameraK-testing>
+// Library unique name: <dev.kashifmehmood:cameraK-testing>
 final class com.kashif.cameraK.testing/FakeCameraEngine : com.kashif.cameraK.engine/CameraEngine { // com.kashif.cameraK.testing/FakeCameraEngine|null[0]
     constructor <init>(com.kashif.cameraK.capabilities/CameraCapabilities = ..., com.kashif.cameraK.enums/FlashMode = ..., com.kashif.cameraK.enums/TorchMode = ..., kotlin/Float = ...) // com.kashif.cameraK.testing/FakeCameraEngine.<init>|<init>(com.kashif.cameraK.capabilities.CameraCapabilities;com.kashif.cameraK.enums.FlashMode;com.kashif.cameraK.enums.TorchMode;kotlin.Float){}[0]
 

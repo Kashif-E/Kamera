@@ -238,8 +238,9 @@ RESOURCE_ARTIFACTS = ("camerak-ocr-tessdata-eng",)
 def publish_problems(repo: Path, expected: dict) -> list[str]:
     """The coordinates the publish step should have written to [repo] and did not: each module's root
     artifact and one per PUBLISHED_TARGETS entry (.module and .pom), each RESOURCE_ARTIFACTS entry's root
-    (.module, .pom and .jar), the BOM's root, and each relocation POM, which must relocate to the 2.0
-    coordinate (group, artifact id and version). A module whose targets in the build's model differ from
+    (.module, .pom and .jar), the BOM's root, and each relocation POM, published under the legacy group
+    with that as its own groupId, which must relocate to the 2.0 coordinate (group, artifact id and
+    version). A module whose targets in the build's model differ from
     PUBLISHED_TARGETS is reported too, and so is a build whose resource artifacts differ from
     RESOURCE_ARTIFACTS."""
     group_dir = repo.joinpath(*expected["group"].split("."))
@@ -264,10 +265,12 @@ def publish_problems(repo: Path, expected: dict) -> list[str]:
     for artifact in RESOURCE_ARTIFACTS:
         require(artifact, ("module", "pom", "jar"))
     require(expected["bom"], ("module", "pom"))
+    legacy_group = expected["legacyGroup"]
+    legacy_dir = repo.joinpath(*legacy_group.split("."))
     for old_id, new_id in sorted(expected["relocations"].items()):
-        pom = group_dir / old_id / version / f"{old_id}-{version}.pom"
+        pom = legacy_dir / old_id / version / f"{old_id}-{version}.pom"
         if not pom.is_file():
-            problems.append(f"{expected['group']}:{old_id}:{version} has no relocation .pom")
+            problems.append(f"{legacy_group}:{old_id}:{version} has no relocation .pom")
             continue
         try:
             root = ET.parse(pom).getroot()
@@ -277,6 +280,10 @@ def publish_problems(repo: Path, expected: dict) -> list[str]:
         ns = {"m": root.tag[1:].split("}")[0]} if root.tag.startswith("{") else {}
         prefix = "m:" if ns else ""
         relocation = root.find(f"{prefix}distributionManagement/{prefix}relocation", ns)
+        own = root.find(f"{prefix}groupId", ns)
+        own_group = "" if own is None else (own.text or "").strip()
+        if own_group != legacy_group:
+            problems.append(f"{old_id}'s POM has its own groupId {own_group or 'missing'}, not {legacy_group}")
 
         def relocated(field: str) -> str:
             element = None if relocation is None else relocation.find(f"{prefix}{field}", ns)
@@ -501,10 +508,12 @@ def main() -> int:
                 len(expected_coordinates["modules"])
                 + len(expected_coordinates.get("resourceArtifacts", []))
                 + 1
-                + len(expected_coordinates["relocations"])
             )
+            relocations = len(expected_coordinates["relocations"])
             task_checks["publish"] = (
-                f"every coordinate of {count} artifacts published to `{os.path.relpath(publish_repo, ROOT)}`"
+                f"every coordinate of {count} artifacts under {expected_coordinates['group']} and {relocations} "
+                f"relocation POMs under {expected_coordinates['legacyGroup']} published to "
+                f"`{os.path.relpath(publish_repo, ROOT)}`"
                 if not publish_missing
                 else f"{len(publish_missing)} coordinate(s) missing"
             )
