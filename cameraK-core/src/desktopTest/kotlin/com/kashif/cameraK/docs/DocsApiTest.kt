@@ -480,7 +480,7 @@ class DocsApiTest {
             """\bcom\.kashif\.(?:ocrPlugin|analyzerPlugin)\b""" to "com.kashif.ocrplugin, com.kashif.analyzerplugin",
         ).map { (pattern, replacement) -> Regex(pattern) to replacement }
 
-        val COORDINATE = Regex("""io\.github\.kashif-mehmood-km:([A-Za-z0-9_.-]+)""")
+        val COORDINATE = Regex("""dev\.kashifmehmood:([A-Za-z0-9_.-]+)""")
 
         /** §9.4: the plugins' 2.0 artifact ids. Their 1.x ids publish only relocation POMs. */
         val PLUGIN_ARTIFACT_IDS = setOf("camerak-media-saver", "camerak-qr-scanner", "camerak-ocr", "camerak-analyzer")
