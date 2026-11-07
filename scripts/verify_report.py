@@ -229,13 +229,19 @@ PUBLISHED_COORDINATES_FILE = ROOT / "build" / "verify" / "published-coordinates.
 # The list is fixed here rather than read from the build, so a module that drops a target fails the
 # publish step instead of quietly expecting less.
 PUBLISHED_TARGETS = ("android", "desktop", "iosarm64", "iossimulatorarm64")
+# Published resource jars: no Kotlin and no target variants, so each is a root artifact whose .module
+# has one JVM variant and whose .jar is the content. Fixed here for the same reason as PUBLISHED_TARGETS,
+# so a module that falls out of the build's list fails the publish step.
+RESOURCE_ARTIFACTS = ("camerak-ocr-tessdata-eng",)
 
 
 def publish_problems(repo: Path, expected: dict) -> list[str]:
     """The coordinates the publish step should have written to [repo] and did not: each module's root
-    artifact and one per PUBLISHED_TARGETS entry (.module and .pom), the BOM's root, and each relocation
-    POM, which must relocate to the 2.0 coordinate (group, artifact id and version). A module whose
-    targets in the build's model differ from PUBLISHED_TARGETS is reported too."""
+    artifact and one per PUBLISHED_TARGETS entry (.module and .pom), each RESOURCE_ARTIFACTS entry's root
+    (.module, .pom and .jar), the BOM's root, and each relocation POM, which must relocate to the 2.0
+    coordinate (group, artifact id and version). A module whose targets in the build's model differ from
+    PUBLISHED_TARGETS is reported too, and so is a build whose resource artifacts differ from
+    RESOURCE_ARTIFACTS."""
     group_dir = repo.joinpath(*expected["group"].split("."))
     version = expected["version"]
     problems: list[str] = []
@@ -252,6 +258,11 @@ def publish_problems(repo: Path, expected: dict) -> list[str]:
         require(artifact, ("module", "pom"))
         for target in PUBLISHED_TARGETS:
             require(f"{artifact}-{target}", ("module", "pom"))
+    resources = expected.get("resourceArtifacts", [])
+    if sorted(resources) != sorted(RESOURCE_ARTIFACTS):
+        problems.append(f"the build publishes the resource artifacts {sorted(resources)}, not {list(RESOURCE_ARTIFACTS)}")
+    for artifact in RESOURCE_ARTIFACTS:
+        require(artifact, ("module", "pom", "jar"))
     require(expected["bom"], ("module", "pom"))
     for old_id, new_id in sorted(expected["relocations"].items()):
         pom = group_dir / old_id / version / f"{old_id}-{version}.pom"
@@ -295,16 +306,24 @@ def relocation_pom(group: str, artifact: str, version: str) -> str:
 
 def publish_check_self_test() -> list[str]:
     """What publish_problems misjudges among its fixtures: a complete repository, a module whose build
-    dropped its iOS targets (so the build's own model expects none), and relocation POMs that name the
-    wrong group or version."""
+    dropped its iOS targets (so the build's own model expects none), a resource artifact without its .jar,
+    a build that no longer lists a resource artifact, and relocation POMs that name the wrong group or
+    version."""
     group, version = "io.example", "2.0"
     every_target = ["android", "desktop", "iosarm64", "iossimulatorarm64"]
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as scratch:
-        def repository(name: str, targets: list[str], relocated: tuple[str, str, str]) -> Path:
+        def repository(
+            name: str,
+            targets: list[str],
+            relocated: tuple[str, str, str],
+            resource: tuple[str, ...] = ("module", "pom", "jar"),
+        ) -> Path:
             repo = Path(scratch) / name
             for artifact in ("lib", "bom"):
                 write_publication(repo, group, artifact, version, ("module", "pom"))
+            for artifact in RESOURCE_ARTIFACTS:
+                write_publication(repo, group, artifact, version, resource)
             for target in targets:
                 write_publication(repo, group, f"lib-{target}", version, ("module", "pom"))
             pom = repo.joinpath(*group.split("."), "old-lib", version, f"old-lib-{version}.pom")
@@ -312,11 +331,12 @@ def publish_check_self_test() -> list[str]:
             pom.write_text(relocation_pom(*relocated))
             return repo
 
-        def expected(targets: list[str]) -> dict:
+        def expected(targets: list[str], resources: tuple[str, ...] = RESOURCE_ARTIFACTS) -> dict:
             return {
                 "group": group,
                 "version": version,
                 "modules": {"lib": targets},
+                "resourceArtifacts": list(resources),
                 "bom": "bom",
                 "relocations": {"old-lib": "lib"},
             }
@@ -328,6 +348,13 @@ def publish_check_self_test() -> list[str]:
         found = publish_problems(repository("no-ios", no_ios, (group, "lib", version)), expected(no_ios))
         if not any("lib-iosarm64" in p for p in found) or not any("lib-iossimulatorarm64" in p for p in found):
             problems.append(f"a module that dropped its iOS targets is accepted: {found}")
+        complete = (group, "lib", version)
+        found = publish_problems(repository("no-jar", every_target, complete, ("module", "pom")), expected(every_target))
+        if len(found) != len(RESOURCE_ARTIFACTS) or not all(p.endswith("has no .jar") for p in found):
+            problems.append(f"a resource artifact without its .jar is misjudged: {found}")
+        found = publish_problems(repository("unlisted", every_target, complete), expected(every_target, ()))
+        if len(found) != 1 or "resource artifacts" not in found[0]:
+            problems.append(f"a build that no longer lists a resource artifact is misjudged: {found}")
         for name, relocated in (("group", ("io.other", "lib", version)), ("version", (group, "lib", "1.9"))):
             found = publish_problems(repository(f"wrong-{name}", every_target, relocated), expected(every_target))
             if len(found) != 1 or "old-lib" not in found[0]:
@@ -453,7 +480,12 @@ def main() -> int:
             problems.append(f"publish: {task_checks['publish']}")
         else:
             publish_missing = publish_problems(Path(publish_repo), expected_coordinates)
-            count = len(expected_coordinates["modules"]) + 1 + len(expected_coordinates["relocations"])
+            count = (
+                len(expected_coordinates["modules"])
+                + len(expected_coordinates.get("resourceArtifacts", []))
+                + 1
+                + len(expected_coordinates["relocations"])
+            )
             task_checks["publish"] = (
                 f"every coordinate of {count} artifacts published to `{os.path.relpath(publish_repo, ROOT)}`"
                 if not publish_missing
