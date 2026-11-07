@@ -48,8 +48,9 @@ include(":camerak-bom")
 // The release gate's Macrobenchmark over the Sample app; built by verify.sh, run on a device by the maintainer.
 include(":benchmark")
 
-// POM-only relocations of the 1.x artifact ids 2.0 renamed (the root build's relocatedArtifacts).
+// POM-only relocations of the 1.x coordinates 2.0 moved to a new group or id (the root build's relocatedArtifacts).
 include(":relocations:qr_scanner_plugin")
 include(":relocations:ocr_plugin")
 include(":relocations:analyzer_plugin")
 include(":relocations:image_saver_plugin")
+include(":relocations:camerak")

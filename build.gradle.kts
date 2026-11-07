@@ -85,6 +85,7 @@ val relocatedArtifacts =
         "ocr_plugin" to "ocrPlugin",
         "analyzer_plugin" to "analyzerPlugin",
         "image_saver_plugin" to "ImageSaverPlugin",
+        "camerak" to "cameraK",
     )
 
 fun relocationProject(oldId: String) = findProject(":relocations:$oldId")
