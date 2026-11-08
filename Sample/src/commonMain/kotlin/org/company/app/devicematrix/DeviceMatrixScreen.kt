@@ -45,7 +45,6 @@ internal fun DeviceMatrixApp(args: MatrixArgs) {
     val permissions = rememberCameraKPermissionState(
         CameraKPermission.CAMERA,
         CameraKPermission.MICROPHONE,
-        CameraKPermission.GALLERY_ADD,
     )
     LaunchedEffect(permissions) {
         if (!permissions.allGranted) permissions.launchRequest()

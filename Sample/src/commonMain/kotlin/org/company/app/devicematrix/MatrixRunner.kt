@@ -122,7 +122,9 @@ internal class MatrixRunner(
     suspend fun run() {
         val started = clock.markNow()
         log("START ${platform.platformName}: ${platform.deviceDescription}; $args")
-        val permissions = CameraKPermission.entries.map { it.name to awaitAnswer(it)?.toString() }
+        // This phone must not be written to the photo library: gallery access is never asked for.
+        val permissions = listOf(CameraKPermission.CAMERA, CameraKPermission.MICROPHONE)
+            .map { it.name to awaitAnswer(it)?.toString() }
         val header = listOf(
             "platform" to platform.platformName,
             "device" to platform.deviceDescription,
