@@ -85,15 +85,16 @@ internal class CameraInputs(
             if (device.isFront) frontCamera = device else backCamera = device
             device
         } else {
-            backCamera = cameraDevices.find(CameraLens.BACK, cameraDeviceType)
-            frontCamera = cameraDevices.find(CameraLens.FRONT, cameraDeviceType)
-            when (lens) {
-                CameraLens.FRONT -> frontCamera ?: backCamera
-                CameraLens.BACK -> backCamera ?: frontCamera
-            } ?: cameraDevices.find(null, cameraDeviceType)?.also { found ->
-                if (found.isFront) frontCamera = found else backCamera = found
+            val other = lens.opposite()
+            val found = findCamera(lens, cameraDeviceType) ?: return false
+            // The camera switchCamera moves to, found quietly: only the requested facing's fallback is news.
+            val opposite = findCamera(other, cameraDeviceType, warn = false)
+            if (found.isFront) frontCamera = found else backCamera = found
+            if (opposite != null && opposite.isFront != found.isFront) {
+                if (opposite.isFront) frontCamera = opposite else backCamera = opposite
             }
-        } ?: return false
+            found
+        }
 
         currentCamera = camera
         controls.forgetRequestedZoom()
@@ -118,12 +119,20 @@ internal class CameraInputs(
     }
 
     /**
-     * The camera facing [lens] of [type], else the one facing the other way, else any camera of that
-     * type: the order setup has always picked in.
+     * The camera facing [lens] of [type]; when that facing lacks [type], a warning and the facing's
+     * default camera, as Android's CameraSelectorResolver does. A camera facing the other way is never
+     * the answer: with no camera facing [lens] at all, it is the system's camera of no facing for BACK
+     * (an external or Mac camera), else null.
      */
-    fun findCamera(lens: CameraLens, type: CameraDeviceType): CaptureDeviceOps? {
-        val other = if (lens == CameraLens.FRONT) CameraLens.BACK else CameraLens.FRONT
-        return cameraDevices.find(lens, type) ?: cameraDevices.find(other, type) ?: cameraDevices.find(null, type)
+    fun findCamera(lens: CameraLens, type: CameraDeviceType, warn: Boolean = true): CaptureDeviceOps? {
+        cameraDevices.find(lens, type)?.let { return it }
+        if (type != CameraDeviceType.DEFAULT) {
+            cameraDevices.find(lens, CameraDeviceType.DEFAULT)?.let { facingDefault ->
+                if (warn) CameraKLogger.w(TAG, "$type is not available for $lens; using the $lens default camera")
+                return facingDefault
+            }
+        }
+        return cameraDevices.find(null, CameraDeviceType.DEFAULT)?.takeIf { it.isFront == (lens == CameraLens.FRONT) }
     }
 
     fun findCameraById(id: String): CaptureDeviceOps? = cameraDevices.findById(id)
@@ -151,11 +160,9 @@ internal class CameraInputs(
             if (deviceType.toAVCaptureDeviceType() == null) return@async
             if (refusedWhileRecording("change the camera device type")) return@async
 
-            // The requested type facing the current way, falling back to either way
+            // The requested type facing the current way, or that facing's default camera
             val lens = if (isUsingFrontCamera) CameraLens.FRONT else CameraLens.BACK
-            val newDevice = cameraDevices.find(lens, deviceType)
-                ?: cameraDevices.find(null, deviceType)
-                ?: return@async
+            val newDevice = findCamera(lens, deviceType) ?: return@async
 
             val failure = swapVideoInput(ops, newDevice)
             if (failure != null) {
@@ -254,6 +261,8 @@ internal class CameraInputs(
         stills.prepareOnQueue()
     }
 }
+
+private fun CameraLens.opposite(): CameraLens = if (this == CameraLens.FRONT) CameraLens.BACK else CameraLens.FRONT
 
 /**
  * Convert CameraDeviceType enum to AVFoundation device type string
