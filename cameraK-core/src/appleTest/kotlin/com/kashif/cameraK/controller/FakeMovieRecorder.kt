@@ -3,9 +3,11 @@ package com.kashif.cameraK.controller
 import platform.AVFoundation.AVCaptureFileOutputRecordingDelegateProtocol
 import platform.AVFoundation.AVCaptureMovieFileOutput
 import platform.AVFoundation.AVCaptureVideoOrientation
+import platform.Foundation.NSDate
 import platform.Foundation.NSError
 import platform.Foundation.NSLock
 import platform.Foundation.NSURL
+import platform.Foundation.timeIntervalSince1970
 
 /**
  * A [MovieRecorder] that records each call instead of recording. A started recording stays "in
@@ -27,6 +29,12 @@ internal class FakeMovieRecorder : MovieRecorder {
     /** Whether pause takes effect; a pause the output does not apply leaves isPaused false. */
     var pauseTakesEffect = true
 
+    /**
+     * How long after pause or resume the output reports the change, as AVCaptureMovieFileOutput applies
+     * it on its own queue: isPaused keeps its old value until this many milliseconds have passed.
+     */
+    var pauseLatencyMs: Long = 0
+
     /** Whether the output's audio connection is active, for a recording whose microphone was added. */
     var audioConnectionActive = true
 
@@ -39,6 +47,7 @@ internal class FakeMovieRecorder : MovieRecorder {
     private var pauseCount = 0
     private var recording = false
     private var paused = false
+    private var pauseChangedAt = 0.0
 
     val starts: List<Start> get() = locked { startList.toList() }
     val stops: Int get() = locked { stopCount }
@@ -58,6 +67,7 @@ internal class FakeMovieRecorder : MovieRecorder {
             startList += Start(output, url, rotation, delegate as VideoRecordingDelegate, queue)
             recording = true
             paused = false
+            pauseChangedAt = 0.0
         }
     }
 
@@ -67,12 +77,23 @@ internal class FakeMovieRecorder : MovieRecorder {
 
     override fun pause(output: AVCaptureMovieFileOutput) = locked {
         pauseCount++
-        if (pauseTakesEffect) paused = true
+        if (pauseTakesEffect) changePaused(true)
     }
 
-    override fun resume(output: AVCaptureMovieFileOutput) = locked { paused = false }
+    override fun resume(output: AVCaptureMovieFileOutput) = locked { changePaused(false) }
 
-    override fun isPaused(output: AVCaptureMovieFileOutput): Boolean = locked { paused }
+    override fun isPaused(output: AVCaptureMovieFileOutput): Boolean = locked {
+        if (now() - pauseChangedAt >= pauseLatencyMs / 1000.0) paused else !paused
+    }
+
+    // Under the lock.
+    private fun changePaused(to: Boolean) {
+        if (paused == to) return
+        paused = to
+        pauseChangedAt = now()
+    }
+
+    private fun now(): Double = NSDate().timeIntervalSince1970
 
     override fun hasActiveAudioConnection(output: AVCaptureMovieFileOutput): Boolean = audioConnectionActive
 
