@@ -173,7 +173,7 @@ internal class AndroidCameraEngine(
         analyzerExecutor = analyzerExecutor,
         sessionFormat = config.analysisFormat,
         newWorker = { name -> environment.runtime.newWorker(name) },
-        resolutionSelector = binder.analysisResolutionSelector(config.analysisResolution),
+        resolutionSelector = { outputs -> binder.analysisResolutionSelector(config.analysisResolution, outputs) },
     )
     internal val videoRecorder: VideoRecorder =
         VideoRecorder(

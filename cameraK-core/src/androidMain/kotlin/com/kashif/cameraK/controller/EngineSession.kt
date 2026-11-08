@@ -262,7 +262,6 @@ internal class EngineSession(
         binder.useProvider(binding)
         observers.clear()
         boundCamera = null
-        val resolutionSelector = binder.resolutionSelector()
         val pinned = resolved.pinnedPhysicalId
         pinnedPhysicalId = pinned
         val facts = resolved.pinnedFacts
@@ -270,11 +269,11 @@ internal class EngineSession(
         val outputs = facts?.outputs
         boundLens = resolved.lens
 
-        val preview = binder.buildPreview(resolutionSelector.keepingOnly(outputs?.preview), pinned) {
+        val preview = binder.buildPreview(binder.resolutionSelector(outputs?.preview), pinned) {
             backend.onPreviewFrame(it, ::onPreviewFrame)
         }
         previewSource.bindTo(preview)
-        stillCapturer.configure(resolutionSelector.keepingOnly(outputs?.still), controls.flashMode, pinned)
+        stillCapturer.configure(binder.resolutionSelector(outputs?.still), controls.flashMode, pinned)
         // VideoCapture joins the group only while a recording needs it or it was prepared.
         val video = videoRecorder.useCaseForBind()
         catalog.forgetBoundQualities()

@@ -49,7 +49,8 @@ internal class FramePipeline(
     private val sessionFormat: FrameFormat = FrameFormat.YUV_420,
     private val newWorker: (String) -> WorkerDispatcher = ::newDedicatedWorker,
     private val nanoTime: () -> Long = System::nanoTime,
-    private val resolutionSelector: ResolutionSelector? = null,
+    /** The analysis selector, keeping only the sizes given when they are set; null leaves CameraX's default. */
+    private val resolutionSelector: (outputs: List<Size>?) -> ResolutionSelector? = { null },
 ) : FrameSource {
     private val registrations = atomic(emptyList<Registration>())
     private val pool = FramePool()
@@ -122,8 +123,7 @@ internal class FramePipeline(
      */
     @OptIn(ExperimentalCamera2Interop::class)
     fun build(pinnedPhysicalId: String?, outputs: List<Size>? = null): ImageAnalysis {
-        val selector = outputs?.let { (resolutionSelector ?: ResolutionSelector.Builder().build()).keepingOnly(it) }
-            ?: resolutionSelector
+        val selector = resolutionSelector(outputs)
         val built = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(sessionFormat.toOutputImageFormat())
