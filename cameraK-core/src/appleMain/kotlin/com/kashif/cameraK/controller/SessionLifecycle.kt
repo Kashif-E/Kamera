@@ -87,9 +87,24 @@ internal class SessionLifecycle(
         session = null
     }
 
-    /** Tears the session down and forgets it and its still preset. Session queue only. */
+    /**
+     * Tears the session down: stopped, then emptied of its inputs and outputs in one transaction, so it
+     * holds no camera however long the session object itself lives on. Kotlin/Native releases the
+     * AVCaptureSession only when its collector frees the engine, and every closed session still holding
+     * a camera's input slowed the next start on that camera until starts timed out. Forgets the session
+     * and its still preset. Session queue only.
+     */
     fun tearDownOnQueue() {
-        (session ?: preparedSession)?.tearDown()
+        (session ?: preparedSession)?.let { ops ->
+            ops.tearDown()
+            ops.beginConfiguration()
+            try {
+                ops.inputs.forEach(ops::removeInput)
+                ops.outputs.forEach(ops::removeOutput)
+            } finally {
+                ops.commitConfiguration()
+            }
+        }
         session = null
         preparedSession = null
         stillPreset = null
