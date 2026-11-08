@@ -105,6 +105,9 @@ internal class AppleRecorder(
     /** Session queue: a recording finalized and nothing records now, so the outputs may change again. */
     var onIdle: () -> Unit = {}
 
+    /** The duration of the finished movie at a path, or null when it cannot be read; tests answer for the fake output. */
+    var fileDuration: (path: String) -> Duration? = { null }
+
     /** Whether the movie output can pause: AVCaptureFileOutput's pause exists from iOS 18. */
     var pauseSupported: () -> Boolean = { osVersion >= PAUSE_RESUME_IOS }
 
