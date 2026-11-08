@@ -43,17 +43,20 @@ internal class PreviewLayers(
         mirroring(layer, front)
     }
 
-    /** Takes the layer away and removes it from its superlayer, on main; callable from any thread. */
+    /**
+     * Takes the layer away, removes it from its superlayer and takes the session out of it, on main, so
+     * a layer UIKit or Compose keeps does not keep the closed session alive; callable from any thread.
+     */
     fun remove() {
         val layer = layer
         this.layer = null
         // The layer belongs to UIKit; the engine may close from any thread.
         if (layer != null) {
-            if (NSThread.isMainThread) {
+            val detach = {
                 layer.removeFromSuperlayer()
-            } else {
-                dispatch_async(dispatch_get_main_queue()) { layer.removeFromSuperlayer() }
+                layer.session = null
             }
+            if (NSThread.isMainThread) detach() else dispatch_async(dispatch_get_main_queue(), detach)
         }
     }
 
