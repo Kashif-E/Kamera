@@ -54,4 +54,22 @@ class TorchSupportTest {
             engine.close()
         }
     }
+
+    // On an iPhone 14 Pro the front camera, which has no torch, refused OFF with Unsupported(TORCH) though
+    // its capabilities list OFF (device matrix #18). A torch that does not exist is off.
+    @Test
+    fun offAlwaysSucceedsAndACameraWithoutATorchIsNeverGivenIt() {
+        val driver = AppleEngineDriver() // neither camera has a torch
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+
+            assertEquals(CameraKResult.Success(TorchMode.OFF), engine.setTorchMode(TorchMode.OFF), "OFF without a torch")
+            assertEquals(null, driver.back.lastTorchSet, "a device without a torch was given a mode")
+            driver.settle()
+            assertEquals(TorchMode.OFF, engine.hardware.value.torchMode, "the torch the engine reports")
+            engine.close()
+        }
+    }
 }
