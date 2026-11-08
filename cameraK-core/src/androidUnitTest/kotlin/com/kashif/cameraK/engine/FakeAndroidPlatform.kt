@@ -15,6 +15,7 @@ import androidx.camera.core.Preview
 import androidx.test.core.app.ApplicationProvider
 import com.kashif.cameraK.capabilities.AndroidLensDescriptor
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capabilities.PhysicalLensFacts
 import com.kashif.cameraK.controller.AndroidCameraEngine
 import com.kashif.cameraK.controller.FakeCamera
 import com.kashif.cameraK.controller.FakeCameraXBackend
@@ -50,6 +51,10 @@ import java.util.concurrent.ExecutorService
  * With [offeredByCameraX], CameraX offers only those cameras, which may differ from what the
  * enumeration listed (a USB camera unplugged since): each camera a bind asks for is selected by its
  * real CameraX selector over them, and a bind that selects none is refused as CameraX refuses it.
+ *
+ * [physicalChildren] names the lenses that are physical lenses of a logical multi-camera, as the
+ * enumeration lists them. A bind that pins one binds its logical camera, as CameraX does: the camera it
+ * returns is the parent's, with the parent's flash unit, zoom and metering.
  */
 internal class FakeAndroidPlatform(
     val lenses: List<LensInfo> = TWO_FIXED_CAMERAS,
@@ -57,6 +62,7 @@ internal class FakeAndroidPlatform(
     private val flashUnitOf: (LensInfo) -> Boolean = { it.hasFlash },
     private val offeredByCameraX: List<LensInfo>? = null,
     private val meteringOf: (LensInfo) -> FakeMetering = { FakeMetering() },
+    private val physicalChildren: Map<String, PhysicalChild> = emptyMap(),
 ) {
     val context: Context = ApplicationProvider.getApplicationContext()
     val backend = FakeCameraXBackend()
@@ -125,7 +131,10 @@ internal class FakeAndroidPlatform(
 
     private val lensSource: () -> List<AndroidLensDescriptor> = {
         enumerations += Thread.currentThread()
-        lenses.map { AndroidLensDescriptor(it, isPhysicalChild = false, parentLogicalId = null) }
+        lenses.map { lens ->
+            val child = physicalChildren[lens.id]
+            AndroidLensDescriptor(lens, child != null, child?.parentLogicalId, child?.facts)
+        }
     }
 
     /** Runs what the engine queued on the scheduler and the main looper until both are idle. */
@@ -195,7 +204,7 @@ internal class FakeAndroidPlatform(
                 is ResolvedCamera.FacingDefault -> lenses.first { it.lens == resolved.lens }.id
                 is ResolvedCamera.TopLevel -> resolved.cameraId
                 is ResolvedCamera.External -> resolved.cameraId
-                is ResolvedCamera.PhysicalLens -> resolved.physicalId
+                is ResolvedCamera.PhysicalLens -> checkNotNull(resolved.parentLogicalId)
             }
         }
         val lens = lenses.first { it.id == id }
@@ -208,6 +217,9 @@ internal class FakeAndroidPlatform(
             meters = meteringOf(lens),
         )
     }
+
+    /** A physical lens of the logical camera [parentLogicalId], with what it can do on its own. */
+    class PhysicalChild(val parentLogicalId: String, val facts: PhysicalLensFacts?)
 
     companion object {
         private const val SETTLE_ROUNDS = 4

@@ -5,6 +5,7 @@ import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
 import com.kashif.cameraK.capabilities.AndroidLensDescriptor
+import com.kashif.cameraK.capabilities.PhysicalLensFacts
 import com.kashif.cameraK.capabilities.deviceTypeTarget
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
@@ -22,9 +23,16 @@ internal sealed interface ResolvedCamera {
     /** A camera CameraX lists itself, selected by its id. */
     data class TopLevel(override val lens: CameraLens, val cameraId: String) : ResolvedCamera
 
-    /** A physical lens inside the logical multi-camera [parentLogicalId], pinned through Camera2Interop. */
-    data class PhysicalLens(override val lens: CameraLens, val physicalId: String, val parentLogicalId: String?) :
-        ResolvedCamera
+    /**
+     * A physical lens inside the logical multi-camera [parentLogicalId], pinned through Camera2Interop;
+     * [facts] is what the lens can do on its own, null when the enumeration has none.
+     */
+    data class PhysicalLens(
+        override val lens: CameraLens,
+        val physicalId: String,
+        val parentLogicalId: String?,
+        val facts: PhysicalLensFacts? = null,
+    ) : ResolvedCamera
 
     /**
      * An external (USB) camera, selected by its id alone: it faces neither way, and CameraX's facing

@@ -19,8 +19,14 @@ import com.kashif.cameraK.utils.CameraKLogger
  * resolves purely from the CameraFilter set — setPhysicalCameraId does NOT influence which logical
  * camera is picked — so pinning a physical child to the right hardware requires filtering on this
  * parent id too (see CameraSelectorResolver).
+ * @property physical For a physical sub-lens, what it can do on its own; null for top-level entries.
  */
-internal class AndroidLensDescriptor(val info: LensInfo, val isPhysicalChild: Boolean, val parentLogicalId: String?)
+internal class AndroidLensDescriptor(
+    val info: LensInfo,
+    val isPhysicalChild: Boolean,
+    val parentLogicalId: String?,
+    val physical: PhysicalLensFacts? = null,
+)
 
 /**
  * The built-in lens a switch to [deviceType] on [lens] binds, or null when [lens] has no lens of that
@@ -218,6 +224,9 @@ internal interface Camera2Reader {
 
     /** The physical lenses of a logical multi-camera; none below API 28. */
     fun physicalCameraIds(characteristics: CameraCharacteristics): Set<String>
+
+    /** The sizes [characteristics]' stream configuration map outputs; null when it has none. */
+    fun outputSizes(characteristics: CameraCharacteristics): LensOutputSizes? = TODO("w14 red stub")
 }
 
 private class CameraManagerReader(private val manager: CameraManager) : Camera2Reader {
