@@ -8,6 +8,10 @@ internal data class MatrixArgs(
     val offset: Int = 0,
     val sections: Set<MatrixSection> = MatrixSection.entries.toSet(),
     val limit: Int? = null,
+    /** Instead of the matrix: open and close this many holders of [churnLens] and [churnType] in one process. */
+    val churn: Int? = null,
+    val churnLens: String = "BACK",
+    val churnType: String = "WIDE_ANGLE",
 )
 
 /**
@@ -21,6 +25,9 @@ internal fun matrixArgsFromLaunchArguments(arguments: List<String>): MatrixArgs?
         offset = valueOf("-cameraKMatrixOffset")?.toIntOrNull() ?: 0,
         sections = parseSections(valueOf("-cameraKMatrixSections")),
         limit = valueOf("-cameraKMatrixLimit")?.toIntOrNull(),
+        churn = valueOf("-cameraKMatrixChurn")?.toIntOrNull(),
+        churnLens = valueOf("-cameraKMatrixChurnLens") ?: "BACK",
+        churnType = valueOf("-cameraKMatrixChurnType") ?: "WIDE_ANGLE",
     )
 }
 

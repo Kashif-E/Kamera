@@ -131,6 +131,10 @@ internal class MatrixRunner(
             "limit" to args.limit,
             "permissions" to permissions,
         )
+        args.churn?.let { holders ->
+            churn(holders)
+            return
+        }
         val probed = probe()
         if (probed == null) {
             writer.begin(args.offset > 0, header + ("error" to "probe: the back camera did not open, no capabilities"))
@@ -155,6 +159,33 @@ internal class MatrixRunner(
         _progress.value = MatrixProgress(total = total)
         for (group in groups(selected)) runGroup(group)
         finish(started)
+    }
+
+    // Opens and closes [holders] holders of one camera in this process, logging each one's time to Ready
+    // and to closed, and the median time to Ready of each 50.
+    private suspend fun churn(holders: Int) {
+        val config = CameraConfiguration {
+            cameraLens = CameraLens.valueOf(args.churnLens)
+            cameraDeviceType = CameraDeviceType.valueOf(args.churnType)
+        }
+        log("CHURN $holders holders of ${args.churnLens}/${args.churnType}")
+        val ready = mutableListOf<Long>()
+        for (i in 1..holders) {
+            val holder = platform.newHolder(config, emptyList())
+            _holder.value = holder
+            val opened = open(holder)
+            val camera = holder.uiState.value.cameraId
+            _holder.value = null
+            val closing = clock.markNow()
+            val closed = withTimeoutOrNull(timing.close) { holder.closeAndJoin() } != null
+            val closeMs = closing.elapsedNow().inWholeMilliseconds
+            ready += opened.readyMs
+            log("CHURN $i/$holders state=${opened.state} readyMs=${opened.readyMs} closeMs=$closeMs closed=$closed camera=$camera")
+            _progress.update { it.copy(done = i, total = holders, current = "churn $i") }
+            if (i % 50 == 0) log("CHURN median of $i-49..$i readyMs=${ready.takeLast(50).sorted()[25]}")
+        }
+        log("DONE churn=$holders")
+        _progress.update { it.copy(finished = true, current = "done") }
     }
 
     private fun finish(started: TimeSource.Monotonic.ValueTimeMark) {
