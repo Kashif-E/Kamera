@@ -65,7 +65,11 @@ class TorchSupportTest {
             driver.settle()
             assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
 
-            assertEquals(CameraKResult.Success(TorchMode.OFF), engine.setTorchMode(TorchMode.OFF), "OFF without a torch")
+            assertEquals(
+                CameraKResult.Success(TorchMode.OFF),
+                engine.setTorchMode(TorchMode.OFF),
+                "OFF without a torch",
+            )
             assertEquals(null, driver.back.lastTorchSet, "a device without a torch was given a mode")
             driver.settle()
             assertEquals(TorchMode.OFF, engine.hardware.value.torchMode, "the torch the engine reports")

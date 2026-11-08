@@ -114,13 +114,19 @@ internal class EngineControls(
 
     /**
      * Sets the torch on the session queue when the camera's device supports [mode], the source of its
-     * torch capabilities; [hardware] follows when the device reports it lit or dark.
+     * torch capabilities; [hardware] follows when the device reports it lit or dark. OFF always
+     * succeeds: a camera without a torch is dark already and its device is never given a mode.
      */
     suspend fun setTorchMode(mode: TorchMode): CameraKResult<TorchMode> {
         generations.notOpen()?.let { return it }
         return generations.onSessionQueue("setting the torch") {
             val device = custom.currentDevice ?: return@onSessionQueue engineFailure(CameraKError.NotReady)
             val avMode = mode.toAVCaptureTorchMode()
+            if (mode == TorchMode.OFF && !device.hasTorch) {
+                desiredTorch = mode
+                custom.torchMode = avMode
+                return@onSessionQueue CameraKResult.Success(mode)
+            }
             if (!device.hasTorch || !device.isTorchModeSupported(avMode)) {
                 return@onSessionQueue engineFailure(CameraKError.Unsupported(CameraFeature.TORCH))
             }
