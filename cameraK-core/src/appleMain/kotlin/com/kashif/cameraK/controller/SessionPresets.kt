@@ -44,3 +44,12 @@ internal fun presetCandidates(aspectRatio: AspectRatio, target: Pair<Int, Int>?)
     val start = ladder.indexOfLast { it.long >= long && it.short >= short }.coerceAtLeast(0)
     return ladder.drop(start).map { it.name }
 }
+
+/**
+ * Whether [preset], a session preset setup chose, delivers a frame that reaches [target] (its long and
+ * short sides); false for a preset CameraK does not choose. The Photo preset is the sensor's full size.
+ */
+internal fun presetReaches(preset: String?, target: Pair<Int, Int>): Boolean {
+    val known = (fourThree + sixteenNine).firstOrNull { it.name == preset } ?: return false
+    return known.long >= maxOf(target.first, target.second) && known.short >= minOf(target.first, target.second)
+}
