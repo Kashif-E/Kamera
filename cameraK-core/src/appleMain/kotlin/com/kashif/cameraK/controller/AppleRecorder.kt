@@ -38,6 +38,8 @@ import platform.AVFoundation.AVCaptureSessionPreset1920x1080
 import platform.AVFoundation.AVCaptureSessionPreset3840x2160
 import platform.AVFoundation.AVCaptureSessionPreset640x480
 import platform.AVFoundation.AVMediaTypeAudio
+import platform.AVFoundation.AVURLAsset
+import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.CoreMedia.kCMTimeInvalid
 import platform.Foundation.NSDate
@@ -48,6 +50,7 @@ import platform.Foundation.timeIntervalSince1970
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.resume
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
@@ -106,7 +109,7 @@ internal class AppleRecorder(
     var onIdle: () -> Unit = {}
 
     /** The duration of the finished movie at a path, or null when it cannot be read; tests answer for the fake output. */
-    var fileDuration: (path: String) -> Duration? = { null }
+    var fileDuration: (path: String) -> Duration? = ::movieFileDuration
 
     /** Whether the movie output can pause: AVCaptureFileOutput's pause exists from iOS 18. */
     var pauseSupported: () -> Boolean = { osVersion >= PAUSE_RESUME_IOS }
@@ -184,36 +187,92 @@ internal class AppleRecorder(
         }
     }
 
-    suspend fun pause(): CameraKResult<Unit> = onQueue("pausing a recording") {
+    /**
+     * Pauses the recording and returns once the movie output reports it paused. AVCaptureMovieFileOutput
+     * applies a pause on its own queue, so isRecordingPaused still reads false straight after
+     * pauseRecording; the session queue checks it again every [OUTPUT_STATE_POLL_MS] for up to
+     * [OUTPUT_STATE_TIMEOUT_MS].
+     */
+    suspend fun pause(): CameraKResult<Unit> = onQueueAwaiting("pausing a recording") { done ->
         val movie = active?.takeIf { it.started.isCompleted && !it.abandoned }
-            ?: return@onQueue failure(CameraKError.InvalidState(CameraOperation.RECORD_PAUSE))
-        if (!pauseSupported()) return@onQueue failure(CameraKError.Unsupported(CameraFeature.PAUSE_RESUME))
-        movieRecorder.pause(movie.output)
-        if (!movieRecorder.isPaused(movie.output)) {
-            return@onQueue failure(CameraKError.Hardware(null, IllegalStateException("The movie output did not pause")))
-        }
-        movie.pausedAt = TimeSource.Monotonic.markNow()
-        _events.tryEmit(EngineRecordingEvent.Paused)
-        CameraKResult.Success(Unit)
-    }
-
-    suspend fun resume(): CameraKResult<Unit> = onQueue("resuming a recording") {
-        val movie = active?.takeIf { it.started.isCompleted && !it.abandoned }
-            ?: return@onQueue failure(CameraKError.InvalidState(CameraOperation.RECORD_RESUME))
-        if (!pauseSupported()) return@onQueue failure(CameraKError.Unsupported(CameraFeature.PAUSE_RESUME))
-        if (!movieRecorder.isPaused(movie.output)) {
-            return@onQueue failure(CameraKError.InvalidState(CameraOperation.RECORD_RESUME))
-        }
-        movieRecorder.resume(movie.output)
-        if (movieRecorder.isPaused(movie.output)) {
-            return@onQueue failure(
-                CameraKError.Hardware(null, IllegalStateException("The movie output did not resume")),
+            ?: return@onQueueAwaiting done(failure(CameraKError.InvalidState(CameraOperation.RECORD_PAUSE)))
+        if (!pauseSupported()) {
+            return@onQueueAwaiting done(
+                failure(CameraKError.Unsupported(CameraFeature.PAUSE_RESUME)),
             )
         }
-        movie.pausedAt?.let { movie.paused += it.elapsedNow() }
-        movie.pausedAt = null
-        _events.tryEmit(EngineRecordingEvent.Resumed)
-        CameraKResult.Success(Unit)
+        movieRecorder.pause(movie.output)
+        whenOutputReports({ movieRecorder.isPaused(movie.output) }, done) { paused ->
+            when {
+                movie.finalized -> failure(CameraKError.InvalidState(CameraOperation.RECORD_PAUSE))
+                !paused -> failure(
+                    CameraKError.Hardware(
+                        null,
+                        IllegalStateException("The movie output did not pause within $OUTPUT_STATE_TIMEOUT_MS ms"),
+                    ),
+                )
+                else -> {
+                    if (movie.pausedAt == null) movie.pausedAt = TimeSource.Monotonic.markNow()
+                    _events.tryEmit(EngineRecordingEvent.Paused)
+                    CameraKResult.Success(Unit)
+                }
+            }
+        }
+    }
+
+    /** Resumes a paused recording and returns once the movie output reports it recording again ([pause]). */
+    suspend fun resume(): CameraKResult<Unit> = onQueueAwaiting("resuming a recording") { done ->
+        val movie = active?.takeIf { it.started.isCompleted && !it.abandoned }
+            ?: return@onQueueAwaiting done(failure(CameraKError.InvalidState(CameraOperation.RECORD_RESUME)))
+        if (!pauseSupported()) {
+            return@onQueueAwaiting done(
+                failure(CameraKError.Unsupported(CameraFeature.PAUSE_RESUME)),
+            )
+        }
+        if (movie.pausedAt == null) {
+            return@onQueueAwaiting done(failure(CameraKError.InvalidState(CameraOperation.RECORD_RESUME)))
+        }
+        movieRecorder.resume(movie.output)
+        whenOutputReports({ !movieRecorder.isPaused(movie.output) }, done) { resumed ->
+            when {
+                movie.finalized -> failure(CameraKError.InvalidState(CameraOperation.RECORD_RESUME))
+                !resumed -> failure(
+                    CameraKError.Hardware(
+                        null,
+                        IllegalStateException("The movie output did not resume within $OUTPUT_STATE_TIMEOUT_MS ms"),
+                    ),
+                )
+                else -> {
+                    movie.pausedAt?.let { movie.paused += it.elapsedNow() }
+                    movie.pausedAt = null
+                    _events.tryEmit(EngineRecordingEvent.Resumed)
+                    CameraKResult.Success(Unit)
+                }
+            }
+        }
+    }
+
+    /**
+     * Session queue: passes to [done] what [then] makes of whether [applied] held, checked now and then
+     * every [OUTPUT_STATE_POLL_MS] until it holds or [OUTPUT_STATE_TIMEOUT_MS] have passed. The queue
+     * is free between checks.
+     */
+    private fun whenOutputReports(
+        applied: () -> Boolean,
+        done: (CameraKResult<Unit>) -> Unit,
+        waitedMs: Long = 0,
+        then: (Boolean) -> CameraKResult<Unit>,
+    ) {
+        val holds = applied()
+        if (holds || waitedMs >= OUTPUT_STATE_TIMEOUT_MS) return done(then(holds))
+        custom.onSessionQueueAfter(OUTPUT_STATE_POLL_MS) {
+            try {
+                whenOutputReports(applied, done, waitedMs + OUTPUT_STATE_POLL_MS, then)
+            } catch (e: Exception) {
+                CameraKLogger.e(TAG, "reading the movie output's paused state failed", e)
+                done(failure(CameraKError.Internal(e)))
+            }
+        }
     }
 
     /** The engine's stop: a running recording ends with SHUTDOWN before the camera stops (contract rule 7). */
@@ -424,9 +483,25 @@ internal class AppleRecorder(
         return (elapsed - paused).coerceAtLeast(Duration.ZERO)
     }
 
+    /**
+     * The finished file's duration, which is what was recorded; the wall clock less the pauses only
+     * when the file's cannot be read.
+     */
+    private fun duration(movie: Movie): Duration {
+        val fromFile = try {
+            fileDuration(movie.path)
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "reading the finished movie's duration failed", e)
+            null
+        }
+        return fromFile ?: recorded(movie).also {
+            CameraKLogger.w(TAG, "the finished movie's duration could not be read; reporting the time it recorded for")
+        }
+    }
+
     private fun video(movie: Movie): RecordedVideo = RecordedVideo(
         path = movie.path,
-        duration = recorded(movie),
+        duration = duration(movie),
         width = movie.config.quality.width,
         height = movie.config.quality.height,
         bitrateBps = null,
@@ -461,6 +536,21 @@ internal class AppleRecorder(
         val directory = appOwnedDirectory(config.outputDirectory ?: cameraConfig.outputDirectory)
         val timestamp = NSDate().timeIntervalSince1970.toLong()
         return "$directory/${config.filePrefix}_${timestamp}_${NSUUID().UUIDString.take(8)}.mp4"
+    }
+
+    /** Runs [block] on the session queue; its result is what it, or work it queues later, passes to done. */
+    private suspend fun <T> onQueueAwaiting(
+        what: String,
+        block: (done: (CameraKResult<T>) -> Unit) -> Unit,
+    ): CameraKResult<T> = suspendCancellableCoroutine { continuation ->
+        custom.afterQueuedSessionWork {
+            try {
+                block { result -> continuation.resume(result) }
+            } catch (e: Exception) {
+                CameraKLogger.e(TAG, "$what failed", e)
+                continuation.resume(failure(CameraKError.Internal(e)))
+            }
+        }
     }
 
     private suspend fun <T> onQueue(what: String, block: () -> CameraKResult<T>): CameraKResult<T> =
@@ -527,6 +617,10 @@ internal class AppleRecorder(
     private companion object {
         const val TAG = "CameraK"
         const val PAUSE_RESUME_IOS = 18
+
+        /** How often, and for how long, pause and resume check that the movie output applied them. */
+        const val OUTPUT_STATE_POLL_MS = 10L
+        const val OUTPUT_STATE_TIMEOUT_MS = 1_000L
         const val EVENT_BUFFER = 64
 
         /** Free space a recording leaves on disk: room for the system and the file's finalisation. */
@@ -548,4 +642,11 @@ internal fun defaultMicrophoneInput(): Result<AVCaptureInput> = memScoped {
             error.value?.let(::NSErrorException)
                 ?: IllegalStateException("AVFoundation made no input for the microphone and gave no error"),
         )
+}
+
+/** The duration of the movie at [path] as its file states it; null when the file has none to read. */
+internal fun movieFileDuration(path: String): Duration? {
+    val asset = AVURLAsset.URLAssetWithURL(NSURL.fileURLWithPath(path), options = null)
+    val seconds = CMTimeGetSeconds(asset.duration)
+    return if (seconds.isFinite() && seconds > 0) seconds.seconds else null
 }
