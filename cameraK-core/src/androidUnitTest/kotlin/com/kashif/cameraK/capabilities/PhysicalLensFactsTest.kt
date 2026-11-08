@@ -114,6 +114,7 @@ class PhysicalLensFactsTest {
     private class PixelReader(
         private val ultraWideMinFocus: Float? = 0f,
         private val ultraWideRegions: IntArray? = intArrayOf(1, 0, 0),
+        /** When set, reading the ultra-wide's output sizes throws it. */
         private val outputFailure: Throwable? = null,
     ) : Camera2Reader {
         override fun cameraIds(): Array<String> = arrayOf("0")
@@ -131,7 +132,7 @@ class PhysicalLensFactsTest {
             if (characteristics === byId["0"]) setOf("2", "3") else emptySet()
 
         override fun outputSizes(characteristics: CameraCharacteristics): LensOutputSizes? {
-            outputFailure?.let { throw it }
+            if (characteristics === byId["3"]) outputFailure?.let { throw it }
             return super.outputSizes(characteristics)
         }
 

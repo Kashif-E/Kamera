@@ -1,5 +1,6 @@
 package com.kashif.cameraK.controller
 
+import android.util.Size
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
@@ -115,15 +116,18 @@ internal class FramePipeline(
 
     /**
      * Builds the [ImageAnalysis] use case in the session's format and size, baking in
-     * [pinnedPhysicalId] via Camera2Interop, makes it the current [analysis] and attaches the
-     * multiplexer when someone is consuming. Construction only: it does not bind.
+     * [pinnedPhysicalId] via Camera2Interop and keeping only the YUV sizes the pinned lens [outputs],
+     * makes it the current [analysis] and attaches the multiplexer when someone is consuming.
+     * Construction only: it does not bind.
      */
     @OptIn(ExperimentalCamera2Interop::class)
-    fun build(pinnedPhysicalId: String?): ImageAnalysis {
+    fun build(pinnedPhysicalId: String?, outputs: List<Size>? = null): ImageAnalysis {
+        val selector = outputs?.let { (resolutionSelector ?: ResolutionSelector.Builder().build()).keepingOnly(it) }
+            ?: resolutionSelector
         val built = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(sessionFormat.toOutputImageFormat())
-            .apply { resolutionSelector?.let { setResolutionSelector(it) } }
+            .apply { selector?.let { setResolutionSelector(it) } }
             .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
             .build()
         analysis = built

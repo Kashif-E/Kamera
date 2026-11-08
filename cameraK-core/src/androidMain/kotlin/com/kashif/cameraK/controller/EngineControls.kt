@@ -7,6 +7,7 @@ import androidx.camera.core.Camera
 import androidx.camera.core.Preview
 import androidx.camera.core.TorchState
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capabilities.PhysicalMetering
 import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.HardwareState
@@ -44,6 +45,7 @@ internal class EngineControls(
     private val videoRecorder: VideoRecorder,
     preview: () -> Preview?,
     mirrored: () -> Boolean,
+    pinnedMetering: () -> PhysicalMetering?,
     callbackExecutor: Executor,
     isReleased: () -> Boolean,
 ) {
@@ -59,6 +61,7 @@ internal class EngineControls(
     private val metering = FocusMetering(
         backend = backend,
         camera = { binder.camera },
+        pinnedMetering = pinnedMetering,
         preview = preview,
         mirrored = mirrored,
         executor = callbackExecutor,

@@ -10,6 +10,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capabilities.PhysicalLensFacts
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.engine.EngineState
@@ -87,6 +88,10 @@ internal class EngineSession(
 
     /** The physical lens every use case of the current bind pins, or null. */
     var pinnedPhysicalId: String? = null
+        private set
+
+    /** What the physical lens the current bind pins can do on its own, or null. */
+    var pinnedFacts: PhysicalLensFacts? = null
         private set
 
     /** The facing of the current bind; the still capturer's front-camera mirroring reads it. */
@@ -260,16 +265,22 @@ internal class EngineSession(
         val resolutionSelector = binder.resolutionSelector()
         val pinned = resolved.pinnedPhysicalId
         pinnedPhysicalId = pinned
+        val facts = resolved.pinnedFacts
+        pinnedFacts = facts
+        val outputs = facts?.outputs
         boundLens = resolved.lens
 
-        val preview = binder.buildPreview(resolutionSelector, pinned) { backend.onPreviewFrame(it, ::onPreviewFrame) }
+        val preview = binder.buildPreview(resolutionSelector.keepingOnly(outputs?.preview), pinned) {
+            backend.onPreviewFrame(it, ::onPreviewFrame)
+        }
         previewSource.bindTo(preview)
-        stillCapturer.configure(resolutionSelector, controls.flashMode, pinned)
+        stillCapturer.configure(resolutionSelector.keepingOnly(outputs?.still), controls.flashMode, pinned)
         // VideoCapture joins the group only while a recording needs it or it was prepared.
         val video = videoRecorder.useCaseForBind()
         catalog.forgetBoundQualities()
         // Rebuilt rather than reused: its Camera2Interop pin belongs to the bind it was built for.
-        framePipeline.analysis = if (framePipeline.analysisRequested) framePipeline.build(pinned) else null
+        framePipeline.analysis =
+            if (framePipeline.analysisRequested) framePipeline.build(pinned, outputs?.analysis) else null
         controls.applyCaptureRotation()
 
         val useCases = buildList<UseCase> {
@@ -306,7 +317,9 @@ internal class EngineSession(
         framePipeline.onBound(framePipeline.analysis != null)
         if (video == null) videoRecorder.onBoundWithoutVideo()
         catalog.queryVideoQualities(camera)
-        controls.onBound(camera) { catalog.describeBound(camera, catalog.reportedLens(resolved, camera, binding)) }
+        controls.onBound(camera) {
+            catalog.describeBound(camera, catalog.reportedLens(resolved, camera, binding), facts?.metering)
+        }
         observe(camera)
         // A bind while the engine runs attaches the use cases at once; the first bind of a start waits
         // for the camera to open, which applies them.

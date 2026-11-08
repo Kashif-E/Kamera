@@ -22,6 +22,9 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.lifecycle.LifecycleOwner
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.state.Resolution
+import com.kashif.cameraK.utils.CameraKLogger
+
+private const val TAG = "CameraK"
 
 /**
  * Binds the engine's use cases to the process camera provider and unbinds exactly those. Owns the
@@ -235,6 +238,25 @@ internal class UseCaseBinder(
 
 // ImageAnalysis's own default size in CameraX 1.5 (SizeUtil.RESOLUTION_VGA).
 private val ANALYSIS_DEFAULT_SIZE = Size(640, 480)
+
+/**
+ * This selector, keeping only the sizes in [outputs] when it is set: the sizes the pinned physical lens
+ * outputs for the use case's format. CameraX offers the sizes of the logical camera a pin binds, and a
+ * size the lens itself does not output comes back as a frame of another shape (w14, the Pixel 7's
+ * ultra-wide). When the lens outputs none of CameraX's sizes they are all kept, as CameraX binds nothing
+ * from an empty list.
+ */
+internal fun ResolutionSelector.keepingOnly(outputs: List<Size>?): ResolutionSelector {
+    outputs ?: return this
+    return ResolutionSelector.Builder.fromResolutionSelector(this)
+        .setResolutionFilter { sizes, _ ->
+            sizes.filter { it in outputs }.ifEmpty {
+                CameraKLogger.w(TAG, "The pinned lens outputs none of the sizes CameraX offers; keeping them all")
+                sizes
+            }
+        }
+        .build()
+}
 
 private fun Int.isQuarterTurn(): Boolean = this == Surface.ROTATION_90 || this == Surface.ROTATION_270
 

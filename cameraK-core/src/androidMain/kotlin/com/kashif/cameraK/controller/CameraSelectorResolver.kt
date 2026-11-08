@@ -72,7 +72,7 @@ internal class CameraSelectorResolver(private val enumerate: () -> List<AndroidL
             return ResolvedCamera.FacingDefault(lens)
         }
         return if (target.isPhysicalChild) {
-            ResolvedCamera.PhysicalLens(lens, target.info.id, target.parentLogicalId)
+            ResolvedCamera.PhysicalLens(lens, target.info.id, target.parentLogicalId, target.physical)
         } else {
             ResolvedCamera.TopLevel(lens, target.info.id)
         }
@@ -94,11 +94,15 @@ internal class CameraSelectorResolver(private val enumerate: () -> List<AndroidL
         val lens = descriptor.info.lens
         return when {
             descriptor.info.isExternal -> ResolvedCamera.External(lens, id)
-            descriptor.isPhysicalChild -> ResolvedCamera.PhysicalLens(lens, id, descriptor.parentLogicalId)
+            descriptor.isPhysicalChild ->
+                ResolvedCamera.PhysicalLens(lens, id, descriptor.parentLogicalId, descriptor.physical)
             else -> ResolvedCamera.TopLevel(lens, id)
         }
     }
 }
+
+/** What the pinned physical lens can do on its own, or null when nothing is pinned or nothing was read. */
+internal val ResolvedCamera.pinnedFacts: PhysicalLensFacts? get() = (this as? ResolvedCamera.PhysicalLens)?.facts
 
 /**
  * The physical lens every use-case builder must pin. CameraSelector.setPhysicalCameraId ALONE

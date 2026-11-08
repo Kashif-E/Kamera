@@ -3,6 +3,8 @@
 package com.kashif.cameraK.capabilities
 
 import android.content.Context
+import android.graphics.ImageFormat
+import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Build
@@ -104,6 +106,7 @@ internal object LensEnumerator {
                         ),
                         isPhysicalChild = raw.isPhysicalChild,
                         parentLogicalId = raw.parentLogicalId,
+                        physical = raw.physical,
                     ),
                 )
             }
@@ -155,6 +158,7 @@ internal object LensEnumerator {
         val physicalSizeWidthMm: Float?,
         val physicalCameraIds: Set<String>,
         val minFocusDistance: Float,
+        val physical: PhysicalLensFacts?,
     )
 
     private fun describe(
@@ -212,6 +216,36 @@ internal object LensEnumerator {
             physicalSizeWidthMm = characteristics.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)?.width,
             physicalCameraIds = physicalIds,
             minFocusDistance = characteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE) ?: 0f,
+            physical = if (isPhysicalChild) physicalFacts(reader, id, characteristics) else null,
+        )
+    }
+
+    // A bind that pins a physical lens binds its logical camera, which CameraX sizes and describes: what
+    // the lens can do on its own is read here, from its own characteristics.
+    private fun physicalFacts(
+        reader: Camera2Reader,
+        id: String,
+        characteristics: CameraCharacteristics,
+    ): PhysicalLensFacts {
+        val outputs = try {
+            reader.outputSizes(characteristics)
+        } catch (e: Exception) {
+            CameraKLogger.w("CameraK", "Lens enumeration failed to read physical lens $id's output sizes", e)
+            null
+        }
+        return PhysicalLensFacts(outputs, meteringOf(characteristics))
+    }
+
+    // A minimum focus distance of 0 is a fixed-focus lens; a lens that takes no region of a kind cannot
+    // meter it at a point. A key the characteristics leave out restricts nothing.
+    private fun meteringOf(characteristics: CameraCharacteristics): PhysicalMetering {
+        fun takesRegions(key: CameraCharacteristics.Key<Int>) = characteristics.get(key)?.let { it > 0 } ?: true
+        val focuses =
+            characteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE)?.let { it > 0f } ?: true
+        return PhysicalMetering(
+            autoFocus = focuses && takesRegions(CameraCharacteristics.CONTROL_MAX_REGIONS_AF),
+            autoExposure = takesRegions(CameraCharacteristics.CONTROL_MAX_REGIONS_AE),
+            autoWhiteBalance = takesRegions(CameraCharacteristics.CONTROL_MAX_REGIONS_AWB),
         )
     }
 }
@@ -226,7 +260,14 @@ internal interface Camera2Reader {
     fun physicalCameraIds(characteristics: CameraCharacteristics): Set<String>
 
     /** The sizes [characteristics]' stream configuration map outputs; null when it has none. */
-    fun outputSizes(characteristics: CameraCharacteristics): LensOutputSizes? = TODO("w14 red stub")
+    fun outputSizes(characteristics: CameraCharacteristics): LensOutputSizes? {
+        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
+        return LensOutputSizes(
+            still = map.getOutputSizes(ImageFormat.JPEG).orEmpty().toList(),
+            preview = map.getOutputSizes(SurfaceTexture::class.java).orEmpty().toList(),
+            analysis = map.getOutputSizes(ImageFormat.YUV_420_888).orEmpty().toList(),
+        )
+    }
 }
 
 private class CameraManagerReader(private val manager: CameraManager) : Camera2Reader {

@@ -6,6 +6,7 @@ import androidx.camera.core.Camera
 import com.kashif.cameraK.capabilities.AndroidLensDescriptor
 import com.kashif.cameraK.capabilities.CameraCapabilities
 import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.capabilities.PhysicalMetering
 import com.kashif.cameraK.capabilities.capabilitiesOf
 import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.enums.AspectRatio
@@ -112,12 +113,13 @@ internal class LensCatalog(
     /**
      * The bound camera [lens] as CameraX describes it: its flash unit ([withFlashUnitOf]), and whether
      * it meters at a point and its exposure compensation range and step, which the capabilities then
-     * report for that lens (w13 Z-focus-android).
+     * report for that lens (w13 Z-focus-android). A pinned physical lens meters at a point only with
+     * what it meters itself, [pinned]: CameraX describes the logical camera the pin binds.
      */
-    fun describeBound(camera: Camera, lens: LensInfo?): LensInfo? {
+    fun describeBound(camera: Camera, lens: LensInfo?, pinned: PhysicalMetering? = null): LensInfo? {
         val described = withFlashUnitOf(camera, lens) ?: return null
         val features = try {
-            meteringFeaturesOf(camera)
+            meteringFeaturesOf(camera, pinned)
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Reading the bound camera's focus and exposure support failed", e)
             return described
