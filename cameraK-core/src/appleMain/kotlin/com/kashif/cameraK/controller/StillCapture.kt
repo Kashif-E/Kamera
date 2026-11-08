@@ -29,6 +29,10 @@ internal class StillCapture(
     private val isUsingFrontCamera: () -> Boolean,
     currentVideoOrientation: () -> AVCaptureVideoOrientation,
     private val reportError: (CameraException) -> Unit,
+    /** The configured target resolution, the size QUALITY captures aim for; null for the camera's largest. */
+    private val targetResolution: Pair<Int, Int>? = null,
+    /** The session preset setup chose for stills. */
+    private val stillPreset: () -> String? = { null },
 ) {
     @Volatile
     private var photoOutput: AVCapturePhotoOutput? = null
@@ -66,7 +70,7 @@ internal class StillCapture(
     private val highResolution: Boolean
         get() = qualityPrioritization == QualityPrioritization.QUALITY
 
-    /** The size QUALITY captures ask for: the current camera's largest. Written on the session queue. */
+    /** The size QUALITY captures ask for ([applyMaxPhotoDimensions]); null keeps the preset's. */
     @Volatile
     private var maxPhotoDimensions: PhotoDimensions? = null
 
@@ -128,16 +132,24 @@ internal class StillCapture(
     }
 
     /**
-     * Opens the photo output up to the current camera's largest photo when QUALITY asks for high
-     * resolution. The size must be one the camera's active format supports, so this runs on the
-     * session queue once the camera (and its format) is settled: after setup and after each swap.
+     * Opens the photo output up to the size QUALITY asks for: the current camera's largest photo, or,
+     * with a target resolution, the target. A target the still preset already reaches leaves the
+     * output at the preset's size; one above it asks for the smallest photo that reaches it, else the
+     * largest. The size must be one the camera's active format supports, so this runs on the session
+     * queue once the camera (and its format) is settled: after setup and after each swap.
      */
     fun applyMaxPhotoDimensions() {
         if (!highResolution) return
         val output = photoOutput ?: return
-        val largest = currentCamera()?.supportedMaxPhotoDimensions?.maxByOrNull { it.pixels }
-        maxPhotoDimensions = largest
-        if (largest != null) photoCapturer.setMaxPhotoDimensions(output, largest)
+        val sizes = currentCamera()?.supportedMaxPhotoDimensions.orEmpty()
+        val target = targetResolution
+        val wanted = when {
+            target == null -> sizes.maxByOrNull { it.pixels }
+            presetReaches(stillPreset(), target) -> null
+            else -> sizes.filter { it.reaches(target) }.minByOrNull { it.pixels } ?: sizes.maxByOrNull { it.pixels }
+        }
+        maxPhotoDimensions = wanted
+        if (wanted != null) photoCapturer.setMaxPhotoDimensions(output, wanted)
     }
 
     /**
@@ -271,3 +283,8 @@ internal class StillCapture(
         }
     }
 }
+
+/** Whether this photo size reaches [target] (its long and short sides), whichever way either is held. */
+private fun PhotoDimensions.reaches(target: Pair<Int, Int>): Boolean =
+    maxOf(width, height) >= maxOf(target.first, target.second) &&
+        minOf(width, height) >= minOf(target.first, target.second)

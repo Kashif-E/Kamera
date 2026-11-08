@@ -142,6 +142,8 @@ internal class CustomCameraController private constructor(
         isUsingFrontCamera = { inputs.isUsingFrontCamera },
         currentVideoOrientation = ::currentVideoOrientation,
         reportError = ::reportError,
+        targetResolution = targetResolution,
+        stillPreset = { lifecycle.stillPreset },
     )
 
     /** The cameras, the one in use and the session's camera input. */
