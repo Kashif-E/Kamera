@@ -10,6 +10,7 @@ import com.kashif.cameraK.enums.ImageFormat
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
+import com.kashif.cameraK.state.Resolution
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.InternalCameraKApi
 import com.kashif.cameraK.utils.toByteArray
@@ -36,6 +37,8 @@ internal class CaptureRig(
     imageFormat: ImageFormat = ImageFormat.JPEG,
     outputDirectory: String? = null,
     hasUsageDescription: (String) -> Boolean = { true },
+    aspectRatio: AspectRatio = AspectRatio.RATIO_4_3,
+    targetResolution: Pair<Int, Int>? = null,
 ) {
     val session = RecordingSession()
     val capturer = FakePhotoCapturer()
@@ -44,6 +47,8 @@ internal class CaptureRig(
     val previewOrientations = mutableListOf<AVCaptureVideoOrientation>()
     val custom = CustomCameraController(
         qualityPrioritization = qualityPrioritization,
+        aspectRatio = aspectRatio,
+        targetResolution = targetResolution,
         sessionFactory = { session },
         cameraDevices = { _, _ -> device },
         photoCapturer = capturer,
@@ -53,7 +58,8 @@ internal class CaptureRig(
         CameraConfiguration {
             this.qualityPrioritization = qualityPrioritization
             this.imageFormat = imageFormat
-            aspectRatio = AspectRatio.RATIO_4_3
+            this.aspectRatio = aspectRatio
+            this.targetResolution = targetResolution?.let { Resolution(it.first, it.second) }
             this.outputDirectory = outputDirectory
         },
         CameraKEnvironment(),

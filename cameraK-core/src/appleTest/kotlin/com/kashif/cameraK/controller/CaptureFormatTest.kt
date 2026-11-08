@@ -3,6 +3,7 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.CapturedImage
+import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.enums.QualityPrioritization
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.InternalCameraKApi
@@ -97,4 +98,46 @@ class CaptureFormatTest {
             "the capture used the deprecated high-resolution flag",
         )
     }
+
+    // On the iPhone 14 Pro a 16:9 QUALITY capture with a target of 1280x720 was 4224x2376 while BALANCED,
+    // SPEED and NONE gave 1280x720 (device matrix): QUALITY opened the output to the camera's largest
+    // photo whatever the target. The target is the size to aim for (CameraConfiguration.targetResolution).
+    @Test
+    fun qualityWithATargetThePresetReachesKeepsThePresetsSize() {
+        rig = CaptureRig(
+            device = FakeDevice(supportedMaxPhotoDimensions = sixteenNineSizes),
+            qualityPrioritization = QualityPrioritization.QUALITY,
+            aspectRatio = AspectRatio.RATIO_16_9,
+            targetResolution = 1280 to 720,
+        )
+        rig.start()
+        drainSessionThenMain(rig.custom)
+
+        assertEquals(
+            emptyList(),
+            rig.capturer.maxPhotoDimensionsSet,
+            "a 1280x720 target, which the 1280x720 preset reaches, opened the output to a larger photo",
+        )
+    }
+
+    @Test
+    fun qualityWithATargetAbovePresetsAsksForTheSmallestPhotoThatReachesIt() {
+        rig = CaptureRig(
+            device = FakeDevice(supportedMaxPhotoDimensions = sixteenNineSizes),
+            qualityPrioritization = QualityPrioritization.QUALITY,
+            aspectRatio = AspectRatio.RATIO_16_9,
+            targetResolution = 4000 to 2250,
+        )
+        rig.start()
+        drainSessionThenMain(rig.custom)
+
+        assertEquals(
+            listOf(PhotoDimensions(4224, 2376)),
+            rig.capturer.maxPhotoDimensionsSet,
+            "a target above the largest 16:9 preset asks for the smallest photo that reaches it",
+        )
+    }
+
+    private val sixteenNineSizes =
+        listOf(PhotoDimensions(8448, 4752), PhotoDimensions(4224, 2376), PhotoDimensions(3840, 2160))
 }
