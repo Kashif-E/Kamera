@@ -3,6 +3,9 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.CapturedImage
+import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.enums.CameraDeviceType
+import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.InternalCameraKApi
@@ -17,6 +20,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 
 /**
  * On an iPhone 14 Pro (iOS 27.2) and a 14 Pro Max (iOS 26.3.1), startRunning returned in a few
@@ -26,7 +30,12 @@ import kotlin.test.assertNotSame
  * only while the session it was issued on still runs.
  */
 class SessionNotRunningRetryTest {
-    private val rig = CaptureRig()
+    private val back = FakeDevice(isFront = false)
+    private val front = FakeDevice(isFront = true)
+    private val rig = CaptureRig(
+        device = back,
+        cameraDevices = CameraDeviceProvider { lens, _ -> if (lens == CameraLens.FRONT) front else back },
+    )
 
     @AfterTest
     fun tearDown() = rig.tearDown()
@@ -101,5 +110,22 @@ class SessionNotRunningRetryTest {
         waitPastTheRetryDelay()
         assertEquals(1, rig.capturer.requests.size, "a capture was issued on a closed engine")
         assertEquals(0, rig.custom.outstandingPhotoDelegates, "the failed capture's delegate was kept")
+    }
+
+    @Test
+    fun aCaptureIsNotIssuedAgainOnAnotherCamera() {
+        rig.start()
+        val (capture, first) = rig.capture()
+
+        first.fail(AVErrorSessionNotRunning)
+        var switched: CameraKResult<*>? = null
+        rig.launch { switched = selectCamera(CameraSelection.ByLens(CameraLens.FRONT, CameraDeviceType.DEFAULT)) }
+        awaitTrue("the switch to the front camera") { switched != null }
+        assertIs<CameraKResult.Success<*>>(switched)
+        assertSame(front, rig.custom.currentDevice, "the switch did not open the front camera")
+
+        assertEquals(CameraKResult.Failure(CameraKError.NotReady), capture.awaitResult())
+        waitPastTheRetryDelay()
+        assertEquals(1, rig.capturer.requests.size, "a capture asked of one camera was taken with another")
     }
 }

@@ -39,6 +39,8 @@ internal class CaptureRig(
     hasUsageDescription: (String) -> Boolean = { true },
     aspectRatio: AspectRatio = AspectRatio.RATIO_4_3,
     targetResolution: Pair<Int, Int>? = null,
+    /** The cameras the controller opens; [device] for every lens unless a test needs more than one. */
+    cameraDevices: CameraDeviceProvider = CameraDeviceProvider { _, _ -> device },
 ) {
     val session = RecordingSession()
     val capturer = FakePhotoCapturer()
@@ -50,7 +52,7 @@ internal class CaptureRig(
         aspectRatio = aspectRatio,
         targetResolution = targetResolution,
         sessionFactory = { session },
-        cameraDevices = { _, _ -> device },
+        cameraDevices = cameraDevices,
         photoCapturer = capturer,
         previewOrienting = { _, orientation -> previewOrientations += orientation },
     )
