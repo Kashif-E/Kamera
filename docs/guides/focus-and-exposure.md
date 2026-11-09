@@ -108,6 +108,12 @@ Each camera's capabilities fill in once it has been bound, from CameraX: a focus
 `CameraInfo.isFocusMeteringSupported` accepts a centre AF and AE action, and the range and step of
 `ExposureState` where it supports compensation. A camera never opened yet reports neither.
 
+A device type that maps to a physical lens inside a logical multi-camera, such as the Pixel 7's
+ultra-wide, binds the logical camera, and CameraX describes that one. Such a lens meters only what its
+own characteristics allow: no AF on a fixed-focus lens (a minimum focus distance of 0) or one with no AF
+region, and no AE or AWB where it takes no region of that kind. A fixed-focus ultra-wide therefore
+meters exposure and answers `Success`.
+
 `focusAt` maps the point through the preview's crop, rotation and, on the front camera, its mirror,
 then meters there with AF, AE and AWB, keeping each the camera supports. CameraX returns to
 continuous metering after its default 5 seconds.

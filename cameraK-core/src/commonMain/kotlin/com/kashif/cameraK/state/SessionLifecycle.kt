@@ -15,6 +15,8 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -154,9 +156,21 @@ internal class SessionLifecycle(
         }
     }
 
+    // Guards [state]'s writes and [readies], so a count read always matches a state published.
+    private val writing = SynchronizedObject()
+    private var readies = 0
+
+    /** How many times [state] became Ready; it counts each one, however quickly the next state follows. */
+    val readyCount: Int get() = synchronized(writing) { readies }
+
     /** The only writer of [state]. Nothing leaves Closed, whatever the engine reports. */
     fun transition(next: (CameraKState) -> CameraKState) {
-        _state.update { current -> if (current is CameraKState.Closed) current else next(current) }
+        synchronized(writing) {
+            val current = _state.value
+            val updated = if (current is CameraKState.Closed) current else next(current)
+            _state.value = updated
+            if (updated is CameraKState.Ready && current !is CameraKState.Ready) readies++
+        }
     }
 
     /** Starts a session from Idle or Error; changes nothing while one is live or once closed. */
@@ -213,7 +227,7 @@ internal class SessionLifecycle(
 
     /** Publishes Closed. From here [transition] keeps it. */
     fun enterClosed() {
-        _state.value = CameraKState.Closed
+        synchronized(writing) { _state.value = CameraKState.Closed }
     }
 
     /** Ends the reconciler: a session still starting stops the engine, a live one is left to the engine's close. */

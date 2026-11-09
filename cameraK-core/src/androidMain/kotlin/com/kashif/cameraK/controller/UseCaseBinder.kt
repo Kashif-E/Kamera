@@ -22,6 +22,9 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.lifecycle.LifecycleOwner
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.state.Resolution
+import com.kashif.cameraK.utils.CameraKLogger
+
+private const val TAG = "CameraK"
 
 /**
  * Binds the engine's use cases to the process camera provider and unbinds exactly those. Owns the
@@ -75,8 +78,11 @@ internal class UseCaseBinder(
         camera = null
     }
 
-    /** The resolution selector for the configured aspect ratio and target resolution. */
-    fun resolutionSelector(): ResolutionSelector {
+    /**
+     * The resolution selector for the configured aspect ratio and target resolution, keeping only
+     * [outputs] when it is set ([keepingOnly]).
+     */
+    fun resolutionSelector(outputs: List<Size>? = null): ResolutionSelector {
         // Always honor the configured aspect ratio. When a target resolution is also set, keep the
         // ratio as the primary constraint and use the resolution as the preferred size within it —
         // previously targetResolution dropped the ratio entirely, so a 16:9 target produced 16:9
@@ -88,22 +94,23 @@ internal class UseCaseBinder(
                 ResolutionStrategy(Size(w, h), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
             )
         }
-        return builder.build()
+        return builder.keepingOnly(outputs).build()
     }
 
     /**
      * The analysis resolution selector (design §8): the configured aspect ratio, as the preview has,
      * and [resolution] as the preferred size within it. Without one the preferred size is CameraX's
      * own analysis default, VGA: a selector with no resolution strategy would make CameraX pick the
-     * largest size the camera has.
+     * largest size the camera has. Keeps only [outputs] when it is set ([keepingOnly]).
      */
-    fun analysisResolutionSelector(resolution: Resolution?): ResolutionSelector {
+    fun analysisResolutionSelector(resolution: Resolution?, outputs: List<Size>? = null): ResolutionSelector {
         val preferred = resolution?.let { Size(it.width, it.height) } ?: ANALYSIS_DEFAULT_SIZE
         return ResolutionSelector.Builder()
             .setAspectRatioStrategy(aspectRatio.toCameraXAspectRatioStrategy())
             .setResolutionStrategy(
                 ResolutionStrategy(preferred, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
             )
+            .keepingOnly(outputs)
             .build()
     }
 
@@ -235,6 +242,22 @@ internal class UseCaseBinder(
 
 // ImageAnalysis's own default size in CameraX 1.5 (SizeUtil.RESOLUTION_VGA).
 private val ANALYSIS_DEFAULT_SIZE = Size(640, 480)
+
+/**
+ * Keeps only the sizes in [outputs] when it is set: the sizes the pinned physical lens outputs for the
+ * use case's format. CameraX offers the sizes of the logical camera a pin binds, and a size the lens
+ * itself does not output comes back as a frame of another shape (w14, the Pixel 7's ultra-wide). When
+ * the lens outputs none of CameraX's sizes they are all kept, as CameraX binds nothing from an empty list.
+ */
+private fun ResolutionSelector.Builder.keepingOnly(outputs: List<Size>?): ResolutionSelector.Builder {
+    outputs ?: return this
+    return setResolutionFilter { sizes, _ ->
+        sizes.filter { it in outputs }.ifEmpty {
+            CameraKLogger.w(TAG, "The pinned lens outputs none of the sizes CameraX offers; keeping them all")
+            sizes
+        }
+    }
+}
 
 private fun Int.isQuarterTurn(): Boolean = this == Surface.ROTATION_90 || this == Surface.ROTATION_270
 

@@ -238,8 +238,12 @@ internal class CameraInputs(
             }
             if (previous != null && ops.canAddInput(previous)) {
                 ops.addInput(previous)
+                return CameraException.ConfigurationError("Cannot add input")
             }
-            return CameraException.ConfigurationError("Cannot add input")
+            // Nothing the session will take: it has no camera now, and nothing may act as if it had.
+            videoInput = null
+            currentCamera = null
+            return CameraException.ConfigurationError("Cannot add input, and the previous camera could not be restored")
         } finally {
             ops.commitConfiguration()
         }

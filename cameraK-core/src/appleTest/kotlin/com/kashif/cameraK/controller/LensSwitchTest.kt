@@ -124,6 +124,25 @@ class LensSwitchTest {
         assertEquals(listOf(front.input), session.inputs)
     }
 
+    /**
+     * A switch whose new input is refused, and whose previous input the session will not take back,
+     * leaves the session without a camera; the controller must not go on as if the previous one were
+     * there.
+     */
+    @Test
+    fun aSwitchThatCannotPutThePreviousCameraBackLeavesNoCameraInUse() {
+        startRunning()
+        session.refuse(front.input!!)
+        session.refuse(back.input!!)
+
+        controller.switchCamera()
+        drainSessionThenMain(controller)
+
+        assertEquals(emptyList(), session.inputs, "the session's inputs")
+        assertEquals(null, controller.currentDevice, "the controller believes a camera the session lost is in use")
+        assertEquals(1, errors.size, "the lost camera was not reported: $errors")
+    }
+
     @Test
     fun aRefusedDeviceTypeLeavesThePreviousCameraInPlace() {
         startRunning()

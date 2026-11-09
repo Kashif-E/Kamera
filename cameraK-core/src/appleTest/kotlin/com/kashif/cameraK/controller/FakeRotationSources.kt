@@ -2,6 +2,7 @@ package com.kashif.cameraK.controller
 
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.Foundation.NSLock
+import platform.Foundation.NSThread
 import kotlin.concurrent.Volatile
 
 /**
@@ -17,6 +18,8 @@ internal class FakeRotationSources(
         val device: CaptureDeviceOps,
         val previewLayer: AVCaptureVideoPreviewLayer?,
         private val onPreviewAngle: (Double) -> Unit,
+        /** Whether the engine made this source on the main thread, where AVFoundation's coordinator is made. */
+        val onMainThread: Boolean,
     ) : RotationSource {
         @Volatile
         var closed = false
@@ -53,7 +56,7 @@ internal class FakeRotationSources(
         previewLayer: AVCaptureVideoPreviewLayer?,
         onPreviewAngle: (Double) -> Unit,
     ): RotationSource {
-        val source = Source(device, previewLayer, onPreviewAngle)
+        val source = Source(device, previewLayer, onPreviewAngle, NSThread.isMainThread)
         lock.lock()
         try {
             madeList += source

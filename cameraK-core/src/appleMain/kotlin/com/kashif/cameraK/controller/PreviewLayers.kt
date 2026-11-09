@@ -46,18 +46,23 @@ internal class PreviewLayers(
     /**
      * Takes the layer away, removes it from its superlayer and takes the session out of it, on main, so
      * a layer UIKit or Compose keeps does not keep the closed session alive; callable from any thread.
+     * [then] runs once the session is out of the layer: taking it out configures the session, and
+     * stopping the session inside that configuration raises an exception Kotlin cannot catch.
      */
-    fun remove() {
+    fun remove(then: () -> Unit = {}) {
         val layer = layer
         this.layer = null
-        // The layer belongs to UIKit; the engine may close from any thread.
-        if (layer != null) {
-            val detach = {
-                layer.removeFromSuperlayer()
-                layer.session = null
-            }
-            if (NSThread.isMainThread) detach() else dispatch_async(dispatch_get_main_queue(), detach)
+        if (layer == null) {
+            then()
+            return
         }
+        // The layer belongs to UIKit; the engine may close from any thread.
+        val detach = {
+            layer.removeFromSuperlayer()
+            layer.session = null
+            then()
+        }
+        if (NSThread.isMainThread) detach() else dispatch_async(dispatch_get_main_queue(), detach)
     }
 
     @OptIn(ExperimentalForeignApi::class)

@@ -8,6 +8,7 @@ import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import com.google.common.util.concurrent.ListenableFuture
+import com.kashif.cameraK.capabilities.PhysicalMetering
 import com.kashif.cameraK.controls.NormalizedPoint
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
@@ -21,6 +22,14 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 
 private const val TAG = "CameraK"
+
+// Whether a lens meters [flag] at a point; nothing pinned restricts nothing.
+private fun PhysicalMetering?.meters(flag: Int): Boolean = when {
+    this == null -> true
+    flag == FocusMeteringAction.FLAG_AF -> autoFocus
+    flag == FocusMeteringAction.FLAG_AE -> autoExposure
+    else -> autoWhiteBalance
+}
 
 /** How CameraX draws the preview (`Preview.getResolutionInfo()`): its buffer size, crop and rotation to the display. */
 internal class PreviewGeometry(val resolution: Size, val cropRect: Rect, val rotationDegrees: Int)
@@ -63,13 +72,17 @@ internal fun contentPointToSurfacePoint(
  */
 internal data class MeteringFeatures(val focusPoint: Boolean, val exposureRange: IntRange?, val exposureStep: Float?)
 
-/** [camera]'s [MeteringFeatures]. CameraX's calls can throw; the caller decides what that means. */
-internal fun meteringFeaturesOf(camera: Camera): MeteringFeatures {
+/**
+ * [camera]'s [MeteringFeatures], with only what [pinned] meters at a point when a bind pins a physical
+ * lens: CameraX describes the logical camera the pin binds. CameraX's calls can throw; the caller
+ * decides what that means.
+ */
+internal fun meteringFeaturesOf(camera: Camera, pinned: PhysicalMetering? = null): MeteringFeatures {
     val info = camera.cameraInfo
     val centre = SurfaceOrientedMeteringPointFactory(1f, 1f).createPoint(0.5f, 0.5f)
-    val focusPoint = info.isFocusMeteringSupported(
-        FocusMeteringAction.Builder(centre, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE).build(),
-    )
+    val flags = listOf(FocusMeteringAction.FLAG_AF, FocusMeteringAction.FLAG_AE).filter { pinned.meters(it) }
+    val focusPoint = flags.isNotEmpty() &&
+        info.isFocusMeteringSupported(FocusMeteringAction.Builder(centre, flags.reduce(Int::or)).build())
     val exposure = info.exposureState.takeIf { it.isExposureCompensationSupported }
     return MeteringFeatures(
         focusPoint = focusPoint,
@@ -98,6 +111,7 @@ internal fun meteringFeaturesOf(camera: Camera): MeteringFeatures {
 internal class FocusMetering(
     private val backend: CameraXBackend,
     private val camera: () -> Camera?,
+    private val pinnedMetering: () -> PhysicalMetering?,
     private val preview: () -> Preview?,
     private val mirrored: () -> Boolean,
     private val executor: Executor,
@@ -174,9 +188,13 @@ internal class FocusMetering(
         val meteringPoint =
             backend.meteringPoint(surface.x, surface.y, geometry.resolution.width, geometry.resolution.height)
         // CameraX drops a flag the camera cannot meter with; dropping it here tells whether AF is in the action.
+        // CameraX answers for the logical camera a pin binds, so a flag the pinned lens cannot meter is
+        // dropped too: AF on a fixed-focus lens would never lock.
+        val pinned = pinnedMetering()
         val flags = try {
             METERING_FLAGS.filter {
-                camera.cameraInfo.isFocusMeteringSupported(FocusMeteringAction.Builder(meteringPoint, it).build())
+                pinned.meters(it) &&
+                    camera.cameraInfo.isFocusMeteringSupported(FocusMeteringAction.Builder(meteringPoint, it).build())
             }
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Reading which metering the camera supports at the point failed", e)
@@ -261,7 +279,7 @@ internal class FocusMetering(
     }
 
     private fun features(camera: Camera): MeteringFeatures? = try {
-        meteringFeaturesOf(camera)
+        meteringFeaturesOf(camera, pinnedMetering())
     } catch (e: Exception) {
         CameraKLogger.e(TAG, "Reading the camera's focus and exposure support failed", e)
         null

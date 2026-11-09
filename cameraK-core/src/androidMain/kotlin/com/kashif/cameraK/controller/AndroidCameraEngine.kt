@@ -173,7 +173,7 @@ internal class AndroidCameraEngine(
         analyzerExecutor = analyzerExecutor,
         sessionFormat = config.analysisFormat,
         newWorker = { name -> environment.runtime.newWorker(name) },
-        resolutionSelector = binder.analysisResolutionSelector(config.analysisResolution),
+        resolutionSelector = { outputs -> binder.analysisResolutionSelector(config.analysisResolution, outputs) },
     )
     internal val videoRecorder: VideoRecorder =
         VideoRecorder(
@@ -199,6 +199,8 @@ internal class AndroidCameraEngine(
         preview = { previewSource.boundPreview },
         // CameraXViewfinder mirrors the front camera's preview.
         mirrored = { session.boundLens == CameraLens.FRONT },
+        // CameraX describes the logical camera a pin binds; the pinned lens meters only what it can itself.
+        pinnedMetering = { session.pinnedFacts?.metering },
         callbackExecutor = mainExecutor,
         isReleased = { closed.value },
     )

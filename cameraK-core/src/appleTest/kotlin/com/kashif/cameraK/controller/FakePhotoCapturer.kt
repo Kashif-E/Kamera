@@ -49,6 +49,12 @@ internal class FakePhotoCapturer : PhotoCapturer {
     private val flashModeQueues = mutableListOf<String>()
     private val deferredStartOff = mutableListOf<AVCaptureOutput>()
 
+    /** Whether the output has an active, enabled video connection; false once its camera input is gone. */
+    @Volatile
+    var videoConnectionActive: Boolean = true
+
+    override fun hasActiveVideoConnection(output: AVCapturePhotoOutput): Boolean = videoConnectionActive
+
     /** The codecs the output can encode a photo in; JPEG only unless a test adds HEVC. */
     @Volatile
     var codecTypes: List<String> = listOf(AVVideoCodecTypeJPEG!!)

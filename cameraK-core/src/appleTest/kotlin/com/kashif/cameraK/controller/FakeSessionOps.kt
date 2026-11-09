@@ -22,6 +22,7 @@ import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
 import platform.darwin.dispatch_queue_t
 import platform.darwin.dispatch_sync
+import kotlin.concurrent.Volatile
 
 /**
  * A session the engine tests script as AVFoundation would run it. Its notifications are AVFoundation's
@@ -173,7 +174,16 @@ internal class FakeSessionOps : CaptureSessionOps {
         wantsRunning = false
     }
 
-    override fun tearDown() = locked {
+    /** Runs when close tears the session down, on the thread that does it, before the session stops. */
+    @Volatile
+    var onTearDown: (() -> Unit)? = null
+
+    override fun tearDown() {
+        onTearDown?.invoke()
+        tearDownLocked()
+    }
+
+    private fun tearDownLocked() = locked {
         teardowns++
         running = false
         interrupted = false

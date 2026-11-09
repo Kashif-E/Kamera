@@ -12,6 +12,7 @@ import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
+import com.kashif.cameraK.utils.InternalCameraKApi
 
 /**
  * The camera screen for [holder]: one slot per [CameraKState].
@@ -51,9 +52,6 @@ public fun CameraKScreen(
     val state by holder.cameraState.collectAsState()
     val retry: () -> Unit = remember(holder) { { holder.retry() } }
     val autoRetry = remember(holder) { AutoRetry(holder) }
-    LaunchedEffect(autoRetry) {
-        holder.cameraState.collect { if (it is CameraKState.Ready) autoRetry.rearm() }
-    }
 
     Box(modifier = modifier) {
         when (val current = state) {
@@ -80,19 +78,18 @@ public fun CameraKScreen(
 /**
  * The default error slot's one retry. A retry that fails again shows the error again, and only a
  * camera that reached Ready since earns another, so an error that keeps coming back is not retried
- * in a loop. Used on the composition's thread only.
+ * in a loop. The holder counts the Readies, so one the composition never drew still counts. Used on
+ * the composition's thread only.
  */
+@OptIn(InternalCameraKApi::class)
 private class AutoRetry(private val holder: CameraKStateHolder) {
-    private var spent = false
+    private var retriedAtReady = -1
 
     fun retryOnce() {
-        if (spent) return
-        spent = true
+        val readies = holder.readyCount
+        if (readies == retriedAtReady) return
+        retriedAtReady = readies
         holder.retry()
-    }
-
-    fun rearm() {
-        spent = false
     }
 }
 

@@ -59,6 +59,12 @@ internal interface PhotoCapturer {
      * session starts never waits on an output AVFoundation chose to start late.
      */
     fun disableDeferredStart(output: AVCaptureOutput)
+
+    /**
+     * Whether [output] has an active and enabled video connection: capturePhotoWithSettings without one
+     * raises an exception Kotlin cannot catch.
+     */
+    fun hasActiveVideoConnection(output: AVCapturePhotoOutput): Boolean = true
 }
 
 @OptIn(ExperimentalForeignApi::class)
@@ -95,6 +101,9 @@ internal object AVPhotoCapturer : PhotoCapturer {
     override fun availablePhotoCodecTypes(output: AVCapturePhotoOutput): List<String> =
         output.availablePhotoCodecTypes.filterIsInstance<String>()
 
+    override fun hasActiveVideoConnection(output: AVCapturePhotoOutput): Boolean =
+        output.connectionWithMediaType(AVMediaTypeVideo)?.let { it.isActive() && it.isEnabled() } == true
+
     override fun disableDeferredStart(output: AVCaptureOutput) {
         output.deferredStartEnabled = false
     }
@@ -130,6 +139,9 @@ internal interface PhotoCaptureCallbacks {
 
     /** AVFoundation's last callback for the capture (didFinishCaptureForResolvedSettings). */
     fun captureFinished(error: NSError?)
+
+    /** Whether the capture still has a caller waiting for it; one that does not is never issued again. */
+    val stillWanted: Boolean get() = true
 }
 
 /**
