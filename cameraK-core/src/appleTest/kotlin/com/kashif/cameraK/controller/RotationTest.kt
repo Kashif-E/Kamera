@@ -11,11 +11,13 @@ import com.kashif.cameraK.enums.DeviceOrientation
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.InternalCameraKApi
+import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.test.TestScope
 import platform.AVFoundation.AVCaptureVideoOrientationLandscapeRight
 import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.CoreGraphics.CGRectMake
+import platform.Foundation.NSThread
 import platform.UIKit.UIDeviceOrientation
 import platform.UIKit.UIInterfaceOrientationLandscapeRight
 import platform.UIKit.UIInterfaceOrientationPortrait
@@ -149,6 +151,68 @@ class RotationTest {
             assertEquals(1, open.size, "open coordinators")
             assertSame(driver.front, open.single().device, "the open coordinator's camera")
             assertSame(layer, open.single().previewLayer, "the open coordinator's layer")
+            engine.close()
+        }
+    }
+
+    /** Waits for [condition] without servicing main, so blocks queued on main stay queued. */
+    private fun holdingMainUntil(condition: () -> Boolean) {
+        var waited = 0
+        while (!condition()) {
+            check(waited < 1_000) { "timed out holding the main thread" }
+            NSThread.sleepForTimeInterval(0.01)
+            waited++
+        }
+    }
+
+    @Test
+    fun aSwitchAwayAndBackBeforeMainRunsLeavesTheSessionsCameraCoordinated() {
+        val rotation = FakeRotationSources()
+        val driver = AppleEngineDriver(osVersion = 17, rotationSources = rotation)
+        driver.runCase {
+            driver.createEngine()
+            val engine = driver.engine
+            engine.preview.createPreviewLayer()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            driver.settle()
+
+            val switched = atomic(0)
+            engine.switchCamera(CameraSelection.ById(AppleEngineDriver.FRONT_ID)) { switched.incrementAndGet() }
+            engine.switchCamera(CameraSelection.ById(AppleEngineDriver.BACK_ID)) { switched.incrementAndGet() }
+            holdingMainUntil { switched.value == 2 }
+            driver.settle()
+
+            val open = rotation.made.filterNot { it.closed }
+            assertEquals(1, open.size, "open coordinators")
+            assertSame(driver.back, open.single().device, "the coordinator's camera, with the session on the back camera")
+            engine.close()
+        }
+    }
+
+    @Test
+    fun aSwitchClosesThePreviousCamerasCoordinatorBeforeMainRuns() {
+        val rotation = FakeRotationSources()
+        val driver = AppleEngineDriver(osVersion = 17, rotationSources = rotation)
+        driver.runCase {
+            driver.createEngine()
+            val engine = driver.engine
+            engine.preview.createPreviewLayer()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            driver.settle()
+            val backCoordinator = rotation.made.single { !it.closed }
+
+            val switched = atomic(false)
+            engine.switchCamera(CameraSelection.ById(AppleEngineDriver.FRONT_ID)) { switched.value = true }
+            holdingMainUntil { switched.value }
+            assertTrue(
+                backCoordinator.closed,
+                "captures until main makes the front camera's coordinator would take the back camera's angle",
+            )
+
+            driver.settle()
+            assertSame(driver.front, rotation.made.single { !it.closed }.device, "the coordinator after the switch")
             engine.close()
         }
     }
