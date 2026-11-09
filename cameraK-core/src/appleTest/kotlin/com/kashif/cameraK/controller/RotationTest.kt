@@ -185,7 +185,11 @@ class RotationTest {
 
             val open = rotation.made.filterNot { it.closed }
             assertEquals(1, open.size, "open coordinators")
-            assertSame(driver.back, open.single().device, "the coordinator's camera, with the session on the back camera")
+            assertSame(
+                driver.back,
+                open.single().device,
+                "the coordinator's camera, with the session on the back camera",
+            )
             engine.close()
         }
     }
