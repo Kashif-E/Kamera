@@ -418,12 +418,13 @@ internal class CustomCameraController private constructor(
      */
     fun cleanupSession() {
         lifecycle.invalidateSetups()
-        preview.remove()
-        sessionQueue.async {
-            lifecycle.tearDownOnQueue()
-            stills.releaseOnQueue()
-            inputs.releaseOnQueue()
-            controls.forgetRequestedZoom()
+        preview.remove {
+            sessionQueue.async {
+                lifecycle.tearDownOnQueue()
+                stills.releaseOnQueue()
+                inputs.releaseOnQueue()
+                controls.forgetRequestedZoom()
+            }
         }
     }
 
