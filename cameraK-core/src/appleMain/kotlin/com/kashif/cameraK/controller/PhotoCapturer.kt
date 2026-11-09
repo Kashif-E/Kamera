@@ -101,6 +101,9 @@ internal object AVPhotoCapturer : PhotoCapturer {
     override fun availablePhotoCodecTypes(output: AVCapturePhotoOutput): List<String> =
         output.availablePhotoCodecTypes.filterIsInstance<String>()
 
+    override fun hasActiveVideoConnection(output: AVCapturePhotoOutput): Boolean =
+        output.connectionWithMediaType(AVMediaTypeVideo)?.let { it.isActive() && it.isEnabled() } == true
+
     override fun disableDeferredStart(output: AVCaptureOutput) {
         output.deferredStartEnabled = false
     }
