@@ -58,6 +58,11 @@ internal class EngineRotation(
     /** Counts binds and unbinds; a coordinator is made only for the latest. Under [lock]. */
     private var bindings = 0L
 
+    /** The camera and layer the latest bind asked main to coordinate; null once unbound. Under [lock]. */
+    private var requested: Request? = null
+
+    private class Request(val device: CaptureDeviceOps, val layer: AVCaptureVideoPreviewLayer?)
+
     /** The preview layer made last, which the rotation coordinator turns. Under [lock]. */
     private var newestPreviewLayer: AVCaptureVideoPreviewLayer? = null
 
@@ -147,11 +152,18 @@ internal class EngineRotation(
     fun bindOnQueue() {
         if (!coordinatesRotation) return
         val device = boundDevice() ?: return
-        val (binding, layer) = lock.locked {
-            val current = rotation
-            if (current != null && current.device === device && current.layer === newestPreviewLayer) return
-            ++bindings to newestPreviewLayer
+        val (binding, layer, left) = lock.locked {
+            val layer = newestPreviewLayer
+            val asked = requested
+            if (asked != null && asked.device === device && asked.layer === layer) return
+            requested = Request(device, layer)
+            // A coordinator of the camera the session left would turn captures by that camera's angle until
+            // main makes this one; without one they follow the device.
+            val left = rotation?.takeIf { it.device !== device }
+            if (left != null) rotation = null
+            Triple(++bindings, layer, left)
         }
+        left?.source?.close()
         dispatch_async(dispatch_get_main_queue()) {
             platformCallback("binding the rotation coordinator") { bindOnMain(binding, device, layer) }
         }
@@ -185,6 +197,7 @@ internal class EngineRotation(
     fun unbindOnQueue() {
         lock.locked {
             bindings++
+            requested = null
             rotation.also { rotation = null }
         }?.source?.close()
     }
