@@ -16,6 +16,8 @@ internal data class MatrixArgs(
     val settleBeforeFlashMs: Long = 0,
     /** Diagnostics: wait this long between a photo case setting its flash mode and capturing. */
     val settleAfterFlashMs: Long = 0,
+    /** Diagnostics: each photo holder captures its flash OFF case first, right after Ready. */
+    val offFirst: Boolean = false,
 )
 
 /**
@@ -34,6 +36,7 @@ internal fun matrixArgsFromLaunchArguments(arguments: List<String>): MatrixArgs?
         churnType = valueOf("-cameraKMatrixChurnType") ?: "WIDE_ANGLE",
         settleBeforeFlashMs = valueOf("-cameraKMatrixSettleBeforeFlashMs")?.toLongOrNull() ?: 0,
         settleAfterFlashMs = valueOf("-cameraKMatrixSettleAfterFlashMs")?.toLongOrNull() ?: 0,
+        offFirst = "-cameraKMatrixOffFirst" in arguments,
     )
 }
 

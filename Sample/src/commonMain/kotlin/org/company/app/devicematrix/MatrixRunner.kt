@@ -290,7 +290,8 @@ internal class MatrixRunner(
             val ui = readBack(holder.uiState) { it.cameraId != null }
             val base = listOf("readyMs" to opened.readyMs) + cameraMeasures(ui, key.lens, key.deviceType)
             val cameraChecks = cameraChecks(ui, key.lens, key.deviceType)
-            for (case in group) {
+            val ordered = if (args.offFirst) group.sortedBy { (it.spec as PhotoSpec).flashMode != FlashMode.OFF } else group
+            for (case in ordered) {
                 val spec = case.spec as PhotoSpec
                 val flash = ui.cameraId?.let { flashPrediction(capabilities, it, spec.flashMode) } ?: Prediction.NONE
                 capturePhoto(holder, case, spec, startPrediction + flash, base, cameraChecks)
