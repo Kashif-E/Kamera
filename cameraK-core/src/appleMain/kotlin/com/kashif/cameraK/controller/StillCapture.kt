@@ -199,7 +199,7 @@ internal class StillCapture(
      * false, without calling [callbacks], when the camera is not ready.
      *
      * A capture that fails with -11803 (session not running) is issued once more after
-     * [NOT_RUNNING_RETRY_DELAY_MS], while the same photo output is still set up and its session runs:
+     * [NOT_RUNNING_RETRY_DELAY_MS], while the same photo output and camera are in use and the session runs:
      * on an iPhone 14 Pro and 14 Pro Max, startRunning returned in a few milliseconds in about two
      * sessions in three, the first capture of such a session failed with -11803 while the session
      * reported running, and a capture issued half a second later always succeeded.
@@ -223,6 +223,7 @@ internal class StillCapture(
         // the mirrored preview when configured (#112).
         val rotation = captureRotation()
         val mirrored = mirrorFrontCamera && isUsingFrontCamera()
+        val camera = currentCamera()
 
         lateinit var delegate: PhotoCaptureDelegate
         delegate = PhotoCaptureDelegate(
@@ -251,7 +252,7 @@ internal class StillCapture(
                     if (failure == null) {
                         callbacks.captureFinished(error)
                     } else {
-                        queue.after(NOT_RUNNING_RETRY_DELAY_MS) { retryOnQueue(output, callbacks, failure) }
+                        queue.after(NOT_RUNNING_RETRY_DELAY_MS) { retryOnQueue(output, camera, callbacks, failure) }
                     }
                 }
             },
@@ -260,10 +261,16 @@ internal class StillCapture(
         photoCapturer.capture(output, settings, rotation, mirrored, delegate)
     }
 
-    // Session queue: the capture that failed with [failure] is issued again on [output], or, when the
-    // output was released or its session stopped meanwhile, ends with that failure.
-    private fun retryOnQueue(output: AVCapturePhotoOutput, callbacks: PhotoCaptureCallbacks, failure: NSError) {
-        if (photoOutput !== output || session()?.isRunning != true) {
+    // Session queue: the capture that failed with [failure] is issued again on [output] with [camera],
+    // or, when the output was released, the camera switched or the session stopped meanwhile, ends
+    // with that failure.
+    private fun retryOnQueue(
+        output: AVCapturePhotoOutput,
+        camera: CaptureDeviceOps?,
+        callbacks: PhotoCaptureCallbacks,
+        failure: NSError,
+    ) {
+        if (photoOutput !== output || currentCamera() !== camera || session()?.isRunning != true) {
             callbacks.photoProcessed(null, failure)
             callbacks.captureFinished(failure)
             return
