@@ -55,6 +55,9 @@ internal class EngineRotation(
     /** The rotation coordinator of the bound camera and the newest preview layer, iOS 17 and later. Under [lock]. */
     private var rotation: Rotation? = null
 
+    /** Counts binds and unbinds; a coordinator is made only for the latest. Under [lock]. */
+    private var bindings = 0L
+
     /** The preview layer made last, which the rotation coordinator turns. Under [lock]. */
     private var newestPreviewLayer: AVCaptureVideoPreviewLayer? = null
 
@@ -136,13 +139,26 @@ internal class EngineRotation(
      * Session queue: a coordinator for the bound camera and the newest preview layer, in place of one
      * made for another camera or layer, and the layer turned to its preview angle. Nothing below iOS
      * 17, before a camera is bound, or for a camera AVFoundation does not own.
+     *
+     * The coordinator is made on main, as AVCam makes it: its init waits for the main thread, so made
+     * here it deadlocks with a main thread waiting on the session, as making a preview layer does
+     * (iPhone 14 Pro, iOS 27.3). A later bind or an unbind before main gets to it supersedes it.
      */
     fun bindOnQueue() {
         if (!coordinatesRotation) return
         val device = boundDevice() ?: return
-        val layer = lock.locked { newestPreviewLayer }
-        val current = lock.locked { rotation }
-        if (current != null && current.device === device && current.layer === layer) return
+        val (binding, layer) = lock.locked {
+            val current = rotation
+            if (current != null && current.device === device && current.layer === newestPreviewLayer) return
+            ++bindings to newestPreviewLayer
+        }
+        dispatch_async(dispatch_get_main_queue()) {
+            platformCallback("binding the rotation coordinator") { bindOnMain(binding, device, layer) }
+        }
+    }
+
+    private fun bindOnMain(binding: Long, device: CaptureDeviceOps, layer: AVCaptureVideoPreviewLayer?) {
+        if (lock.locked { binding != bindings || generations.closedLocked }) return
         val made = atomic<Rotation?>(null)
         val source = try {
             rotationSources.make(device, layer) { angle ->
@@ -155,7 +171,7 @@ internal class EngineRotation(
         val next = source?.let { Rotation(device, layer, it) }
         made.value = next
         val replaced = lock.locked {
-            if (generations.closedLocked) {
+            if (binding != bindings || generations.closedLocked) {
                 next?.source?.close()
                 return
             }
@@ -167,7 +183,10 @@ internal class EngineRotation(
 
     /** Session queue: the coordinator closed, so nothing reports angles for a camera that stopped. */
     fun unbindOnQueue() {
-        lock.locked { rotation.also { rotation = null } }?.source?.close()
+        lock.locked {
+            bindings++
+            rotation.also { rotation = null }
+        }?.source?.close()
     }
 
     /** From any thread: [made]'s layer turned to [angle] on main, unless another coordinator replaced it since. */
