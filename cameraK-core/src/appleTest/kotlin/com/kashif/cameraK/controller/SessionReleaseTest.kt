@@ -1,4 +1,4 @@
-@file:OptIn(CameraKEngineApi::class)
+@file:OptIn(CameraKEngineApi::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 
 package com.kashif.cameraK.controller
 
@@ -7,6 +7,9 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import platform.Foundation.NSThread
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_DEFAULT
 import platform.darwin.dispatch_async
@@ -94,6 +97,38 @@ class SessionReleaseTest {
 
             assertFalse(tornDownWhileMainWasHeld, "the session stopped before main took it out of the preview layer")
             assertFalse(layerHeldTheSession.value, "the preview layer still held the session when it stopped")
+        }
+    }
+
+    /**
+     * closeAndJoin waits until the native resources are released: a holder made right after it, on the
+     * same camera, must not start while the old session still runs with the camera's input (#937). With
+     * a preview layer, the teardown waits for main to take the session out of the layer, and the join
+     * waits for the teardown.
+     */
+    @Test
+    fun closeAndJoinReturnsOnlyOnceTheSessionIsTornDown() {
+        val driver = AppleEngineDriver()
+        driver.runCase {
+            val engine = driver.createEngine()
+            engine.preview.createPreviewLayer()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            driver.settle()
+
+            val joined = CoroutineScope(Dispatchers.Default).async {
+                engine.closeAndJoin()
+                driver.session.inputs.size to driver.session.isRunning
+            }
+            // Main is held, so the detach queued to it cannot run yet.
+            NSThread.sleepForTimeInterval(0.5)
+            awaitTrue("closeAndJoin to return") { joined.isCompleted }
+
+            assertEquals(
+                0 to false,
+                joined.getCompleted(),
+                "the session's inputs and running when closeAndJoin returned",
+            )
         }
     }
 }
