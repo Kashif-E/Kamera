@@ -4,6 +4,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.engine.CameraSelection
+import com.kashif.cameraK.engine.contract.AppleEngineDriver
 import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.error.CameraKError
@@ -14,6 +15,7 @@ import platform.AVFoundation.AVErrorSessionNotRunning
 import platform.AVFoundation.AVErrorUnknown
 import platform.AVFoundation.AVFoundationErrorDomain
 import platform.Foundation.NSError
+import platform.Foundation.NSThread
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -166,5 +168,58 @@ class SessionNotRunningRetryTest {
         assertEquals(CameraKResult.Failure(CameraKError.NotReady), capture.awaitResult())
         waitPastTheRetryDelay()
         assertEquals(1, rig.capturer.requests.size, "a retry was handed to an output with no video connection")
+    }
+
+    @Test
+    fun aSessionNotRunningReportedOnlyWhenTheCaptureFinishesIsRetried() {
+        rig.start()
+        val (capture, first) = rig.capture()
+
+        first.callbacks.captureFinished(avError(AVErrorSessionNotRunning))
+        awaitTrue("the capture to be issued again") { rig.capturer.requests.size == 2 || capture.result != null }
+
+        assertEquals(null, capture.result, "the capture returned the session-not-running failure")
+    }
+
+    @Test
+    fun aStopBeforeTheRetryEndsTheCaptureAndIssuesNothing() {
+        rig.start()
+        val (capture, first) = rig.capture()
+
+        first.fail(AVErrorSessionNotRunning)
+        rig.launch { stop() }
+        awaitTrue("the session to stop") { !rig.session.isRunning }
+
+        assertEquals(CameraKResult.Failure(CameraKError.NotReady), capture.awaitResult())
+        waitPastTheRetryDelay()
+        assertEquals(1, rig.capturer.requests.size, "a capture was issued on a stopped session")
+    }
+
+    /**
+     * Close settles the capture at once, but during a recording the session keeps its photo output and
+     * runs until the movie is finalized; the retry must still see that nobody waits for the capture.
+     */
+    @Test
+    fun closingDuringARecordingEndsTheCaptureAndIssuesNothing() {
+        val driver = AppleEngineDriver()
+        driver.runCase {
+            val engine = driver.createEngine()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            driver.settle()
+            val recording = startEngineRecording(driver, engine)
+            val (capture, first) = captureReachingThePhotoOutput(driver, engine)
+
+            first.callbacks.photoProcessed(null, avError(AVErrorSessionNotRunning))
+            first.callbacks.captureFinished(avError(AVErrorSessionNotRunning))
+            engine.close()
+            driver.settle()
+            assertEquals(CameraKResult.Failure(CameraKError.Closed), capture.await())
+
+            NSThread.sleepForTimeInterval(1.0)
+            driver.settle()
+            assertEquals(1, driver.photoCapturer.requests.size, "a capture was issued on a closed engine")
+            finishRecording(driver, recording)
+            removeFiles(listOf(recording.path))
+        }
     }
 }
