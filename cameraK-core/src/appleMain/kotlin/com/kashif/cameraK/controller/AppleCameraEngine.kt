@@ -355,8 +355,8 @@ internal class AppleCameraEngine(
         if (session != null) {
             // A recording is finalized before the session is released (contract rule 7).
             recorder.finishForClose {
-                custom.cleanupSession()
-                custom.afterQueuedSessionWork {
+                // The close is done once the session is torn down, which waits for the preview layer.
+                custom.cleanupSession {
                     controls.stopObservingHardware()
                     rotation.unbindOnQueue()
                     closeDone.complete()

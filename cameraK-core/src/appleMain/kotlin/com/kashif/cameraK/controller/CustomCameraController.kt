@@ -413,10 +413,11 @@ internal class CustomCameraController private constructor(
 
     /**
      * Stops and releases the session on the session queue, after any setup already queued, so a setup
-     * still in flight cannot leave a running session behind. Call it on the main thread: it removes
-     * the preview layer.
+     * still in flight cannot leave a running session behind, and after main has taken the session out
+     * of the preview layer. Callable from any thread; [then] runs on the session queue once the session
+     * is released.
      */
-    fun cleanupSession() {
+    fun cleanupSession(then: () -> Unit = {}) {
         lifecycle.invalidateSetups()
         preview.remove {
             sessionQueue.async {
@@ -424,6 +425,7 @@ internal class CustomCameraController private constructor(
                 stills.releaseOnQueue()
                 inputs.releaseOnQueue()
                 controls.forgetRequestedZoom()
+                then()
             }
         }
     }

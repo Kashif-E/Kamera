@@ -10,6 +10,7 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import platform.CoreFoundation.CFRelease
 import platform.CoreFoundation.CFRetain
@@ -92,4 +93,13 @@ private fun Any?.asInt(): Int? = when (this) {
 /** Removes the files a capture or recording test wrote. */
 internal fun removeFiles(paths: Iterable<String>) {
     paths.forEach { NSFileManager.defaultManager.removeItemAtPath(it, null) }
+}
+
+/**
+ * [engine]'s closeAndJoin, with main serviced meanwhile: with a preview layer the close waits for main to
+ * take the session out of it, and a test body on main that only suspends does not run main's queue.
+ */
+internal suspend fun TestScope.closeAndJoinServicingMain(driver: AppleEngineDriver, engine: CameraEngine) {
+    val closing = launch { engine.closeAndJoin() }
+    driver.settleUntil("the engine to close") { closing.isCompleted }
 }

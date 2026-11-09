@@ -110,7 +110,7 @@ class FocusPointOfInterestTest {
                     driver.front.lastPointOfInterest("setExposurePointOfInterest"),
                     "front camera held $orientation",
                 )
-                engine.closeAndJoin()
+                closeAndJoinServicingMain(driver, engine)
             }
         }
     }
@@ -151,7 +151,7 @@ class FocusPointOfInterestTest {
                 layerPoints.last(),
                 "the layer point in a 300 x 533.33 layer (16:9 in portrait)",
             )
-            engine.closeAndJoin()
+            closeAndJoinServicingMain(driver, engine)
         }
     }
 
@@ -172,7 +172,7 @@ class FocusPointOfInterestTest {
                 driver.back.lastPointOfInterest("setFocusPointOfInterest"),
                 "no connection: the portrait back camera's fallback",
             )
-            engine.closeAndJoin()
+            closeAndJoinServicingMain(driver, engine)
         }
 
         val converted = mutableListOf<Unit>()
@@ -195,7 +195,7 @@ class FocusPointOfInterestTest {
                 withSeam.back.lastPointOfInterest("setFocusPointOfInterest"),
                 "empty bounds: the fallback",
             )
-            engine.closeAndJoin()
+            closeAndJoinServicingMain(driver, engine)
         }
     }
 
@@ -215,7 +215,7 @@ class FocusPointOfInterestTest {
                 driver.back.lastPointOfInterest("setFocusPointOfInterest"),
                 "the back camera turned left shows the buffer as it is",
             )
-            engine.closeAndJoin()
+            closeAndJoinServicingMain(driver, engine)
         }
     }
 
@@ -232,7 +232,7 @@ class FocusPointOfInterestTest {
                 driver.back.lastPointOfInterest("setFocusPointOfInterest"),
                 "16:9 over the 4:3 format, held in portrait",
             )
-            engine.closeAndJoin()
+            closeAndJoinServicingMain(driver, engine)
         }
     }
 

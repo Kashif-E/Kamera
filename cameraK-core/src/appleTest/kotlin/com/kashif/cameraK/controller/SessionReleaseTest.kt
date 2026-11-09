@@ -41,7 +41,7 @@ class SessionReleaseTest {
                 "the started session has no camera input or no outputs"
             }
 
-            engine.closeAndJoin()
+            closeAndJoinServicingMain(driver, engine)
             driver.settle()
 
             assertEquals(emptyList(), driver.session.inputs, "inputs left in the closed session")
@@ -60,7 +60,7 @@ class SessionReleaseTest {
             driver.settle()
             assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
 
-            engine.closeAndJoin()
+            closeAndJoinServicingMain(driver, engine)
             driver.settle()
 
             assertNull(layer.session, "the closed engine's preview layer still holds its session")
