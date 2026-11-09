@@ -154,9 +154,22 @@ internal class SessionLifecycle(
         }
     }
 
+    private val readies = atomic(0)
+
+    /** How many times [state] became Ready; it counts each one, however quickly the next state follows. */
+    val readyCount: Int get() = readies.value
+
     /** The only writer of [state]. Nothing leaves Closed, whatever the engine reports. */
     fun transition(next: (CameraKState) -> CameraKState) {
-        _state.update { current -> if (current is CameraKState.Closed) current else next(current) }
+        while (true) {
+            val current = _state.value
+            val updated = if (current is CameraKState.Closed) current else next(current)
+            // Counted before it is published, so whoever sees a later state reads a count that includes it.
+            val entersReady = updated is CameraKState.Ready && current !is CameraKState.Ready
+            if (entersReady) readies.incrementAndGet()
+            if (_state.compareAndSet(current, updated)) return
+            if (entersReady) readies.decrementAndGet()
+        }
     }
 
     /** Starts a session from Idle or Error; changes nothing while one is live or once closed. */

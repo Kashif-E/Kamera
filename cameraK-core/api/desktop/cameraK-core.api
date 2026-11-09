@@ -1143,6 +1143,7 @@ public final class com/kashif/cameraK/state/CameraKStateHolder : java/lang/AutoC
 	public final fun getEvents ()Lkotlinx/coroutines/flow/SharedFlow;
 	public final fun getFrames ()Lcom/kashif/cameraK/frames/FrameSource;
 	public final fun getPreviewSource ()Lcom/kashif/cameraK/engine/PlatformPreviewSource;
+	public final fun getReadyCount ()I
 	public final fun getRecordingState ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getSelectsPlatformDefault ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getUiState ()Lkotlinx/coroutines/flow/StateFlow;

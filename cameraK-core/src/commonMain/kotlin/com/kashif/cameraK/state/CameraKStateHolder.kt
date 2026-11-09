@@ -218,6 +218,13 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
      */
     public val cameraState: StateFlow<CameraKState> = lifecycle.state
 
+    /**
+     * For `:cameraK`'s CameraKScreen: how many times [cameraState] became Ready, each one counted
+     * however quickly the next state follows. Public only because `:cameraK` is another module.
+     */
+    @InternalCameraKApi
+    public val readyCount: Int get() = lifecycle.readyCount
+
     private val commands = CommandRunner(scope) {
         when {
             closing.value -> CameraKError.Closed

@@ -1041,6 +1041,8 @@ final class com.kashif.cameraK.state/CameraKStateHolder : kotlin/AutoCloseable {
         final fun <get-frames>(): com.kashif.cameraK.frames/FrameSource // com.kashif.cameraK.state/CameraKStateHolder.frames.<get-frames>|<get-frames>(){}[0]
     final val previewSource // com.kashif.cameraK.state/CameraKStateHolder.previewSource|{}previewSource[0]
         final fun <get-previewSource>(): com.kashif.cameraK.engine/PlatformPreviewSource // com.kashif.cameraK.state/CameraKStateHolder.previewSource.<get-previewSource>|<get-previewSource>(){}[0]
+    final val readyCount // com.kashif.cameraK.state/CameraKStateHolder.readyCount|{}readyCount[0]
+        final fun <get-readyCount>(): kotlin/Int // com.kashif.cameraK.state/CameraKStateHolder.readyCount.<get-readyCount>|<get-readyCount>(){}[0]
     final val recordingState // com.kashif.cameraK.state/CameraKStateHolder.recordingState|{}recordingState[0]
         final fun <get-recordingState>(): kotlinx.coroutines.flow/StateFlow<com.kashif.cameraK.recording/RecordingState> // com.kashif.cameraK.state/CameraKStateHolder.recordingState.<get-recordingState>|<get-recordingState>(){}[0]
     final val selectsPlatformDefault // com.kashif.cameraK.state/CameraKStateHolder.selectsPlatformDefault|{}selectsPlatformDefault[0]
