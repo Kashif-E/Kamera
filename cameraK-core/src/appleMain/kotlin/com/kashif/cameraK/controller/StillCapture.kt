@@ -262,15 +262,19 @@ internal class StillCapture(
     }
 
     // Session queue: the capture that failed with [failure] is issued again on [output] with [camera],
-    // or, when the output was released, the camera switched or the session stopped meanwhile, ends
-    // with that failure.
+    // or, when its caller is gone (cancelled, or settled by close), the output was released, the camera
+    // switched or the session stopped meanwhile, ends with that failure.
     private fun retryOnQueue(
         output: AVCapturePhotoOutput,
         camera: CaptureDeviceOps?,
         callbacks: PhotoCaptureCallbacks,
         failure: NSError,
     ) {
-        if (photoOutput !== output || currentCamera() !== camera || session()?.isRunning != true) {
+        val reissue = callbacks.stillWanted &&
+            photoOutput === output &&
+            currentCamera() === camera &&
+            session()?.isRunning == true
+        if (!reissue) {
             callbacks.photoProcessed(null, failure)
             callbacks.captureFinished(failure)
             return

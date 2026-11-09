@@ -130,6 +130,9 @@ internal interface PhotoCaptureCallbacks {
 
     /** AVFoundation's last callback for the capture (didFinishCaptureForResolvedSettings). */
     fun captureFinished(error: NSError?)
+
+    /** Whether the capture still has a caller waiting for it; one that does not is never issued again. */
+    val stillWanted: Boolean get() = true
 }
 
 /**

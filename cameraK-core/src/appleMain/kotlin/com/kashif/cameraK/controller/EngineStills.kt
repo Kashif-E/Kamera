@@ -127,6 +127,8 @@ internal class EngineStills(
             detached.value = true
         }
 
+        override val stillWanted: Boolean get() = !settled.value && !detached.value
+
         fun settle(result: CameraKResult<NSData>) {
             if (!settled.compareAndSet(expect = false, update = true)) return
             lock.locked { pending.remove(this) }
