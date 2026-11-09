@@ -6,8 +6,14 @@ import com.kashif.cameraK.engine.contract.AppleEngineDriver
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
+import kotlinx.atomicfu.atomic
+import platform.Foundation.NSThread
+import platform.darwin.DISPATCH_QUEUE_PRIORITY_DEFAULT
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_global_queue
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 /**
@@ -55,6 +61,39 @@ class SessionReleaseTest {
             driver.settle()
 
             assertNull(layer.session, "the closed engine's preview layer still holds its session")
+        }
+    }
+
+    /**
+     * Taking the session out of the preview layer opens a configuration on the session, on main, and
+     * stopRunning inside a configuration raises an exception Kotlin cannot catch ("stopRunning may not
+     * be called between calls to beginConfiguration and commitConfiguration"). A close off main
+     * detached the layer on main while the session queue stopped the session; the detach now comes first.
+     */
+    @Test
+    fun aCloseOffMainTakesTheSessionOutOfThePreviewBeforeItStops() {
+        val driver = AppleEngineDriver()
+        driver.runCase {
+            val engine = driver.createEngine()
+            val layer = engine.preview.createPreviewLayer()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            driver.settle()
+            val tornDown = atomic(false)
+            val layerHeldTheSession = atomic(false)
+            driver.session.onTearDown = {
+                layerHeldTheSession.value = layer.session != null
+                tornDown.value = true
+            }
+
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.toLong(), 0u)) { engine.close() }
+            // Main is held: a detach queued to it cannot run yet.
+            NSThread.sleepForTimeInterval(0.5)
+            val tornDownWhileMainWasHeld = tornDown.value
+            awaitTrue("the closed session to be torn down") { tornDown.value }
+
+            assertFalse(tornDownWhileMainWasHeld, "the session stopped before main took it out of the preview layer")
+            assertFalse(layerHeldTheSession.value, "the preview layer still held the session when it stopped")
         }
     }
 }
