@@ -128,4 +128,17 @@ class SessionNotRunningRetryTest {
         waitPastTheRetryDelay()
         assertEquals(1, rig.capturer.requests.size, "a capture asked of one camera was taken with another")
     }
+
+    @Test
+    fun aCancelledCaptureIsNotIssuedAgain() {
+        rig.start()
+        val (capture, first) = rig.capture()
+
+        first.fail(AVErrorSessionNotRunning)
+        capture.job.cancel()
+
+        waitPastTheRetryDelay()
+        assertEquals(1, rig.capturer.requests.size, "a capture nobody waits for was issued again")
+        assertEquals(0, rig.custom.outstandingPhotoDelegates, "the failed capture's delegate was kept")
+    }
 }
