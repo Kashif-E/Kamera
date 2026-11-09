@@ -12,6 +12,10 @@ internal data class MatrixArgs(
     val churn: Int? = null,
     val churnLens: String = "BACK",
     val churnType: String = "WIDE_ANGLE",
+    /** Diagnostics: wait this long before a photo case sets its flash mode. */
+    val settleBeforeFlashMs: Long = 0,
+    /** Diagnostics: wait this long between a photo case setting its flash mode and capturing. */
+    val settleAfterFlashMs: Long = 0,
 )
 
 /**
@@ -28,6 +32,8 @@ internal fun matrixArgsFromLaunchArguments(arguments: List<String>): MatrixArgs?
         churn = valueOf("-cameraKMatrixChurn")?.toIntOrNull(),
         churnLens = valueOf("-cameraKMatrixChurnLens") ?: "BACK",
         churnType = valueOf("-cameraKMatrixChurnType") ?: "WIDE_ANGLE",
+        settleBeforeFlashMs = valueOf("-cameraKMatrixSettleBeforeFlashMs")?.toLongOrNull() ?: 0,
+        settleAfterFlashMs = valueOf("-cameraKMatrixSettleAfterFlashMs")?.toLongOrNull() ?: 0,
     )
 }
 

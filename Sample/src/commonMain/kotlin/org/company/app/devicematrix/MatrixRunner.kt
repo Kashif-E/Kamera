@@ -309,6 +309,7 @@ internal class MatrixRunner(
         log("BEGIN #${case.index} ${case.id}")
         val measures = base.toMutableList()
         val checks = cameraChecks.toMutableList()
+        if (args.settleBeforeFlashMs > 0) delay(args.settleBeforeFlashMs)
         when (val flash = command { holder.setFlashMode(spec.flashMode) }) {
             null -> return record(case, Outcome.TimedOut("setFlashMode"), predicted, measures, checks)
             is CameraKResult.Failure -> return record(
@@ -323,6 +324,7 @@ internal class MatrixRunner(
         val flashBack = readBack(holder.uiState) { it.flashMode == spec.flashMode }.flashMode
         measures += "flashReadBack" to flashBack
         if (flashBack != spec.flashMode) checks += "flash read back $flashBack, asked ${spec.flashMode}"
+        if (args.settleAfterFlashMs > 0) delay(args.settleAfterFlashMs)
         val capturing = clock.markNow()
         val result = withTimeoutOrNull(timing.capture) { holder.capture() }
         measures += "captureMs" to capturing.elapsedNow().inWholeMilliseconds
