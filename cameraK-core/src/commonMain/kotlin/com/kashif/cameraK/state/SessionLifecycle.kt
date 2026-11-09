@@ -15,6 +15,8 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -154,21 +156,20 @@ internal class SessionLifecycle(
         }
     }
 
-    private val readies = atomic(0)
+    // Guards [state]'s writes and [readies], so a count read always matches a state published.
+    private val writing = SynchronizedObject()
+    private var readies = 0
 
     /** How many times [state] became Ready; it counts each one, however quickly the next state follows. */
-    val readyCount: Int get() = readies.value
+    val readyCount: Int get() = synchronized(writing) { readies }
 
     /** The only writer of [state]. Nothing leaves Closed, whatever the engine reports. */
     fun transition(next: (CameraKState) -> CameraKState) {
-        while (true) {
+        synchronized(writing) {
             val current = _state.value
             val updated = if (current is CameraKState.Closed) current else next(current)
-            // Counted before it is published, so whoever sees a later state reads a count that includes it.
-            val entersReady = updated is CameraKState.Ready && current !is CameraKState.Ready
-            if (entersReady) readies.incrementAndGet()
-            if (_state.compareAndSet(current, updated)) return
-            if (entersReady) readies.decrementAndGet()
+            _state.value = updated
+            if (updated is CameraKState.Ready && current !is CameraKState.Ready) readies++
         }
     }
 
@@ -226,7 +227,7 @@ internal class SessionLifecycle(
 
     /** Publishes Closed. From here [transition] keeps it. */
     fun enterClosed() {
-        _state.value = CameraKState.Closed
+        synchronized(writing) { _state.value = CameraKState.Closed }
     }
 
     /** Ends the reconciler: a session still starting stops the engine, a live one is left to the engine's close. */
