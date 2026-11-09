@@ -21,10 +21,12 @@ import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.testing.FakePermissionChecker
 import com.kashif.cameraK.testing.fakeCameraKStateHolder
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -39,7 +41,31 @@ import kotlin.test.fail
  * and leaves Error(Permission) to the resume re-check.
  */
 class CameraKScreenSlotTest {
-    private class Rig(private val scope: TestScope, val holder: CameraKStateHolder, defaultError: Boolean) {
+    /**
+     * Runs the composition's coroutines (its effects, state collectors and recomposer) only when a frame
+     * is drawn, as a device's main thread does, rather than the moment they are resumed.
+     */
+    private class FrameDispatcher : CoroutineDispatcher() {
+        private val queue = ArrayDeque<Runnable>()
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            synchronized(queue) { queue.addLast(block) }
+        }
+
+        fun drain() {
+            while (true) {
+                val next = synchronized(queue) { queue.removeFirstOrNull() } ?: return
+                next.run()
+            }
+        }
+    }
+
+    private class Rig(
+        private val scope: TestScope,
+        val holder: CameraKStateHolder,
+        defaultError: Boolean,
+        private val frameDispatcher: FrameDispatcher? = null,
+    ) {
         /** The slots in the composition now. */
         val showing = mutableSetOf<String>()
 
@@ -56,12 +82,18 @@ class CameraKScreenSlotTest {
             Track("error")
         }
 
-        private val scene = ImageComposeScene(width = WIDTH, height = HEIGHT) {
+        private val screen: @Composable () -> Unit = {
             if (defaultError) {
                 CameraKScreen(holder, Modifier.fillMaxSize(), loading = loading, content = content)
             } else {
                 CameraKScreen(holder, Modifier.fillMaxSize(), loading = loading, error = error, content = content)
             }
+        }
+
+        private val scene = if (frameDispatcher != null) {
+            ImageComposeScene(width = WIDTH, height = HEIGHT, coroutineContext = frameDispatcher, content = screen)
+        } else {
+            ImageComposeScene(width = WIDTH, height = HEIGHT, content = screen)
         }
 
         @Composable
@@ -76,8 +108,10 @@ class CameraKScreenSlotTest {
         val state: CameraKState get() = holder.cameraState.value
 
         fun frame(): PixelMap {
+            frameDispatcher?.drain()
             Snapshot.sendApplyNotifications()
             val pixels = scene.render().toComposeImageBitmap().toPixelMap()
+            frameDispatcher?.drain()
             scope.runCurrent()
             Snapshot.sendApplyNotifications()
             return pixels
@@ -101,8 +135,13 @@ class CameraKScreenSlotTest {
         fake: FakeCameraEngine = FakeCameraEngine(),
         checker: FakePermissionChecker = FakePermissionChecker(),
         defaultError: Boolean = false,
-    ): Pair<Rig, FakeCameraEngine> =
-        Rig(this, fakeCameraKStateHolder(fake = fake, permissionChecker = checker), defaultError) to fake
+        effectsOnFrames: Boolean = false,
+    ): Pair<Rig, FakeCameraEngine> = Rig(
+        this,
+        fakeCameraKStateHolder(fake = fake, permissionChecker = checker),
+        defaultError,
+        if (effectsOnFrames) FrameDispatcher() else null,
+    ) to fake
 
     // The fake's fixed frame is 640 x 480, left half 0x202020 and right half 0xE0E0E0; the scene is 4:3.
     private fun PixelMap.showsTheFixedFrame(): Boolean =
@@ -269,6 +308,36 @@ class CameraKScreenSlotTest {
             runCurrent()
             rig.frame()
             assertEquals(4, fake.startCalls, "no retry after a failure that followed Ready: ${fake.calls}")
+        } finally {
+            rig.close()
+        }
+    }
+
+    /**
+     * Reaching Ready re-arms the one retry even when the camera fails again before the composition
+     * draws a frame: a state collector in the composition sees only the last of the two.
+     */
+    @Test
+    fun defaultErrorSlotRetriesAfterAReadyTheCompositionNeverDrew() = runTest {
+        val (rig, fake) = rig(defaultError = true, effectsOnFrames = true)
+        try {
+            fake.autoOpen = false
+            rig.holder.start()
+            runCurrent()
+            fake.failOpen(CameraKError.CameraInUse())
+            runCurrent()
+            rig.frame()
+            assertEquals(2, fake.startCalls, "first failure: ${fake.calls}")
+
+            // The holder reaches Ready and fails again, with no frame drawn in between.
+            fake.deliverOpen()
+            runCurrent()
+            assertIs<CameraKState.Ready>(rig.state)
+            fake.fail(CameraKError.Disconnected())
+            runCurrent()
+            rig.frame()
+            rig.frame()
+            assertEquals(3, fake.startCalls, "no retry after a failure that followed Ready: ${fake.calls}")
         } finally {
             rig.close()
         }
