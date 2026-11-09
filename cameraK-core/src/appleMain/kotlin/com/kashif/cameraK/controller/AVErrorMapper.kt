@@ -64,4 +64,5 @@ internal fun cameraKErrorFor(error: NSError): CameraKError {
     }
 }
 
-private fun NSError.isAVFoundation(code: Long): Boolean = domain == AVFoundationErrorDomain && this.code == code
+/** Whether this is AVFoundation's error [code]. */
+internal fun NSError.isAVFoundation(code: Long): Boolean = domain == AVFoundationErrorDomain && this.code == code

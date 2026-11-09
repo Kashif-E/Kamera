@@ -13,6 +13,9 @@ import kotlin.concurrent.Volatile
 
 private const val TAG = "CameraK"
 
+/** How long a capture that failed with -11803 on a running session waits before it is issued again. */
+internal const val NOT_RUNNING_RETRY_DELAY_MS = 500L
+
 /**
  * A controller's photo output and still captures: the output setup adds, the settings each capture
  * and each prepare gets, the flash mode captures request, and the delegates kept alive until
@@ -194,11 +197,21 @@ internal class StillCapture(
      * settings are built from the photo output as it is now, after every piece of session work queued
      * before (a lens switch, a flash change), and handed to it in the same block (design §2.4). Returns
      * false, without calling [callbacks], when the camera is not ready.
+     *
+     * A capture that fails with -11803 (session not running) is issued once more after
+     * [NOT_RUNNING_RETRY_DELAY_MS], while the same photo output is still set up and its session runs:
+     * on an iPhone 14 Pro and 14 Pro Max, startRunning returned in a few milliseconds in about two
+     * sessions in three, the first capture of such a session failed with -11803 while the session
+     * reported running, and a capture issued half a second later always succeeded.
      */
     fun captureOnQueue(callbacks: PhotoCaptureCallbacks): Boolean {
         val output = photoOutput
         if (output == null || session()?.isRunning != true) return false
+        issue(output, callbacks, mayRetry = true)
+        return true
+    }
 
+    private fun issue(output: AVCapturePhotoOutput, callbacks: PhotoCaptureCallbacks, mayRetry: Boolean) {
         // Do NOT reconfigure the session preset here. Switching the preset synchronously right
         // before capturePhotoWithSettings disrupts auto-exposure, so the still is captured
         // mid-reconfiguration and comes out underexposed (#138). The preset is chosen once at
@@ -214,17 +227,55 @@ internal class StillCapture(
         lateinit var delegate: PhotoCaptureDelegate
         delegate = PhotoCaptureDelegate(
             object : PhotoCaptureCallbacks {
-                override fun photoProcessed(data: NSData?, error: NSError?) = callbacks.photoProcessed(data, error)
+                // AVFoundation calls one capture's delegate methods one after another.
+                @Volatile
+                private var notRunning: NSError? = null
+
+                @Volatile
+                private var photoForwarded = false
+
+                override fun photoProcessed(data: NSData?, error: NSError?) {
+                    if (mayRetry && error?.isAVFoundation(AVErrorSessionNotRunning) == true) {
+                        notRunning = error
+                        return
+                    }
+                    photoForwarded = true
+                    callbacks.photoProcessed(data, error)
+                }
 
                 override fun captureFinished(error: NSError?) {
                     releaseDelegate(delegate)
-                    callbacks.captureFinished(error)
+                    val failure = notRunning ?: error?.takeIf {
+                        mayRetry && !photoForwarded && it.isAVFoundation(AVErrorSessionNotRunning)
+                    }
+                    if (failure == null) {
+                        callbacks.captureFinished(error)
+                    } else {
+                        queue.after(NOT_RUNNING_RETRY_DELAY_MS) { retryOnQueue(output, callbacks, failure) }
+                    }
                 }
             },
         )
         retainDelegate(delegate)
         photoCapturer.capture(output, settings, rotation, mirrored, delegate)
-        return true
+    }
+
+    // Session queue: the capture that failed with [failure] is issued again on [output], or, when the
+    // output was released or its session stopped meanwhile, ends with that failure.
+    private fun retryOnQueue(output: AVCapturePhotoOutput, callbacks: PhotoCaptureCallbacks, failure: NSError) {
+        if (photoOutput !== output || session()?.isRunning != true) {
+            callbacks.photoProcessed(null, failure)
+            callbacks.captureFinished(failure)
+            return
+        }
+        CameraKLogger.w(TAG, "a capture failed with -11803 while the session was running; issuing it again")
+        try {
+            issue(output, callbacks, mayRetry = false)
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "issuing a capture again failed", e)
+            callbacks.photoProcessed(null, failure)
+            callbacks.captureFinished(failure)
+        }
     }
 
     /**
