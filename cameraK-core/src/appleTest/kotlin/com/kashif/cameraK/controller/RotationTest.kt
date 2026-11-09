@@ -4,6 +4,7 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.capture.CapturedImage
 import com.kashif.cameraK.engine.CameraEngine
+import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
 import com.kashif.cameraK.engine.layOutPreviewLayer
 import com.kashif.cameraK.enums.DeviceOrientation
@@ -113,6 +114,41 @@ class RotationTest {
                 driver.lastTurnOf(layer),
                 "a layout pass turned the layer away from the coordinator's angle",
             )
+            engine.close()
+        }
+    }
+
+    /**
+     * AVCaptureDeviceRotationCoordinator's init waits for the main thread. Made on the session queue it
+     * deadlocked an iPhone 14 Pro (iOS 27.3, watchdog 0x8BADF00D): main was making a preview layer,
+     * which waits on a session lock, while the session queue waited for main. AVCam makes it on main.
+     */
+    @Test
+    fun theCoordinatorIsMadeOnTheMainThread() {
+        val rotation = FakeRotationSources()
+        val driver = AppleEngineDriver(osVersion = 17, rotationSources = rotation)
+        driver.runCase {
+            val engine = driver.createEngine()
+            engine.preview.createPreviewLayer()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            driver.settle()
+            assertIs<CameraKResult.Success<*>>(engine.selectCamera(CameraSelection.ById(AppleEngineDriver.FRONT_ID)))
+            driver.settle()
+            val layer = engine.preview.createPreviewLayer()
+            driver.settle()
+
+            val made = rotation.made
+            assertTrue(made.size >= 3, "a coordinator for the start, the switch and the new layer: ${made.size}")
+            assertEquals(
+                0,
+                made.count { !it.onMainThread },
+                "coordinators made off the main thread, of ${made.size}",
+            )
+            val open = made.filterNot { it.closed }
+            assertEquals(1, open.size, "open coordinators")
+            assertSame(driver.front, open.single().device, "the open coordinator's camera")
+            assertSame(layer, open.single().previewLayer, "the open coordinator's layer")
             engine.close()
         }
     }
