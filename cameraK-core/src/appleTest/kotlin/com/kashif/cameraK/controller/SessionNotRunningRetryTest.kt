@@ -141,4 +141,30 @@ class SessionNotRunningRetryTest {
         assertEquals(1, rig.capturer.requests.size, "a capture nobody waits for was issued again")
         assertEquals(0, rig.custom.outstandingPhotoDelegates, "the failed capture's delegate was kept")
     }
+
+    /**
+     * capturePhotoWithSettings raises an exception Kotlin cannot catch when the photo output has no
+     * active video connection, as after a switch that lost the camera; the capture is refused instead.
+     */
+    @Test
+    fun aCaptureWithoutAnActiveVideoConnectionIsNotReady() {
+        rig.start()
+        rig.capturer.videoConnectionActive = false
+
+        assertEquals(CameraKResult.Failure(CameraKError.NotReady), rig.Capture().awaitResult())
+        assertEquals(0, rig.capturer.requests.size, "a capture was handed to an output with no video connection")
+    }
+
+    @Test
+    fun aRetryWithoutAnActiveVideoConnectionEndsTheCapture() {
+        rig.start()
+        val (capture, first) = rig.capture()
+        rig.capturer.videoConnectionActive = false
+
+        first.fail(AVErrorSessionNotRunning)
+
+        assertEquals(CameraKResult.Failure(CameraKError.NotReady), capture.awaitResult())
+        waitPastTheRetryDelay()
+        assertEquals(1, rig.capturer.requests.size, "a retry was handed to an output with no video connection")
+    }
 }

@@ -59,6 +59,12 @@ internal interface PhotoCapturer {
      * session starts never waits on an output AVFoundation chose to start late.
      */
     fun disableDeferredStart(output: AVCaptureOutput)
+
+    /**
+     * Whether [output] has an active and enabled video connection: capturePhotoWithSettings without one
+     * raises an exception Kotlin cannot catch.
+     */
+    fun hasActiveVideoConnection(output: AVCapturePhotoOutput): Boolean = true
 }
 
 @OptIn(ExperimentalForeignApi::class)
