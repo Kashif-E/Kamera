@@ -186,8 +186,13 @@ class RetainedHolderTest {
         test.runCurrent()
 
         assertSame(first, current, "the recreation built a new holder")
-        assertFalse("stop" in fake.calls, "the rotation closed the camera: ${fake.calls}")
-        assertEquals(listOf<CameraKState>(CameraKState.Ready), states.distinct(), "the camera states the rotation went through")
+        assertEquals(1, engines.size, "the engine factory ran again")
+        assertFalse("stop" in fake.calls || "close" in fake.calls, "the rotation closed the camera: ${fake.calls}")
+        assertEquals(
+            listOf<CameraKState>(CameraKState.Ready),
+            states.distinct(),
+            "the camera states the rotation went through",
+        )
     }
 
     @Test
@@ -255,21 +260,6 @@ class RetainedHolderTest {
         assertEquals(2, built.size, "without a ViewModelStoreOwner the recreation kept the holder")
         assertIs<CameraKState.Ready>(current.cameraState.value)
         assertEquals(1, (engines.first() as FakeCameraEngine).closeCalls)
-    }
-
-    @Test
-    fun recreateHostWithoutRecordingKeepsHolderAndReopensTheEngine() {
-        launch { Remembered() }
-        val first = current
-        assertIs<CameraKState.Ready>(first.cameraState.value)
-
-        recreate()
-
-        assertSame(first, current, "the recreation built a new holder")
-        assertEquals(1, engines.size, "the engine factory ran again")
-        assertEquals(listOf("stop", "start"), fake.calls.takeLast(2), "engine calls: ${fake.calls}")
-        assertFalse("close" in fake.calls, "the recreation closed the engine: ${fake.calls}")
-        assertIs<CameraKState.Ready>(current.cameraState.value)
     }
 
     @Test
