@@ -2,7 +2,8 @@
 # siblings are macros whose name and format must be string literals, so Kotlin cannot call them;
 # these static wrappers fix both to "CameraK" and "%{public}s" and take the interval's label as the
 # argument. Begin and end match by log, name and id, so every interval gets its own id.
-package = com.kashif.cameraK.signpost
+# The klib ships with camerak-core and its declarations are public to apps, so its package is internal.
+package = com.kashif.cameraK.internal.signpost
 headers = os/log.h os/signpost.h
 headerFilter = os/log.h os/signpost.h
 ---
