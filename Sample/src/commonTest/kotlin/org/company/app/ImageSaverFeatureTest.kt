@@ -20,7 +20,12 @@ class ImageSaverFeatureTest {
     fun aFailedGallerySaveIsToldAndASavedOneIsNot() = runTest {
         val results = flowOf(
             CameraKResult.Success("saved"),
-            CameraKResult.Failure(CameraKError.Permission(CameraKPermission.GALLERY_ADD, PermissionStatus.Denied(shouldShowRationale = false))),
+            CameraKResult.Failure(
+                CameraKError.Permission(
+                    CameraKPermission.GALLERY_ADD,
+                    PermissionStatus.Denied(shouldShowRationale = false),
+                ),
+            ),
             CameraKResult.Failure(CameraKError.Storage(StorageFailure.GALLERY_IMPORT_FAILED)),
         )
 

@@ -86,6 +86,9 @@ internal fun CameraContent(
 ) {
     val qrCodes = rememberQrCodes(qrScanner)
     val recognizedText = rememberRecognizedText(ocr)
+    LaunchedEffect(imageSaver) {
+        imageSaver.notices.collect { snackbarHostState.showSnackbar(it) }
+    }
 
     // Config-level settings with no runtime setter: changing one rebuilds the CameraConfiguration
     // and re-initializes the camera. Saved, so a rotation rebuilds an equal configuration and the
