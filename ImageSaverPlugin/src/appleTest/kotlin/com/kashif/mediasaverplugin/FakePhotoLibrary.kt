@@ -44,6 +44,13 @@ internal class FakePhotoLibrary(
     val resourceWriteStarted = CompletableDeferred<String>()
     val resourceWriteFinished = CompletableDeferred<Unit>()
     private val heldWrite = atomic<(() -> Unit)?>(null)
+    private val heldCreation = atomic<((String?, NSError?) -> Unit)?>(null)
+
+    /** Photos finishes, late, an import `completesCreation = false` held: it calls back with [identifier]. */
+    fun finishHeldImport(identifier: String? = ASSET_ID) {
+        val completion = checkNotNull(heldCreation.getAndSet(null)) { "no import is held" }
+        completion(identifier, null)
+    }
 
     /** Lets a write held by `holdsResourceWrites` go ahead: Photos writes the file, then calls back. */
     fun releaseResourceWrite() {
@@ -59,7 +66,7 @@ internal class FakePhotoLibrary(
         createdOnMainThread.value = NSThread.isMainThread
         creationStarted.complete(Unit)
         // Photos may call the completion before performChanges returns; the bridge must not lose it.
-        if (completesCreation) completion(createdIdentifier, createError)
+        if (completesCreation) completion(createdIdentifier, createError) else heldCreation.value = completion
     }
 
     override fun writeAssetData(localIdentifier: String, fileUrl: NSURL, completion: (NSError?) -> Unit): Boolean {

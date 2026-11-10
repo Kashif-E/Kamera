@@ -58,7 +58,9 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      standard library's atomics: atomics are AtomicFU's. Every CameraKLogger call
                      in a published module's main sources passes that artifact's one tag, and its
                      message does not open by naming the tag, CameraK or a plugin again. Each engine
-                     file W12 split (SPLIT_ENGINE_FILES) exists and stays within 600 lines.
+                     file W12 split (SPLIT_ENGINE_FILES) exists and stays within 600 lines. A
+                     published module's cinterop .def puts its bindings under an internal package:
+                     its klib ships to apps, so a public package would be API.
   release-gate       The release gate's device harness is built (design §12.4 B1): settings include
                      :benchmark, verify.sh's android target compiles cameraK-core's instrumented
                      sources, its sample target builds :benchmark against the Sample app, and the
@@ -1434,6 +1436,24 @@ def log_prefix_problems(sources: Dict[str, str], tags: Dict[str, str] = ARTIFACT
     return problems
 
 
+DEF_SETTING = re.compile(r"^([A-Za-z.]+)\s*=\s*(.*)$", re.MULTILINE)
+
+
+def cinterop_surface_problems(defs: Dict[str, str], modules: List[str]) -> List[str]:
+    """cinterop_bindings_are_internal: a published module's cinterop klib ships with it, and every
+    declaration in it is public to apps; each of its .def files puts its bindings under an internal
+    package, so apps do not find the engine's shims as API."""
+    problems = []
+    for path, text in sorted(defs.items()):
+        if path.split("/", 1)[0] not in modules:
+            continue
+        settings = dict(DEF_SETTING.findall(text.split("\n---", 1)[0]))
+        package = settings.get("package", "")
+        if "internal" not in package.split("."):
+            problems.append(f"{path}: package {package or '(none)'} is public; apps can import it from the published klib")
+    return problems
+
+
 def check_module_sources() -> List[str]:
     fixture_settings = 'include(":cameraK")\ninclude("ocrPlugin")\n'
     fixture_files = [
@@ -1541,6 +1561,18 @@ def check_module_sources() -> List[str]:
         "ocrPlugin/src/desktopMain/kotlin/C.kt:1",
     ]:
         raise CheckError(f"log_message_repeats_its_tag misjudges its fixture: {found}")
+    planted_defs = {
+        "cameraK-core/src/nativeInterop/cinterop/a.def": "package = x.a\nheaders = os/log.h\n",
+        "cameraK-core/src/nativeInterop/cinterop/b.def": "headers = os/log.h\n---\npackage = x.internal.b\n",
+        "cameraK-core/src/nativeInterop/cinterop/c.def": "package = x.internal.c\nheaders = os/log.h\n",
+        "Sample/src/nativeInterop/cinterop/d.def": "package = x.d\nheaders = os/log.h\n",
+    }
+    found = cinterop_surface_problems(planted_defs, ["cameraK-core"])
+    if [problem.split(" ", 1)[0] for problem in found] != [
+        "cameraK-core/src/nativeInterop/cinterop/a.def:",
+        "cameraK-core/src/nativeInterop/cinterop/b.def:",
+    ]:
+        raise CheckError(f"cinterop_bindings_are_internal misjudges its fixture: {found}")
     files = [path.relative_to(ROOT).as_posix() for path in tracked("*.kt")]
     sources = {path: (ROOT / path).read_text() for path in APPLE_ENGINE_INTERNALS if (ROOT / path).is_file()}
     engines = {path: (ROOT / path).read_text() for path in SPLIT_ENGINE_FILES if (ROOT / path).is_file()}
@@ -1566,6 +1598,9 @@ def check_module_sources() -> List[str]:
         + stdlib_atomics_problems(kotlin, LIBRARY_MODULES)
         + log_tag_problems(kotlin)
         + log_prefix_problems(kotlin)
+        + cinterop_surface_problems(
+            {path.relative_to(ROOT).as_posix(): path.read_text() for path in tracked("*.def")}, LIBRARY_MODULES
+        )
     )
 
 

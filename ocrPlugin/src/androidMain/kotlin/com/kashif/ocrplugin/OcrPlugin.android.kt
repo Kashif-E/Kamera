@@ -89,7 +89,13 @@ private class MlKitLiveRecognizer(private val client: MlKitTextClient, private v
             nv21Height = image.height
         }
         image.bytes.copyInto(nv21, 0, 0, lumaBytes)
-        return client.recognizeNv21(nv21, image.width, image.height, image.rotationDegrees).awaitBlocking(timeoutMillis)
+        return try {
+            client.recognizeNv21(nv21, image.width, image.height, image.rotationDegrees).awaitBlocking(timeoutMillis)
+        } catch (timeout: TimeoutException) {
+            // The abandoned task may still read this array: the next frame gets a new one.
+            nv21Width = -1
+            throw timeout
+        }
     }
 
     override fun close() = client.close()

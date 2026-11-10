@@ -156,7 +156,11 @@ internal class SessionLifecycle(
 
     private val readies = atomic(0)
 
-    /** How many times [state] became Ready; it counts each one, however quickly the next state follows. */
+    /**
+     * Rises each time [state] becomes Ready, however quickly the next state follows, and never falls.
+     * A Ready that loses its race to another state may raise it too: a reader comparing two counts
+     * may see a change with no Ready behind it, but never misses a Ready.
+     */
     val readyCount: Int get() = readies.value
 
     /** The only writer of [state]. Nothing leaves Closed, whatever the engine reports. */
@@ -168,7 +172,6 @@ internal class SessionLifecycle(
             val entersReady = updated is CameraKState.Ready && current !is CameraKState.Ready
             if (entersReady) readies.incrementAndGet()
             if (_state.compareAndSet(current, updated)) return
-            if (entersReady) readies.decrementAndGet()
         }
     }
 

@@ -107,6 +107,17 @@ class PhotosSaveTest {
     }
 
     @Test
+    fun anImportThatFinishesAfterItsTimeoutLeavesTheFailureAndTheFile() {
+        val photos = FakePhotoLibrary(completesCreation = false)
+        val path = file()
+
+        val result = saveImage(photos, path)
+        photos.finishHeldImport()
+
+        assertKept(result, path)
+    }
+
+    @Test
     fun aRefusedImportNamesWhatPhotosReportedAndKeepsTheFile() {
         val path = file()
 

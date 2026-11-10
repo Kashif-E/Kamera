@@ -3,11 +3,11 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.engine.Tracer
-import com.kashif.cameraK.signpost.camerak_signpost_begin
-import com.kashif.cameraK.signpost.camerak_signpost_end
-import com.kashif.cameraK.signpost.camerak_signpost_event
-import com.kashif.cameraK.signpost.camerak_signpost_id
-import com.kashif.cameraK.signpost.camerak_signpost_log
+import com.kashif.cameraK.internal.signpost.camerak_signpost_begin
+import com.kashif.cameraK.internal.signpost.camerak_signpost_end
+import com.kashif.cameraK.internal.signpost.camerak_signpost_event
+import com.kashif.cameraK.internal.signpost.camerak_signpost_id
+import com.kashif.cameraK.internal.signpost.camerak_signpost_log
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.ExperimentalForeignApi
 

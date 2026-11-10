@@ -48,7 +48,7 @@ class FinalizedContractTest {
         val stop = async { engine.stopRecording() }
         driver.settle()
         finishRecording(driver, first)
-        repeat(20) { if (!stop.isCompleted) driver.settle() }
+        driver.settleUntil("the stop to complete") { stop.isCompleted }
         assertEquals(first.path, assertIs<CameraKResult.Success<RecordedVideo>>(stop.await()).value.path)
 
         val second = startEngineRecording(driver, engine).also { written += it.path }
@@ -107,7 +107,7 @@ class FinalizedContractTest {
         val stop = async { engine.stopRecording() }
         repeat(20) { if (driver.movieRecorder.stops == 0) driver.settle() }
         driver.movieRecorder.reportFinished(begun, movieError(AVErrorUnknown, successfullyFinished = false))
-        repeat(20) { if (!stop.isCompleted) driver.settle() }
+        driver.settleUntil("the stop to complete") { stop.isCompleted }
         val stopped = stop.await()
         driver.settle()
 

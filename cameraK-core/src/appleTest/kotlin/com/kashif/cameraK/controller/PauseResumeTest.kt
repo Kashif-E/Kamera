@@ -118,7 +118,7 @@ class PauseResumeTest {
             val stopped = async { engine.stopRecording() }
             driver.settle()
             finishRecording(driver, recording)
-            repeat(20) { if (!stopped.isCompleted) driver.settle() }
+            driver.settleUntil("the stop to complete") { stopped.isCompleted }
 
             val video = assertIs<CameraKResult.Success<RecordedVideo>>(stopped.await(), "stopRecording").value
             assertEquals(1_573.milliseconds, video.duration, "the reported duration")

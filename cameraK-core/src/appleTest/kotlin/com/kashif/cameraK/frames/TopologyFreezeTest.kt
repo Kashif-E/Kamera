@@ -5,6 +5,7 @@ package com.kashif.cameraK.frames
 import com.kashif.cameraK.controller.backCamera
 import com.kashif.cameraK.controller.finishRecording
 import com.kashif.cameraK.controller.removeFiles
+import com.kashif.cameraK.controller.settleUntil
 import com.kashif.cameraK.controller.startEngineRecording
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
 import com.kashif.cameraK.result.CameraKResult
@@ -55,7 +56,7 @@ class TopologyFreezeTest {
         val stop = async { engine.stopRecording() }
         driver.settle()
         finishRecording(driver, recording)
-        repeat(20) { if (!stop.isCompleted) driver.settle() }
+        driver.settleUntil("the stop to complete") { stop.isCompleted }
         driver.settle()
         assertEquals(1, driver.session.videoDataOutputs.size, "frame outputs once the recording finalized")
         assertTrue(registration.active.value, "the waiting registration once the recording finalized")
@@ -81,7 +82,7 @@ class TopologyFreezeTest {
         val stop = async { engine.stopRecording() }
         driver.settle()
         finishRecording(driver, recording)
-        repeat(20) { if (!stop.isCompleted) driver.settle() }
+        driver.settleUntil("the stop to complete") { stop.isCompleted }
         driver.settle()
         assertTrue(
             driver.session.videoDataOutputs.isEmpty(),
@@ -110,7 +111,7 @@ class TopologyFreezeTest {
         val stop = async { engine.stopRecording() }
         driver.settle()
         finishRecording(driver, recording)
-        repeat(20) { if (!stop.isCompleted) driver.settle() }
+        driver.settleUntil("the stop to complete") { stop.isCompleted }
         registration.close()
         engine.close()
     }
