@@ -56,4 +56,63 @@ class TorchReadBackTest {
         assertEquals(TorchMode.OFF, engine.hardware.value.torchMode, "a torch the system shut off is reported off")
         engine.close()
     }
+
+    @Test
+    fun aTorchTheSystemTurnsOffOnceTheSessionRunsIsTurnedOnAgain() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        assertEquals(CameraKResult.Success(TorchMode.ON), engine.setTorchMode(TorchMode.ON))
+        driver.back.report(torch = AVCaptureTorchModeOn)
+        driver.settle()
+
+        // A session whose startRunning returned early starts for real later, and the system turns
+        // the torch it was given off without the engine asking.
+        driver.back.report(torch = AVCaptureTorchModeOff)
+        driver.settle()
+
+        assertEquals(2, driver.back.torchOnSets(), "the torch turned off behind the engine's back was set on again")
+        driver.back.report(torch = AVCaptureTorchModeOn)
+        driver.settle()
+        assertEquals(TorchMode.ON, engine.hardware.value.torchMode)
+        engine.close()
+    }
+
+    @Test
+    fun aTorchTheSystemKeepsTurningOffIsSetOnAgainOnlyOnce() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        assertEquals(CameraKResult.Success(TorchMode.ON), engine.setTorchMode(TorchMode.ON))
+        driver.back.report(torch = AVCaptureTorchModeOn)
+        driver.settle()
+
+        repeat(3) {
+            driver.back.report(torch = AVCaptureTorchModeOff)
+            driver.settle()
+        }
+
+        assertEquals(2, driver.back.torchOnSets(), "a torch that never comes back on is not set on in a loop")
+        assertEquals(TorchMode.OFF, engine.hardware.value.torchMode)
+        engine.close()
+    }
+
+    @Test
+    fun aTorchTurnedOffOnRequestStaysOff() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        assertEquals(CameraKResult.Success(TorchMode.ON), engine.setTorchMode(TorchMode.ON))
+        driver.back.report(torch = AVCaptureTorchModeOn)
+        driver.settle()
+        assertEquals(CameraKResult.Success(TorchMode.OFF), engine.setTorchMode(TorchMode.OFF))
+        driver.back.report(torch = AVCaptureTorchModeOff)
+        driver.settle()
+
+        assertEquals(1, driver.back.torchOnSets())
+        assertEquals(TorchMode.OFF, engine.hardware.value.torchMode)
+        engine.close()
+    }
+
+    private fun FakeDevice.torchOnSets(): Int = calls.count { it.op == "setTorchMode" && it.value == AVCaptureTorchModeOn }
 }
