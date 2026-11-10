@@ -114,5 +114,6 @@ class TorchReadBackTest {
         engine.close()
     }
 
-    private fun FakeDevice.torchOnSets(): Int = calls.count { it.op == "setTorchMode" && it.value == AVCaptureTorchModeOn }
+    private fun FakeDevice.torchOnSets(): Int =
+        calls.count { it.op == "setTorchMode" && it.value == AVCaptureTorchModeOn }
 }
