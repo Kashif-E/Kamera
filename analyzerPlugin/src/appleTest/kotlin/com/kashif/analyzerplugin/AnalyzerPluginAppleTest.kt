@@ -33,7 +33,7 @@ class AnalyzerPluginAppleTest {
      * delivers (ios-config-queue, analyzer half).
      */
     @Test
-    fun addsNoOutputOfItsOwn() = runTest {
+    fun encodesTheHoldersFramesWithNoSessionOfItsOwn() = runTest {
         val engine = FakeCameraEngine()
         val plugin = AnalyzerPlugin(AnalyzerConfig(), { CoreImageFrameEncoder(it, copyingRenderer) })
         val holder = fakeCameraKStateHolder(fake = engine, plugins = listOf(plugin))
