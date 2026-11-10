@@ -172,7 +172,8 @@ class PinnedPhysicalLensTest {
         val afterSwitch = platform.backend.binding.bound.filterIsInstance<VideoCapture<*>>().map(::pinOf)
         startRecording(platform, engine, VideoConfiguration { enableAudio = false })
 
-        assertTrue(afterSwitch.all { it == ULTRA_WIDE.id }, "a VideoCapture bound with the ultra-wide pins $afterSwitch")
+        val otherLenses = afterSwitch.filterNot { it == ULTRA_WIDE.id }
+        assertEquals(emptyList(), otherLenses, "other lenses bound with the ultra-wide")
         assertEquals(ULTRA_WIDE.id, pinOf(bound<VideoCapture<*>>(platform)), "the recording's VideoCapture lens")
         engine.closeAndJoin()
     }

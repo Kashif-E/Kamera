@@ -129,9 +129,17 @@ internal interface CameraXBackend {
     /**
      * A VideoCapture over a new Recorder for [quality], with [bitrateBps] as the encoder's target
      * video bitrate when it is set, and [fallback] as CameraX's rule when the camera cannot record
-     * [quality]. Builds no platform session, so it may run off the main thread.
+     * [quality], pinned to [pinnedPhysicalId] as the other use cases of a bind on a physical lens are:
+     * unpinned, it streams from the logical camera's own lens. Builds no platform session, so it may
+     * run off the main thread.
      */
-    fun buildVideoCapture(quality: VideoQuality, bitrateBps: Int?, fallback: QualityFallback): VideoCapture<Recorder> {
+    @OptIn(ExperimentalCamera2Interop::class)
+    fun buildVideoCapture(
+        quality: VideoQuality,
+        bitrateBps: Int?,
+        fallback: QualityFallback,
+        pinnedPhysicalId: String?,
+    ): VideoCapture<Recorder> {
         val cameraXQuality = quality.toCameraXQuality()
         val strategy = when (fallback) {
             QualityFallback.HIGHER_OR_LOWER -> FallbackStrategy.higherQualityOrLowerThan(cameraXQuality)
@@ -141,7 +149,9 @@ internal interface CameraXBackend {
             .setQualitySelector(QualitySelector.from(cameraXQuality, strategy))
             .apply { bitrateBps?.let { setTargetVideoEncodingBitRate(it) } }
             .build()
-        return VideoCapture.withOutput(recorder)
+        return VideoCapture.Builder(recorder)
+            .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
+            .build()
     }
 
     /**

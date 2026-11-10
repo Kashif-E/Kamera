@@ -52,6 +52,9 @@ internal interface VideoSessionHost {
     /** Whether a bind has given the session its camera. */
     val isBound: Boolean
 
+    /** The physical lens the bound camera's use cases pin, or null when the camera is bound as itself. */
+    val pinnedPhysicalId: String?
+
     /**
      * Rebinds the bound camera with [VideoRecorder.useCaseForBind] in the group; null when bound.
      * When CameraX refuses the group, the host binds it again without VideoCapture and returns
@@ -108,8 +111,11 @@ internal class VideoRecorder(
     var videoCapture: VideoCapture<Recorder>? = null
         private set
 
-    // The quality videoCapture records in, and whether it stays bound after its recording (prepare).
+    // The quality videoCapture records in, the fallback and lens it was built for, and whether it stays
+    // bound after its recording (prepare).
     private var videoQuality: VideoQuality? = null
+    private var videoFallback: QualityFallback? = null
+    private var videoPin: String? = null
     private var prepared = false
 
     // Set when the engine stopped with VideoCapture bound: the next start binds the photo session again.
@@ -124,8 +130,26 @@ internal class VideoRecorder(
 
     val isRecording: Boolean get() = active != null
 
-    /** The VideoCapture the next bind's use-case group includes, or null. */
-    fun useCaseForBind(): VideoCapture<Recorder>? = videoCapture
+    /**
+     * The VideoCapture the next bind's use-case group includes, or null. One built for another lens
+     * than [pinnedPhysicalId] is built again for it, so a bind never mixes lenses; a recording keeps
+     * its own, as a lens switch waits for its end.
+     */
+    fun useCaseForBind(pinnedPhysicalId: String?): VideoCapture<Recorder>? {
+        val built = videoCapture ?: return null
+        if (videoPin == pinnedPhysicalId || active != null) return built
+        val quality = checkNotNull(videoQuality)
+        val rebuilt = try {
+            backend.buildVideoCapture(quality, quality.bitrateBps, checkNotNull(videoFallback), pinnedPhysicalId)
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Building the VideoCapture use case for the new lens failed", e)
+            dropVideoCapture()
+            return null
+        }
+        videoCapture = rebuilt
+        videoPin = pinnedPhysicalId
+        return rebuilt
+    }
 
     /** Takes VideoCapture out of the next bind: CameraX refused the group that had it. */
     fun dropVideoCapture() {
@@ -151,7 +175,7 @@ internal class VideoRecorder(
     suspend fun start(config: VideoConfiguration): CameraKResult<String> {
         if (active != null) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_START))
         val fallback = qualityFallback(config) ?: return unsupportedQuality()
-        val lazyBind = videoCapture == null || videoQuality != config.quality
+        val lazyBind = videoCapture == null || videoQuality != config.quality || videoPin != host.pinnedPhysicalId
         var started = false
         try {
             if (lazyBind) bindVideoCapture(config.quality, fallback)?.let { return CameraKResult.Failure(it) }
@@ -442,8 +466,9 @@ internal class VideoRecorder(
     // bitrate is the quality's.
     private suspend fun bindVideoCapture(quality: VideoQuality, fallback: QualityFallback): CameraKError? {
         if (!host.isBound) return CameraKError.NotReady
+        val pin = host.pinnedPhysicalId
         val built = try {
-            withContext(background) { backend.buildVideoCapture(quality, quality.bitrateBps, fallback) }
+            withContext(background) { backend.buildVideoCapture(quality, quality.bitrateBps, fallback, pin) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -452,6 +477,8 @@ internal class VideoRecorder(
         }
         videoCapture = built
         videoQuality = quality
+        videoFallback = fallback
+        videoPin = pin
         val error = host.bindWithVideo()
         if (error != null) {
             videoCapture = null

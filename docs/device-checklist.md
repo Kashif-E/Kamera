@@ -70,6 +70,12 @@ the main thread.
       ```
       Run without the class filter, the other cases report as skipped: each needs a fault hook or a
       sub-interface the device driver does not have.
+- [ ] **Recording on a physical lens.** A recording on the back ultra-wide, which the Pixel 7 exposes as
+      a physical lens of its logical back camera, streams from that lens:
+      ```
+      ./gradlew :cameraK-core:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=\
+      com.kashif.cameraK.engine.PhysicalLensRecordingDeviceTest
+      ```
 - [ ] **VideoCapture bind on Main.** Record the `CameraK.videoBind` time from the benchmark above,
       and check that the preview does not stall when recording starts.
 

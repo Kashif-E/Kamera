@@ -91,8 +91,9 @@ internal class FakeCameraXBackend : CameraXBackend {
         quality: VideoQuality,
         bitrateBps: Int?,
         fallback: QualityFallback,
+        pinnedPhysicalId: String?,
     ): VideoCapture<Recorder> {
-        val built = super.buildVideoCapture(quality, bitrateBps, fallback)
+        val built = super.buildVideoCapture(quality, bitrateBps, fallback, pinnedPhysicalId)
         videoCaptureBuilds += VideoCaptureBuild(quality, bitrateBps, fallback, Thread.currentThread(), built)
         return built
     }
