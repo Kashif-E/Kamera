@@ -196,6 +196,21 @@ class RetainedHolderTest {
     }
 
     @Test
+    fun aHolderTheRecreatedScreenNoLongerComposesStopsOnceTheGraceEnds() {
+        var showCamera = true
+        launch { if (showCamera) Remembered() }
+        assertIs<CameraKState.Ready>(current.cameraState.value)
+
+        // The recreated screen shows no camera, as one shown from state the recreation lost would not.
+        showCamera = false
+        recreate()
+        test.advanceTimeBy(5.seconds)
+        test.runCurrent()
+
+        assertTrue("stop" in fake.calls, "the camera stayed open with no screen to show it: ${fake.calls}")
+    }
+
+    @Test
     fun stoppingTheHostForGoodStopsTheCameraAtOnce() {
         launch { Remembered() }
         assertIs<CameraKState.Ready>(current.cameraState.value)
