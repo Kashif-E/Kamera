@@ -103,8 +103,13 @@ internal class DesktopFrameSource(
         var planes: List<FramePlane>? = null
         for (registration in registrations) {
             val gate = registration.gate ?: continue
-            val lease = gate.tryEnter(onReleased = { registration.returned(frame) }) ?: continue
+            // Counted before the gate lets the frame in, so a close in between keeps the pool sized for it.
             registration.handed()
+            val lease = gate.tryEnter(onReleased = { registration.returned(frame) })
+            if (lease == null) {
+                registration.notHanded()
+                continue
+            }
             frame.retain()
             val view = planes ?: try {
                 convert.planes(frame, format, analysisSize).also { planes = it }
@@ -147,6 +152,10 @@ internal class DesktopFrameSource(
 
         fun returned(frame: LeasedFrame) {
             frame.release()
+            notHanded()
+        }
+
+        fun notHanded() {
             if (outstanding.decrementAndGet() == 0 && !open) leavePool(this)
         }
 
