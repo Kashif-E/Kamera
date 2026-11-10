@@ -9,17 +9,20 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * The Sample asks for the gallery only when its image saver puts captures there, and a refused camera
- * reaches the screen as a notice rather than the console.
+ * The Sample asks for the microphone its recordings use, and for the gallery only when its image saver
+ * puts captures there; a refused camera reaches the screen as a notice rather than the console.
  */
 class SamplePermissionsTest {
     @Test
     fun theGalleryIsAskedForOnlyWhenAutoSaveIsOn() {
         assertEquals(
-            listOf(CameraKPermission.CAMERA, CameraKPermission.GALLERY_ADD),
+            listOf(CameraKPermission.CAMERA, CameraKPermission.MICROPHONE, CameraKPermission.GALLERY_ADD),
             samplePermissions(autoSave = true),
         )
-        assertEquals(listOf(CameraKPermission.CAMERA), samplePermissions(autoSave = false))
+        assertEquals(
+            listOf(CameraKPermission.CAMERA, CameraKPermission.MICROPHONE),
+            samplePermissions(autoSave = false),
+        )
     }
 
     @Test
