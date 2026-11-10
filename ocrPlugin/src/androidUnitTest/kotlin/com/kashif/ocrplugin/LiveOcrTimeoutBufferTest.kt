@@ -25,7 +25,12 @@ class LiveOcrTimeoutBufferTest {
             override fun recognize(bitmap: Bitmap, rotationDegrees: Int): Task<List<FoundBlock>> =
                 error("live recognition reads NV21")
 
-            override fun recognizeNv21(nv21: ByteArray, width: Int, height: Int, rotationDegrees: Int): Task<List<FoundBlock>> {
+            override fun recognizeNv21(
+                nv21: ByteArray,
+                width: Int,
+                height: Int,
+                rotationDegrees: Int,
+            ): Task<List<FoundBlock>> {
                 handed += nv21
                 return answers.removeFirst()
             }
