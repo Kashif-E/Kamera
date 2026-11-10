@@ -174,6 +174,34 @@ class RetainedHolderTest {
     }
 
     @Test
+    fun recreateHostKeepsTheCameraOpenWithNoRecording() {
+        launch { Remembered() }
+        assertIs<CameraKState.Ready>(current.cameraState.value)
+        val first = current
+        val states = mutableListOf<CameraKState>()
+        test.launch { first.cameraState.collect { states += it } }
+
+        recreate()
+        test.advanceTimeBy(5.seconds)
+        test.runCurrent()
+
+        assertSame(first, current, "the recreation built a new holder")
+        assertFalse("stop" in fake.calls, "the rotation closed the camera: ${fake.calls}")
+        assertEquals(listOf<CameraKState>(CameraKState.Ready), states.distinct(), "the camera states the rotation went through")
+    }
+
+    @Test
+    fun stoppingTheHostForGoodStopsTheCameraAtOnce() {
+        launch { Remembered() }
+        assertIs<CameraKState.Ready>(current.cameraState.value)
+
+        assertNotNull(controller).pause().stop()
+        settle()
+
+        assertTrue("stop" in fake.calls, "leaving the screen kept the camera open: ${fake.calls}")
+    }
+
+    @Test
     fun disposeHostEmitsRecordingEndedShutdownWithPath() {
         launch { Remembered() }
         val first = current
