@@ -65,6 +65,7 @@ internal class EngineControls(
         metering.desiredExposure = desired.exposureCompensationIndex
         custom.setFlashMode(desired.flashMode.toAVCaptureFlashMode())
         custom.torchMode = desiredTorch.toAVCaptureTorchMode()
+        torchSetAgain = false
     }
 
     /**
@@ -135,6 +136,7 @@ internal class EngineControls(
             }
             desiredTorch = mode
             custom.torchMode = avMode
+            torchSetAgain = false
             CameraKResult.Success(mode)
         }
     }
@@ -161,6 +163,7 @@ internal class EngineControls(
         if (observedDevice === device) return
         stopObservingHardware()
         observedDevice = device
+        torchSetAgain = false
         hardwareObservation = device.observeHardware {
             platformCallback("a torch or zoom report") {
                 custom.afterQueuedSessionWork {
@@ -188,21 +191,20 @@ internal class EngineControls(
         publishHardware()
     }
 
-    // Session queue only: whether the torch was set again since the device last reported the mode asked for.
+    // Session queue only: whether the torch was set again since the last start, torch command or camera.
     private var torchSetAgain = false
 
     /**
      * Session queue: a session whose startRunning returned early starts for real later, and the system
-     * turns off the torch it was given then. The asked-for mode is set again, once until the device
-     * reports it, so a torch the system keeps refusing is not set in a loop.
+     * turns off the torch it was given then. The asked-for mode is set again once per start, torch
+     * command and camera, so a torch the system keeps turning off is not fought over, and never while
+     * the session is not running, as when it is interrupted and the system or another client has the camera.
      */
     private fun reapplyTorchTheSystemTurnedOff() {
-        val device = custom.currentDevice ?: return
-        if (device.torchMode == custom.torchMode) {
-            torchSetAgain = false
-            return
-        }
         if (torchSetAgain) return
+        val device = custom.currentDevice ?: return
+        if (device.torchMode == custom.torchMode) return
+        if (custom.sessionOps?.isRunning != true) return
         torchSetAgain = true
         custom.reapplyTorchOnQueue()
     }
