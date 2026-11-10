@@ -91,10 +91,10 @@ private class MlKitLiveRecognizer(private val client: MlKitTextClient, private v
         image.bytes.copyInto(nv21, 0, 0, lumaBytes)
         return try {
             client.recognizeNv21(nv21, image.width, image.height, image.rotationDegrees).awaitBlocking(timeoutMillis)
-        } catch (timeout: TimeoutException) {
-            // The abandoned task may still read this array: the next frame gets a new one.
-            nv21Width = -1
-            throw timeout
+        } catch (abandoned: Exception) {
+            // A timed-out or interrupted wait leaves the task reading this array: the next frame gets a new one.
+            if (abandoned is TimeoutException || abandoned is InterruptedException) nv21Width = -1
+            throw abandoned
         }
     }
 

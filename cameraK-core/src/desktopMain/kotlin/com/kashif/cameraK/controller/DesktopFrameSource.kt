@@ -103,9 +103,10 @@ internal class DesktopFrameSource(
         var planes: List<FramePlane>? = null
         for (registration in registrations) {
             val gate = registration.gate ?: continue
-            // Counted before the gate lets the frame in, so a close in between keeps the pool sized for it.
+            // Counted before the gate lets the frame in, so a close in between keeps the pool sized for it;
+            // one closed before it was counted, after this delivery's snapshot, gets no frame.
             registration.handed()
-            val lease = gate.tryEnter(onReleased = { registration.returned(frame) })
+            val lease = if (registration.isOpen) gate.tryEnter(onReleased = { registration.returned(frame) }) else null
             if (lease == null) {
                 registration.notHanded()
                 continue
@@ -139,6 +140,8 @@ internal class DesktopFrameSource(
         override val active: StateFlow<Boolean> = _active.asStateFlow()
 
         @Volatile private var open = rejection == null
+
+        val isOpen: Boolean get() = open
 
         /** The frames the registration may keep, as its gate counts them. */
         val retainLimit: Int = spec.maxRetained.coerceAtLeast(1)

@@ -44,4 +44,33 @@ class LiveOcrTimeoutBufferTest {
 
         assertEquals(List(4) { 1.toByte() }, handed.first().take(4), "the luma of the frame ML Kit was still reading")
     }
+
+    @Test
+    fun aFrameAfterAnInterruptedWaitIsNotWrittenIntoTheArrayMlKitMayStillRead() {
+        val handed = mutableListOf<ByteArray>()
+        val answers = ArrayDeque(listOf(TaskCompletionSource<List<FoundBlock>>().task, textTask("TEXT")))
+        val client = object : MlKitTextClient {
+            override fun recognize(bitmap: Bitmap, rotationDegrees: Int): Task<List<FoundBlock>> =
+                error("live recognition reads NV21")
+
+            override fun recognizeNv21(
+                nv21: ByteArray,
+                width: Int,
+                height: Int,
+                rotationDegrees: Int,
+            ): Task<List<FoundBlock>> {
+                handed += nv21
+                return answers.removeFirst()
+            }
+
+            override fun close() = Unit
+        }
+        val recognizer = AndroidTextRecognizers(newClient = { client }).live(OcrLevel.FAST)
+
+        Thread.currentThread().interrupt()
+        assertFailsWith<InterruptedException> { recognizer.recognize(LumaImage(ByteArray(4) { 1 }, 2, 2, 0)) }
+        recognizer.recognize(LumaImage(ByteArray(4) { 2 }, 2, 2, 0))
+
+        assertEquals(List(4) { 1.toByte() }, handed.first().take(4), "the luma of the frame ML Kit was still reading")
+    }
 }
