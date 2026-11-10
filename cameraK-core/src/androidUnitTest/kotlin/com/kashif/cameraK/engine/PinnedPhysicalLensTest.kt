@@ -4,12 +4,15 @@ package com.kashif.cameraK.engine
 
 import android.util.Size
 import android.view.Surface
+import androidx.camera.camera2.impl.Camera2ImplConfig
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCase
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.video.VideoCapture
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.capabilities.LensOutputSizes
 import com.kashif.cameraK.capabilities.PhysicalLensFacts
@@ -28,6 +31,7 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
+import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -141,6 +145,48 @@ class PinnedPhysicalLensTest {
         assertTrue(platform.camera!!.metering.focusRequests.isEmpty(), "the action reached CameraX")
         engine.closeAndJoin()
     }
+
+    @Test
+    fun aRecordingOnAPinnedLensStreamsItsVideoFromThatLens() = runTest {
+        val platform = platformWith(ULTRA_WIDE_FACTS)
+        val engine = openUltraWide(platform)
+
+        startRecording(platform, engine, VideoConfiguration { enableAudio = false })
+
+        assertEquals(ULTRA_WIDE.id, pinOf(bound<VideoCapture<*>>(platform)), "the VideoCapture's physical lens")
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aVideoCapturePreparedOnTheLogicalCameraIsNotBoundToAPinnedLens() = runTest {
+        val platform = platformWith(ULTRA_WIDE_FACTS)
+        val engine = platform.engine(testScheduler, CameraConfiguration())
+        platform.settle(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(ULTRA_WIDE_DESIRED.on(CameraDeviceType.WIDE_ANGLE)))
+        platform.settle(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.prepareRecording(VideoConfiguration { enableAudio = false }))
+        platform.settle(testScheduler)
+
+        assertIs<CameraKResult.Success<*>>(engine.selectCamera(CameraSelection.ById(ULTRA_WIDE.id)))
+        platform.settle(testScheduler)
+        val afterSwitch = platform.backend.binding.bound.filterIsInstance<VideoCapture<*>>().map(::pinOf)
+        startRecording(platform, engine, VideoConfiguration { enableAudio = false })
+
+        assertTrue(afterSwitch.all { it == ULTRA_WIDE.id }, "a VideoCapture bound with the ultra-wide pins $afterSwitch")
+        assertEquals(ULTRA_WIDE.id, pinOf(bound<VideoCapture<*>>(platform)), "the recording's VideoCapture lens")
+        engine.closeAndJoin()
+    }
+
+    @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
+    private fun pinOf(useCase: UseCase): String? = Camera2ImplConfig(useCase.currentConfig).getPhysicalCameraId(null)
+
+    private fun DesiredHardware.on(type: CameraDeviceType) = DesiredHardware(
+        selection = CameraSelection.ByLens(CameraLens.BACK, type),
+        flashMode = flashMode,
+        torchMode = torchMode,
+        zoomRatio = zoomRatio,
+        targetOrientation = targetOrientation,
+    )
 
     private fun platformWith(facts: PhysicalLensFacts) = FakeAndroidPlatform(
         lenses = listOf(LOGICAL_BACK, ULTRA_WIDE, FRONT),
