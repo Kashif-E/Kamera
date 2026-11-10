@@ -219,8 +219,9 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
     public val cameraState: StateFlow<CameraKState> = lifecycle.state
 
     /**
-     * For `:cameraK`'s CameraKScreen: how many times [cameraState] became Ready, each one counted
-     * however quickly the next state follows. Public only because `:cameraK` is another module.
+     * For `:cameraK`'s CameraKScreen: rises each time [cameraState] becomes Ready, however quickly the
+     * next state follows, and never falls; a Ready that lost a race may raise it too, so a change can
+     * have no Ready behind it, but no Ready goes unseen. Public only because `:cameraK` is another module.
      */
     @InternalCameraKApi
     public val readyCount: Int get() = lifecycle.readyCount
