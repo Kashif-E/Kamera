@@ -2,7 +2,6 @@
 
 package com.kashif.cameraK.state
 
-import com.kashif.cameraK.engine.DesiredHardware
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.utils.CameraKEngineApi
