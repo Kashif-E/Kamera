@@ -80,12 +80,13 @@ fun App() = SampleTheme {
 }
 
 /**
- * What the Sample asks for when it opens: the camera, and the gallery only when the image saver puts
- * every capture there. On Android 10 and later and on desktop the gallery needs no permission and reads
+ * What the Sample asks for when it opens: the camera, the microphone its recordings use, and the
+ * gallery only when the image saver puts every capture there. On Android 10 and later and on desktop the gallery needs no permission and reads
  * Granted.
  */
 internal fun samplePermissions(autoSave: Boolean): List<CameraKPermission> =
-    if (autoSave) listOf(CameraKPermission.CAMERA, CameraKPermission.GALLERY_ADD) else listOf(CameraKPermission.CAMERA)
+    listOf(CameraKPermission.CAMERA, CameraKPermission.MICROPHONE) +
+        if (autoSave) listOf(CameraKPermission.GALLERY_ADD) else emptyList()
 
 /** Whether the Sample shows the camera for this camera permission status; Limited counts as granted. */
 internal fun cameraGranted(status: PermissionStatus?): Boolean =
