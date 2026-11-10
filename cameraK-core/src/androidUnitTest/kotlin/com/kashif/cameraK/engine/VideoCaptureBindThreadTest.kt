@@ -3,6 +3,9 @@
 package com.kashif.cameraK.engine
 
 import android.os.Looper
+import com.kashif.cameraK.capabilities.LensInfo
+import com.kashif.cameraK.enums.CameraDeviceType
+import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
@@ -28,7 +31,7 @@ import kotlin.test.assertTrue
  */
 @RunWith(RobolectricTestRunner::class)
 class VideoCaptureBindThreadTest {
-    private val platform = FakeAndroidPlatform()
+    private var platform = FakeAndroidPlatform()
     private val background: ExecutorCoroutineDispatcher =
         Executors.newSingleThreadExecutor { Thread(it, "camerak-test-background") }.asCoroutineDispatcher()
 
@@ -59,6 +62,37 @@ class VideoCaptureBindThreadTest {
             "the main-thread part of the VideoCapture bind is not one interval",
         )
         platform.backend.recordings.single().finalize()
+        settleUntil { true }
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aVideoCapturePreparedOnAnotherLensIsBuiltAgainOffMain() = runTest {
+        val main = Looper.getMainLooper().thread
+        val logicalBack = LensInfo("0", CameraDeviceType.WIDE_ANGLE, CameraLens.BACK, 0.67f, 8f, true, true)
+        val ultraWide = LensInfo("3", CameraDeviceType.ULTRA_WIDE, CameraLens.BACK, 1f, 8f, true, false)
+        val physical = FakeAndroidPlatform(
+            lenses = listOf(logicalBack, ultraWide, FakeAndroidPlatform.FRONT),
+            physicalChildren = mapOf(ultraWide.id to FakeAndroidPlatform.PhysicalChild(logicalBack.id, null)),
+        )
+        platform = physical
+        val engine = physical.engine(testScheduler, background = background)
+        assertEquals(CameraKResult.Success(Unit), engine.start(FakeAndroidPlatform.desired))
+        settleUntil { physical.backend.qualityQueryThreads.isNotEmpty() }
+        val prepare = async { engine.prepareRecording(VideoConfiguration { enableAudio = false }) }
+        settleUntil { prepare.isCompleted }
+        assertEquals(CameraKResult.Success(Unit), prepare.await(), "setup: prepare")
+
+        val switch = async { engine.selectCamera(CameraSelection.ById(ultraWide.id)) }
+        settleUntil { switch.isCompleted }
+        assertIs<CameraKResult.Success<*>>(switch.await(), "setup: the switch to the ultra-wide")
+        val start = async { engine.startRecording(VideoConfiguration { enableAudio = false }) }
+        settleUntil { start.isCompleted }
+
+        assertIs<CameraKResult.Success<String>>(start.await())
+        val onMain = physical.backend.videoCaptureBuilds.filter { it.thread == main }
+        assertEquals(0, onMain.size, "VideoCapture builds on the main thread")
+        physical.backend.recordings.single().finalize()
         settleUntil { true }
         engine.closeAndJoin()
     }
