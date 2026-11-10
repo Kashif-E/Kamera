@@ -44,4 +44,26 @@ class DesktopFramePoolCloseRaceTest {
         kept.single().close()
         assertEquals(idlePool, source.poolSize, "the pool once the kept frame came back")
     }
+
+    // The producer hands a frame to a snapshot of the registrations; one closed after the snapshot and
+    // before its turn, here by the analyzer before it, gets no frame.
+    @Test
+    fun aRegistrationClosedBeforeItsTurnInADeliveryGetsNoFrame() {
+        val source = DesktopFrameSource(
+            format = FrameFormat.YUV_420,
+            analysisSize = null,
+            newWorker = { error("a synchronous registration needs no worker") },
+            nanoTime = { 0L },
+        )
+        var second: FrameRegistration? = null
+        source.register(FrameSpec(synchronous = true)) { second?.close() }
+        val afterFirst = source.poolSize
+        val kept = mutableListOf<RetainedFrame>()
+        second = source.register(FrameSpec(synchronous = true)) { frame -> kept += frame.retain() }
+
+        source.deliver(LeasedFrame(width = 4, height = 4).apply { begin(nanos = 1L) })
+
+        assertEquals(0, kept.size, "frames the closed registration's analyzer got")
+        assertEquals(afterFirst, source.poolSize, "the pool once the closed registration holds nothing")
+    }
 }
