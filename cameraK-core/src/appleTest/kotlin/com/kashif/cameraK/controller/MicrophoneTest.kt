@@ -89,7 +89,7 @@ class MicrophoneTest {
             val stop = async { engine.stopRecording() }
             driver.settle()
             finishRecording(driver, recording)
-            repeat(20) { if (!stop.isCompleted) driver.settle() }
+            driver.settleUntil("the stop to complete") { stop.isCompleted }
             val video = assertIs<CameraKResult.Success<RecordedVideo>>(stop.await()).value
             assertFalse(video.hasAudio, "the finished recording reported an audio track")
             engine.close()
@@ -119,7 +119,7 @@ class MicrophoneTest {
             val stop = async { engine.stopRecording() }
             driver.settle()
             finishRecording(driver, recording)
-            repeat(20) { if (!stop.isCompleted) driver.settle() }
+            driver.settleUntil("the stop to complete") { stop.isCompleted }
             val video = assertIs<CameraKResult.Success<RecordedVideo>>(stop.await()).value
             assertFalse(video.hasAudio, "the finished recording reported an audio track")
             engine.close()

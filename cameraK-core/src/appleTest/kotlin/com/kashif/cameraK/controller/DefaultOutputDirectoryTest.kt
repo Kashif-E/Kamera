@@ -69,7 +69,7 @@ class DefaultOutputDirectoryTest {
             val stop = async { engine.stopRecording() }
             driver.settle()
             finishRecording(driver, recording)
-            repeat(20) { if (!stop.isCompleted) driver.settle() }
+            driver.settleUntil("the stop to complete") { stop.isCompleted }
 
             val video = assertIs<CameraKResult.Success<RecordedVideo>>(stop.await()).value
             assertEquals(recording.path, video.path, "the recording's result is its file")

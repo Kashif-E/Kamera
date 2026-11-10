@@ -44,7 +44,7 @@ internal suspend fun TestScope.startEngineRecording(
     val started = driver.movieRecorder.starts.getOrNull(before) ?: fail("the recording never reached the movie output")
     NSFileManager.defaultManager.createFileAtPath(started.url.path!!, NSData(), null)
     driver.movieRecorder.reportStarted(started)
-    repeat(50) { if (!start.isCompleted) driver.settle() }
+    driver.settleUntil("the start to complete") { start.isCompleted }
     val path = assertIs<CameraKResult.Success<String>>(start.await(), "startRecording").value
     return EngineRecording(path, started)
 }

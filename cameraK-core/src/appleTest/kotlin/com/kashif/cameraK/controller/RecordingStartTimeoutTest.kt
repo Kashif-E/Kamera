@@ -81,7 +81,7 @@ class RecordingStartTimeoutTest {
         )
         assertEquals(1, driver.movieRecorder.stops, "the movie output was not told to stop")
         driver.movieRecorder.reportFinished(begun, null)
-        repeat(20) { if (!start.isCompleted) driver.settle() }
+        driver.settleUntil("the start to complete") { start.isCompleted }
         driver.settle()
 
         assertStartTimedOut(start.await(), "the start that timed out")
@@ -123,7 +123,7 @@ class RecordingStartTimeoutTest {
 
             advanceTimeBy(timeoutMs.milliseconds)
             runCurrent()
-            repeat(20) { if (!start.isCompleted) driver.settle() }
+            driver.settleUntil("the start to complete") { start.isCompleted }
             assertStartTimedOut(start.await(), "a start AVFoundation never reported")
             assertTrue(NSFileManager.defaultManager.fileExistsAtPath(path), "AVFoundation's file before it finished")
 
