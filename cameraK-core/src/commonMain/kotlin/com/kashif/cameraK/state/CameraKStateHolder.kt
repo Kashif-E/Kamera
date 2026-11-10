@@ -328,6 +328,18 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
         lifecycle.stop()
     }
 
+    /**
+     * For `:cameraK`'s rememberCameraKStateHolder: [stop], for a host that stops only to be recreated
+     * (an Android configuration change). The camera stays open, and Ready, for two seconds whatever is
+     * live, so the recreated host's [start] carries on with it; a holder no recreated host starts
+     * again, as when the new screen no longer shows the camera, then stops. Public only because
+     * `:cameraK` is another module.
+     */
+    @InternalCameraKApi
+    public fun stopForRecreation() {
+        lifecycle.stop(forRecreation = true)
+    }
+
     /** Starts again from [CameraKState.Error]. Returns false, doing nothing, in any other state. */
     public fun retry(): Boolean = !closing.value && lifecycle.retry()
 

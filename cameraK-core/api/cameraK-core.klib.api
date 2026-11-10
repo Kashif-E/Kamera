@@ -1062,6 +1062,7 @@ final class com.kashif.cameraK.state/CameraKStateHolder : kotlin/AutoCloseable {
     final fun shutdown() // com.kashif.cameraK.state/CameraKStateHolder.shutdown|shutdown(){}[0]
     final fun start() // com.kashif.cameraK.state/CameraKStateHolder.start|start(){}[0]
     final fun stop() // com.kashif.cameraK.state/CameraKStateHolder.stop|stop(){}[0]
+    final fun stopForRecreation() // com.kashif.cameraK.state/CameraKStateHolder.stopForRecreation|stopForRecreation(){}[0]
     final fun toggleCameraLens() // com.kashif.cameraK.state/CameraKStateHolder.toggleCameraLens|toggleCameraLens(){}[0]
     final fun toggleFlashMode() // com.kashif.cameraK.state/CameraKStateHolder.toggleFlashMode|toggleFlashMode(){}[0]
     final fun toggleTorchMode() // com.kashif.cameraK.state/CameraKStateHolder.toggleTorchMode|toggleTorchMode(){}[0]

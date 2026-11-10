@@ -62,8 +62,9 @@ public fun rememberCameraKState(
  * When [lifecycleOwner] is not null, the holder starts when it reaches STARTED and stops when it
  * drops below, and on every resume it re-checks the camera permission, so a permission granted in
  * the system dialog opens the camera with no retry. A rotation does not stop it: an Android Activity
- * that stops only to be recreated leaves the camera open, with any recording. With a null owner the
- * caller starts and stops the holder.
+ * that stops only to be recreated leaves the camera open, with any recording, for the recreated
+ * screen to carry on with; one that no longer shows the camera stops it two seconds later. With a
+ * null owner the caller starts and stops the holder.
  */
 @Composable
 public fun rememberCameraKStateHolder(
@@ -163,8 +164,7 @@ internal fun rememberLifecycleHolder(
         val recreating = rememberHostRecreation()
         LifecycleStartEffect(holder, lifecycleOwner = lifecycleOwner) {
             holder.start()
-            // The ViewModel keeps the holder through a recreation, and the new host starts it again.
-            onStopOrDispose { if (!recreating()) holder.stop() }
+            onStopOrDispose { if (recreating()) holder.stopForRecreation() else holder.stop() }
         }
         LifecycleResumeEffect(holder, lifecycleOwner = lifecycleOwner) {
             holder.recheckPermission()

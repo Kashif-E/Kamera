@@ -1169,6 +1169,7 @@ public final class com/kashif/cameraK/state/CameraKStateHolder : java/lang/AutoC
 	public final fun startRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun startRecording$default (Lcom/kashif/cameraK/state/CameraKStateHolder;Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun stop ()V
+	public final fun stopForRecreation ()V
 	public final fun stopRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun toggleCameraLens ()V
 	public final fun toggleFlashMode ()V

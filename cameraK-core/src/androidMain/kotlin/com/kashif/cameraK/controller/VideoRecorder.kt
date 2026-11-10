@@ -111,10 +111,9 @@ internal class VideoRecorder(
     var videoCapture: VideoCapture<Recorder>? = null
         private set
 
-    // The quality videoCapture records in, the fallback and lens it was built for, and whether it stays
-    // bound after its recording (prepare).
+    // The quality videoCapture records in, the lens it was built for, and whether it stays bound after
+    // its recording (prepare).
     private var videoQuality: VideoQuality? = null
-    private var videoFallback: QualityFallback? = null
     private var videoPin: String? = null
     private var prepared = false
 
@@ -132,23 +131,14 @@ internal class VideoRecorder(
 
     /**
      * The VideoCapture the next bind's use-case group includes, or null. One built for another lens
-     * than [pinnedPhysicalId] is built again for it, so a bind never mixes lenses; a recording keeps
-     * its own, as a lens switch waits for its end.
+     * than [pinnedPhysicalId] is left out, so a bind never mixes lenses, and the next start builds it
+     * again, off Main; a recording keeps its own, as a lens switch waits for its end.
      */
     fun useCaseForBind(pinnedPhysicalId: String?): VideoCapture<Recorder>? {
         val built = videoCapture ?: return null
         if (videoPin == pinnedPhysicalId || active != null) return built
-        val quality = checkNotNull(videoQuality)
-        val rebuilt = try {
-            backend.buildVideoCapture(quality, quality.bitrateBps, checkNotNull(videoFallback), pinnedPhysicalId)
-        } catch (e: Exception) {
-            CameraKLogger.e(TAG, "Building the VideoCapture use case for the new lens failed", e)
-            dropVideoCapture()
-            return null
-        }
-        videoCapture = rebuilt
-        videoPin = pinnedPhysicalId
-        return rebuilt
+        dropVideoCapture()
+        return null
     }
 
     /** Takes VideoCapture out of the next bind: CameraX refused the group that had it. */
@@ -477,7 +467,6 @@ internal class VideoRecorder(
         }
         videoCapture = built
         videoQuality = quality
-        videoFallback = fallback
         videoPin = pin
         val error = host.bindWithVideo()
         if (error != null) {
