@@ -184,7 +184,27 @@ internal class EngineControls(
      */
     private fun onHardwareReport() {
         if (!generations.isStartingOrLive) return
+        reapplyTorchTheSystemTurnedOff()
         publishHardware()
+    }
+
+    // Session queue only: whether the torch was set again since the device last reported the mode asked for.
+    private var torchSetAgain = false
+
+    /**
+     * Session queue: a session whose startRunning returned early starts for real later, and the system
+     * turns off the torch it was given then. The asked-for mode is set again, once until the device
+     * reports it, so a torch the system keeps refusing is not set in a loop.
+     */
+    private fun reapplyTorchTheSystemTurnedOff() {
+        val device = custom.currentDevice ?: return
+        if (device.torchMode == custom.torchMode) {
+            torchSetAgain = false
+            return
+        }
+        if (torchSetAgain) return
+        torchSetAgain = true
+        custom.reapplyTorchOnQueue()
     }
 
     /** Session queue: the desired zoom, clamped into [device]'s range, unless the device reports it already. */
