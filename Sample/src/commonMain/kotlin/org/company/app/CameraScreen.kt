@@ -3,16 +3,10 @@ package org.company.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -32,10 +26,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.Constraints
 import com.composables.icons.lucide.CircleAlert
 import com.composables.icons.lucide.Lucide
 import com.kashif.cameraK.capture.CapturedImage
@@ -368,38 +364,14 @@ internal fun CameraScreen(
         }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(SampleTheme.colors.background)) {
-        if (maxWidth > maxHeight) {
-            // Held sideways the screen is as short as it was narrow: the controls go beside the
-            // preview, which keeps the height but the top bar's. The capture controls sit in the
-            // middle; a result sheet rises from the bottom, as it does upright.
-            Row(Modifier.fillMaxSize()) {
-                Column(Modifier.weight(1f).fillMaxHeight()) {
-                    topBar()
-                    preview(Modifier.weight(1f).fillMaxWidth())
-                }
-                Box(
-                    modifier = Modifier.width(SampleTheme.sizes.sidePanel).fillMaxHeight(),
-                    contentAlignment = if (mode == CameraMode.Photo || mode == CameraMode.Video) {
-                        Alignment.Center
-                    } else {
-                        Alignment.BottomCenter
-                    },
-                ) {
-                    Box(Modifier.verticalScroll(rememberScrollState())) { controls(Modifier.fillMaxWidth()) }
-                }
-            }
-        } else {
-            Column(Modifier.fillMaxSize()) {
-                topBar()
-                preview(Modifier.weight(1f).fillMaxWidth())
-                // The preview keeps one size in every mode; a sheet taller than this overlaps its bottom.
-                Spacer(Modifier.height(SampleTheme.sizes.controlsArea))
-            }
-            controls(
-                Modifier.align(Alignment.BottomCenter).widthIn(max = SampleTheme.sizes.contentMaxWidth).fillMaxWidth(),
-            )
-        }
+    Box(Modifier.fillMaxSize().background(SampleTheme.colors.background)) {
+        CameraLayout(
+            topBar = topBar,
+            preview = { preview(Modifier) },
+            controls = { Box(Modifier.verticalScroll(rememberScrollState())) { controls(Modifier.fillMaxWidth()) } },
+            centreControlsSideways = mode == CameraMode.Photo || mode == CameraMode.Video,
+            modifier = Modifier.fillMaxSize(),
+        )
 
         if (showSettings) {
             SettingsSheet(
@@ -431,6 +403,52 @@ internal fun CameraScreen(
                 onDismiss = { showSettings = false },
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+    }
+}
+
+/**
+ * The camera screen's layout. Upright: [topBar], [preview], then the controls' area, with [controls] at
+ * the bottom, as wide as a sheet may be; a sheet taller than the area overlaps the preview's bottom.
+ * Wider than tall, as a phone held sideways, the screen is as short as it was narrow: [controls] go in
+ * a side panel, in its middle when [centreControlsSideways] and at its bottom otherwise, and the
+ * preview keeps the height but the top bar's. One layout for both, so a change of shape lays the same
+ * preview out again rather than building it anew.
+ */
+@Composable
+private fun CameraLayout(
+    topBar: @Composable () -> Unit,
+    preview: @Composable () -> Unit,
+    controls: @Composable () -> Unit,
+    centreControlsSideways: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val sizes = SampleTheme.sizes
+    Layout(contents = listOf(topBar, preview, controls), modifier = modifier) { measurables, constraints ->
+        val (topBars, previews, controlsList) = measurables
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val sideways = width > height
+        val mainWidth = if (sideways) (width - sizes.sidePanel.roundToPx()).coerceAtLeast(0) else width
+        val bars = topBars.map {
+            it.measure(Constraints(minWidth = mainWidth, maxWidth = mainWidth, maxHeight = height))
+        }
+        val barHeight = bars.maxOfOrNull { it.height } ?: 0
+        val reserved = if (sideways) 0 else sizes.controlsArea.roundToPx()
+        val previewHeight = (height - barHeight - reserved).coerceAtLeast(0)
+        val shown = previews.map { it.measure(Constraints.fixed(mainWidth, previewHeight)) }
+        val controlsWidth = if (sideways) width - mainWidth else minOf(width, sizes.contentMaxWidth.roundToPx())
+        val panels = controlsList.map {
+            it.measure(Constraints(minWidth = controlsWidth, maxWidth = controlsWidth, maxHeight = height))
+        }
+        layout(width, height) {
+            bars.forEach { it.place(0, 0) }
+            shown.forEach { it.place(0, barHeight) }
+            panels.forEach {
+                val x = if (sideways) mainWidth else (width - it.width) / 2
+                val y = if (sideways && centreControlsSideways) (height - it.height) / 2 else height - it.height
+                it.place(x, y)
+            }
         }
     }
 }
