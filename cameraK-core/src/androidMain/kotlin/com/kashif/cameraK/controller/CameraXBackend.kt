@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -180,6 +181,27 @@ internal interface CameraXBackend {
      * produces, from the first one on.
      */
     fun onPreviewFrame(previewBuilder: Preview.Builder, onFrame: () -> Unit)
+
+    /**
+     * Runs [onReport] on the camera's thread with the exposure compensation index of each capture result
+     * of the session the ImageCapture built from [imageCaptureBuilder] joins, from the first one on. The
+     * session's repeating request carries every bound use case's callback, so the results arrive with or
+     * without a preview surface.
+     */
+    @OptIn(ExperimentalCamera2Interop::class)
+    fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Int) -> Unit) {
+        Camera2Interop.Extender(imageCaptureBuilder).setSessionCaptureCallback(
+            object : CameraCaptureSession.CaptureCallback() {
+                override fun onCaptureCompleted(
+                    session: CameraCaptureSession,
+                    request: CaptureRequest,
+                    result: TotalCaptureResult,
+                ) {
+                    result.get(CaptureResult.CONTROL_AE_EXPOSURE_COMPENSATION)?.let(onReport)
+                }
+            },
+        )
+    }
 
     /**
      * The flash mode [imageCapture] holds, read back after each set and each bind: flash has no

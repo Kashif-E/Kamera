@@ -24,6 +24,8 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * [real], with every bind and unbind recorded: the owner, the use cases and the camera each bind
@@ -36,7 +38,12 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
     private val owners = mutableMapOf<UseCase, LifecycleOwner>()
     private val cameras = IdentityHashMap<Camera, RecordingCamera>()
     private val observedOwners = mutableSetOf<LifecycleOwner>()
-    private val pendingControlCalls = mutableListOf<ListenableFuture<*>>()
+    private val pendingControlCalls = mutableListOf<ControlCall>()
+
+    // The exposure index the session's capture results last carried, and a signal on each.
+    private val reports = ReentrantLock()
+    private val reported = reports.newCondition()
+    private var reportedExposure: Int? = null
     private var lastBound: RecordingCamera? = null
     private var releases = 0
 
@@ -66,18 +73,31 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
         )
     }
 
+    override fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Int) -> Unit) {
+        real.onExposureReported(imageCaptureBuilder) { index ->
+            reports.withLock {
+                reportedExposure = index
+                reported.signalAll()
+            }
+            onReport(index)
+        }
+    }
+
     /** Unbinds made while the owner of an unbound use case was DESTROYED: the engine's release. */
     fun releaseCount(): Int = synchronized(lock) { releases }
 
     /**
      * Waits for every CameraX control call recorded since the last call. A call CameraX cancels,
-     * because a newer one replaced it or the camera closed, has still been received.
+     * because a newer one replaced it or the camera closed, has still been received. An exposure index
+     * has been received once a capture result carries it, as the engine takes it: CameraX completes the
+     * call only once auto-exposure settles, and sets no limit on how long that may take.
      */
     fun awaitControlCalls() {
         val calls = synchronized(lock) { pendingControlCalls.toList().also { pendingControlCalls.clear() } }
         for (call in calls) {
+            if (call.exposureIndex != null && awaitExposureReport(call)) continue
             try {
-                call.get(CONTROL_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                call.future.get(CONTROL_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             } catch (e: ExecutionException) {
                 CameraKLogger.w(TAG, "A camera control call ended in failure while the driver settled", e)
             } catch (e: CancellationException) {
@@ -85,6 +105,23 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
             }
         }
     }
+
+    // Whether a capture result carried [call]'s index before CameraX completed it, within the call timeout.
+    private fun awaitExposureReport(call: ControlCall): Boolean {
+        call.future.addListener({ reports.withLock { reported.signalAll() } }) { it.run() }
+        return reports.withLock { awaitReportLocked(call) }
+    }
+
+    private fun awaitReportLocked(call: ControlCall): Boolean {
+        var left = TimeUnit.SECONDS.toNanos(CONTROL_CALL_TIMEOUT_SECONDS)
+        while (!call.future.isDone && reportedExposure != call.exposureIndex) {
+            if (left <= 0) return false
+            left = reported.awaitNanos(left)
+        }
+        return !call.future.isDone
+    }
+
+    private class ControlCall(val future: ListenableFuture<*>, val exposureIndex: Int? = null)
 
     private inner class RecordingBinding(private val binding: CameraBinding) : CameraBinding {
         override fun unbind(vararg useCases: UseCase) {
@@ -151,17 +188,19 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
         private val control = object : CameraControl by real.cameraControl {
             override fun enableTorch(torch: Boolean): ListenableFuture<Void> = synchronized(lock) {
                 torchMode = if (torch) TorchMode.ON else TorchMode.OFF
-                real.cameraControl.enableTorch(torch).also { pendingControlCalls += it }
+                real.cameraControl.enableTorch(torch).also { pendingControlCalls += ControlCall(it) }
             }
 
             override fun setZoomRatio(ratio: Float): ListenableFuture<Void> = synchronized(lock) {
                 zoomRatio = ratio
-                real.cameraControl.setZoomRatio(ratio).also { pendingControlCalls += it }
+                real.cameraControl.setZoomRatio(ratio).also { pendingControlCalls += ControlCall(it) }
             }
 
             override fun setExposureCompensationIndex(value: Int): ListenableFuture<Int> = synchronized(lock) {
                 exposureIndex = value
-                real.cameraControl.setExposureCompensationIndex(value).also { pendingControlCalls += it }
+                real.cameraControl.setExposureCompensationIndex(value).also {
+                    pendingControlCalls += ControlCall(it, exposureIndex = value)
+                }
             }
         }
 

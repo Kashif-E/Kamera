@@ -53,6 +53,8 @@ internal class StillCapturer(
     private val isReleased: () -> Boolean,
     private val metadata: () -> ImageCapture.Metadata,
     private val boundLens: () -> CameraLens?,
+    /** The exposure compensation index each capture result of the session carries; on the camera's thread. */
+    private val onExposureReported: (Int) -> Unit,
 ) {
     /** The ImageCapture use case of the current bind, or null before the first one. */
     var imageCapture: ImageCapture? = null
@@ -65,6 +67,9 @@ internal class StillCapturer(
 
     private val imageProcessing = imageProcessingExecutor.asCoroutineDispatcher()
 
+    // The bind whose ImageCapture reports exposure: a result of an earlier bind's session can still arrive.
+    @Volatile private var reportingBind = 0
+
     /**
      * Builds the image capture use case for the next bind. [QualityPrioritization.NONE] states no
      * preference and captures at maximum quality, as it always did on a device that was not short
@@ -72,6 +77,7 @@ internal class StillCapturer(
      */
     @OptIn(ExperimentalZeroShutterLag::class, ExperimentalCamera2Interop::class)
     fun configure(resolutionSelector: ResolutionSelector, flashMode: FlashMode, pinnedPhysicalId: String?) {
+        val bind = ++reportingBind
         imageCapture = ImageCapture.Builder()
             .setFlashMode(flashMode.toCameraXFlashMode())
             .setCaptureMode(
@@ -84,6 +90,7 @@ internal class StillCapturer(
             )
             .setResolutionSelector(resolutionSelector)
             .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
+            .apply { backend.onExposureReported(this) { if (bind == reportingBind) onExposureReported(it) } }
             .build()
     }
 

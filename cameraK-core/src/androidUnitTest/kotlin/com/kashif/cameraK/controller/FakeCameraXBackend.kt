@@ -145,6 +145,39 @@ internal class FakeCameraXBackend : CameraXBackend {
     /** The preview of the latest bind produces a frame, reported on the calling thread. */
     fun deliverPreviewFrame() = previewFrameCallbacks.last().invoke()
 
+    /** The exposure report callback of each ImageCapture built, oldest first. */
+    val exposureReportCallbacks = mutableListOf<(Int) -> Unit>()
+
+    override fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Int) -> Unit) {
+        exposureReportCallbacks += onReport
+    }
+
+    /**
+     * When true, each capture session streams: [FakeAndroidPlatform.settle] reports its first capture result. A
+     * session starts with each bind and each open of the camera. When false, a session reports only what
+     * [reportExposure] sends.
+     */
+    var streams = true
+
+    private var reportedSession: Pair<Int, Int>? = null
+
+    /**
+     * The session of the latest bind on [camera], opened for the [opens]th time, reports its first capture result,
+     * carrying [index], unless it already has.
+     */
+    fun reportFirstResult(opens: Int, index: Int) {
+        val session = exposureReportCallbacks.size to opens
+        if (!streams || exposureReportCallbacks.isEmpty() || session == reportedSession) return
+        reportedSession = session
+        exposureReportCallbacks.last().invoke(index)
+    }
+
+    /** A capture result of the latest bind's session carries exposure compensation [index], on the calling thread. */
+    fun reportExposure(index: Int) {
+        check(exposureReportCallbacks.isNotEmpty()) { "the engine listens to no capture result" }
+        exposureReportCallbacks.last().invoke(index)
+    }
+
     override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
         executor.execute { onResult(Result.success(binding)) }
     }
@@ -484,8 +517,18 @@ internal class FakeCamera(
 
     private var opened = false
 
+    /** How many times the camera reported OPEN; each open starts a capture session. */
+    var opens = 0
+        private set
+
+    /** Whether the camera's latest report was OPEN; a scripted state that throws when read is not. */
+    var isOpen = false
+        private set
+
     /** Reports [state] to the camera state's observers, on the calling thread. */
     fun report(state: CameraState) {
+        isOpen = runCatching { state.type }.getOrNull() == CameraState.Type.OPEN
+        if (isOpen) opens++
         cameraState.value = state
     }
 
