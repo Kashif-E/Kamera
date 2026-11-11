@@ -105,6 +105,48 @@ class ExposureCompensationTest {
         engine.closeAndJoin()
     }
 
+    // CameraX completes an exposure request only once auto-exposure settles (CONVERGED, LOCKED or
+    // FLASH_REQUIRED). A Galaxy S23 in the dark searched for 6 to 44 frames at index 20 while every frame
+    // already carried the index, and CameraX sets no limit on how long that search may last.
+    @Test
+    fun aRequestTheFramesReportAppliedSucceedsThoughAutoExposureHasNotSettled() = runTest {
+        val engine = open()
+        platform.camera!!.metering.holdExposure = true
+
+        val set = async { engine.setExposureCompensation(4) }
+        platform.settle(testScheduler)
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+        assertFalse(set.isCompleted, "a frame at the old index completed the request")
+        platform.backend.reportExposure(4)
+        platform.settle(testScheduler)
+
+        assertTrue(set.isCompleted, "setExposureCompensation still waits once the frames carry the index")
+        assertEquals(CameraKResult.Success(Unit), set.await())
+        assertEquals(4, engine.hardware.value.exposureCompensationIndex)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aResetTheFramesReportAppliedSucceedsThoughAutoExposureHasNotSettled() = runTest {
+        val engine = open()
+        assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(4))
+        platform.camera!!.metering.holdExposure = true
+
+        val reset = async { engine.resetFocusAndExposure() }
+        platform.settle(testScheduler)
+        platform.backend.reportExposure(4)
+        platform.settle(testScheduler)
+        assertFalse(reset.isCompleted, "a frame at the old index completed the reset")
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+
+        assertTrue(reset.isCompleted, "resetFocusAndExposure still waits once the frames carry index 0")
+        assertEquals(CameraKResult.Success(Unit), reset.await())
+        assertEquals(0, engine.hardware.value.exposureCompensationIndex)
+        engine.closeAndJoin()
+    }
+
     @Test
     fun theCameraClosingUnderAPendingRequestIsClosed() = runTest {
         val engine = open()

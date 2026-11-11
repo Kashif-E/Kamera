@@ -145,6 +145,19 @@ internal class FakeCameraXBackend : CameraXBackend {
     /** The preview of the latest bind produces a frame, reported on the calling thread. */
     fun deliverPreviewFrame() = previewFrameCallbacks.last().invoke()
 
+    /** The exposure report callback of each ImageCapture built, oldest first. */
+    val exposureReportCallbacks = mutableListOf<(Int) -> Unit>()
+
+    override fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Int) -> Unit) {
+        exposureReportCallbacks += onReport
+    }
+
+    /** A capture result of the latest bind's session carries exposure compensation [index], on the calling thread. */
+    fun reportExposure(index: Int) {
+        check(exposureReportCallbacks.isNotEmpty()) { "the engine listens to no capture result" }
+        exposureReportCallbacks.last().invoke(index)
+    }
+
     override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
         executor.execute { onResult(Result.success(binding)) }
     }
