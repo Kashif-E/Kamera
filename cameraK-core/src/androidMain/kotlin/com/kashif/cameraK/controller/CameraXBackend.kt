@@ -183,13 +183,13 @@ internal interface CameraXBackend {
     fun onPreviewFrame(previewBuilder: Preview.Builder, onFrame: () -> Unit)
 
     /**
-     * Runs [onReport] on the camera's thread with the exposure compensation index of each capture result
-     * of the session the ImageCapture built from [imageCaptureBuilder] joins, from the first one on. The
-     * session's repeating request carries every bound use case's callback, so the results arrive with or
-     * without a preview surface.
+     * Runs [onReport] on the camera's thread with the capture session and the exposure compensation index
+     * of each capture result of the sessions the ImageCapture built from [imageCaptureBuilder] joins, from
+     * the first one on. The session's repeating request carries every bound use case's callback, so the
+     * results arrive with or without a preview surface.
      */
     @OptIn(ExperimentalCamera2Interop::class)
-    fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Int) -> Unit) {
+    fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (session: Any, index: Int) -> Unit) {
         Camera2Interop.Extender(imageCaptureBuilder).setSessionCaptureCallback(
             object : CameraCaptureSession.CaptureCallback() {
                 override fun onCaptureCompleted(
@@ -197,7 +197,7 @@ internal interface CameraXBackend {
                     request: CaptureRequest,
                     result: TotalCaptureResult,
                 ) {
-                    result.get(CaptureResult.CONTROL_AE_EXPOSURE_COMPENSATION)?.let(onReport)
+                    result.get(CaptureResult.CONTROL_AE_EXPOSURE_COMPENSATION)?.let { onReport(session, it) }
                 }
             },
         )
