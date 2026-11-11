@@ -20,6 +20,7 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.CancellationException
@@ -126,11 +127,14 @@ internal class FocusMetering(
 ) {
     private var desiredExposure = 0
 
-    // The index the bound session's capture results last carried since the latest exposure request; null
-    // until one arrives.
-    private val reportedExposure = MutableStateFlow<Int?>(null)
-
     private var run = Run()
+
+    // The capture results of the bound session: the run they belong to, how many arrived, and the index the
+    // latest carried, null until the first, which shows the session configured and streaming.
+    private val results = MutableStateFlow(Results(run, 0, null))
+
+    // A camera whose desired index waits for its session's first capture result.
+    private var pendingApply: Camera? = null
 
     /** The exposure index the next camera whose control becomes active is given. */
     fun store(exposureIndex: Int) {
@@ -146,11 +150,22 @@ internal class FocusMetering(
     private fun endRun(end: RunEnd) {
         run.end = end
         run = Run()
+        results.value = Results(run, 0, null)
+        pendingApply = null
     }
 
     /** A capture result of the bound session carries exposure compensation [index]; any thread. */
     fun onExposureReported(index: Int) {
-        reportedExposure.value = index
+        val before = results.getAndUpdate { Results(it.run, it.count + 1, index) }
+        if (before.index == null) executor.execute { onStreaming(before.run) }
+    }
+
+    // Main thread: the session of [streaming]'s run produced its first capture result.
+    private fun onStreaming(streaming: Run) {
+        val camera = pendingApply ?: return
+        if (streaming !== run) return
+        pendingApply = null
+        if (!isReleased() && camera === this.camera()) applyNow(camera)
     }
 
     /** The exposure index [camera] reports; 0 for one without compensation or whose state cannot be read. */
@@ -162,9 +177,9 @@ internal class FocusMetering(
     }
 
     /**
-     * Gives [camera], whose control has just become active, the desired index clamped into its range;
-     * on a camera without compensation the index is dropped. The read-back is published once CameraX
-     * completes the request, unless another camera is bound by then.
+     * Gives [camera], whose control has just become active, the desired index clamped into its range,
+     * once its session streams; on a camera without compensation the index is dropped. The read-back
+     * is published once CameraX completes the request, unless another camera is bound by then.
      */
     fun applyDesiredTo(camera: Camera) {
         val range = features(camera)?.exposureRange
@@ -172,11 +187,19 @@ internal class FocusMetering(
             desiredExposure = 0
             return
         }
-        val target = desiredExposure.coerceIn(range)
-        if (target == exposureIndexOf(camera)) {
-            publishExposure(target)
+        if (desiredExposure.coerceIn(range) == exposureIndexOf(camera)) {
+            publishExposure(exposureIndexOf(camera))
             return
         }
+        if (results.value.index == null) {
+            pendingApply = camera
+            return
+        }
+        applyNow(camera)
+    }
+
+    private fun applyNow(camera: Camera) {
+        val target = desiredExposure.coerceIn(features(camera)?.exposureRange ?: return)
         val future = issue { camera.cameraControl.setExposureCompensationIndex(target) }.getOrElse {
             CameraKLogger.e(TAG, "Re-applying the exposure compensation failed", it)
             return
@@ -241,8 +264,13 @@ internal class FocusMetering(
         val camera = camera() ?: return NOT_READY
         if (features(camera)?.exposureRange == null) return unsupported(CameraFeature.EXPOSURE_COMPENSATION)
         val request = Request(run, ++run.exposureRequest)
-        reportedExposure.value = null
-        val outcome = awaitExposure(issue { camera.cameraControl.setExposureCompensationIndex(index) }, index)
+        awaitStreaming(request, CameraOperation.EXPOSURE_COMPENSATION)?.let { return it }
+        if (request.isSuperseded(Run::exposureRequest)) {
+            return CameraKResult.Failure(CameraKError.Busy(CameraOperation.EXPOSURE_COMPENSATION))
+        }
+        val issued = results.value.count
+        val outcome =
+            awaitExposure(request, issued, issue { camera.cameraControl.setExposureCompensationIndex(index) }, index)
         if (isReleased()) return AndroidCameraEngine.CLOSED
         return outcome.fold(
             onSuccess = {
@@ -271,11 +299,12 @@ internal class FocusMetering(
         if (features?.focusPoint != true && !compensates) return unsupported(CameraFeature.FOCUS_POINT)
         val focus = Request(run, ++run.focusRequest)
         val exposure = Request(run, ++run.exposureRequest)
+        if (compensates) awaitStreaming(exposure, CameraOperation.FOCUS_POINT)?.let { return it }
+        val issued = results.value.count
         val cancel = issue { camera.cameraControl.cancelFocusAndMetering() }
-        if (compensates) reportedExposure.value = null
         val zero = if (compensates) issue { camera.cameraControl.setExposureCompensationIndex(0) } else null
         val cancelled = cancel.await()
-        val zeroed = zero?.let { awaitExposure(it, 0) }
+        val zeroed = zero?.let { awaitExposure(exposure, issued, it, 0) }
         if (isReleased()) return AndroidCameraEngine.CLOSED
         cancelled.onFailure {
             val busy = focus.isSuperseded(Run::focusRequest)
@@ -337,19 +366,37 @@ internal class FocusMetering(
     // CameraX completes an exposure request only once a capture result carries the index with auto-exposure
     // CONVERGED, LOCKED or FLASH_REQUIRED, and sets no limit on how long the search may take (a dark scene
     // took 44 frames); every result carries the index from the first the request reaches. A result carrying
-    // [index] completes the request as CameraX's outcome would, whichever comes first.
-    private suspend fun awaitExposure(request: Result<ListenableFuture<Int>>, index: Int): Result<Int> =
-        coroutineScope {
-            val reported = async {
-                reportedExposure.first { it == index }
-                Result.success(index)
-            }
-            val completed = async { request.await() }
-            select {
-                reported.onAwait { it }
-                completed.onAwait { it }
-            }.also { coroutineContext.cancelChildren() }
+    // [index] after the [issued]th of its session completes the request as CameraX's outcome would, whichever
+    // comes first.
+    private suspend fun awaitExposure(
+        request: Request,
+        issued: Long,
+        call: Result<ListenableFuture<Int>>,
+        index: Int,
+    ): Result<Int> = coroutineScope {
+        val reported = async {
+            results.first { it.run === request.run && it.count > issued && it.index == index }
+            Result.success(index)
         }
+        val completed = async { call.await() }
+        select {
+            reported.onAwait { it }
+            completed.onAwait { it }
+        }.also { coroutineContext.cancelChildren() }
+    }
+
+    // CameraX drops an exposure request sent while it is still configuring the session it binds, without
+    // completing or failing it; the session's first capture result shows it configured. Null once [request]'s
+    // session streams; Busy when a bind ended its run first, and Closed when a stop or the release did.
+    private suspend fun awaitStreaming(request: Request, operation: CameraOperation): CameraKResult<Unit>? {
+        results.first { it.run !== request.run || it.index != null }
+        if (isReleased()) return AndroidCameraEngine.CLOSED
+        return when (request.run.end) {
+            null -> null
+            RunEnd.REBIND -> CameraKResult.Failure(CameraKError.Busy(operation))
+            RunEnd.STOP -> AndroidCameraEngine.CLOSED
+        }
+    }
 
     // A CameraX call that throws instead of failing its future fails the same way.
     private inline fun <T> issue(call: () -> ListenableFuture<T>): Result<ListenableFuture<T>> = try {
@@ -388,6 +435,8 @@ internal class FocusMetering(
         var exposureRequest = 0
         var end: RunEnd? = null
     }
+
+    private class Results(val run: Run, val count: Long, val index: Int?)
 
     private class Request(val run: Run, val number: Int) {
         // Busy: a newer request of its kind or a reset in its run, or the rebind that ended the run.

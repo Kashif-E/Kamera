@@ -145,9 +145,9 @@ internal class FakeAndroidPlatform(
         repeat(SETTLE_ROUNDS) {
             scheduler.runCurrent()
             shadowOf(Looper.getMainLooper()).idle()
-            camera?.takeIf {
-                it.isOpen
-            }?.let { backend.reportFirstResult(it.metering.exposureState.exposureCompensationIndex) }
+            camera?.takeIf { it.isOpen }?.let {
+                backend.reportFirstResult(it.opens, it.metering.exposureState.exposureCompensationIndex)
+            }
         }
     }
 

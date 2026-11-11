@@ -153,17 +153,22 @@ internal class FakeCameraXBackend : CameraXBackend {
     }
 
     /**
-     * When true, the session of each bind streams once its camera is open: [FakeAndroidPlatform.settle] reports
-     * its first capture result. When false, a session reports only what [reportExposure] sends.
+     * When true, each capture session streams: [FakeAndroidPlatform.settle] reports its first capture result. A
+     * session starts with each bind and each open of the camera. When false, a session reports only what
+     * [reportExposure] sends.
      */
     var streams = true
 
-    private var firstResultsReported = 0
+    private var reportedSession: Pair<Int, Int>? = null
 
-    /** The latest bind's session reports its first capture result, carrying [index], unless it already has. */
-    fun reportFirstResult(index: Int) {
-        if (!streams || exposureReportCallbacks.size <= firstResultsReported) return
-        firstResultsReported = exposureReportCallbacks.size
+    /**
+     * The session of the latest bind on [camera], opened for the [opens]th time, reports its first capture result,
+     * carrying [index], unless it already has.
+     */
+    fun reportFirstResult(opens: Int, index: Int) {
+        val session = exposureReportCallbacks.size to opens
+        if (!streams || exposureReportCallbacks.isEmpty() || session == reportedSession) return
+        reportedSession = session
         exposureReportCallbacks.last().invoke(index)
     }
 
@@ -512,11 +517,18 @@ internal class FakeCamera(
 
     private var opened = false
 
-    /** Whether the camera is open, so a bound session can stream. */
-    val isOpen: Boolean get() = opened
+    /** How many times the camera reported OPEN; each open starts a capture session. */
+    var opens = 0
+        private set
+
+    /** Whether the camera's latest report was OPEN; a scripted state that throws when read is not. */
+    var isOpen = false
+        private set
 
     /** Reports [state] to the camera state's observers, on the calling thread. */
     fun report(state: CameraState) {
+        isOpen = runCatching { state.type }.getOrNull() == CameraState.Type.OPEN
+        if (isOpen) opens++
         cameraState.value = state
     }
 
