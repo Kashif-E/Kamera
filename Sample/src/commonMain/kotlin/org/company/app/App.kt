@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -40,12 +41,7 @@ fun App() = SampleTheme {
     val permissions = rememberCameraKPermissionState(*asked.toTypedArray()) { results ->
         permissionNotice(results)?.let { scope.launch { snackbarHostState.showSnackbar(it) } }
     }
-    // Asked once when the app opens, as the 1.x screen did, and again when Save to gallery adds the
-    // gallery to what is asked. A preview asks for nothing.
-    val inspecting = LocalInspectionMode.current
-    LaunchedEffect(permissions) {
-        if (!inspecting && !permissions.allGranted) permissions.launchRequest()
-    }
+    AskWhenOpened(asked = asked, allGranted = permissions.allGranted, launchRequest = permissions::launchRequest)
 
     Scaffold(
         snackbarHost = { SampleSnackbarHost(snackbarHostState) },
@@ -76,6 +72,19 @@ fun App() = SampleTheme {
                 modifier = Modifier.fillMaxSize().padding(padding),
             )
         }
+    }
+}
+
+/**
+ * Asks for [asked] when the app opens, as the 1.x screen did, and again when Save to gallery adds the
+ * gallery to it. A preview asks for nothing.
+ */
+@Composable
+internal fun AskWhenOpened(asked: List<CameraKPermission>, allGranted: Boolean, launchRequest: () -> Unit) {
+    val inspecting = LocalInspectionMode.current
+    val granted by rememberUpdatedState(allGranted)
+    LaunchedEffect(asked) {
+        if (!inspecting && !granted) launchRequest()
     }
 }
 
