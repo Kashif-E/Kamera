@@ -3,13 +3,19 @@ package org.company.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -257,78 +263,72 @@ internal fun CameraScreen(
     }
 
     val cameraLive = cameraState is CameraKState.Ready || cameraState is CameraKState.Interrupted
-    val sheetWidth = Modifier.widthIn(max = SampleTheme.sizes.contentMaxWidth).fillMaxWidth()
-
-    Box(Modifier.fillMaxSize().background(SampleTheme.colors.background)) {
-        Column(Modifier.fillMaxSize()) {
-            when (mode) {
-                CameraMode.Photo, CameraMode.Video -> CaptureTopBar(
-                    flashMode = uiState.flashMode ?: FlashMode.OFF,
-                    torchMode = uiState.torchMode ?: TorchMode.OFF,
-                    aspectRatio = settings.aspectRatio,
-                    isRecording = isRecording,
-                    recordingDurationMs = shownDurationMs,
-                    onFlashToggle = { scope.launch { holder.cycleFlashMode() } },
-                    onTorchToggle = { scope.launch { holder.toggleTorch() } },
-                    onAspectRatioCycle = {
-                        if (!isRecording) {
-                            onSettingsChange(settings.copy(aspectRatio = settings.aspectRatio.nextInSample()))
-                        }
-                    },
-                    onOpenSettings = { showSettings = true },
-                )
-                CameraMode.Qr -> ToolTopBar(
-                    title = "QR Scanner",
-                    onBack = toPhoto,
-                    trailing = listOf({
-                        TorchButton(
-                            torchMode = uiState.torchMode ?: TorchMode.OFF,
-                            onClick = { scope.launch { holder.toggleTorch() } },
-                        )
-                    }),
-                )
-                CameraMode.Text -> ToolTopBar(
-                    title = "Text",
-                    onBack = toPhoto,
-                    trailing = listOf({ OcrAccuracyToggle(options.ocrAccuracy, options.onOcrAccuracyChange) }),
-                )
-                CameraMode.Analyze -> ToolTopBar(title = "Analyze", onBack = toPhoto)
-            }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .background(SampleTheme.colors.previewPlaceholder)
-                    .testTag(PREVIEW_TAG)
-                    .pointerInput(holder) {
-                        detectTransformGestures { _, _, zoomChange, _ ->
-                            if (zoomChange != 1f) setCameraZoom(zoom.ratio * zoomChange)
-                        }
-                    },
-            ) {
-                SampleCameraKScreen(holder, Modifier.fillMaxSize()) {
-                    when (mode) {
-                        CameraMode.Photo -> ThirdsGrid()
-                        CameraMode.Qr -> QrOverlay(qrScanner)
-                        else -> Unit
+    val topBar: @Composable () -> Unit = {
+        when (mode) {
+            CameraMode.Photo, CameraMode.Video -> CaptureTopBar(
+                flashMode = uiState.flashMode ?: FlashMode.OFF,
+                torchMode = uiState.torchMode ?: TorchMode.OFF,
+                aspectRatio = settings.aspectRatio,
+                isRecording = isRecording,
+                recordingDurationMs = shownDurationMs,
+                onFlashToggle = { scope.launch { holder.cycleFlashMode() } },
+                onTorchToggle = { scope.launch { holder.toggleTorch() } },
+                onAspectRatioCycle = {
+                    if (!isRecording) {
+                        onSettingsChange(settings.copy(aspectRatio = settings.aspectRatio.nextInSample()))
                     }
-                }
-                if (!isRecording && (mode == CameraMode.Photo || mode == CameraMode.Video)) {
-                    DetectionChips(
-                        latestCode = qrCodes.firstOrNull().takeIf { choices.qrScanning },
-                        textLine = recognizedText?.lineSequence()?.firstOrNull { it.isNotBlank() }
-                            ?.takeIf { choices.ocr },
-                        onOpenQr = { choices = choices.copy(mode = CameraMode.Qr) },
-                        onOpenText = { choices = choices.copy(mode = CameraMode.Text) },
-                        modifier = Modifier.align(Alignment.BottomCenter),
+                },
+                onOpenSettings = { showSettings = true },
+            )
+            CameraMode.Qr -> ToolTopBar(
+                title = "QR Scanner",
+                onBack = toPhoto,
+                trailing = listOf({
+                    TorchButton(
+                        torchMode = uiState.torchMode ?: TorchMode.OFF,
+                        onClick = { scope.launch { holder.toggleTorch() } },
                     )
+                }),
+            )
+            CameraMode.Text -> ToolTopBar(
+                title = "Text",
+                onBack = toPhoto,
+                trailing = listOf({ OcrAccuracyToggle(options.ocrAccuracy, options.onOcrAccuracyChange) }),
+            )
+            CameraMode.Analyze -> ToolTopBar(title = "Analyze", onBack = toPhoto)
+        }
+    }
+    val preview: @Composable (Modifier) -> Unit = { modifier ->
+        Box(
+            modifier = modifier
+                .background(SampleTheme.colors.previewPlaceholder)
+                .testTag(PREVIEW_TAG)
+                .pointerInput(holder) {
+                    detectTransformGestures { _, _, zoomChange, _ ->
+                        if (zoomChange != 1f) setCameraZoom(zoom.ratio * zoomChange)
+                    }
+                },
+        ) {
+            SampleCameraKScreen(holder, Modifier.fillMaxSize()) {
+                when (mode) {
+                    CameraMode.Photo -> ThirdsGrid()
+                    CameraMode.Qr -> QrOverlay(qrScanner)
+                    else -> Unit
                 }
             }
-            // The preview keeps one size in every mode; a sheet taller than this overlaps its bottom.
-            Spacer(Modifier.height(SampleTheme.sizes.controlsArea))
+            if (!isRecording && (mode == CameraMode.Photo || mode == CameraMode.Video)) {
+                DetectionChips(
+                    latestCode = qrCodes.firstOrNull().takeIf { choices.qrScanning },
+                    textLine = recognizedText?.lineSequence()?.firstOrNull { it.isNotBlank() }
+                        ?.takeIf { choices.ocr },
+                    onOpenQr = { choices = choices.copy(mode = CameraMode.Qr) },
+                    onOpenText = { choices = choices.copy(mode = CameraMode.Text) },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
         }
-
-        val bottom = Modifier.align(Alignment.BottomCenter).then(sheetWidth)
+    }
+    val controls: @Composable (Modifier) -> Unit = { modifier ->
         when (mode) {
             CameraMode.Photo, CameraMode.Video -> CaptureControls(
                 state = CaptureControlsState(
@@ -360,11 +360,45 @@ internal fun CameraScreen(
                 },
                 onPauseToggle = { scope.launch { holder.togglePause()?.let(notify) } },
                 onFlip = { scope.launch { holder.toggleLens() } },
-                modifier = bottom,
+                modifier = modifier,
             )
-            CameraMode.Qr -> QrResultSheet(codes = qrCodes, onCopy = copy, onOpen = open, modifier = bottom)
-            CameraMode.Text -> TextResultSheet(text = recognizedText, onCopy = copy, modifier = bottom)
-            CameraMode.Analyze -> AnalyzerSheet(analyzer = analyzer, modifier = bottom)
+            CameraMode.Qr -> QrResultSheet(codes = qrCodes, onCopy = copy, onOpen = open, modifier = modifier)
+            CameraMode.Text -> TextResultSheet(text = recognizedText, onCopy = copy, modifier = modifier)
+            CameraMode.Analyze -> AnalyzerSheet(analyzer = analyzer, modifier = modifier)
+        }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize().background(SampleTheme.colors.background)) {
+        if (maxWidth > maxHeight) {
+            // Held sideways the screen is as short as it was narrow: the controls go beside the
+            // preview, which keeps the height but the top bar's. The capture controls sit in the
+            // middle; a result sheet rises from the bottom, as it does upright.
+            Row(Modifier.fillMaxSize()) {
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    topBar()
+                    preview(Modifier.weight(1f).fillMaxWidth())
+                }
+                Box(
+                    modifier = Modifier.width(SampleTheme.sizes.sidePanel).fillMaxHeight(),
+                    contentAlignment = if (mode == CameraMode.Photo || mode == CameraMode.Video) {
+                        Alignment.Center
+                    } else {
+                        Alignment.BottomCenter
+                    },
+                ) {
+                    Box(Modifier.verticalScroll(rememberScrollState())) { controls(Modifier.fillMaxWidth()) }
+                }
+            }
+        } else {
+            Column(Modifier.fillMaxSize()) {
+                topBar()
+                preview(Modifier.weight(1f).fillMaxWidth())
+                // The preview keeps one size in every mode; a sheet taller than this overlaps its bottom.
+                Spacer(Modifier.height(SampleTheme.sizes.controlsArea))
+            }
+            controls(
+                Modifier.align(Alignment.BottomCenter).widthIn(max = SampleTheme.sizes.contentMaxWidth).fillMaxWidth(),
+            )
         }
 
         if (showSettings) {

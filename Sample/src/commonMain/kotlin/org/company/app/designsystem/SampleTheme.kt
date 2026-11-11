@@ -173,6 +173,8 @@ internal data class SampleSizes(
     val strokeBold: Dp = 4.dp,
     val reticle: Dp = 240.dp,
     val controlsArea: Dp = 252.dp,
+    /** The controls' width beside the preview on a screen wider than tall. */
+    val sidePanel: Dp = 360.dp,
     val badge: Dp = 64.dp,
     val contentMaxWidth: Dp = 560.dp,
 )
