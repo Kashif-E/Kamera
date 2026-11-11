@@ -394,14 +394,17 @@ internal class MatrixRunner(
         ) { holder ->
             val opened = open(holder)
             val cameraId = holder.uiState.value.cameraId ?: capabilities.lenses(spec.lens).firstOrNull()?.id
-            val predicted = lensPrediction(capabilities, spec.lens) +
-                (cameraId?.let { flashPrediction(capabilities, it, spec.flashMode) } ?: Prediction.NONE)
+            val predicted = lensPrediction(capabilities, spec.lens)
+            // Only setFlashMode refuses a mode the camera lacks. A configured one is held, as across a camera
+            // switch: the camera reads OFF, and a camera with the mode gets it back.
+            val taken = cameraId == null || flashPrediction(capabilities, cameraId, spec.flashMode) == Prediction.NONE
+            val expected = if (taken) spec.flashMode else FlashMode.OFF
             val measures = mutableListOf<Pair<String, Any?>>("readyMs" to opened.readyMs, "cameraId" to cameraId)
             if (!opened.ready) return@withHolder record(case, opened.failure(), predicted, measures)
-            val back = readBack(holder.uiState) { it.flashMode == spec.flashMode }.flashMode
+            val back = readBack(holder.uiState) { it.flashMode == expected }.flashMode
             measures += "flashReadBack" to back
             val checks = listOfNotNull(
-                "flash read back $back, asked ${spec.flashMode}".takeIf { back != spec.flashMode },
+                "flash read back $back, expected $expected for ${spec.flashMode}".takeIf { back != expected },
             )
             record(case, Outcome.Completed, predicted, measures, checks)
         }
