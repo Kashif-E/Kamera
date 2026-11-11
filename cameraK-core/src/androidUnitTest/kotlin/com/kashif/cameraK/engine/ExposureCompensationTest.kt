@@ -261,6 +261,51 @@ class ExposureCompensationTest {
     }
 
     @Test
+    fun aFrameOfASessionStoppedBeforeItsFirstResultDoesNotLetTheReapplyOut() = runTest {
+        val engine = platform.engine(testScheduler)
+        platform.settle(testScheduler)
+        platform.backend.streams = false
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired.withExposure(5)))
+        platform.settle(testScheduler)
+        val metering = platform.camera!!.metering
+        val stopped = platform.backend.currentSession()
+        engine.stop()
+        platform.settle(testScheduler)
+        platform.backend.reportExposure(0, session = stopped)
+        platform.settle(testScheduler)
+
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired.withExposure(5)))
+        platform.settle(testScheduler)
+        assertTrue(metering.exposureRequests.isEmpty(), "the index went out on a frame of the stopped session")
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+
+        assertEquals(listOf(5), metering.exposureRequests, "the index once the new session streamed")
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aCommandThatFailsLetsThePendingReapplyOut() = runTest {
+        val engine = platform.engine(testScheduler)
+        platform.settle(testScheduler)
+        platform.backend.streams = false
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired.withExposure(5)))
+        platform.settle(testScheduler)
+        val metering = platform.camera!!.metering
+
+        // Out of the camera's -12..12: CameraX fails it.
+        val set = async { engine.setExposureCompensation(40) }
+        platform.settle(testScheduler)
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+
+        assertIs<CameraKResult.Failure>(set.await())
+        assertEquals(listOf(5), metering.exposureRequests, "the held index after the failed command")
+        assertEquals(5, engine.hardware.value.exposureCompensationIndex)
+        engine.closeAndJoin()
+    }
+
+    @Test
     fun theCameraClosingUnderAPendingRequestIsClosed() = runTest {
         val engine = open()
         platform.camera!!.metering.holdExposure = true
