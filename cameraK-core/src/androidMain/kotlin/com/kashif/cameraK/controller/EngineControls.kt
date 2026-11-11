@@ -196,6 +196,7 @@ internal class EngineControls(
     /** [camera] opened: its control is active from here, so what is desired is applied and reported. */
     fun onOpened(camera: Camera) {
         hardwareControls.applyDesiredHardwareState(camera)
+        metering.onOpened()
         metering.applyDesiredTo(camera)
         publishHardware(
             flashMode = hardwareControls.boundFlashMode() ?: _hardware.value.flashMode,

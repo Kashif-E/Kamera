@@ -132,9 +132,10 @@ internal class FocusMetering(
 
     // The capture results of the run's session: the run, the session reporting and the one whose results no
     // longer count (the one reporting when the previous run ended: a stop leaves frames in the pipeline, and a
-    // restart on the same camera binds nothing), how many arrived, and the index the latest carried, null until
-    // the first, which shows the session configured and streaming.
-    private val results = MutableStateFlow(Results(run, null, null, 0, null))
+    // restart on the same camera binds nothing), how many arrived, the index the latest carried, null until the
+    // first, which shows the session configured and streaming, and whether results count yet: after a stop, only
+    // once the camera has opened again, since a session stopped before its first result was never named.
+    private val results = MutableStateFlow(Results(run, null, null, 0, null, counting = true))
 
     // A camera whose desired index waits for its session's first capture result.
     private var pendingApply: Camera? = null
@@ -153,16 +154,16 @@ internal class FocusMetering(
     private fun endRun(end: RunEnd) {
         run.end = end
         run = Run()
-        results.update { Results(run, null, it.session ?: it.ignored, 0, null) }
+        results.update { Results(run, null, it.session ?: it.ignored, 0, null, counting = end == RunEnd.REBIND) }
         pendingApply = null
     }
 
     /** A capture result of [session] carries exposure compensation [index]; any thread. */
     fun onExposureReported(session: Any, index: Int) {
         val before = results.getAndUpdate {
-            if (session == it.ignored) it else Results(it.run, session, it.ignored, it.count + 1, index)
+            if (!it.counts(session)) it else Results(it.run, session, it.ignored, it.count + 1, index, counting = true)
         }
-        if (session != before.ignored && before.index == null) executor.execute { onStreaming(before.run) }
+        if (before.counts(session) && before.index == null) executor.execute { onStreaming(before.run) }
     }
 
     // Main thread: the session of [streaming]'s run produced its first capture result.
@@ -171,6 +172,20 @@ internal class FocusMetering(
         if (streaming !== run) return
         pendingApply = null
         if (!isReleased() && camera === this.camera()) applyNow(camera)
+    }
+
+    /** The camera opened: the closed device can deliver no more results, so the run's results count from here. */
+    fun onOpened() {
+        val current = run
+        results.update {
+            if (it.run === current &&
+                !it.counting
+            ) {
+                Results(it.run, null, it.ignored, 0, null, true)
+            } else {
+                it
+            }
+        }
     }
 
     /** The exposure index [camera] reports; 0 for one without compensation or whose state cannot be read. */
@@ -274,6 +289,7 @@ internal class FocusMetering(
             return CameraKResult.Failure(CameraKError.Busy(CameraOperation.EXPOSURE_COMPENSATION))
         }
         // The command replaces a re-apply still waiting for the session, which would otherwise replace it.
+        val replaced = pendingApply
         pendingApply = null
         val issued = results.value.count
         val outcome =
@@ -290,6 +306,7 @@ internal class FocusMetering(
             },
             onFailure = {
                 val busy = request.isSuperseded(Run::exposureRequest)
+                if (!busy) applyReplaced(request, replaced)
                 failure(it, busy, CameraOperation.EXPOSURE_COMPENSATION, "Setting the exposure compensation")
             },
         )
@@ -310,6 +327,7 @@ internal class FocusMetering(
         if (focus.isSuperseded(Run::focusRequest) || exposure.isSuperseded(Run::exposureRequest)) {
             return CameraKResult.Failure(CameraKError.Busy(CameraOperation.FOCUS_POINT))
         }
+        val replaced = pendingApply.takeIf { compensates }
         if (compensates) pendingApply = null
         val issued = results.value.count
         val cancel = issue { camera.cameraControl.cancelFocusAndMetering() }
@@ -323,6 +341,7 @@ internal class FocusMetering(
         }
         zeroed?.onFailure {
             val busy = exposure.isSuperseded(Run::exposureRequest)
+            if (!busy) applyReplaced(exposure, replaced)
             return failure(it, busy, CameraOperation.FOCUS_POINT, "Resetting the exposure compensation")
         }
         if (zeroed != null) {
@@ -396,6 +415,12 @@ internal class FocusMetering(
         }.also { coroutineContext.cancelChildren() }
     }
 
+    // A command that failed on its own leaves the camera without the held index it took the place of.
+    private fun applyReplaced(request: Request, replaced: Camera?) {
+        if (replaced == null || request.run.end != null || isReleased() || replaced !== camera()) return
+        applyNow(replaced)
+    }
+
     // CameraX drops an exposure request sent while it is still configuring the session it binds, without
     // completing or failing it; the session's first capture result shows it configured. Null once [request]'s
     // session streams; Busy when a bind ended its run first, and Closed when a stop or the release did.
@@ -447,7 +472,16 @@ internal class FocusMetering(
         var end: RunEnd? = null
     }
 
-    private class Results(val run: Run, val session: Any?, val ignored: Any?, val count: Long, val index: Int?)
+    private class Results(
+        val run: Run,
+        val session: Any?,
+        val ignored: Any?,
+        val count: Long,
+        val index: Int?,
+        val counting: Boolean,
+    ) {
+        fun counts(from: Any): Boolean = counting && from != ignored
+    }
 
     private class Request(val run: Run, val number: Int) {
         // Busy: a newer request of its kind or a reset in its run, or the rebind that ended the run.
