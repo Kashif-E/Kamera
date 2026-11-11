@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import com.composables.icons.lucide.CircleAlert
 import com.composables.icons.lucide.Lucide
@@ -298,6 +299,7 @@ internal fun CameraScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .background(SampleTheme.colors.previewPlaceholder)
+                    .testTag(PREVIEW_TAG)
                     .pointerInput(holder) {
                         detectTransformGestures { _, _, zoomChange, _ ->
                             if (zoomChange != 1f) setCameraZoom(zoom.ratio * zoomChange)
@@ -400,6 +402,9 @@ internal fun CameraScreen(
 }
 
 private const val TAG = "Sample"
+
+/** The preview's test tag. */
+internal const val PREVIEW_TAG = "preview"
 
 // A fixed text per kind of error: an error's cause may carry a platform message with a file path in it.
 private fun CameraKError.displayText(): String = when (this) {
