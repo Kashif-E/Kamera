@@ -73,13 +73,13 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
         )
     }
 
-    override fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Int) -> Unit) {
-        real.onExposureReported(imageCaptureBuilder) { index ->
+    override fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Any, Int) -> Unit) {
+        real.onExposureReported(imageCaptureBuilder) { session, index ->
             reports.withLock {
                 reportedExposure = index
                 reported.signalAll()
             }
-            onReport(index)
+            onReport(session, index)
         }
     }
 

@@ -90,7 +90,15 @@ internal class StillCapturer(
             )
             .setResolutionSelector(resolutionSelector)
             .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
-            .apply { backend.onExposureReported(this) { if (bind == reportingBind) onExposureReported(it) } }
+            .apply {
+                backend.onExposureReported(this) { _, index ->
+                    if (bind ==
+                        reportingBind
+                    ) {
+                        onExposureReported(index)
+                    }
+                }
+            }
             .build()
     }
 

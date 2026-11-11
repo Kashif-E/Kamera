@@ -194,6 +194,72 @@ class ExposureCompensationTest {
         engine.closeAndJoin()
     }
 
+    // A stop does not end the session at once: frames already in the pipeline still arrive, and a restart on the
+    // same camera reuses the bound use cases, so it binds nothing. Those frames are not the new session's.
+    @Test
+    fun aFrameOfTheStoppedSessionDoesNotLetTheReapplyOutBeforeTheNewSessionStreams() = runTest {
+        val engine = open()
+        assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(5))
+        val stopped = platform.backend.currentSession()
+        engine.stop()
+        platform.settle(testScheduler)
+        val metering = platform.camera!!.metering
+        platform.backend.streams = false
+        platform.backend.reportExposure(5, session = stopped)
+        platform.settle(testScheduler)
+
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired.withExposure(5)))
+        platform.settle(testScheduler)
+        assertEquals(listOf(5), metering.exposureRequests, "the index went out on a frame of the stopped session")
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+
+        assertEquals(listOf(5, 5), metering.exposureRequests, "the index once the new session streamed")
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aCommandSentBeforeTheSessionStreamsReplacesThePendingReapply() = runTest {
+        val engine = platform.engine(testScheduler)
+        platform.settle(testScheduler)
+        platform.backend.streams = false
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired.withExposure(5)))
+        platform.settle(testScheduler)
+        val metering = platform.camera!!.metering
+
+        val set = async { engine.setExposureCompensation(3) }
+        platform.settle(testScheduler)
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+
+        assertEquals(CameraKResult.Success(Unit), set.await())
+        assertEquals(listOf(3), metering.exposureRequests, "the re-apply went out after the command")
+        assertEquals(3, engine.hardware.value.exposureCompensationIndex)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aResetThatACommandReplacedWhileItWaitedIsBusyAndSendsNothing() = runTest {
+        val engine = platform.engine(testScheduler)
+        platform.settle(testScheduler)
+        platform.backend.streams = false
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        val metering = platform.camera!!.metering
+
+        val reset = async { engine.resetFocusAndExposure() }
+        platform.settle(testScheduler)
+        val set = async { engine.setExposureCompensation(4) }
+        platform.settle(testScheduler)
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+
+        assertIs<CameraKError.Busy>(failure(reset.await()), "a reset the command replaced")
+        assertEquals(CameraKResult.Success(Unit), set.await())
+        assertEquals(listOf(4), metering.exposureRequests)
+        engine.closeAndJoin()
+    }
+
     @Test
     fun theCameraClosingUnderAPendingRequestIsClosed() = runTest {
         val engine = open()

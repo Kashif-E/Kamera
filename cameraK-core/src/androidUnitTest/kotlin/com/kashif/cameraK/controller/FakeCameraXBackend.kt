@@ -146,11 +146,14 @@ internal class FakeCameraXBackend : CameraXBackend {
     fun deliverPreviewFrame() = previewFrameCallbacks.last().invoke()
 
     /** The exposure report callback of each ImageCapture built, oldest first. */
-    val exposureReportCallbacks = mutableListOf<(Int) -> Unit>()
+    val exposureReportCallbacks = mutableListOf<(Any, Int) -> Unit>()
 
-    override fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Int) -> Unit) {
+    override fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Any, Int) -> Unit) {
         exposureReportCallbacks += onReport
     }
+
+    /** The capture session running now: one per bind and per open of the latest bound camera. */
+    fun currentSession(): Any = exposureReportCallbacks.size to (binding.cameras.lastOrNull()?.opens ?: 0)
 
     /**
      * When true, each capture session streams: [FakeAndroidPlatform.settle] reports its first capture result. A
@@ -169,13 +172,16 @@ internal class FakeCameraXBackend : CameraXBackend {
         val session = exposureReportCallbacks.size to opens
         if (!streams || exposureReportCallbacks.isEmpty() || session == reportedSession) return
         reportedSession = session
-        exposureReportCallbacks.last().invoke(index)
+        exposureReportCallbacks.last().invoke(session, index)
     }
 
-    /** A capture result of the latest bind's session carries exposure compensation [index], on the calling thread. */
-    fun reportExposure(index: Int) {
+    /**
+     * A capture result of [session], by default the one running now, carries exposure compensation [index], on the
+     * calling thread.
+     */
+    fun reportExposure(index: Int, session: Any = currentSession()) {
         check(exposureReportCallbacks.isNotEmpty()) { "the engine listens to no capture result" }
-        exposureReportCallbacks.last().invoke(index)
+        exposureReportCallbacks.last().invoke(session, index)
     }
 
     override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
