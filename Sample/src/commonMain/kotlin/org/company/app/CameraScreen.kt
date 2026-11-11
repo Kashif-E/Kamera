@@ -199,6 +199,7 @@ internal fun CameraScreen(
     val zoom by holder.zoom.collectAsState()
     val capabilities by holder.capabilities.collectAsState()
     val deviceOrientation by holder.deviceOrientation.collectAsState()
+    val screenOrientation = rememberScreenOrientation()
     val lastPhoto by capture.lastPhoto.collectAsState()
     val thumbnail by rememberThumbnail(lastPhoto)
 
@@ -337,7 +338,7 @@ internal fun CameraScreen(
                     zoomStops = zoomStops(zoom.minRatio, zoom.maxRatio),
                     zoom = zoom.ratio,
                     thumbnail = thumbnail,
-                    rotationDegrees = deviceOrientation.compensationDegrees,
+                    rotationDegrees = uprightRotation(deviceOrientation, screenOrientation),
                 ),
                 onZoom = ::setCameraZoom,
                 onModeChange = { choices = choices.copy(mode = it) },
