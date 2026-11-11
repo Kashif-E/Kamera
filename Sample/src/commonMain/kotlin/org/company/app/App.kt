@@ -78,13 +78,21 @@ fun App() = SampleTheme {
 /**
  * Asks for [asked] when the app opens, as the 1.x screen did, and again when Save to gallery adds the
  * gallery to it. A preview asks for nothing.
+ *
+ * What was asked is saved: a rotation recreates the screen, and asking again there for a permission
+ * just refused would show the dialog on every rotation. The permission screen's button still asks.
  */
 @Composable
 internal fun AskWhenOpened(asked: List<CameraKPermission>, allGranted: Boolean, launchRequest: () -> Unit) {
     val inspecting = LocalInspectionMode.current
     val granted by rememberUpdatedState(allGranted)
+    // Names joined in one string, which every platform's saved state holds.
+    var askedBefore by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(asked) {
-        if (!inspecting && !granted) launchRequest()
+        val before = askedBefore.split(',').toSet()
+        if (inspecting || granted || asked.all { it.name in before }) return@LaunchedEffect
+        askedBefore = (before + asked.map { it.name }).filter { it.isNotEmpty() }.joinToString(",")
+        launchRequest()
     }
 }
 
