@@ -152,6 +152,21 @@ internal class FakeCameraXBackend : CameraXBackend {
         exposureReportCallbacks += onReport
     }
 
+    /**
+     * When true, the session of each bind streams once its camera is open: [FakeAndroidPlatform.settle] reports
+     * its first capture result. When false, a session reports only what [reportExposure] sends.
+     */
+    var streams = true
+
+    private var firstResultsReported = 0
+
+    /** The latest bind's session reports its first capture result, carrying [index], unless it already has. */
+    fun reportFirstResult(index: Int) {
+        if (!streams || exposureReportCallbacks.size <= firstResultsReported) return
+        firstResultsReported = exposureReportCallbacks.size
+        exposureReportCallbacks.last().invoke(index)
+    }
+
     /** A capture result of the latest bind's session carries exposure compensation [index], on the calling thread. */
     fun reportExposure(index: Int) {
         check(exposureReportCallbacks.isNotEmpty()) { "the engine listens to no capture result" }
@@ -496,6 +511,9 @@ internal class FakeCamera(
     val useCases = mutableListOf<UseCase>()
 
     private var opened = false
+
+    /** Whether the camera is open, so a bound session can stream. */
+    val isOpen: Boolean get() = opened
 
     /** Reports [state] to the camera state's observers, on the calling thread. */
     fun report(state: CameraState) {

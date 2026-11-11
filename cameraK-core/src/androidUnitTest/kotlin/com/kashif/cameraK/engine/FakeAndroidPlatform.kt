@@ -137,11 +137,17 @@ internal class FakeAndroidPlatform(
         }
     }
 
-    /** Runs what the engine queued on the scheduler and the main looper until both are idle. */
+    /**
+     * Runs what the engine queued on the scheduler and the main looper until both are idle; a session bound on
+     * an open camera reports its first capture result ([FakeCameraXBackend.streams]).
+     */
     fun settle(scheduler: TestCoroutineScheduler) {
         repeat(SETTLE_ROUNDS) {
             scheduler.runCurrent()
             shadowOf(Looper.getMainLooper()).idle()
+            camera?.takeIf {
+                it.isOpen
+            }?.let { backend.reportFirstResult(it.metering.exposureState.exposureCompensationIndex) }
         }
     }
 

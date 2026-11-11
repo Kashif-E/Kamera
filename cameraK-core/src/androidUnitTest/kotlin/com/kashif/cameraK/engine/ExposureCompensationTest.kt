@@ -112,6 +112,7 @@ class ExposureCompensationTest {
     fun aRequestTheFramesReportAppliedSucceedsThoughAutoExposureHasNotSettled() = runTest {
         val engine = open()
         platform.camera!!.metering.holdExposure = true
+        platform.backend.streams = false
 
         val set = async { engine.setExposureCompensation(4) }
         platform.settle(testScheduler)
@@ -132,6 +133,7 @@ class ExposureCompensationTest {
         val engine = open()
         assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(4))
         platform.camera!!.metering.holdExposure = true
+        platform.backend.streams = false
 
         val reset = async { engine.resetFocusAndExposure() }
         platform.settle(testScheduler)
@@ -144,6 +146,51 @@ class ExposureCompensationTest {
         assertTrue(reset.isCompleted, "resetFocusAndExposure still waits once the frames carry index 0")
         assertEquals(CameraKResult.Success(Unit), reset.await())
         assertEquals(0, engine.hardware.value.exposureCompensationIndex)
+        engine.closeAndJoin()
+    }
+
+    // CameraX drops an exposure request sent while it is still configuring the session it binds: on a Galaxy
+    // S23 the re-apply of index 20 at a restart went out between two of CameraX's close-and-reopen cycles,
+    // and every capture result after it carried 0 while ExposureState said 20 and CameraX never completed the
+    // request. A session's first capture result shows it configured.
+    @Test
+    fun theIndexIsReappliedOnlyOnceTheRestartedSessionStreams() = runTest {
+        val engine = open()
+        assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(5))
+        engine.stop()
+        platform.settle(testScheduler)
+        val metering = platform.camera!!.metering
+        platform.backend.streams = false
+
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired.withExposure(5)))
+        platform.settle(testScheduler)
+        assertEquals(listOf(5), metering.exposureRequests, "the index went out before the session streamed")
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+
+        assertEquals(listOf(5, 5), metering.exposureRequests, "the index once the session streamed")
+        assertEquals(5, engine.hardware.value.exposureCompensationIndex)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aRequestGoesOutOnlyOnceTheSessionStreams() = runTest {
+        val engine = platform.engine(testScheduler)
+        platform.settle(testScheduler)
+        platform.backend.streams = false
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        val metering = platform.camera!!.metering
+
+        val set = async { engine.setExposureCompensation(4) }
+        platform.settle(testScheduler)
+        assertTrue(metering.exposureRequests.isEmpty(), "the request went out before the session streamed")
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+
+        assertEquals(listOf(4), metering.exposureRequests)
+        assertEquals(CameraKResult.Success(Unit), set.await())
+        assertEquals(4, engine.hardware.value.exposureCompensationIndex)
         engine.closeAndJoin()
     }
 
