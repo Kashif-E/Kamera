@@ -275,7 +275,7 @@ internal class EngineSession(
         previewSource.bindTo(preview)
         stillCapturer.configure(binder.resolutionSelector(outputs?.still), controls.flashMode, pinned)
         // VideoCapture joins the group only while a recording needs it or it was prepared.
-        val video = videoRecorder.useCaseForBind()
+        val video = videoRecorder.useCaseForBind(pinned)
         catalog.forgetBoundQualities()
         // Rebuilt rather than reused: its Camera2Interop pin belongs to the bind it was built for.
         framePipeline.analysis =

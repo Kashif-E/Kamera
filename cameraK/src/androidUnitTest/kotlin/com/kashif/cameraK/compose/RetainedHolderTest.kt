@@ -174,6 +174,54 @@ class RetainedHolderTest {
     }
 
     @Test
+    fun recreateHostKeepsTheCameraOpenWithNoRecording() {
+        launch { Remembered() }
+        assertIs<CameraKState.Ready>(current.cameraState.value)
+        val first = current
+        val states = mutableListOf<CameraKState>()
+        test.launch { first.cameraState.collect { states += it } }
+
+        recreate()
+        test.advanceTimeBy(5.seconds)
+        test.runCurrent()
+
+        assertSame(first, current, "the recreation built a new holder")
+        assertEquals(1, engines.size, "the engine factory ran again")
+        assertFalse("stop" in fake.calls || "close" in fake.calls, "the rotation closed the camera: ${fake.calls}")
+        assertEquals(
+            listOf<CameraKState>(CameraKState.Ready),
+            states.distinct(),
+            "the camera states the rotation went through",
+        )
+    }
+
+    @Test
+    fun aHolderTheRecreatedScreenNoLongerComposesStopsOnceTheGraceEnds() {
+        var showCamera = true
+        launch { if (showCamera) Remembered() }
+        assertIs<CameraKState.Ready>(current.cameraState.value)
+
+        // The recreated screen shows no camera, as one shown from state the recreation lost would not.
+        showCamera = false
+        recreate()
+        test.advanceTimeBy(5.seconds)
+        test.runCurrent()
+
+        assertTrue("stop" in fake.calls, "the camera stayed open with no screen to show it: ${fake.calls}")
+    }
+
+    @Test
+    fun stoppingTheHostForGoodStopsTheCameraAtOnce() {
+        launch { Remembered() }
+        assertIs<CameraKState.Ready>(current.cameraState.value)
+
+        assertNotNull(controller).pause().stop()
+        settle()
+
+        assertTrue("stop" in fake.calls, "leaving the screen kept the camera open: ${fake.calls}")
+    }
+
+    @Test
     fun disposeHostEmitsRecordingEndedShutdownWithPath() {
         launch { Remembered() }
         val first = current
@@ -227,21 +275,6 @@ class RetainedHolderTest {
         assertEquals(2, built.size, "without a ViewModelStoreOwner the recreation kept the holder")
         assertIs<CameraKState.Ready>(current.cameraState.value)
         assertEquals(1, (engines.first() as FakeCameraEngine).closeCalls)
-    }
-
-    @Test
-    fun recreateHostWithoutRecordingKeepsHolderAndReopensTheEngine() {
-        launch { Remembered() }
-        val first = current
-        assertIs<CameraKState.Ready>(first.cameraState.value)
-
-        recreate()
-
-        assertSame(first, current, "the recreation built a new holder")
-        assertEquals(1, engines.size, "the engine factory ran again")
-        assertEquals(listOf("stop", "start"), fake.calls.takeLast(2), "engine calls: ${fake.calls}")
-        assertFalse("close" in fake.calls, "the recreation closed the engine: ${fake.calls}")
-        assertIs<CameraKState.Ready>(current.cameraState.value)
     }
 
     @Test

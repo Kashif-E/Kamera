@@ -61,9 +61,10 @@ public fun rememberCameraKState(
  *
  * When [lifecycleOwner] is not null, the holder starts when it reaches STARTED and stops when it
  * drops below, and on every resume it re-checks the camera permission, so a permission granted in
- * the system dialog opens the camera with no retry. A rotation's stop and start fall inside the
- * holder's two-second grace, so a recording carries on. With a null owner the caller starts and
- * stops the holder.
+ * the system dialog opens the camera with no retry. A rotation does not stop it: an Android Activity
+ * that stops only to be recreated leaves the camera open, with any recording, for the recreated
+ * screen to carry on with; one that no longer shows the camera stops it two seconds later. With a
+ * null owner the caller starts and stops the holder.
  */
 @Composable
 public fun rememberCameraKStateHolder(
@@ -75,6 +76,13 @@ public fun rememberCameraKStateHolder(
 /** This platform's context for the production holder constructor. */
 @Composable
 internal expect fun platformContext(): CameraKPlatformContext
+
+/**
+ * Whether the host is stopping only to be recreated, read as it stops: an Android Activity changing
+ * its configuration (a rotation). Never on the other platforms, which do not recreate their hosts.
+ */
+@Composable
+internal expect fun rememberHostRecreation(): () -> Boolean
 
 // The production holder over this platform's camera.
 @OptIn(InternalCameraKApi::class)
@@ -153,9 +161,10 @@ internal fun rememberLifecycleHolder(
         }.collect { reported -> if (reported != null) userState.value = reported }
     }
     if (lifecycleOwner != null) {
+        val recreating = rememberHostRecreation()
         LifecycleStartEffect(holder, lifecycleOwner = lifecycleOwner) {
             holder.start()
-            onStopOrDispose { holder.stop() }
+            onStopOrDispose { if (recreating()) holder.stopForRecreation() else holder.stop() }
         }
         LifecycleResumeEffect(holder, lifecycleOwner = lifecycleOwner) {
             holder.recheckPermission()

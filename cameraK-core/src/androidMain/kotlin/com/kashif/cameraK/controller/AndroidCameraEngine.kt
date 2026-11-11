@@ -398,6 +398,8 @@ internal class AndroidCameraEngine(
 
         override val isBound: Boolean get() = session.isBound
 
+        override val pinnedPhysicalId: String? get() = session.pinnedPhysicalId
+
         override fun bindWithVideo(): CameraKError? = recordingBinding.bindWithVideo()
 
         override suspend fun videoQualities(): Set<VideoQuality> = catalog.videoQualities()

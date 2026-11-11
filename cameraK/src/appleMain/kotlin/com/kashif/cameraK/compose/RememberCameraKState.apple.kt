@@ -9,3 +9,8 @@ import com.kashif.cameraK.utils.InternalCameraKApi
 /** iOS needs no platform context. */
 @Composable
 internal actual fun platformContext(): CameraKPlatformContext = CameraKPlatformContext()
+
+@Composable
+internal actual fun rememberHostRecreation(): () -> Boolean = NeverRecreated
+
+private val NeverRecreated: () -> Boolean = { false }

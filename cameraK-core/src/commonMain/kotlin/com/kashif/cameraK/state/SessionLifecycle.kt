@@ -11,6 +11,7 @@ import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.CameraKPermissionChecker
 import com.kashif.cameraK.permissions.PermissionStatus
+import com.kashif.cameraK.recording.CONFIG_CHANGE_GRACE
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
@@ -23,6 +24,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -77,9 +79,10 @@ internal fun startTimeoutState(status: PermissionStatus): CameraKState.Error = i
  * [state], written only through [transition]. A new desired value cancels the work of the previous
  * one, so a stop during a start cancels the start instead of racing it.
  *
- * A stop while a recording is live waits [hostStopGrace] first, and a start inside that wait
- * continues the open session: the engine is not started again and Starting is not published. So
- * does a start that reaches the reconciler together with the stop before it, which then never runs.
+ * A stop while a recording is live waits [hostStopGrace] first, and a stop for a host's recreation
+ * waits [CONFIG_CHANGE_GRACE] whatever is live; a start inside that wait continues the open session:
+ * the engine is not started again and Starting is not published. So does a start that reaches the
+ * reconciler together with the stop before it, which then never runs.
  *
  * @param beforeReady Runs before the first and every later Ready is published, outside any lock.
  * @param awaitPreviousClose Runs before each engine start: a holder that replaces another waits for
@@ -101,7 +104,7 @@ internal class SessionLifecycle(
 ) {
     private sealed interface Desired {
         /** Stopped once every attempt up to [upTo] had been requested. */
-        data class Stopped(val upTo: Int) : Desired
+        data class Stopped(val upTo: Int, val forRecreation: Boolean = false) : Desired
 
         /** [attempt] changes on every start from Stopped or Error, so the reconciler runs a new session. */
         class Running(val attempt: Int) : Desired
@@ -131,7 +134,7 @@ internal class SessionLifecycle(
                 is Desired.Stopped -> {
                     if (engineStarted) {
                         continuable = sessionOpen
-                        hostStopGrace()
+                        if (d.forRecreation) delay(CONFIG_CHANGE_GRACE) else hostStopGrace()
                         continuable = false
                         withContext(NonCancellable) {
                             hostStop()
@@ -188,8 +191,9 @@ internal class SessionLifecycle(
         }
     }
 
-    fun stop() {
-        desired.update { if (it is Desired.Closed) it else Desired.Stopped(attempts.value) }
+    /** Stops the camera; [forRecreation] waits [CONFIG_CHANGE_GRACE] first for the recreated host's start. */
+    fun stop(forRecreation: Boolean = false) {
+        desired.update { if (it is Desired.Closed) it else Desired.Stopped(attempts.value, forRecreation) }
     }
 
     /** Restarts from Error; false in any other state. */

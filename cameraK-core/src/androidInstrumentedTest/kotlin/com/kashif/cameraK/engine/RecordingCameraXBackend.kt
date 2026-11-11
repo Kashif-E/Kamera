@@ -1,6 +1,8 @@
 package com.kashif.cameraK.engine
 
 import android.content.Context
+import androidx.camera.camera2.impl.Camera2ImplConfig
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraControl
 import androidx.camera.core.ImageCapture
@@ -45,7 +47,8 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
     /**
      * Flash from the bound ImageCapture; torch, zoom and the exposure index as the engine last sent
      * them to the bound camera, which starts, as CameraX opens one, with the torch off, zoom 1x and
-     * index 0; the camera is the last bound one.
+     * index 0; the camera is the last bound one, reported as the physical lens its use cases pin
+     * ([RecordingCamera.streamingId]).
      */
     fun boundSettings(): BoundSettings = synchronized(lock) {
         val camera = lastBound
@@ -58,7 +61,7 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
             },
             torchMode = camera?.torchMode ?: TorchMode.OFF,
             zoomRatio = camera?.zoomRatio ?: 1f,
-            cameraId = camera?.id,
+            cameraId = camera?.streamingId(),
             exposureCompensationIndex = camera?.exposureIndex ?: 0,
         )
     }
@@ -163,6 +166,21 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
         }
 
         override fun getCameraControl(): CameraControl = control
+
+        /**
+         * The camera the bound use cases stream from: the physical lens they pin with Camera2Interop
+         * inside the logical camera CameraX bound ([id]), or [id] when none pins one. Use cases that
+         * disagree are reported together, which matches no single lens.
+         */
+        @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
+        fun streamingId(): String {
+            val pinned = useCases.map { Camera2ImplConfig(it.currentConfig).getPhysicalCameraId(null) }.toSet()
+            return when {
+                pinned.isEmpty() || pinned == setOf(null) -> id
+                pinned.size == 1 -> checkNotNull(pinned.single())
+                else -> pinned.joinToString("+") { it ?: "$id (unpinned)" }
+            }
+        }
 
         fun reset() {
             torchMode = TorchMode.OFF

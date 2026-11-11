@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -40,12 +41,7 @@ fun App() = SampleTheme {
     val permissions = rememberCameraKPermissionState(*asked.toTypedArray()) { results ->
         permissionNotice(results)?.let { scope.launch { snackbarHostState.showSnackbar(it) } }
     }
-    // Asked once when the app opens, as the 1.x screen did, and again when Save to gallery adds the
-    // gallery to what is asked. A preview asks for nothing.
-    val inspecting = LocalInspectionMode.current
-    LaunchedEffect(permissions) {
-        if (!inspecting && !permissions.allGranted) permissions.launchRequest()
-    }
+    AskWhenOpened(asked = asked, allGranted = permissions.allGranted, launchRequest = permissions::launchRequest)
 
     Scaffold(
         snackbarHost = { SampleSnackbarHost(snackbarHostState) },
@@ -80,12 +76,40 @@ fun App() = SampleTheme {
 }
 
 /**
- * What the Sample asks for when it opens: the camera, and the gallery only when the image saver puts
- * every capture there. On Android 10 and later and on desktop the gallery needs no permission and reads
+ * Asks for [asked] when the app opens, as the 1.x screen did, and again when Save to gallery adds the
+ * gallery to it. A preview asks for nothing.
+ *
+ * The last list asked is saved: a rotation recreates the screen, and asking again there for a
+ * permission just refused would show the dialog on every rotation. It asks when the list gains a
+ * permission, and the saved list is forgotten once everything is granted, so a permission revoked in
+ * the settings later (Android then ends the app, which restores this) is asked for again. The
+ * permission screen's button still asks.
+ */
+@Composable
+internal fun AskWhenOpened(asked: List<CameraKPermission>, allGranted: Boolean, launchRequest: () -> Unit) {
+    val inspecting = LocalInspectionMode.current
+    val granted by rememberUpdatedState(allGranted)
+    // Names joined in one string, which every platform's saved state holds.
+    var askedBefore by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(allGranted) {
+        if (allGranted) askedBefore = ""
+    }
+    LaunchedEffect(asked) {
+        if (inspecting || granted) return@LaunchedEffect
+        val before = askedBefore.split(',').toSet()
+        askedBefore = asked.joinToString(",") { it.name }
+        if (asked.any { it.name !in before }) launchRequest()
+    }
+}
+
+/**
+ * What the Sample asks for when it opens: the camera, the microphone its recordings use, and the
+ * gallery only when the image saver puts every capture there. On Android 10 and later and on desktop the gallery needs no permission and reads
  * Granted.
  */
 internal fun samplePermissions(autoSave: Boolean): List<CameraKPermission> =
-    if (autoSave) listOf(CameraKPermission.CAMERA, CameraKPermission.GALLERY_ADD) else listOf(CameraKPermission.CAMERA)
+    listOf(CameraKPermission.CAMERA, CameraKPermission.MICROPHONE) +
+        if (autoSave) listOf(CameraKPermission.GALLERY_ADD) else emptyList()
 
 /** Whether the Sample shows the camera for this camera permission status; Limited counts as granted. */
 internal fun cameraGranted(status: PermissionStatus?): Boolean =
