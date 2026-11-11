@@ -8,6 +8,7 @@ import com.kashif.cameraK.controller.CameraXBackend
 import com.kashif.cameraK.engine.contract.BoundSettings
 import com.kashif.cameraK.engine.contract.EngineContractDriver
 import com.kashif.cameraK.engine.contract.HardwareChange
+import com.kashif.cameraK.engine.contract.ReadBackExposureDriver
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -21,9 +22,15 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * The contract kit's driver for [AndroidCameraEngine] on a device, over real CameraX through
  * [RecordingCameraXBackend] (design §12.4 B1). It cannot script the platform, so every fault hook
- * throws [AssumptionViolatedException] and the case that calls one reports as skipped.
+ * throws [AssumptionViolatedException] and the case that calls one reports as skipped. Exposure
+ * compensation is read back by the engine before the command returns ([ReadBackExposureDriver]), as
+ * over the fake platform. Flash is read back too, but the one case that checks it as a read-back also
+ * holds torch and zoom reports until a scripted one, which real CameraX sends on its own; left a
+ * scripted report, flash makes that case skip.
  */
-internal class DeviceEngineDriver : EngineContractDriver {
+internal class DeviceEngineDriver :
+    EngineContractDriver,
+    ReadBackExposureDriver {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private var backend: RecordingCameraXBackend? = null
     private var engine: AndroidCameraEngine? = null
