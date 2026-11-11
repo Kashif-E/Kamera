@@ -15,6 +15,12 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKLogger
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
@@ -95,8 +101,8 @@ internal fun meteringFeaturesOf(camera: Camera, pinned: PhysicalMetering? = null
  * Focus, metering and exposure compensation on the bound camera (w13 Z-focus-android). [focusAt]
  * maps the tap through the preview's geometry and meters there with AF, AE and AWB where the camera
  * supports each, under CameraX's default auto-cancel. Exposure has no CameraX observer: the index
- * `ExposureState` reads back once CameraX completes a request is what [publishExposure] reports
- * (rule 5). The last successful index is the desired one, applied to every camera whose control
+ * `ExposureState` reads back once CameraX completes a request, or once a capture result carries the
+ * requested index, is what [publishExposure] reports (rule 5). The last successful index is the desired one, applied to every camera whose control
  * becomes active, clamped into its range, and dropped to 0 on a camera without one (rule 6); a focus
  * point is never re-applied.
  *
@@ -120,6 +126,10 @@ internal class FocusMetering(
 ) {
     private var desiredExposure = 0
 
+    // The index the bound session's capture results last carried since the latest exposure request; null
+    // until one arrives.
+    private val reportedExposure = MutableStateFlow<Int?>(null)
+
     private var run = Run()
 
     /** The exposure index the next camera whose control becomes active is given. */
@@ -136,6 +146,11 @@ internal class FocusMetering(
     private fun endRun(end: RunEnd) {
         run.end = end
         run = Run()
+    }
+
+    /** A capture result of the bound session carries exposure compensation [index]; any thread. */
+    fun onExposureReported(index: Int) {
+        reportedExposure.value = index
     }
 
     /** The exposure index [camera] reports; 0 for one without compensation or whose state cannot be read. */
@@ -226,7 +241,8 @@ internal class FocusMetering(
         val camera = camera() ?: return NOT_READY
         if (features(camera)?.exposureRange == null) return unsupported(CameraFeature.EXPOSURE_COMPENSATION)
         val request = Request(run, ++run.exposureRequest)
-        val outcome = issue { camera.cameraControl.setExposureCompensationIndex(index) }.await()
+        reportedExposure.value = null
+        val outcome = awaitExposure(issue { camera.cameraControl.setExposureCompensationIndex(index) }, index)
         if (isReleased()) return AndroidCameraEngine.CLOSED
         return outcome.fold(
             onSuccess = {
@@ -256,9 +272,10 @@ internal class FocusMetering(
         val focus = Request(run, ++run.focusRequest)
         val exposure = Request(run, ++run.exposureRequest)
         val cancel = issue { camera.cameraControl.cancelFocusAndMetering() }
+        if (compensates) reportedExposure.value = null
         val zero = if (compensates) issue { camera.cameraControl.setExposureCompensationIndex(0) } else null
         val cancelled = cancel.await()
-        val zeroed = zero?.await()
+        val zeroed = zero?.let { awaitExposure(it, 0) }
         if (isReleased()) return AndroidCameraEngine.CLOSED
         cancelled.onFailure {
             val busy = focus.isSuperseded(Run::focusRequest)
@@ -316,6 +333,23 @@ internal class FocusMetering(
             CameraKLogger.w(TAG, "$name failed", cause)
         }
     }
+
+    // CameraX completes an exposure request only once a capture result carries the index with auto-exposure
+    // CONVERGED, LOCKED or FLASH_REQUIRED, and sets no limit on how long the search may take (a dark scene
+    // took 44 frames); every result carries the index from the first the request reaches. A result carrying
+    // [index] completes the request as CameraX's outcome would, whichever comes first.
+    private suspend fun awaitExposure(request: Result<ListenableFuture<Int>>, index: Int): Result<Int> =
+        coroutineScope {
+            val reported = async {
+                reportedExposure.first { it == index }
+                Result.success(index)
+            }
+            val completed = async { request.await() }
+            select {
+                reported.onAwait { it }
+                completed.onAwait { it }
+            }.also { coroutineContext.cancelChildren() }
+        }
 
     // A CameraX call that throws instead of failing its future fails the same way.
     private inline fun <T> issue(call: () -> ListenableFuture<T>): Result<ListenableFuture<T>> = try {
