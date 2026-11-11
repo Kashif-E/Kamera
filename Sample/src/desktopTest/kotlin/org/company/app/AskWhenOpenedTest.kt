@@ -39,6 +39,32 @@ class AskWhenOpenedTest {
     }
 
     @Test
+    fun turningSaveToGalleryOffAndOnAgainAsksForTheGalleryAgain() = runTest {
+        var requests = 0
+        var saved = open(this, restored = null, asked = withoutGallery) { requests++ }
+        saved = open(this, restored = saved, asked = samplePermissions(autoSave = true)) { requests++ }
+        saved = open(this, restored = saved, asked = withoutGallery) { requests++ }
+        assertEquals(2, requests, "requests once Save to gallery was turned off, which adds nothing to ask")
+
+        open(this, restored = saved, asked = samplePermissions(autoSave = true)) { requests++ }
+
+        assertEquals(3, requests, "requests once Save to gallery was turned on again")
+    }
+
+    // Android ends the app when a permission is revoked in the settings, and the screen it opens again
+    // is restored from what it saved.
+    @Test
+    fun aPermissionRevokedAfterEverythingWasGrantedIsAskedForAgain() = runTest {
+        var requests = 0
+        var saved = open(this, restored = null, asked = withoutGallery) { requests++ }
+        saved = open(this, restored = saved, asked = withoutGallery, allGranted = true) { requests++ }
+
+        open(this, restored = saved, asked = withoutGallery) { requests++ }
+
+        assertEquals(2, requests, "requests once the app came back with the microphone revoked")
+    }
+
+    @Test
     fun nothingIsAskedWhenEverythingIsGranted() = runTest {
         var requests = 0
         open(this, restored = null, asked = withoutGallery, allGranted = true) { requests++ }
