@@ -21,6 +21,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.CancellationException
@@ -129,9 +130,11 @@ internal class FocusMetering(
 
     private var run = Run()
 
-    // The capture results of the bound session: the run they belong to, how many arrived, and the index the
-    // latest carried, null until the first, which shows the session configured and streaming.
-    private val results = MutableStateFlow(Results(run, 0, null))
+    // The capture results of the run's session: the run, the session reporting and the one whose results no
+    // longer count (the one reporting when the previous run ended: a stop leaves frames in the pipeline, and a
+    // restart on the same camera binds nothing), how many arrived, and the index the latest carried, null until
+    // the first, which shows the session configured and streaming.
+    private val results = MutableStateFlow(Results(run, null, null, 0, null))
 
     // A camera whose desired index waits for its session's first capture result.
     private var pendingApply: Camera? = null
@@ -150,14 +153,16 @@ internal class FocusMetering(
     private fun endRun(end: RunEnd) {
         run.end = end
         run = Run()
-        results.value = Results(run, 0, null)
+        results.update { Results(run, null, it.session ?: it.ignored, 0, null) }
         pendingApply = null
     }
 
-    /** A capture result of the bound session carries exposure compensation [index]; any thread. */
-    fun onExposureReported(index: Int) {
-        val before = results.getAndUpdate { Results(it.run, it.count + 1, index) }
-        if (before.index == null) executor.execute { onStreaming(before.run) }
+    /** A capture result of [session] carries exposure compensation [index]; any thread. */
+    fun onExposureReported(session: Any, index: Int) {
+        val before = results.getAndUpdate {
+            if (session == it.ignored) it else Results(it.run, session, it.ignored, it.count + 1, index)
+        }
+        if (session != before.ignored && before.index == null) executor.execute { onStreaming(before.run) }
     }
 
     // Main thread: the session of [streaming]'s run produced its first capture result.
@@ -268,6 +273,8 @@ internal class FocusMetering(
         if (request.isSuperseded(Run::exposureRequest)) {
             return CameraKResult.Failure(CameraKError.Busy(CameraOperation.EXPOSURE_COMPENSATION))
         }
+        // The command replaces a re-apply still waiting for the session, which would otherwise replace it.
+        pendingApply = null
         val issued = results.value.count
         val outcome =
             awaitExposure(request, issued, issue { camera.cameraControl.setExposureCompensationIndex(index) }, index)
@@ -300,6 +307,10 @@ internal class FocusMetering(
         val focus = Request(run, ++run.focusRequest)
         val exposure = Request(run, ++run.exposureRequest)
         if (compensates) awaitStreaming(exposure, CameraOperation.FOCUS_POINT)?.let { return it }
+        if (focus.isSuperseded(Run::focusRequest) || exposure.isSuperseded(Run::exposureRequest)) {
+            return CameraKResult.Failure(CameraKError.Busy(CameraOperation.FOCUS_POINT))
+        }
+        if (compensates) pendingApply = null
         val issued = results.value.count
         val cancel = issue { camera.cameraControl.cancelFocusAndMetering() }
         val zero = if (compensates) issue { camera.cameraControl.setExposureCompensationIndex(0) } else null
@@ -436,7 +447,7 @@ internal class FocusMetering(
         var end: RunEnd? = null
     }
 
-    private class Results(val run: Run, val count: Long, val index: Int?)
+    private class Results(val run: Run, val session: Any?, val ignored: Any?, val count: Long, val index: Int?)
 
     private class Request(val run: Run, val number: Int) {
         // Busy: a newer request of its kind or a reset in its run, or the rebind that ended the run.

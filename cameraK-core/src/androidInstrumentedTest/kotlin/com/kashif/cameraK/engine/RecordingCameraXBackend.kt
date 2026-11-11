@@ -198,6 +198,8 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
 
             override fun setExposureCompensationIndex(value: Int): ListenableFuture<Int> = synchronized(lock) {
                 exposureIndex = value
+                // Only a result after this call settles it.
+                reports.withLock { reportedExposure = null }
                 real.cameraControl.setExposureCompensationIndex(value).also {
                     pendingControlCalls += ControlCall(it, exposureIndex = value)
                 }
