@@ -14,8 +14,9 @@ import kotlinx.atomicfu.atomic
 /**
  * The engine's preview leaf. The Preview use case is bound with the engine's other use cases, with no
  * surface until a preview attaches one; the latest attachment's provider is the Preview's, and its
- * display drives the ViewPort. Closing an attachment clears the provider only while it is still the
- * current one, so an outgoing preview in a crossfade never blanks the incoming one.
+ * display drives the ViewPort. Closing an attachment takes its provider away only while it is still the
+ * current one, so an outgoing preview in a crossfade never blanks the incoming one; the Preview then
+ * draws into [DroppingPreviewSurface], so the camera keeps streaming with no preview shown.
  *
  * [onMain] runs a block on the engine's main dispatcher, at once when already there; every field
  * here is read and written only inside such a block. [aspectRatio] is the configured one, which the
@@ -60,7 +61,7 @@ internal class EnginePreviewSource(
             onMain {
                 if (current === this) {
                     current = null
-                    preview?.setSurfaceProvider(null)
+                    preview?.setSurfaceProvider(DroppingPreviewSurface)
                 }
             }
         }

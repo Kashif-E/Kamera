@@ -8,8 +8,9 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 public actual interface PlatformPreviewSource {
     /**
      * Attaches [provider] as the preview's surface. The ViewPort follows [display]; null falls back
-     * to the default display. Closing the attachment clears the surface provider only while this
-     * attachment is still the current one, so a crossfade never blanks the incoming preview.
+     * to the default display. Closing the attachment takes [provider] away only while this attachment
+     * is still the current one, so a crossfade never blanks the incoming preview; with no preview
+     * attached the camera keeps streaming, into a surface that drops the frames.
      */
     public fun attach(provider: Preview.SurfaceProvider, display: Display?): PreviewAttachment
 }
