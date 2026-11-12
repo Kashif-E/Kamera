@@ -2,15 +2,21 @@
 
 package com.kashif.cameraK.controller
 
+import com.kashif.cameraK.engine.CameraSelection
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
 import com.kashif.cameraK.engine.layOutPreviewLayer
+import com.kashif.cameraK.enums.CameraDeviceType
+import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.objcPtr
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import platform.CoreGraphics.CGRectMake
+import platform.QuartzCore.CALayer
 import platform.Foundation.NSDate
 import platform.Foundation.NSRunLoop
 import platform.Foundation.dateWithTimeIntervalSinceNow
@@ -78,6 +84,8 @@ class PreviewLayerTest {
     fun aCloseTakesTheSessionOutOfTheLayerOnTheSessionQueue() = driver.runCase {
         val engine = driver.createEngine()
         val layer = engine.preview.createPreviewLayer()
+        val host = CALayer()
+        host.addSublayer(layer)
         driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         driver.settle()
@@ -88,6 +96,7 @@ class PreviewLayerTest {
         val release = holdSessionQueue()
         try {
             NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(MAIN_TURN_SECONDS))
+            assertNull(layer.superlayer, "main did not take the closed engine's layer out of its host")
             assertNotNull(layer.session, "the session was taken out of the layer while the session queue was busy")
         } finally {
             release()
@@ -121,6 +130,95 @@ class PreviewLayerTest {
             assertTrue(layer in driver.boundPreviewTurns, "the layer was not turned once it was bound")
             engine.close()
         }
+    }
+
+    // A preview that leaves composition while the engine lives releases its layer: freed on main still
+    // bound, the layer would take the session out of itself there.
+    @Test
+    fun aReleasedLayerIsTakenOutOfTheSessionOnTheSessionQueue() = driver.runCase {
+        val engine = driver.createEngine()
+        val layer = engine.preview.createPreviewLayer()
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        driver.settle()
+
+        val release = holdSessionQueue()
+        try {
+            engine.preview.releasePreviewLayer(layer)
+            assertNotNull(layer.session, "the session was taken out of the released layer while the queue was busy")
+        } finally {
+            release()
+        }
+        driver.settle()
+
+        assertNull(layer.session, "the released layer still holds the session")
+        engine.close()
+    }
+
+    // A session shows one layer at a time: binding a second takes the session out of the first. Releasing
+    // the first afterwards leaves the second bound.
+    @Test
+    fun releasingAReplacedLayerLeavesTheNewOneBound() = driver.runCase {
+        val engine = driver.createEngine()
+        val first = engine.preview.createPreviewLayer()
+        val second = engine.preview.createPreviewLayer()
+        driver.settle()
+
+        engine.preview.releasePreviewLayer(first)
+        driver.settle()
+
+        assertEquals(driver.session.avSession.objcPtr(), second.session?.objcPtr(), "the new layer's session")
+        engine.close()
+    }
+
+    // From iOS 17 the rotation coordinator is made for the newest layer. A layer made while a start was
+    // queued was handed to the coordinator before the queue bound it.
+    @Test
+    fun theRotationCoordinatorIsMadeOnlyForABoundLayer() {
+        val rotation = FakeRotationSources()
+        val driver = AppleEngineDriver(osVersion = 17, rotationSources = rotation)
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+
+            val release = holdSessionQueue(driver)
+            val start = async { engine.start(backCamera()) }
+            val layer = try {
+                runCurrent()
+                engine.preview.createPreviewLayer()
+            } finally {
+                release()
+            }
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), start.await())
+
+            val made = rotation.made.filter { it.previewLayer != null }
+            assertTrue(made.any { it.previewLayer === layer }, "no coordinator for the new layer")
+            val unbound = made.filterNot { it.previewLayerBound }.map { it.previewLayer }
+            assertEquals(emptyList(), unbound, "coordinators made for a layer not yet bound")
+            engine.close()
+        }
+    }
+
+    // The front camera's preview is mirrored through the layer's connection, which it has only once bound.
+    @Test
+    fun aFrontLayerIsMirroredOnceBound() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+        val front = CameraSelection.ByLens(CameraLens.FRONT, CameraDeviceType.DEFAULT)
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera(front)))
+        driver.settle()
+
+        val release = holdSessionQueue()
+        val layer = try {
+            engine.preview.createPreviewLayer()
+        } finally {
+            release()
+        }
+        driver.settle()
+
+        assertTrue((layer to true) in driver.boundPreviewMirrorings, "the front layer was not mirrored once bound")
+        engine.close()
     }
 
     /** Waits, holding main, until [driver]'s session queue has run the work queued before this call. */

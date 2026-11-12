@@ -215,6 +215,28 @@ internal class AppleEngineDriver(
     private val previewTurnLock = platform.Foundation.NSLock()
     private val previewTurnList = mutableListOf<Pair<AVCaptureVideoPreviewLayer?, VideoRotation>>()
     private val boundPreviewTurnList = mutableListOf<AVCaptureVideoPreviewLayer>()
+    private val boundPreviewMirroringList = mutableListOf<Pair<AVCaptureVideoPreviewLayer, Boolean>>()
+
+    /** The mirrorings given to a layer bound to a session, in order: the layer and whether it was mirrored. */
+    val boundPreviewMirrorings: List<Pair<AVCaptureVideoPreviewLayer, Boolean>>
+        get() {
+            previewTurnLock.lock()
+            try {
+                return boundPreviewMirroringList.toList()
+            } finally {
+                previewTurnLock.unlock()
+            }
+        }
+
+    private fun recordPreviewMirroring(layer: AVCaptureVideoPreviewLayer?, mirrored: Boolean) {
+        if (layer?.session == null) return
+        previewTurnLock.lock()
+        try {
+            boundPreviewMirroringList += layer to mirrored
+        } finally {
+            previewTurnLock.unlock()
+        }
+    }
 
     /** The layers of the turns given while the layer was bound to a session, in order. */
     val boundPreviewTurns: List<AVCaptureVideoPreviewLayer>
@@ -282,6 +304,7 @@ internal class AppleEngineDriver(
             },
             cameraDevices = devices,
             photoCapturer = photoCapturer,
+            previewMirroring = ::recordPreviewMirroring,
             previewOrienting = { layer, orientation ->
                 recordPreviewTurn(layer, VideoRotation.Orientation(orientation))
             },
