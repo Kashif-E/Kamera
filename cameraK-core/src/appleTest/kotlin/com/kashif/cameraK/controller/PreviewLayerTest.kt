@@ -1,19 +1,41 @@
-@file:OptIn(CameraKEngineApi::class, BetaInteropApi::class, ExperimentalForeignApi::class)
+@file:OptIn(CameraKEngineApi::class, BetaInteropApi::class, ExperimentalForeignApi::class, InternalCameraKApi::class)
 
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.engine.contract.AppleEngineDriver
+import com.kashif.cameraK.engine.layOutPreviewLayer
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.utils.InternalCameraKApi
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.objcPtr
+import platform.CoreGraphics.CGRectMake
+import platform.Foundation.NSDate
+import platform.Foundation.NSRunLoop
+import platform.Foundation.dateWithTimeIntervalSinceNow
+import platform.Foundation.runUntilDate
+import platform.UIKit.UIInterfaceOrientationPortrait
+import platform.darwin.DISPATCH_TIME_FOREVER
+import platform.darwin.dispatch_semaphore_create
+import platform.darwin.dispatch_semaphore_signal
+import platform.darwin.dispatch_semaphore_wait
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * The session exists from the engine's construction, so a preview composed before the camera starts
- * gets a layer already bound to the session that start will run.
+ * gets a layer bound to the session that start will run.
+ *
+ * Binding a layer to the session, and taking the session out of it, configures the session. On main,
+ * while the session queue had begun a configuration, the two took AVFoundation's locks in opposite
+ * orders and neither returned: an iPhone 14 Pro stalled in Starting with main in
+ * `-[AVCaptureSession _addVideoPreviewLayer:]` and the session queue in `beginConfiguration`, both
+ * waiting in `_beginConfiguration`, and every later start in the process stalled behind them. Both
+ * changes run on the session queue, after the session work already queued there.
  */
 class PreviewLayerTest {
     private val driver = AppleEngineDriver()
@@ -24,12 +46,101 @@ class PreviewLayerTest {
 
         val session = driver.session.avSession.objcPtr()
         val layer = engine.preview.createPreviewLayer()
+        driver.settle()
         assertEquals(session, layer.session?.objcPtr(), "a layer made before start has another session")
 
-        driver.settle()
         assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
         assertEquals(session, layer.session?.objcPtr(), "start replaced the session the layer shows")
         assertEquals(1, driver.sessionsCreated, "sessions the engine created")
         engine.close()
+    }
+
+    @Test
+    fun aLayerIsBoundToTheSessionOnTheSessionQueue() = driver.runCase {
+        val engine = driver.createEngine()
+        driver.settle()
+
+        val release = holdSessionQueue()
+        val layer = try {
+            engine.preview.createPreviewLayer().also {
+                assertNull(it.session, "the layer was bound to the session while the session queue was busy")
+            }
+        } finally {
+            release()
+        }
+        driver.settle()
+
+        assertEquals(driver.session.avSession.objcPtr(), layer.session?.objcPtr(), "the session the layer shows")
+        engine.close()
+    }
+
+    @Test
+    fun aCloseTakesTheSessionOutOfTheLayerOnTheSessionQueue() = driver.runCase {
+        val engine = driver.createEngine()
+        val layer = engine.preview.createPreviewLayer()
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        driver.settle()
+
+        // The close reaches the layer from the session queue; main then takes the layer out of its host.
+        engine.close()
+        awaitSessionQueue()
+        val release = holdSessionQueue()
+        try {
+            NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(MAIN_TURN_SECONDS))
+            assertNotNull(layer.session, "the session was taken out of the layer while the session queue was busy")
+        } finally {
+            release()
+        }
+        driver.settle()
+
+        assertNull(layer.session, "the closed engine's preview layer still holds its session")
+    }
+
+    // Below iOS 17 the layer turns through its connection, which it has only once bound: a layout that
+    // came first is applied again.
+    @Test
+    fun aLayerLaidOutBeforeItIsBoundIsTurnedOnceBound() {
+        val driver = AppleEngineDriver(osVersion = 16)
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            driver.settle()
+
+            val release = holdSessionQueue(driver)
+            val layer = try {
+                engine.preview.createPreviewLayer().also {
+                    engine.preview.layOutPreviewLayer(it, PHONE_BOUNDS, UIInterfaceOrientationPortrait)
+                }
+            } finally {
+                release()
+            }
+            driver.settle()
+
+            assertTrue(layer in driver.boundPreviewTurns, "the layer was not turned once it was bound")
+            engine.close()
+        }
+    }
+
+    /** Waits, holding main, until [driver]'s session queue has run the work queued before this call. */
+    private fun awaitSessionQueue(driver: AppleEngineDriver = this.driver) {
+        val reached = dispatch_semaphore_create(0)
+        driver.custom.afterQueuedSessionWork { dispatch_semaphore_signal(reached) }
+        dispatch_semaphore_wait(reached, DISPATCH_TIME_FOREVER)
+    }
+
+    /** Holds [driver]'s session queue, behind the work already queued, until the returned function runs. */
+    private fun holdSessionQueue(driver: AppleEngineDriver = this.driver): () -> Unit {
+        val held = dispatch_semaphore_create(0)
+        driver.custom.afterQueuedSessionWork { dispatch_semaphore_wait(held, DISPATCH_TIME_FOREVER) }
+        return { dispatch_semaphore_signal(held) }
+    }
+
+    private companion object {
+        /** Long enough for main to run what is queued to it. */
+        const val MAIN_TURN_SECONDS = 0.2
+
+        val PHONE_BOUNDS = CGRectMake(0.0, 0.0, 390.0, 844.0)
     }
 }

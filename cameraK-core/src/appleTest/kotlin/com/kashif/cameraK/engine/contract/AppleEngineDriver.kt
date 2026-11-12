@@ -214,6 +214,18 @@ internal class AppleEngineDriver(
 
     private val previewTurnLock = platform.Foundation.NSLock()
     private val previewTurnList = mutableListOf<Pair<AVCaptureVideoPreviewLayer?, VideoRotation>>()
+    private val boundPreviewTurnList = mutableListOf<AVCaptureVideoPreviewLayer>()
+
+    /** The layers of the turns given while the layer was bound to a session, in order. */
+    val boundPreviewTurns: List<AVCaptureVideoPreviewLayer>
+        get() {
+            previewTurnLock.lock()
+            try {
+                return boundPreviewTurnList.toList()
+            } finally {
+                previewTurnLock.unlock()
+            }
+        }
 
     /** Every turn of a preview layer, in order: the layer and the orientation or angle it was given. */
     val previewTurns: List<Pair<AVCaptureVideoPreviewLayer?, VideoRotation>>
@@ -230,6 +242,7 @@ internal class AppleEngineDriver(
         previewTurnLock.lock()
         try {
             previewTurnList += layer to rotation
+            if (layer?.session != null) boundPreviewTurnList += layer
         } finally {
             previewTurnLock.unlock()
         }
