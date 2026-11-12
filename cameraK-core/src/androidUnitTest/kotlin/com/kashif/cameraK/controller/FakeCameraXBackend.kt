@@ -145,15 +145,15 @@ internal class FakeCameraXBackend : CameraXBackend {
     /** The preview of the latest bind produces a frame, reported on the calling thread. */
     fun deliverPreviewFrame() = previewFrameCallbacks.last().invoke()
 
-    /** The exposure report callback of each ImageCapture built, oldest first. */
-    val exposureReportCallbacks = mutableListOf<(Any, Int) -> Unit>()
+    /** The capture report callback of each ImageCapture built, oldest first. */
+    val captureReportCallbacks = mutableListOf<(Any, Int, Int?) -> Unit>()
 
-    override fun onExposureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Any, Int) -> Unit) {
-        exposureReportCallbacks += onReport
+    override fun onCaptureReported(imageCaptureBuilder: ImageCapture.Builder, onReport: (Any, Int, Int?) -> Unit) {
+        captureReportCallbacks += onReport
     }
 
     /** The capture session running now: one per bind and per open of the latest bound camera. */
-    fun currentSession(): Any = exposureReportCallbacks.size to (binding.cameras.lastOrNull()?.opens ?: 0)
+    fun currentSession(): Any = captureReportCallbacks.size to (binding.cameras.lastOrNull()?.opens ?: 0)
 
     /**
      * When true, each capture session streams: [FakeAndroidPlatform.settle] reports its first capture result. A
@@ -169,19 +169,19 @@ internal class FakeCameraXBackend : CameraXBackend {
      * carrying [index], unless it already has.
      */
     fun reportFirstResult(opens: Int, index: Int) {
-        val session = exposureReportCallbacks.size to opens
-        if (!streams || exposureReportCallbacks.isEmpty() || session == reportedSession) return
+        val session = captureReportCallbacks.size to opens
+        if (!streams || captureReportCallbacks.isEmpty() || session == reportedSession) return
         reportedSession = session
-        exposureReportCallbacks.last().invoke(session, index)
+        captureReportCallbacks.last().invoke(session, index, null)
     }
 
     /**
-     * A capture result of [session], by default the one running now, carries exposure compensation [index], on the
-     * calling thread.
+     * A capture result of [session], by default the one running now, carries exposure compensation [index] and
+     * autofocus state [afState], on the calling thread.
      */
-    fun reportExposure(index: Int, session: Any = currentSession()) {
-        check(exposureReportCallbacks.isNotEmpty()) { "the engine listens to no capture result" }
-        exposureReportCallbacks.last().invoke(session, index)
+    fun reportExposure(index: Int, session: Any = currentSession(), afState: Int? = null) {
+        check(captureReportCallbacks.isNotEmpty()) { "the engine listens to no capture result" }
+        captureReportCallbacks.last().invoke(session, index, afState)
     }
 
     override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {

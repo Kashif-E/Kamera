@@ -129,8 +129,8 @@ internal class EngineControls(
 
     suspend fun resetFocusAndExposure(): CameraKResult<Unit> = metering.resetFocusAndExposure()
 
-    /** A capture result of [session] carries exposure compensation [index]; any thread. */
-    fun onExposureReported(session: Any, index: Int) = metering.onExposureReported(session, index)
+    /** A capture result of [session] carries exposure compensation [index] and autofocus state [afState]; any thread. */
+    fun onCaptureReported(session: Any, index: Int, afState: Int?) = metering.onCaptureReported(session, index, afState)
 
     // Stored only: the camera's control is inactive until it opens, which applies them. A start that
     // names no target orientation keeps the one stored while the engine was closed or stopped.

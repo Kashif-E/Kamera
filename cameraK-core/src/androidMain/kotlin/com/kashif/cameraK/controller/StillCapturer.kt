@@ -53,8 +53,8 @@ internal class StillCapturer(
     private val isReleased: () -> Boolean,
     private val metadata: () -> ImageCapture.Metadata,
     private val boundLens: () -> CameraLens?,
-    /** The capture session and exposure compensation index of each capture result; on the camera's thread. */
-    private val onExposureReported: (session: Any, index: Int) -> Unit,
+    /** The capture session, exposure compensation index and autofocus state of each capture result; on the camera's thread. */
+    private val onCaptureReported: (session: Any, index: Int, afState: Int?) -> Unit,
 ) {
     /** The ImageCapture use case of the current bind, or null before the first one. */
     var imageCapture: ImageCapture? = null
@@ -90,13 +90,13 @@ internal class StillCapturer(
             )
             .setResolutionSelector(resolutionSelector)
             .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
-            .apply { backend.onExposureReported(this, exposureReporter(bind)) }
+            .apply { backend.onCaptureReported(this, captureReporter(bind)) }
             .build()
     }
 
     // Passes a capture result on only while [bind] is the latest: a result of an earlier bind's session can still arrive.
-    private fun exposureReporter(bind: Int): (Any, Int) -> Unit = { session, index ->
-        if (bind == reportingBind) onExposureReported(session, index)
+    private fun captureReporter(bind: Int): (Any, Int, Int?) -> Unit = { session, index, afState ->
+        if (bind == reportingBind) onCaptureReported(session, index, afState)
     }
 
     /**

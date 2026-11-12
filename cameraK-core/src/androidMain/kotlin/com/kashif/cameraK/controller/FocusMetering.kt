@@ -133,8 +133,9 @@ internal class FocusMetering(
     // The capture results of the run's session: the run, the session reporting and the one whose results no
     // longer count (the one reporting when the previous run ended: a stop leaves frames in the pipeline, and a
     // restart on the same camera binds nothing), how many arrived, the index the latest carried, null until the
-    // first, which shows the session configured and streaming, and whether results count yet: after a stop, only
-    // once the camera has opened again, since a session stopped before its first result was never named.
+    // first, which shows the session configured and streaming, whether results count yet (after a stop, only
+    // once the camera has opened again, since a session stopped before its first result was never named), and
+    // the autofocus state the latest carried.
     private val results = MutableStateFlow(Results(run, null, null, 0, null, counting = true))
 
     // A camera whose desired index waits for its session's first capture result.
@@ -158,10 +159,17 @@ internal class FocusMetering(
         pendingApply = null
     }
 
-    /** A capture result of [session] carries exposure compensation [index]; any thread. */
-    fun onExposureReported(session: Any, index: Int) {
+    /** A capture result of [session] carries exposure compensation [index] and autofocus state [afState]; any thread. */
+    fun onCaptureReported(session: Any, index: Int, afState: Int?) {
         val before = results.getAndUpdate {
-            if (!it.counts(session)) it else Results(it.run, session, it.ignored, it.count + 1, index, counting = true)
+            if (!it.counts(
+                    session,
+                )
+            ) {
+                it
+            } else {
+                Results(it.run, session, it.ignored, it.count + 1, index, counting = true, afState)
+            }
         }
         if (before.counts(session) && before.index == null) executor.execute { onStreaming(before.run) }
     }
@@ -479,6 +487,7 @@ internal class FocusMetering(
         val count: Long,
         val index: Int?,
         val counting: Boolean,
+        val afState: Int? = null,
     ) {
         fun counts(from: Any): Boolean = counting && from != ignored
     }
