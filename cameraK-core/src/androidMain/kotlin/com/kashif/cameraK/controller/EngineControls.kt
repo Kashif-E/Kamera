@@ -187,6 +187,11 @@ internal class EngineControls(
         metering.onStopped()
     }
 
+    /** The camera closed within the run, interrupted: the session it reopens into must stream before exposure goes out. */
+    fun onInterrupted() {
+        metering.onInterrupted()
+    }
+
     /** Applies the desired flash, torch, zoom and exposure index to [camera], whose control is active. */
     fun applyDesiredTo(camera: Camera) {
         hardwareControls.applyDesiredHardwareState(camera)

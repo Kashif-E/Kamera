@@ -186,7 +186,11 @@ class ExposureCompensationTest {
         platform.backend.streams = false
 
         interruptAndReopen(camera)
-        assertEquals(sent, camera.metering.exposureRequests.size, "the index went out before the reopened session streamed")
+        assertEquals(
+            sent,
+            camera.metering.exposureRequests.size,
+            "the index went out before the reopened session streamed",
+        )
         platform.backend.reportExposure(0)
         platform.settle(testScheduler)
 
@@ -204,14 +208,16 @@ class ExposureCompensationTest {
         platform.backend.streams = false
         val interrupted = platform.backend.currentSession()
 
-        camera.metering.onClosed()
-        camera.report(CameraState.create(CameraState.Type.OPENING, CameraState.StateError.create(CameraState.ERROR_CAMERA_IN_USE)))
-        platform.settle(testScheduler)
+        interrupt(camera)
         platform.backend.reportExposure(5, session = interrupted)
         camera.report(CameraState.create(CameraState.Type.OPEN))
         platform.settle(testScheduler)
 
-        assertEquals(sent, camera.metering.exposureRequests.size, "a frame of the interrupted session let the index out")
+        assertEquals(
+            sent,
+            camera.metering.exposureRequests.size,
+            "a frame of the interrupted session let the index out",
+        )
         engine.closeAndJoin()
     }
 
@@ -224,9 +230,7 @@ class ExposureCompensationTest {
         val sent = camera.metering.exposureRequests.size
         platform.backend.streams = false
 
-        camera.metering.onClosed()
-        camera.report(CameraState.create(CameraState.Type.OPENING, CameraState.StateError.create(CameraState.ERROR_CAMERA_IN_USE)))
-        platform.settle(testScheduler)
+        interrupt(camera)
         platform.backend.reportExposure(0, session = "the reopened session")
         camera.report(CameraState.create(CameraState.Type.OPEN))
         platform.settle(testScheduler)
@@ -248,7 +252,11 @@ class ExposureCompensationTest {
 
         val set = async { engine.setExposureCompensation(4) }
         platform.settle(testScheduler)
-        assertEquals(sent, camera.metering.exposureRequests.size, "the request went out before the reopened session streamed")
+        assertEquals(
+            sent,
+            camera.metering.exposureRequests.size,
+            "the request went out before the reopened session streamed",
+        )
         platform.backend.reportExposure(0)
         platform.settle(testScheduler)
         platform.backend.reportExposure(4)
@@ -259,10 +267,16 @@ class ExposureCompensationTest {
         engine.closeAndJoin()
     }
 
-    private fun TestScope.interruptAndReopen(camera: FakeCamera) {
+    // Another client takes the camera: CameraX closes it, which returns its index to 0, and reports it opening again.
+    private fun TestScope.interrupt(camera: FakeCamera) {
         camera.metering.onClosed()
-        camera.report(CameraState.create(CameraState.Type.OPENING, CameraState.StateError.create(CameraState.ERROR_CAMERA_IN_USE)))
+        val inUse = CameraState.StateError.create(CameraState.ERROR_CAMERA_IN_USE)
+        camera.report(CameraState.create(CameraState.Type.OPENING, inUse))
         platform.settle(testScheduler)
+    }
+
+    private fun TestScope.interruptAndReopen(camera: FakeCamera) {
+        interrupt(camera)
         camera.report(CameraState.create(CameraState.Type.OPEN))
         platform.settle(testScheduler)
     }
