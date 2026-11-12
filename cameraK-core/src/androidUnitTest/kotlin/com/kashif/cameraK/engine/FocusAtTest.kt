@@ -105,6 +105,7 @@ class FocusAtTest {
         // A result before the deadline: AF had not ended then, whatever it reported.
         platform.backend.reportExposure(0, afState = CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED)
         metering.focusRequests.single().complete(focused = false)
+        platform.settle(testScheduler)
         platform.backend.reportExposure(0, afState = CaptureResult.CONTROL_AF_STATE_ACTIVE_SCAN)
         platform.settle(testScheduler)
 

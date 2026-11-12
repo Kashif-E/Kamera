@@ -1,6 +1,7 @@
 package com.kashif.cameraK.controller
 
 import android.graphics.Rect
+import android.hardware.camera2.CaptureResult
 import android.util.Size
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraControl
@@ -278,7 +279,7 @@ internal class FocusMetering(
                     result.isFocusSuccessful -> SUCCESS
                     // A fixed-focus camera only meters: CameraX completing the action is the outcome.
                     FocusMeteringAction.FLAG_AF !in flags -> SUCCESS
-                    else -> CameraKResult.Failure(CameraKError.Timeout(CameraOperation.FOCUS_POINT))
+                    else -> unlockedFocus(request)
                 }
             },
             onFailure = {
@@ -286,6 +287,26 @@ internal class FocusMetering(
                 failure(it, busy, CameraOperation.FOCUS_POINT, "Focusing at a point")
             },
         )
+    }
+
+    // CameraX completes an AF action unsuccessful both when AF ends NOT_FOCUSED_LOCKED and when its 5 s deadline
+    // passes while AF still scans. Focus that ended is Success, as on iOS, where focus that stops adjusting
+    // succeeds; focus still searching is Timeout. The state is read from a capture result reported after CameraX
+    // completed, so it is no older than the one that completed the action. A stop before one arrives is Closed;
+    // a rebind, a newer tap or a reset since, whose AF the result would describe, is Busy.
+    private suspend fun unlockedFocus(request: Request): CameraKResult<Unit> {
+        val completed = results.value.count
+        val after = results.first { it.run !== request.run || it.count > completed }
+        if (isReleased() || request.run.end == RunEnd.STOP) return AndroidCameraEngine.CLOSED
+        if (after.run !== request.run || request.isSuperseded(Run::focusRequest)) {
+            return CameraKResult.Failure(CameraKError.Busy(CameraOperation.FOCUS_POINT))
+        }
+        return when (after.afState) {
+            CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED,
+            CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED,
+            -> SUCCESS
+            else -> CameraKResult.Failure(CameraKError.Timeout(CameraOperation.FOCUS_POINT))
+        }
     }
 
     suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> {
