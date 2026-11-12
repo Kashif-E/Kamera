@@ -3,6 +3,7 @@
 package com.kashif.cameraK.engine
 
 import android.graphics.Rect
+import android.hardware.camera2.CaptureResult
 import android.util.Size
 import androidx.camera.core.FocusMeteringAction
 import com.kashif.cameraK.capabilities.LensInfo
@@ -35,9 +36,10 @@ import kotlin.test.assertTrue
  * `focusAt` on CameraX (w13 Z-focus-android, G1): the tap is mapped through the preview's crop,
  * rotation and mirror to a buffer pixel, metered with AF, AE and AWB where the camera supports each,
  * with CameraX's default auto-cancel, and CameraX's outcome is mapped: focused or metering-only is
- * Success, AF that did not lock is Timeout, a request a newer one, a reset or a rebind superseded is
- * Busy, one the camera's closing cancelled is Closed, anything else Hardware. Without a preview
- * surface there is no geometry to map through, so the tap is InvalidState.
+ * Success, and so is AF that ended without locking, as on iOS, where focus that stops adjusting succeeds;
+ * AF still searching when CameraX gives up is Timeout. A request a newer one, a reset or a rebind
+ * superseded is Busy, one the camera's closing cancelled is Closed, anything else Hardware. Without a
+ * preview surface there is no geometry to map through, so the tap is InvalidState.
  */
 @RunWith(RobolectricTestRunner::class)
 class FocusAtTest {
@@ -72,19 +74,58 @@ class FocusAtTest {
         engine.closeAndJoin()
     }
 
+    // CameraX completes an AF action unsuccessful both when AF ends NOT_FOCUSED_LOCKED and when its 5 s deadline
+    // passes while AF still scans; the state is read from a capture result reported once CameraX has completed.
     @Test
-    fun afThatDoesNotLockIsTimeout() = runTest {
+    fun afThatEndsWithoutLockingSucceeds() = runTest {
         val engine = open()
         val metering = platform.camera!!.metering
         metering.holdFocus = true
 
         val focus = async { engine.focusAt(CENTRE) }
         platform.settle(testScheduler)
-        assertFalse(focus.isCompleted, "focusAt returned before CameraX reported the outcome")
         metering.focusRequests.single().complete(focused = false)
+        platform.settle(testScheduler)
+        assertFalse(focus.isCompleted, "focusAt returned before a capture result showed how AF ended")
+        platform.backend.reportExposure(0, afState = CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED)
+        platform.settle(testScheduler)
+
+        assertEquals(CameraKResult.Success(Unit), focus.await())
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun afStillSearchingWhenCameraXGivesUpIsTimeout() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        // A result before the deadline: AF had not ended then, whatever it reported.
+        platform.backend.reportExposure(0, afState = CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED)
+        metering.focusRequests.single().complete(focused = false)
+        platform.backend.reportExposure(0, afState = CaptureResult.CONTROL_AF_STATE_ACTIVE_SCAN)
         platform.settle(testScheduler)
 
         assertEquals(CameraOperation.FOCUS_POINT, assertIs<CameraKError.Timeout>(failure(focus.await())).operation)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aStopBeforeAResultShowsHowAfEndedIsClosed() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        metering.focusRequests.single().complete(focused = false)
+        platform.settle(testScheduler)
+        engine.stop()
+        platform.settle(testScheduler)
+
+        assertEquals(AndroidCameraEngine.CLOSED, focus.await())
         engine.closeAndJoin()
     }
 
