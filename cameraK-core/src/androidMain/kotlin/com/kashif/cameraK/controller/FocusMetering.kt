@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
@@ -103,7 +104,9 @@ internal fun meteringFeaturesOf(camera: Camera, pinned: PhysicalMetering? = null
 /**
  * Focus, metering and exposure compensation on the bound camera (w13 Z-focus-android). [focusAt]
  * maps the tap through the preview's geometry and meters there with AF, AE and AWB where the camera
- * supports each, under CameraX's default auto-cancel. Exposure has no CameraX observer: the index
+ * supports each, under CameraX's default auto-cancel. When CameraX answers that AF did not lock, the
+ * autofocus state of the next capture result tells AF that ended, Success as on iOS, from AF that had not
+ * ended when CameraX gave up, Timeout. Exposure has no CameraX observer: the index
  * `ExposureState` reads back once CameraX completes a request, or once a capture result carries the
  * requested index, is what [publishExposure] reports (rule 5). The last successful index is the desired one, applied to every camera whose control
  * becomes active, clamped into its range, and dropped to 0 on a camera without one (rule 6); a focus
@@ -293,10 +296,14 @@ internal class FocusMetering(
     // passes while AF still scans. Focus that ended is Success, as on iOS, where focus that stops adjusting
     // succeeds; focus still searching is Timeout. The state is read from a capture result reported after CameraX
     // completed, so it is no older than the one that completed the action. A stop before one arrives is Closed;
-    // a rebind, a newer tap or a reset since, whose AF the result would describe, is Busy.
+    // a rebind, a newer tap or a reset since, whose AF the result would describe, is Busy. A streaming camera
+    // reports several results a second; none within [UNLOCKED_FOCUS_RESULT_MS] means it is not streaming
+    // (CameraX gives up then too) or its results carry no exposure index, and the answer stays Timeout.
     private suspend fun unlockedFocus(request: Request): CameraKResult<Unit> {
         val completed = results.value.count
-        val after = results.first { it.run !== request.run || it.count > completed }
+        val after = withTimeoutOrNull(UNLOCKED_FOCUS_RESULT_MS) {
+            results.first { it.run !== request.run || it.count > completed }
+        } ?: return CameraKResult.Failure(CameraKError.Timeout(CameraOperation.FOCUS_POINT))
         if (isReleased() || request.run.end == RunEnd.STOP) return AndroidCameraEngine.CLOSED
         if (after.run !== request.run || request.isSuperseded(Run::focusRequest)) {
             return CameraKResult.Failure(CameraKError.Busy(CameraOperation.FOCUS_POINT))
@@ -526,5 +533,6 @@ internal class FocusMetering(
         )
         val SUCCESS = CameraKResult.Success(Unit)
         val NOT_READY = CameraKResult.Failure(CameraKError.NotReady)
+        const val UNLOCKED_FOCUS_RESULT_MS = 1_000L
     }
 }

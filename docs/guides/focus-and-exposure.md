@@ -123,7 +123,7 @@ continuous metering after its default 5 seconds.
 | The camera focused | `Success` |
 | A fixed-focus camera metered (no AF in the action) | `Success` |
 | AF ended without locking, in a dark or featureless scene | `Success`, as on iOS |
-| AF was still searching when CameraX gave up, 5 seconds after the tap | `Failure(Timeout(FOCUS_POINT))` |
+| AF had not ended when CameraX gave up, 5 seconds after the tap, or no frame came to tell | `Failure(Timeout(FOCUS_POINT))` |
 | A newer `focusAt`, a reset or a camera switch replaced it | `Failure(Busy(FOCUS_POINT))` |
 | The camera stopped or closed first, even if `start` followed at once | `Failure(Closed)` |
 | The preview has no surface yet | `Failure(InvalidState(FOCUS_POINT))` |

@@ -83,7 +83,7 @@ the main thread.
 
 - [ ] **Focus.** Tap a near object; the reticle shows FOCUSED and the object is sharp.
 - [ ] **Focus that cannot lock.** Tap with the lens covered; AF ends without locking and `focusAt`
-      returns `Success`, as on iOS. Only AF still searching 5 seconds after the tap is
+      returns `Success`, as on iOS. Only AF that has not ended 5 seconds after the tap is
       `Timeout(FOCUS_POINT)`.
 - [ ] **Where the tap lands.** At 1:1 and at 16:9, tap a small object near each corner of the
       preview; the reticle and the in-focus area match.
