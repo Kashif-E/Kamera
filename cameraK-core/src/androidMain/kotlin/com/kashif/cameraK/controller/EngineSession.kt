@@ -357,6 +357,7 @@ internal class EngineSession(
             }
             is CameraXSignal.Interrupted -> {
                 _state.value = EngineState.Interrupted(signal.reason)
+                controls.onInterrupted()
                 accept(live)
                 if (live.recovery == null) {
                     live.recovery = scope.launch {

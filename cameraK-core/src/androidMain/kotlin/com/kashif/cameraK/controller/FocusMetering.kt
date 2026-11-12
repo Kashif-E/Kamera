@@ -1,6 +1,7 @@
 package com.kashif.cameraK.controller
 
 import android.graphics.Rect
+import android.hardware.camera2.CaptureResult
 import android.util.Size
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraControl
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
@@ -102,7 +104,9 @@ internal fun meteringFeaturesOf(camera: Camera, pinned: PhysicalMetering? = null
 /**
  * Focus, metering and exposure compensation on the bound camera (w13 Z-focus-android). [focusAt]
  * maps the tap through the preview's geometry and meters there with AF, AE and AWB where the camera
- * supports each, under CameraX's default auto-cancel. Exposure has no CameraX observer: the index
+ * supports each, under CameraX's default auto-cancel. When CameraX answers that AF did not lock, the
+ * autofocus state of the next capture result tells AF that ended, Success as on iOS, from AF that had not
+ * ended when CameraX gave up, Timeout. Exposure has no CameraX observer: the index
  * `ExposureState` reads back once CameraX completes a request, or once a capture result carries the
  * requested index, is what [publishExposure] reports (rule 5). The last successful index is the desired one, applied to every camera whose control
  * becomes active, clamped into its range, and dropped to 0 on a camera without one (rule 6); a focus
@@ -133,8 +137,9 @@ internal class FocusMetering(
     // The capture results of the run's session: the run, the session reporting and the one whose results no
     // longer count (the one reporting when the previous run ended: a stop leaves frames in the pipeline, and a
     // restart on the same camera binds nothing), how many arrived, the index the latest carried, null until the
-    // first, which shows the session configured and streaming, and whether results count yet: after a stop, only
-    // once the camera has opened again, since a session stopped before its first result was never named.
+    // first, which shows the session configured and streaming, whether results count yet (after a stop, only
+    // once the camera has opened again, since a session stopped before its first result was never named), and
+    // the autofocus state the latest carried.
     private val results = MutableStateFlow(Results(run, null, null, 0, null, counting = true))
 
     // A camera whose desired index waits for its session's first capture result.
@@ -158,10 +163,17 @@ internal class FocusMetering(
         pendingApply = null
     }
 
-    /** A capture result of [session] carries exposure compensation [index]; any thread. */
-    fun onExposureReported(session: Any, index: Int) {
+    /** A capture result of [session] carries exposure compensation [index] and autofocus state [afState]; any thread. */
+    fun onCaptureReported(session: Any, index: Int, afState: Int?) {
         val before = results.getAndUpdate {
-            if (!it.counts(session)) it else Results(it.run, session, it.ignored, it.count + 1, index, counting = true)
+            if (!it.counts(
+                    session,
+                )
+            ) {
+                it
+            } else {
+                Results(it.run, session, it.ignored, it.count + 1, index, counting = true, afState)
+            }
         }
         if (before.counts(session) && before.index == null) executor.execute { onStreaming(before.run) }
     }
@@ -174,6 +186,24 @@ internal class FocusMetering(
         if (!isReleased() && camera === this.camera()) applyNow(camera)
     }
 
+    /**
+     * The camera closed within the run, interrupted. CameraX configures a new session when it reopens and drops an
+     * exposure request sent before that session streams, so the run streams again only at a result of a session
+     * other than the one reporting now, whether that arrives before or after the open report. A session that had
+     * not reported is not named, so results count again only once the camera reports open, as after a stop. The
+     * count carries on, for requests in flight.
+     */
+    fun onInterrupted() {
+        val current = run
+        results.update {
+            when {
+                it.run !== current -> it
+                it.session != null -> Results(it.run, null, it.session, it.count, null, it.counting)
+                else -> Results(it.run, null, it.ignored, it.count, null, counting = false)
+            }
+        }
+    }
+
     /** The camera opened: the closed device can deliver no more results, so the run's results count from here. */
     fun onOpened() {
         val current = run
@@ -181,7 +211,7 @@ internal class FocusMetering(
             if (it.run === current &&
                 !it.counting
             ) {
-                Results(it.run, null, it.ignored, 0, null, true)
+                Results(it.run, null, it.ignored, it.count, null, true)
             } else {
                 it
             }
@@ -270,7 +300,7 @@ internal class FocusMetering(
                     result.isFocusSuccessful -> SUCCESS
                     // A fixed-focus camera only meters: CameraX completing the action is the outcome.
                     FocusMeteringAction.FLAG_AF !in flags -> SUCCESS
-                    else -> CameraKResult.Failure(CameraKError.Timeout(CameraOperation.FOCUS_POINT))
+                    else -> unlockedFocus(request)
                 }
             },
             onFailure = {
@@ -278,6 +308,30 @@ internal class FocusMetering(
                 failure(it, busy, CameraOperation.FOCUS_POINT, "Focusing at a point")
             },
         )
+    }
+
+    // CameraX completes an AF action unsuccessful both when AF ends NOT_FOCUSED_LOCKED and when its 5 s deadline
+    // passes while AF still scans. Focus that ended is Success, as on iOS, where focus that stops adjusting
+    // succeeds; focus still searching is Timeout. The state is read from a capture result reported after CameraX
+    // completed, so it is no older than the one that completed the action. A stop before one arrives is Closed;
+    // a rebind, a newer tap or a reset since, whose AF the result would describe, is Busy. A streaming camera
+    // reports several results a second; none within [UNLOCKED_FOCUS_RESULT_MS] means it is not streaming
+    // (CameraX gives up then too) or its results carry no exposure index, and the answer stays Timeout.
+    private suspend fun unlockedFocus(request: Request): CameraKResult<Unit> {
+        val completed = results.value.count
+        val after = withTimeoutOrNull(UNLOCKED_FOCUS_RESULT_MS) {
+            results.first { it.run !== request.run || it.count > completed }
+        } ?: return CameraKResult.Failure(CameraKError.Timeout(CameraOperation.FOCUS_POINT))
+        if (isReleased() || request.run.end == RunEnd.STOP) return AndroidCameraEngine.CLOSED
+        if (after.run !== request.run || request.isSuperseded(Run::focusRequest)) {
+            return CameraKResult.Failure(CameraKError.Busy(CameraOperation.FOCUS_POINT))
+        }
+        return when (after.afState) {
+            CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED,
+            CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED,
+            -> SUCCESS
+            else -> CameraKResult.Failure(CameraKError.Timeout(CameraOperation.FOCUS_POINT))
+        }
     }
 
     suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> {
@@ -479,6 +533,7 @@ internal class FocusMetering(
         val count: Long,
         val index: Int?,
         val counting: Boolean,
+        val afState: Int? = null,
     ) {
         fun counts(from: Any): Boolean = counting && from != ignored
     }
@@ -496,5 +551,6 @@ internal class FocusMetering(
         )
         val SUCCESS = CameraKResult.Success(Unit)
         val NOT_READY = CameraKResult.Failure(CameraKError.NotReady)
+        const val UNLOCKED_FOCUS_RESULT_MS = 1_000L
     }
 }

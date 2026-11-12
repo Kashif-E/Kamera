@@ -167,7 +167,7 @@ internal class AndroidCameraEngine(
         isReleased = { closed.value },
         metadata = ::captureMetadata,
         boundLens = { session.boundLens },
-        onExposureReported = { session, index -> controls.onExposureReported(session, index) },
+        onCaptureReported = { session, index, afState -> controls.onCaptureReported(session, index, afState) },
     )
     internal val framePipeline = FramePipeline(
         backend = backend,
