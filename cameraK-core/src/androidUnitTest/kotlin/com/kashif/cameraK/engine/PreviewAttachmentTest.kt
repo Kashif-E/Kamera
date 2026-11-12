@@ -15,13 +15,17 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 
 /**
- * The preview attaches a surface to a session the engine owns. Closing an attachment clears the
- * surface provider only while it is still the current one, so an outgoing preview in a crossfade
- * never blanks the incoming one.
+ * The preview attaches a surface to a session the engine owns. Closing an attachment takes its
+ * surface provider away only while it is still the current one, so an outgoing preview in a crossfade
+ * never blanks the incoming one. The last one's close hands the preview to a stand-in that drops the
+ * frames: a Preview left without a surface mid-session keeps no repeating request in CameraX 1.5.3, so
+ * no capture result arrives, and a photo or an exposure change never completes (Galaxy S23).
  */
 @RunWith(RobolectricTestRunner::class)
 class PreviewAttachmentTest {
@@ -44,7 +48,9 @@ class PreviewAttachmentTest {
 
         incoming.close()
         platform.settle(testScheduler)
-        assertNull(platform.boundPreview().surfaceProvider, "closing the current attachment left its provider")
+        val standIn = platform.boundPreview().surfaceProvider
+        assertNotNull(standIn, "closing the current attachment left the preview without a surface")
+        assertNotSame(second, standIn, "closing the current attachment left its provider")
         engine.closeAndJoin()
     }
 
