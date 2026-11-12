@@ -189,16 +189,17 @@ internal class FocusMetering(
     /**
      * The camera closed within the run, interrupted. CameraX configures a new session when it reopens and drops an
      * exposure request sent before that session streams, so the run streams again only at a result of a session
-     * other than the one reporting now, whether that arrives before or after the open report. The count carries on,
-     * for requests in flight.
+     * other than the one reporting now, whether that arrives before or after the open report. A session that had
+     * not reported is not named, so results count again only once the camera reports open, as after a stop. The
+     * count carries on, for requests in flight.
      */
     fun onInterrupted() {
         val current = run
         results.update {
-            if (it.run !== current || it.index == null) {
-                it
-            } else {
-                Results(it.run, null, it.session ?: it.ignored, it.count, null, it.counting)
+            when {
+                it.run !== current -> it
+                it.session != null -> Results(it.run, null, it.session, it.count, null, it.counting)
+                else -> Results(it.run, null, it.ignored, it.count, null, counting = false)
             }
         }
     }
@@ -210,7 +211,7 @@ internal class FocusMetering(
             if (it.run === current &&
                 !it.counting
             ) {
-                Results(it.run, null, it.ignored, 0, null, true)
+                Results(it.run, null, it.ignored, it.count, null, true)
             } else {
                 it
             }
