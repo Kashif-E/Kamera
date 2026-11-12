@@ -10,13 +10,17 @@ import com.kashif.cameraK.engine.PreviewAttachment
 import com.kashif.cameraK.enums.AspectRatio
 import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.delay
 
 /**
  * The engine's preview leaf. The Preview use case is bound with the engine's other use cases, with no
  * surface until a preview attaches one; the latest attachment's provider is the Preview's, and its
  * display drives the ViewPort. Closing an attachment takes its provider away only while it is still the
- * current one, so an outgoing preview in a crossfade never blanks the incoming one; the Preview then
- * draws into [DroppingPreviewSurface], so the camera keeps streaming with no preview shown.
+ * current one, so an outgoing preview in a crossfade never blanks the incoming one. With no preview
+ * attached for [STAND_IN_GRACE_MS] the Preview draws into [DroppingPreviewSurface], so the camera keeps
+ * streaming with no preview shown. Giving the Preview a surface rebuilds the capture session, so a
+ * preview that attaches again within the grace period, as one does when a rotation recreates the
+ * Activity, costs one rebuild, not two.
  *
  * [onMain] runs a block on the engine's main dispatcher, at once when already there; every field
  * here is read and written only inside such a block. [aspectRatio] is the configured one, which the
@@ -26,6 +30,7 @@ internal class EnginePreviewSource(
     override val aspectRatio: AspectRatio,
     private val onMain: (() -> Unit) -> Unit,
     private val onDisplayAttached: () -> Unit,
+    private val launch: (suspend () -> Unit) -> Unit,
 ) : PlatformPreviewSource,
     AspectRatioPreview {
     private var current: Attachment? = null
@@ -61,9 +66,17 @@ internal class EnginePreviewSource(
             onMain {
                 if (current === this) {
                     current = null
-                    preview?.setSurfaceProvider(DroppingPreviewSurface)
+                    val left = preview
+                    left?.setSurfaceProvider(null)
+                    launch {
+                        delay(STAND_IN_GRACE_MS)
+                        if (current == null && preview === left) left?.setSurfaceProvider(DroppingPreviewSurface)
+                    }
                 }
             }
         }
     }
 }
+
+/** How long the Preview goes without a surface before [DroppingPreviewSurface] takes over. */
+internal const val STAND_IN_GRACE_MS = 1_000L

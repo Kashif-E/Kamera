@@ -136,7 +136,12 @@ internal class AndroidCameraEngine(
     override val frames: FrameSource get() = framePipeline
 
     private val previewSource =
-        EnginePreviewSource(config.aspectRatio, onMain = ::onMain, onDisplayAttached = ::onDisplayChanged)
+        EnginePreviewSource(
+            config.aspectRatio,
+            onMain = ::onMain,
+            onDisplayAttached = ::onDisplayChanged,
+            launch = ::launch,
+        )
     override val preview: PlatformPreviewSource get() = previewSource
 
     // CameraX's own callbacks (the provider, frame-analysis and capture results the engine reads) run
