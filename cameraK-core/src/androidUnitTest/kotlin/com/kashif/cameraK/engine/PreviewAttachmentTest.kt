@@ -10,6 +10,7 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.InternalCameraKApi
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,7 +26,9 @@ import kotlin.test.assertSame
  * surface provider away only while it is still the current one, so an outgoing preview in a crossfade
  * never blanks the incoming one. The last one's close hands the preview to a stand-in that drops the
  * frames: a Preview left without a surface mid-session keeps no repeating request in CameraX 1.5.3, so
- * no capture result arrives, and a photo or an exposure change never completes (Galaxy S23).
+ * no capture result arrives, and a photo or an exposure change never completes (Galaxy S23). Giving the
+ * Preview a surface rebuilds the capture session, so the stand-in comes only after a grace period, which
+ * a preview attaching again, as on a rotation, cuts short.
  */
 @RunWith(RobolectricTestRunner::class)
 class PreviewAttachmentTest {
@@ -48,9 +51,49 @@ class PreviewAttachmentTest {
 
         incoming.close()
         platform.settle(testScheduler)
+        advanceTimeBy(STAND_IN_GRACE_MS + 1)
+        platform.settle(testScheduler)
         val standIn = platform.boundPreview().surfaceProvider
         assertNotNull(standIn, "closing the current attachment left the preview without a surface")
         assertNotSame(second, standIn, "closing the current attachment left its provider")
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun theStandInComesOnlyAfterTheGracePeriod() = runTest {
+        val engine = platform.engine(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        val attachment = engine.preview.attach(first, null)
+        platform.settle(testScheduler)
+
+        attachment.close()
+        platform.settle(testScheduler)
+        advanceTimeBy(STAND_IN_GRACE_MS - 1)
+        platform.settle(testScheduler)
+
+        assertNull(platform.boundPreview().surfaceProvider, "the stand-in came before the grace period ended")
+        engine.closeAndJoin()
+    }
+
+    // A rotation recreates the Activity: the old preview closes, the new one attaches. A stand-in between
+    // them would rebuild the capture session twice.
+    @Test
+    fun aPreviewAttachedWithinTheGracePeriodKeepsItsSurface() = runTest {
+        val engine = platform.engine(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        val outgoing = engine.preview.attach(first, null)
+        platform.settle(testScheduler)
+
+        outgoing.close()
+        platform.settle(testScheduler)
+        engine.preview.attach(second, null)
+        platform.settle(testScheduler)
+        advanceTimeBy(STAND_IN_GRACE_MS + 1)
+        platform.settle(testScheduler)
+
+        assertSame(second, platform.boundPreview().surfaceProvider, "the stand-in replaced the new preview")
         engine.closeAndJoin()
     }
 
@@ -85,5 +128,10 @@ class PreviewAttachmentTest {
                 }
         }
         assertNull(other.previewAspectRatio(), "a source that is not the engine's")
+    }
+
+    private companion object {
+        /** EnginePreviewSource's grace period before the stand-in surface. */
+        const val STAND_IN_GRACE_MS = 1_000L
     }
 }
