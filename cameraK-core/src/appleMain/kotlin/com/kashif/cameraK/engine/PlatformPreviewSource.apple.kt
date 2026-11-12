@@ -13,7 +13,10 @@ import platform.UIKit.UIInterfaceOrientation
 
 @CameraKEngineApi
 public actual interface PlatformPreviewSource {
-    /** A preview layer bound to the session the engine created at construction. */
+    /**
+     * A preview layer for the session the engine created at construction. CameraK's engine binds it
+     * to the session on its session queue, after the session work already queued there.
+     */
     public fun createPreviewLayer(): AVCaptureVideoPreviewLayer
 }
 

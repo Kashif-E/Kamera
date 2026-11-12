@@ -122,6 +122,7 @@ internal class CustomCameraController private constructor(
     /** The preview layer, its mirroring and its orientation. */
     private val preview: PreviewLayers =
         PreviewLayers(
+            sessionQueue,
             seams.previewMirroring,
             seams.previewOrienting,
             seams.previewRotating,
@@ -405,8 +406,12 @@ internal class CustomCameraController private constructor(
     /** Moves the session to [camera]'s input in one transaction. Session queue only; returns why it failed. */
     internal fun useDeviceOnQueue(camera: CaptureDeviceOps): CameraException? = inputs.useDeviceOnQueue(camera)
 
-    /** Shows [layer] as the preview: mirrored for the front camera, removed with the session. Main only. */
-    internal fun adoptPreviewLayer(layer: AVCaptureVideoPreviewLayer) = preview.adopt(layer, inputs.isUsingFrontCamera)
+    /**
+     * Shows [layer] as the preview: bound to the session on the session queue, mirrored for the front
+     * camera, removed with the session. Main only.
+     */
+    internal fun adoptPreviewLayer(layer: AVCaptureVideoPreviewLayer) =
+        preview.adopt(layer, lifecycle.sessionOps?.avSession) { inputs.isUsingFrontCamera }
 
     /** Main only: the point of interest under content point ([x], [y]) of the preview layer; null without one. */
     internal fun previewDevicePoint(x: Float, y: Float): PointOfInterest? = preview.devicePoint(x, y)

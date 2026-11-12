@@ -9,6 +9,7 @@ import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.AVFoundation.AVLayerVideoGravityResizeAspect
 import platform.CoreGraphics.CGPointMake
 import platform.Foundation.NSThread
+import platform.QuartzCore.CATransaction
 import platform.UIKit.UIDevice
 import platform.UIKit.UIView
 import platform.darwin.dispatch_async
@@ -18,9 +19,16 @@ import kotlin.concurrent.Volatile
 /**
  * A controller's preview layer: mirrored for the front camera, oriented or turned by the rotation
  * coordinator's preview angle, and removed with the session. The layer belongs to UIKit, so it is read
- * and changed on main. Each seam, when given, replaces the change on the layer's connection.
+ * and changed on main, except its session. Each seam, when given, replaces the change on the layer's
+ * connection.
+ *
+ * Binding a layer to the session, and taking the session out of it, configures the session. On main,
+ * while [queue] had begun a configuration, the two took AVFoundation's locks in opposite orders and
+ * neither returned (an iPhone 14 Pro stalled in Starting, main in `_addVideoPreviewLayer:` and the
+ * session queue in `beginConfiguration`), so both run on [queue].
  */
 internal class PreviewLayers(
+    private val queue: SessionQueue,
     mirroring: ((AVCaptureVideoPreviewLayer?, Boolean) -> Unit)?,
     orienting: ((AVCaptureVideoPreviewLayer?, AVCaptureVideoOrientation) -> Unit)?,
     rotating: ((AVCaptureVideoPreviewLayer, Double) -> Unit)?,
@@ -34,19 +42,45 @@ internal class PreviewLayers(
     /** A UIKit layer: read and written on main only. */
     var layer: AVCaptureVideoPreviewLayer? = null
 
+    /** The turn last given to [layer], given again once the layer is bound. Main only. */
+    private var lastTurn: VideoRotation? = null
+
     @Volatile
     private var lastVideoOrientation: AVCaptureVideoOrientation = AVCaptureVideoOrientationPortrait
 
-    /** Shows [layer] as the preview, mirrored when [front]. Main only. */
-    fun adopt(layer: AVCaptureVideoPreviewLayer, front: Boolean) {
+    /**
+     * Shows [layer] as the preview of [session], mirrored when [front] says so. Main only. The layer
+     * is bound on the session queue, after the session work already queued; bound, it has a
+     * connection, and main mirrors it and gives it its last turn again.
+     */
+    fun adopt(layer: AVCaptureVideoPreviewLayer, session: AVCaptureSession?, front: () -> Boolean) {
         this.layer = layer
-        mirroring(layer, front)
+        lastTurn = null
+        if (session == null) {
+            mirroring(layer, front())
+            return
+        }
+        bind(layer, session, front)
+    }
+
+    private fun bind(layer: AVCaptureVideoPreviewLayer, session: AVCaptureSession, front: (() -> Boolean)?) {
+        queue.async {
+            withoutAnimation { layer.session = session }
+            val mirrored = front?.invoke()
+            dispatch_async(dispatch_get_main_queue()) {
+                if (this.layer === layer) {
+                    mirrored?.let { mirroring(layer, it) }
+                    lastTurn?.let { turn(layer, it) }
+                }
+            }
+        }
     }
 
     /**
-     * Takes the layer away, removes it from its superlayer and takes the session out of it, on main, so
-     * a layer UIKit or Compose keeps does not keep the closed session alive; callable from any thread.
-     * [then] runs once the session is out of the layer: taking it out configures the session, and
+     * Takes the layer away: removes it from its superlayer on main, then takes the session out of it on
+     * the session queue, so a layer UIKit or Compose keeps does not keep the closed session alive;
+     * callable from any thread. [then] runs on the session queue once the session is out of the layer
+     * (at once, on the calling thread, without a layer): taking it out configures the session, and
      * stopping the session inside that configuration raises an exception Kotlin cannot catch.
      */
     fun remove(then: () -> Unit = {}) {
@@ -59,24 +93,27 @@ internal class PreviewLayers(
         // The layer belongs to UIKit; the engine may close from any thread.
         val detach = {
             layer.removeFromSuperlayer()
-            layer.session = null
-            then()
+            queue.async {
+                withoutAnimation { layer.session = null }
+                then()
+            }
         }
         if (NSThread.isMainThread) detach() else dispatch_async(dispatch_get_main_queue(), detach)
     }
 
     @OptIn(ExperimentalForeignApi::class)
     fun setUp(view: UIView, session: AVCaptureSession) {
-        val newPreviewLayer = AVCaptureVideoPreviewLayer(session = session).apply {
+        val newPreviewLayer = AVCaptureVideoPreviewLayer().apply {
             // ResizeAspect (letterbox) so the preview shows the exact frame that gets captured — WYSIWYG (#119).
             // ResizeAspectFill would crop the preview to fill the view, mismatching the full-frame captured photo.
             videoGravity = AVLayerVideoGravityResizeAspect
             setFrame(view.bounds)
         }
-        orienting(newPreviewLayer, currentVideoOrientation())
 
         view.layer.addSublayer(newPreviewLayer)
         layer = newPreviewLayer
+        lastTurn = VideoRotation.Orientation(currentVideoOrientation())
+        bind(newPreviewLayer, session, front = null)
     }
 
     /**
@@ -102,6 +139,7 @@ internal class PreviewLayers(
 
     /** Turns [layer] by [rotation]. Call it on main: the preview layer belongs to UIKit. */
     fun turn(layer: AVCaptureVideoPreviewLayer, rotation: VideoRotation) {
+        if (layer === this.layer) lastTurn = rotation
         when (rotation) {
             is VideoRotation.Orientation -> orienting(layer, rotation.orientation)
             is VideoRotation.Angle -> rotating(layer, rotation.degrees)
@@ -125,6 +163,17 @@ internal class PreviewLayers(
         // stays stable as the device tilts (#109).
         lastVideoOrientation = UIDevice.currentDevice.orientation.toVideoOrientation() ?: lastVideoOrientation
         return lastVideoOrientation
+    }
+}
+
+/** Runs [change] in its own Core Animation transaction, without implicit animations, off main too. */
+private inline fun withoutAnimation(change: () -> Unit) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    try {
+        change()
+    } finally {
+        CATransaction.commit()
     }
 }
 

@@ -239,8 +239,9 @@ internal class AppleCameraEngine(
         override val aspectRatio: AspectRatio get() = config.aspectRatio
 
         override fun createPreviewLayer(): AVCaptureVideoPreviewLayer {
-            val avSession = session?.avSession
-            val layer = avSession?.let { AVCaptureVideoPreviewLayer(session = it) } ?: AVCaptureVideoPreviewLayer()
+            // Bound to the session on the session queue (PreviewLayers): bound here, on main, it could
+            // deadlock against a configuration the queue had begun.
+            val layer = AVCaptureVideoPreviewLayer()
             // ResizeAspectFill inside a box of the configured aspect ratio (layOutPreview): the frame
             // is cropped as the still is, so the preview shows what gets captured (#119, w6 decision G1).
             layer.videoGravity = AVLayerVideoGravityResizeAspectFill
