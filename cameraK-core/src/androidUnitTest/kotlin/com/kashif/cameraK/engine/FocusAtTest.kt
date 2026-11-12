@@ -113,6 +113,28 @@ class FocusAtTest {
         engine.closeAndJoin()
     }
 
+    // CameraX also gives up when nothing streams, and a result may carry no exposure index, which the seam needs.
+    @Test
+    fun noResultWithinASecondOfCameraXsAnswerIsTimeout() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        metering.focusRequests.single().complete(focused = false)
+        platform.settle(testScheduler)
+        testScheduler.advanceTimeBy(999)
+        platform.settle(testScheduler)
+        assertFalse(focus.isCompleted, "focusAt gave up on the result within the second")
+        testScheduler.advanceTimeBy(2)
+        platform.settle(testScheduler)
+
+        assertTrue(focus.isCompleted, "focusAt waited past a second for a result")
+        assertEquals(CameraOperation.FOCUS_POINT, assertIs<CameraKError.Timeout>(failure(focus.await())).operation)
+        engine.closeAndJoin()
+    }
+
     @Test
     fun aStopBeforeAResultShowsHowAfEndedIsClosed() = runTest {
         val engine = open()
