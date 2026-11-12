@@ -250,6 +250,8 @@ internal class AppleCameraEngine(
             return layer
         }
 
+        override fun releasePreviewLayer(layer: AVCaptureVideoPreviewLayer) = custom.releasePreviewLayer(layer)
+
         override fun layOut(
             layer: AVCaptureVideoPreviewLayer,
             bounds: CValue<CGRect>,

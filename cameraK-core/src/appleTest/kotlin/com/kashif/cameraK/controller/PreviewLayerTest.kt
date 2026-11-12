@@ -16,11 +16,11 @@ import kotlinx.cinterop.objcPtr
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runCurrent
 import platform.CoreGraphics.CGRectMake
-import platform.QuartzCore.CALayer
 import platform.Foundation.NSDate
 import platform.Foundation.NSRunLoop
 import platform.Foundation.dateWithTimeIntervalSinceNow
 import platform.Foundation.runUntilDate
+import platform.QuartzCore.CALayer
 import platform.UIKit.UIInterfaceOrientationPortrait
 import platform.darwin.DISPATCH_TIME_FOREVER
 import platform.darwin.dispatch_semaphore_create

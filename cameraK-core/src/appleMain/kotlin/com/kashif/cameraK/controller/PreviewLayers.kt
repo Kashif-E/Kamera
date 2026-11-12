@@ -77,6 +77,21 @@ internal class PreviewLayers(
     }
 
     /**
+     * Ends [layer] once nothing shows it: takes the session out of it on the session queue, so it is
+     * not freed on main still bound. Main only. A session shows one layer at a time, so a newer layer
+     * the session shows instead keeps it.
+     */
+    fun release(layer: AVCaptureVideoPreviewLayer) {
+        if (this.layer === layer) {
+            this.layer = null
+            lastTurn = null
+        }
+        queue.async {
+            withoutAnimation { if (layer.session != null) layer.session = null }
+        }
+    }
+
+    /**
      * Takes the layer away: removes it from its superlayer on main, then takes the session out of it on
      * the session queue, so a layer UIKit or Compose keeps does not keep the closed session alive;
      * callable from any thread. [then] runs on the session queue once the session is out of the layer

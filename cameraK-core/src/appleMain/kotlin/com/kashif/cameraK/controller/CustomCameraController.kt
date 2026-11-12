@@ -413,6 +413,9 @@ internal class CustomCameraController private constructor(
     internal fun adoptPreviewLayer(layer: AVCaptureVideoPreviewLayer) =
         preview.adopt(layer, lifecycle.sessionOps?.avSession) { inputs.isUsingFrontCamera }
 
+    /** Ends [layer] once nothing shows it: the session is taken out of it on the session queue. Main only. */
+    internal fun releasePreviewLayer(layer: AVCaptureVideoPreviewLayer) = preview.release(layer)
+
     /** Main only: the point of interest under content point ([x], [y]) of the preview layer; null without one. */
     internal fun previewDevicePoint(x: Float, y: Float): PointOfInterest? = preview.devicePoint(x, y)
 
