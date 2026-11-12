@@ -221,6 +221,38 @@ class ExposureCompensationTest {
         engine.closeAndJoin()
     }
 
+    // Interrupted before its first result, a session is not yet named, and a result some cameras still deliver for
+    // a request in flight when it closed must not count as the reopened session streaming.
+    @Test
+    fun aLateFrameOfASessionInterruptedBeforeItStreamedDoesNotLetTheReapplyOut() = runTest {
+        val engine = open()
+        assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(5))
+        engine.stop()
+        platform.settle(testScheduler)
+        platform.backend.streams = false
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired.withExposure(5)))
+        platform.settle(testScheduler)
+        val camera = platform.camera!!
+        val sent = camera.metering.exposureRequests.size
+        val interrupted = platform.backend.currentSession()
+
+        interrupt(camera)
+        platform.backend.reportExposure(0, session = interrupted)
+        platform.settle(testScheduler)
+        camera.report(CameraState.create(CameraState.Type.OPEN))
+        platform.settle(testScheduler)
+        assertEquals(
+            sent,
+            camera.metering.exposureRequests.size,
+            "a late frame of the interrupted session let the index out",
+        )
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+
+        assertEquals(sent + 1, camera.metering.exposureRequests.size, "the index once the reopened session streamed")
+        engine.closeAndJoin()
+    }
+
     // The reopened session can stream before CameraX reports the camera open; its first result counts.
     @Test
     fun aReopenedSessionThatStreamsBeforeTheOpenReportGetsTheIndexAtTheOpen() = runTest {
