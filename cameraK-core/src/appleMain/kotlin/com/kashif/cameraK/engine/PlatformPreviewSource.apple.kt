@@ -13,8 +13,18 @@ import platform.UIKit.UIInterfaceOrientation
 
 @CameraKEngineApi
 public actual interface PlatformPreviewSource {
-    /** A preview layer bound to the session the engine created at construction. */
+    /**
+     * A preview layer for the session the engine created at construction. CameraK's engine binds it
+     * to the session on its session queue, after the session work already queued there.
+     */
     public fun createPreviewLayer(): AVCaptureVideoPreviewLayer
+
+    /**
+     * Ends [layer], one [createPreviewLayer] made, once nothing shows it. CameraK's engine takes the
+     * session out of it on its session queue, so the layer is not freed on main still bound to the
+     * session; a layer made after it, which the session shows instead, stays bound.
+     */
+    public fun releasePreviewLayer(layer: AVCaptureVideoPreviewLayer) {}
 }
 
 /** How a source lays out the layers it made; CameraK's iOS engine implements it. */

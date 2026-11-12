@@ -78,11 +78,15 @@ internal class EngineRotation(
 
     private val coordinatesRotation: Boolean = osVersion >= ROTATION_COORDINATOR_IOS
 
-    /** A new preview layer: from iOS 17 the coordinator is bound again for it on the session queue. */
+    /**
+     * A new preview layer: from iOS 17 the coordinator is bound again for it on the session queue,
+     * after the queue has bound the layer to the session. Taken as the newest at once, a start already
+     * queued would make the coordinator for a layer with no session.
+     */
     fun adoptPreviewLayer(layer: AVCaptureVideoPreviewLayer) {
         if (!coordinatesRotation) return
-        lock.locked { newestPreviewLayer = layer }
         custom.afterQueuedSessionWork {
+            lock.locked { newestPreviewLayer = layer }
             platformCallback("binding the rotation coordinator") { bindOnQueue() }
         }
     }

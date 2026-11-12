@@ -107,6 +107,7 @@ private class PreviewLayerHostView(
 
     fun detach() {
         previewLayer.removeFromSuperlayer()
+        source.releasePreviewLayer(previewLayer)
     }
 }
 

@@ -248,6 +248,7 @@ abstract interface com.kashif.cameraK.engine/CameraEngine { // com.kashif.camera
 
 abstract interface com.kashif.cameraK.engine/PlatformPreviewSource { // com.kashif.cameraK.engine/PlatformPreviewSource|null[0]
     abstract fun createPreviewLayer(): platform.AVFoundation/AVCaptureVideoPreviewLayer // com.kashif.cameraK.engine/PlatformPreviewSource.createPreviewLayer|createPreviewLayer(){}[0]
+    open fun releasePreviewLayer(platform.AVFoundation/AVCaptureVideoPreviewLayer) // com.kashif.cameraK.engine/PlatformPreviewSource.releasePreviewLayer|releasePreviewLayer(platform.AVFoundation.AVCaptureVideoPreviewLayer){}[0]
 }
 
 abstract interface com.kashif.cameraK.frames/CameraFrame { // com.kashif.cameraK.frames/CameraFrame|null[0]

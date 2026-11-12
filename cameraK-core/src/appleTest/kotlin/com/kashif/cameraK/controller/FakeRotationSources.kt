@@ -21,6 +21,9 @@ internal class FakeRotationSources(
         /** Whether the engine made this source on the main thread, where AVFoundation's coordinator is made. */
         val onMainThread: Boolean,
     ) : RotationSource {
+        /** Whether [previewLayer] was bound to a session when the engine made this source. */
+        val previewLayerBound: Boolean = previewLayer?.session != null
+
         @Volatile
         var closed = false
             private set
