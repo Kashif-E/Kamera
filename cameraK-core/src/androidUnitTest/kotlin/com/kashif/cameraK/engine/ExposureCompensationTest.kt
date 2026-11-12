@@ -2,8 +2,10 @@
 
 package com.kashif.cameraK.engine
 
+import androidx.camera.core.CameraState
 import com.kashif.cameraK.capabilities.LensInfo
 import com.kashif.cameraK.controller.AndroidCameraEngine
+import com.kashif.cameraK.controller.FakeCamera
 import com.kashif.cameraK.controller.FakeMetering
 import com.kashif.cameraK.engine.FakeAndroidPlatform.Companion.CONTRACT_CAMERAS
 import com.kashif.cameraK.engine.FakeAndroidPlatform.Companion.desired
@@ -171,6 +173,98 @@ class ExposureCompensationTest {
         assertEquals(listOf(5, 5), metering.exposureRequests, "the index once the session streamed")
         assertEquals(5, engine.hardware.value.exposureCompensationIndex)
         engine.closeAndJoin()
+    }
+
+    // An interruption closes the camera, and CameraX returns its index to 0; the camera reopens in the same run, into a
+    // session CameraX configures anew, and a request sent before that session streams is lost.
+    @Test
+    fun theIndexIsReappliedOnlyOnceTheSessionReopenedAfterAnInterruptionStreams() = runTest {
+        val engine = open()
+        assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(5))
+        val camera = platform.camera!!
+        val sent = camera.metering.exposureRequests.size
+        platform.backend.streams = false
+
+        interruptAndReopen(camera)
+        assertEquals(sent, camera.metering.exposureRequests.size, "the index went out before the reopened session streamed")
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+
+        assertEquals(5, camera.metering.exposureRequests.last(), "the index once the reopened session streamed")
+        assertEquals(sent + 1, camera.metering.exposureRequests.size)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aFrameOfTheInterruptedSessionDoesNotLetTheReapplyOut() = runTest {
+        val engine = open()
+        assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(5))
+        val camera = platform.camera!!
+        val sent = camera.metering.exposureRequests.size
+        platform.backend.streams = false
+        val interrupted = platform.backend.currentSession()
+
+        camera.metering.onClosed()
+        camera.report(CameraState.create(CameraState.Type.OPENING, CameraState.StateError.create(CameraState.ERROR_CAMERA_IN_USE)))
+        platform.settle(testScheduler)
+        platform.backend.reportExposure(5, session = interrupted)
+        camera.report(CameraState.create(CameraState.Type.OPEN))
+        platform.settle(testScheduler)
+
+        assertEquals(sent, camera.metering.exposureRequests.size, "a frame of the interrupted session let the index out")
+        engine.closeAndJoin()
+    }
+
+    // The reopened session can stream before CameraX reports the camera open; its first result counts.
+    @Test
+    fun aReopenedSessionThatStreamsBeforeTheOpenReportGetsTheIndexAtTheOpen() = runTest {
+        val engine = open()
+        assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(5))
+        val camera = platform.camera!!
+        val sent = camera.metering.exposureRequests.size
+        platform.backend.streams = false
+
+        camera.metering.onClosed()
+        camera.report(CameraState.create(CameraState.Type.OPENING, CameraState.StateError.create(CameraState.ERROR_CAMERA_IN_USE)))
+        platform.settle(testScheduler)
+        platform.backend.reportExposure(0, session = "the reopened session")
+        camera.report(CameraState.create(CameraState.Type.OPEN))
+        platform.settle(testScheduler)
+
+        assertEquals(sent + 1, camera.metering.exposureRequests.size, "the index after the reopened session streamed")
+        assertEquals(5, engine.hardware.value.exposureCompensationIndex)
+        engine.closeAndJoin()
+    }
+
+    // While interrupted a command is NotReady; once the camera reports open, one sent before the reopened session
+    // streams waits for it.
+    @Test
+    fun aCommandSentAfterTheReopenGoesOutOnceTheReopenedSessionStreams() = runTest {
+        val engine = open()
+        val camera = platform.camera!!
+        platform.backend.streams = false
+        interruptAndReopen(camera)
+        val sent = camera.metering.exposureRequests.size
+
+        val set = async { engine.setExposureCompensation(4) }
+        platform.settle(testScheduler)
+        assertEquals(sent, camera.metering.exposureRequests.size, "the request went out before the reopened session streamed")
+        platform.backend.reportExposure(0)
+        platform.settle(testScheduler)
+        platform.backend.reportExposure(4)
+        platform.settle(testScheduler)
+
+        assertEquals(CameraKResult.Success(Unit), set.await())
+        assertEquals(4, camera.metering.exposureRequests.last())
+        engine.closeAndJoin()
+    }
+
+    private fun TestScope.interruptAndReopen(camera: FakeCamera) {
+        camera.metering.onClosed()
+        camera.report(CameraState.create(CameraState.Type.OPENING, CameraState.StateError.create(CameraState.ERROR_CAMERA_IN_USE)))
+        platform.settle(testScheduler)
+        camera.report(CameraState.create(CameraState.Type.OPEN))
+        platform.settle(testScheduler)
     }
 
     @Test
