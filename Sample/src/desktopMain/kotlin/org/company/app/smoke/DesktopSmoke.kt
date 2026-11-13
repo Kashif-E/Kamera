@@ -52,7 +52,7 @@ internal fun smokeVerdict(
 ): SmokeVerdict {
     val reached = when (state) {
         null -> "no Ready or Error in time"
-        is CameraKState.Error -> "Error(${state.error})"
+        is CameraKState.Error -> "Error(${describe(state.error)})"
         else -> state.toString()
     }
     val passed = when (expect) {
@@ -64,10 +64,14 @@ internal fun smokeVerdict(
     val captured = when (photo) {
         null -> ""
         is CameraKResult.Success -> " photo=${photo.value.width}x${photo.value.height} bytes=$photoBytes"
-        is CameraKResult.Failure -> " photo failed: ${photo.error}"
+        is CameraKResult.Failure -> " photo failed: ${describe(photo.error)}"
     }
     return SmokeVerdict(passed, "${if (passed) "PASS" else "FAIL"} expect=$expect state=$reached$captured")
 }
+
+// The error's kind and the platform's cause, which says why a camera did not open.
+private fun describe(error: CameraKError): String =
+    error::class.simpleName + (error.cause?.let { " caused by ${it::class.simpleName}: ${it.message}" } ?: "")
 
 /**
  * Opens the camera in the Sample's window with its preview, asking for the camera permission as the

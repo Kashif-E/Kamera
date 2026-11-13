@@ -44,13 +44,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y "linux-headers-$(uname -r)" v4l2loopback-dkms ffmpeg xvfb
+          sudo apt-get install -y "linux-headers-$(uname -r)" v4l2loopback-dkms v4l-utils ffmpeg xvfb
           sudo modprobe v4l2loopback devices=1 video_nr=10 card_label="CameraK CI" exclusive_caps=1
+          # The node is root:video 0660; the runner user both feeds it and opens it.
+          sudo chmod 0666 /dev/video10
           # With exclusive_caps the node advertises capture only once a writer feeds it.
           nohup ffmpeg -nostdin -loglevel error -re -f lavfi -i testsrc2=size=1280x720:rate=30 \
             -pix_fmt yuyv422 -f v4l2 /dev/video10 > ffmpeg-v4l2.log 2>&1 &
           sleep 5
-          v4l2-ctl --list-devices || ls -l /dev/video*
+          v4l2-ctl --list-devices
+          v4l2-ctl -d /dev/video10 --all | head -20
 
       - name: Virtual camera (Windows, Unity Capture DirectShow filter)
         if: runner.os == 'Windows'
