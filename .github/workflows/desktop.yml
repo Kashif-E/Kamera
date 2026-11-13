@@ -52,8 +52,10 @@ jobs:
           nohup ffmpeg -nostdin -loglevel error -re -f lavfi -i testsrc2=size=1280x720:rate=30 \
             -pix_fmt yuyv422 -f v4l2 /dev/video10 > ffmpeg-v4l2.log 2>&1 &
           sleep 5
-          v4l2-ctl --list-devices
-          v4l2-ctl -d /dev/video10 --all | head -20
+          # Diagnostics only: v4l2-ctl exits non-zero when /dev/video0 does not exist.
+          v4l2-ctl --list-devices || true
+          v4l2-ctl -d /dev/video10 --all | head -20 || true
+          cat ffmpeg-v4l2.log
 
       - name: Virtual camera (Windows, Unity Capture DirectShow filter)
         if: runner.os == 'Windows'
