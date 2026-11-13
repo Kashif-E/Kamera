@@ -616,7 +616,6 @@ actual class CameraController(
         memoryManager.updateMemoryStatus()
 
         if (memoryManager.isUnderMemoryPressure()) {
-            memoryManager.clearBufferPools()
             System.gc()
         }
 
@@ -653,12 +652,10 @@ actual class CameraController(
 
     actual fun startSession() {
         memoryManager.updateMemoryStatus()
-        memoryManager.clearBufferPools()
     }
 
     actual fun stopSession() {
         cameraProvider?.unbindAll()
-        memoryManager.clearBufferPools()
     }
 
     actual fun addImageCaptureListener(listener: (ByteArray) -> Unit) {
@@ -1028,7 +1025,6 @@ actual class CameraController(
         recordingFinalizeChannel.close()
         imageProcessingExecutor.shutdown()
         analyzerExecutor.shutdown()
-        memoryManager.clearBufferPools()
     }
 }
 

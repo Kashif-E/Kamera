@@ -4,8 +4,6 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import kotlinx.atomicfu.atomic
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
 /**
  * Manages memory resources for camera operations on Android
@@ -14,17 +12,7 @@ import kotlin.concurrent.withLock
 object MemoryManager {
     private const val MEMORY_PRESSURE_THRESHOLD = 0.8
 
-    private val smallBufferLock = ReentrantLock()
-    private val mediumBufferLock = ReentrantLock()
-    private val largeBufferLock = ReentrantLock()
-
     private val memoryPressure = atomic(false)
-
-    private var memoryUsage = atomic(0.0)
-
-    private val smallBufferPool = mutableListOf<ByteArray>()
-    private val mediumBufferPool = mutableListOf<ByteArray>()
-    private val largeBufferPool = mutableListOf<ByteArray>()
 
     private var appContext: Context? = null
 
@@ -58,7 +46,6 @@ object MemoryManager {
         if (totalMemory > 0) {
             val usedMemory = totalMemory - availableMemory
             val usage = usedMemory.toDouble() / totalMemory.toDouble()
-            memoryUsage.value = usage
 
             if (usage > MEMORY_PRESSURE_THRESHOLD && !memoryPressure.value) {
                 memoryPressure.value = true
@@ -75,29 +62,12 @@ object MemoryManager {
     }
 
     /**
-     * Handle high memory pressure situation
+     * Handle high memory pressure situation.
+     *
+     * Only a collection hint: this used to also clear buffer pools that nothing ever filled.
      */
     private fun handleHighMemoryPressure() {
-        clearBufferPools()
         System.gc()
-    }
-
-    /**
-     * Clear all buffer pools to free memory
-     * Should be called when memory pressure is detected
-     */
-    fun clearBufferPools() {
-        smallBufferLock.withLock {
-            smallBufferPool.clear()
-        }
-
-        mediumBufferLock.withLock {
-            mediumBufferPool.clear()
-        }
-
-        largeBufferLock.withLock {
-            largeBufferPool.clear()
-        }
     }
 
     /**
