@@ -78,6 +78,17 @@ jobs:
           $p = Start-Process regsvr32.exe -ArgumentList '/s', "`"$dll`"" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "regsvr32 exited $($p.ExitCode)" }
 
+      - name: "Diagnostics: FFmpeg's own CLI lists and grabs the virtual camera (Windows)"
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress | Out-Null
+          ffmpeg -hide_banner -f dshow -list_devices true -i dummy 2>&1 | Select-Object -First 20
+          ffmpeg -hide_banner -f dshow -i "video=Unity Video Capture" -frames:v 1 -y unity.png 2>&1 | Select-Object -Last 15
+          Write-Output "ffmpeg exit $LASTEXITCODE"
+          if (Test-Path unity.png) { Get-Item unity.png | Select-Object Name, Length }
+
       - name: Run the Sample's smoke (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a -s "-screen 0 1920x1080x24" ./gradlew :Sample:run --no-daemon --args="-cameraKSmoke -cameraKSmokeTimeout 90"
