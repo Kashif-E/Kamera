@@ -64,6 +64,19 @@ internal class FramePipeline(
     @Volatile
     var onConsumersChanged: () -> Unit = {}
 
+    /**
+     * Runs on main when [streaming] changes: after the analyzer is set, and before it is
+     * cleared, so whatever keeps the session's repeating request in its place starts first.
+     */
+    @Volatile
+    var onStreamingChanged: () -> Unit = {}
+
+    /**
+     * Whether the bound ImageAnalysis streams: with an analyzer set it is active in CameraX and keeps the
+     * capture session's repeating request; without one it is inactive and streams nothing. Main thread.
+     */
+    val streaming: Boolean get() = analysis != null && multiplexerAttached
+
     // Whether the current bind includes the ImageAnalysis: what a registration's `active` shows.
     @Volatile
     private var outputBound = false
@@ -151,10 +164,13 @@ internal class FramePipeline(
         // QR/OCR) is too heavy to block the UI thread.
         if (wanted) {
             backend.setAnalyzer(current, analyzerExecutor, multiplexer)
+            multiplexerAttached = true
         } else {
+            multiplexerAttached = false
+            onStreamingChanged()
             backend.clearAnalyzer(current)
         }
-        multiplexerAttached = wanted
+        if (wanted) onStreamingChanged()
     }
 
     /** Stops frame delivery, before anything the consumers use goes away. */

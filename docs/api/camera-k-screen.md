@@ -97,8 +97,10 @@ With `tapToFocus`, a tap on the content rectangle calls `holder.focusAt` there, 
 supports a focus point, and `focusIndicator` shows at the tap; see
 [Focus and Exposure](../guides/focus-and-exposure.md).
 
-Two previews of one holder, as in a crossfade, both show it. To run the camera with no preview at
-all, use the holder without `CameraPreview`.
+Two previews of one holder, as in a crossfade or a preview in a dialog over a screen's: on desktop
+both show the camera; on Android and iOS the newer one does, the camera session drawing into one
+preview at a time, and once it leaves the composition the older one shows the camera again. To run
+the camera with no preview at all, use the holder without `CameraPreview`.
 
 ## CameraPreviewScope
 

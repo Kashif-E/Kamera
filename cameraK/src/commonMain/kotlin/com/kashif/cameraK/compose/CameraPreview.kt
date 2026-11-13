@@ -25,8 +25,9 @@ import com.kashif.cameraK.utils.InternalCameraKApi
  * frame's own.
  *
  * The preview only attaches to the camera's session and detaches when it leaves the composition: it
- * never opens or closes the camera, which the holder does. Two previews of one holder, as in a
- * crossfade, both show it.
+ * never opens or closes the camera, which the holder does. Of two previews of one holder, as in a
+ * crossfade or a dialog over a screen, desktop shows the camera in both; Android and iOS in the newer,
+ * and in the older again once the newer leaves.
  *
  * @param holder The camera to show.
  * @param modifier Modifier for the preview's box.

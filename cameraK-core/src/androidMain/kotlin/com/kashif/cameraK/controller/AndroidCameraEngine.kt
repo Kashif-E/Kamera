@@ -135,12 +135,13 @@ internal class AndroidCameraEngine(
 
     override val frames: FrameSource get() = framePipeline
 
-    private val previewSource =
+    private val previewSource: EnginePreviewSource =
         EnginePreviewSource(
             config.aspectRatio,
             onMain = ::onMain,
             onDisplayAttached = ::onDisplayChanged,
             launch = ::launch,
+            analysisStreaming = { framePipeline.streaming },
         )
     override val preview: PlatformPreviewSource get() = previewSource
 
@@ -263,6 +264,7 @@ internal class AndroidCameraEngine(
         // later only joins it (Decision 14).
         if (config.frameAnalysis) framePipeline.requestAnalysis()
         framePipeline.onConsumersChanged = { onMain(recordingBinding::bindAnalysisOrApplyConsumers) }
+        framePipeline.onStreamingChanged = previewSource::onAnalysisStreamingChanged
     }
 
     override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> {

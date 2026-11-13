@@ -34,8 +34,9 @@ import platform.UIKit.UIView
  * Hosts a preview layer of the engine's session in a view of its own, over the whole box, with the
  * overlay over the content rectangle: the box the layer fills, of the engine's aspect ratio turned to
  * the interface orientation the host view reads on each layout pass (null until it has a window
- * scene, when the box's shape decides, as for the layer). It never starts the camera, and composing
- * it twice gives two layers on one session.
+ * scene, when the box's shape decides, as for the layer). It never starts the camera. Composing it
+ * twice gives two layers on one session, which shows the camera in the newer, and in the older again
+ * once the newer is released.
  */
 @Composable
 internal actual fun EnginePreview(
