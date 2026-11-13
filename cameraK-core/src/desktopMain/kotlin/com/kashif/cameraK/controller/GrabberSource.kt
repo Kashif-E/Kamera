@@ -63,12 +63,40 @@ internal suspend fun GrabberSource.open(
                 own(relaxed)
                 relaxed.start()
             }
+            return OpenedDevice(relaxed, relaxed = true)
         } catch (retry: Exception) {
             if (retry !is CancellationException) retry.addSuppressed(e)
-            throw retry
+            // macOS asks for CameraK's rate first (ffmpegGrabber); a camera whose modes top out
+            // elsewhere, such as 29.97, opens only at avfoundation's own default rate.
+            if (retry is CancellationException || os != OperatingSystem.MAC || relaxed.frameRate <= 0) throw retry
+            own(null)
+            release(relaxed)
+            return openAtDefaultRate(device, own, os, retry)
         }
-        return OpenedDevice(relaxed, relaxed = true)
     }
+}
+
+private suspend fun GrabberSource.openAtDefaultRate(
+    device: LensInfo,
+    own: (FrameGrabber?) -> Unit,
+    os: OperatingSystem,
+    earlier: Exception,
+): OpenedDevice {
+    CameraKLogger.w(TAG, "Opening the camera at its own mode and CameraK's frame rate failed; retrying at its rate")
+    val grabber = create(device, constrained = false).also {
+        prepare(it, os)
+        it.frameRate = 0.0
+    }
+    try {
+        blockingCall {
+            own(grabber)
+            grabber.start()
+        }
+    } catch (last: Exception) {
+        if (last !is CancellationException) last.addSuppressed(earlier)
+        throw last
+    }
+    return OpenedDevice(grabber, relaxed = true)
 }
 
 // FFmpeg reads macOS cameras through AVFoundation; the 1.x loop set the format on every FFmpeg grabber.
