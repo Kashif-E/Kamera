@@ -12,13 +12,11 @@ import org.bytedeco.ffmpeg.avdevice.AVDeviceInfoList
 import org.bytedeco.ffmpeg.avformat.AVFormatContext
 import org.bytedeco.ffmpeg.avformat.AVInputFormat
 import org.bytedeco.ffmpeg.avutil.AVDictionary
-import org.bytedeco.ffmpeg.avutil.Callback_Pointer_int_String_Pointer
 import org.bytedeco.ffmpeg.avutil.LogCallback
 import org.bytedeco.ffmpeg.global.avdevice
 import org.bytedeco.ffmpeg.global.avformat
 import org.bytedeco.ffmpeg.global.avutil
 import org.bytedeco.javacpp.BytePointer
-import org.bytedeco.javacpp.Pointer
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
@@ -364,7 +362,7 @@ private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synch
         if (previous != null && !previous.isNull) {
             avutil.setLogCallback(previous)
         } else {
-            avutil.av_log_set_callback(FfmpegDefaultLog)
+            avutil.setLogCallback(StandardErrorLog)
         }
         avutil.av_log_set_level(level)
         capture.close()
@@ -375,10 +373,15 @@ private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synch
 /** Serialises the queries that swap FFmpeg's process-wide log callback. */
 private object DshowLogQuery
 
-/** FFmpeg's default log callback, called through Java: set back when the app had set no callback of its own. */
-private object FfmpegDefaultLog : Callback_Pointer_int_String_Pointer() {
-    override fun call(avcl: Pointer?, level: Int, fmt: String?, vl: Pointer?) =
-        avutil.av_log_default_callback(avcl, level, fmt, vl)
+/**
+ * FFmpeg's lines to standard error, as its default callback writes them: set when the app had set no
+ * callback of its own. A raw av_log callback thunk jumped to address 0 on Windows (windows-2025
+ * runner); JavaCPP's LogCallback, which JavaCV's FFmpegLogCallback uses too, does not.
+ */
+private object StandardErrorLog : LogCallback() {
+    override fun call(level: Int, msg: BytePointer) {
+        System.err.print(msg.string)
+    }
 }
 
 /** AVERROR(EIO), which dshow's device list returns whenever either category is empty. */
