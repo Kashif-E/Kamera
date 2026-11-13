@@ -309,6 +309,9 @@ private fun dshowSources(): List<DshowSource> {
     }
 }
 
+/** The dshow sources in the older list_devices query's [log]; stub. */
+internal fun parseDshowListing(log: String): List<DshowSource> = emptyList()
+
 // A source that names no media type is kept: only one that names others is left out.
 private fun AVDeviceInfo.isVideo(): Boolean {
     val count = nb_media_types()
