@@ -395,7 +395,7 @@ private fun cameraDeviceLock(deviceKey: Any): Mutex = when (deviceKey) {
 private fun BufferedImage.copy(): BufferedImage = BufferedImage(colorModel, copyData(null), isAlphaPremultiplied, null)
 
 // The frame rate the default camera is asked for.
-private const val DEFAULT_CAMERA_FRAME_RATE = 30.0
+internal const val DEFAULT_CAMERA_FRAME_RATE = 30.0
 
 private const val TAG = "CameraK"
 private const val PRODUCER_THREAD = "CameraK-grabber"
