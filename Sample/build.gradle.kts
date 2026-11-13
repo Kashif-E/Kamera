@@ -82,6 +82,9 @@ kotlin {
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutines.swing)
+            // CameraK reads macOS's camera authorization and lists the cameras through JNA, which it
+            // declares compile-only; without it macOS offers only the default camera.
+            runtimeOnly(libs.jna)
         }
     }
 }

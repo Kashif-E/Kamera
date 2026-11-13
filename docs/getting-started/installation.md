@@ -140,6 +140,14 @@ runtimeOnly("org.bytedeco:leptonica:1.85.0-1.5.12:macosx-arm64")    // camerak-o
 
 or depend on the `-platform` artifacts (`ffmpeg-platform`, `javacpp-platform`, ...) and narrow them with the [`org.bytedeco.gradle-javacpp-platform`](https://github.com/bytedeco/gradle-javacpp) plugin, setting `javacppPlatform` (or `-Djavacpp.platform=macosx-arm64` on the Gradle command line) to the platforms you ship. Without natives the camera does not open: the holder's state becomes `CameraKState.Error` with `CameraKError.NativeLibraryMissing`, which names the bytedeco platform and keeps JavaCV's `NoClassDefFoundError` ("Could not initialize class org.bytedeco.ffmpeg.global.avutil") as its cause. The OCR plugin's recognitions fail the same way without the Tesseract natives. The Sample's `build.gradle.kts` adds the natives for the machine that builds it.
 
+On macOS, also ship JNA, which CameraK declares compile-only:
+
+```kotlin
+runtimeOnly("net.java.dev.jna:jna:5.14.0")   // desktopMain
+```
+
+CameraK reads the camera's authorization and lists the cameras through it. Without JNA the app offers only the default camera, and `CameraKPermission.CAMERA` reads `NotDetermined` until the camera opens, which shows macOS's prompt.
+
 On macOS, a packaged app (DMG or PKG) that opens the camera without a camera usage description is
 denied or killed by the system's privacy controls (TCC). `./gradlew run` does not show the
 problem, because the terminal already holds the camera permission. Add the description, and the
