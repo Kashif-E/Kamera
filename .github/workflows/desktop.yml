@@ -85,8 +85,13 @@ jobs:
         run: |
           choco install ffmpeg -y --no-progress | Out-Null
           ffmpeg -hide_banner -f dshow -list_devices true -i dummy 2>&1 | Select-Object -First 20
-          ffmpeg -hide_banner -f dshow -i "video=Unity Video Capture" -frames:v 1 -y unity.png 2>&1 | Select-Object -Last 15
-          Write-Output "ffmpeg exit $LASTEXITCODE"
+          ffmpeg -hide_banner -f dshow -i "video=Unity Video Capture" -frames:v 1 -update 1 -y unity.png 2>&1 | Select-Object -Last 6
+          Write-Output "ffmpeg (native mode) exit $LASTEXITCODE"
+          ffmpeg -hide_banner -f dshow -list_options true -i "video=Unity Video Capture" 2>&1 | Select-Object -First 25
+          # As CameraK opens it: by its alternative name, at 1280x720 and 30 fps.
+          $alt = (ffmpeg -hide_banner -f dshow -list_devices true -i dummy 2>&1 | Select-String 'Alternative name "(@device_sw[^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          ffmpeg -hide_banner -f dshow -video_size 1280x720 -framerate 30 -i "video=$alt" -frames:v 1 -update 1 -y unity720.png 2>&1 | Select-Object -Last 6
+          Write-Output "ffmpeg (1280x720@30 by alternative name) exit $LASTEXITCODE"
           if (Test-Path unity.png) { Get-Item unity.png | Select-Object Name, Length }
 
       - name: Run the Sample's smoke (Linux)
