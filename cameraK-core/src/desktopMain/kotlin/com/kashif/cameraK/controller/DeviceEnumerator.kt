@@ -462,9 +462,9 @@ private fun AVDeviceInfo.isVideo(): Boolean {
 }
 
 /**
- * An FFmpeg grabber for [input] at [size] and CameraK's frame rate, or at the camera's own mode. The
- * avfoundation input has no own mode without a frame rate: it asks for 29.97 by default and opens only
- * a format whose top rate matches, which no FaceTime camera mode does, so there it keeps CameraK's.
+ * An FFmpeg grabber for [input] at [size] and CameraK's frame rate, or with no size. Given no size, the
+ * avfoundation input fails unless one of the camera's formats tops out at the rate asked for, 29.97
+ * by default, which no FaceTime camera mode does, so there it asks for CameraK's rate.
  */
 internal fun ffmpegGrabber(input: DeviceInput, size: Pair<Int, Int>?): FrameGrabber =
     FFmpegFrameGrabber(input.name).apply {

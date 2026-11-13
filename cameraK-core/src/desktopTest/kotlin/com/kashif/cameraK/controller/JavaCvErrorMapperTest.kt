@@ -111,6 +111,45 @@ class JavaCvErrorMapperTest {
         assertEquals(1, released.size, "only the first grabber is the opener's to release; the caller owns the retry")
     }
 
+    // A camera whose modes top out at 29.97 (an NTSC capture device) opens at no 30 fps mode; the
+    // macOS own-mode open asks for 30 first, then for avfoundation's own default rate, 29.97.
+    @Test
+    fun onMacAnOwnModeOpenAtCameraKsRateIsTriedOnceMoreWithoutARate() = runBlocking {
+        val constrained = OpeningGrabber(FrameGrabber.Exception(openError(-5, "Input/output error")))
+        val atThirty = OpeningGrabber(FrameGrabber.Exception(openError(-5, "Input/output error")))
+            .apply { frameRate = 30.0 }
+        val atDefault = OpeningGrabber(null).apply { frameRate = 30.0 }
+        val source = ScriptedSource(canRelax = true, constrained, atThirty, atDefault)
+        var owned: FrameGrabber? = null
+        val released = mutableListOf<FrameGrabber>()
+
+        val opened = source.open(device, own = { owned = it }, release = { released += it }, os = OperatingSystem.MAC)
+
+        assertSame(atDefault, opened.grabber)
+        assertTrue(opened.relaxed)
+        assertEquals(0.0, atDefault.frameRate, "the last attempt still asked for a frame rate")
+        assertEquals(listOf(true, false, false), source.constrainedRequests)
+        assertEquals(listOf<FrameGrabber>(constrained, atThirty), released)
+        assertSame(atDefault, owned)
+    }
+
+    @Test
+    fun offMacAFailedOwnModeOpenIsNotTriedAgain() = runBlocking {
+        val failure = FrameGrabber.Exception(openError(-5, "Input/output error"))
+        val source = ScriptedSource(
+            canRelax = true,
+            OpeningGrabber(FrameGrabber.Exception(openError(-22, "Invalid argument"))),
+            OpeningGrabber(failure).apply { frameRate = 30.0 },
+        )
+
+        val thrown = assertFailsWith<FrameGrabber.Exception> {
+            source.open(device, own = {}, release = {}, os = OperatingSystem.LINUX)
+        }
+
+        assertSame(failure, thrown)
+        assertEquals(listOf(true, false), source.constrainedRequests)
+    }
+
     @Test
     fun missingNativesAreNotRetried() = runBlocking {
         val failure = FrameGrabber.Exception("Failed to load class org.bytedeco.javacv.FFmpegFrameGrabber")
