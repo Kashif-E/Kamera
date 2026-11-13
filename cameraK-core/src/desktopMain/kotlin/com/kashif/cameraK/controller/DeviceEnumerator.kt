@@ -295,10 +295,16 @@ private fun dshowSources(): List<DshowSource> {
     val dshow = avformat.av_find_input_format("dshow") ?: error("This FFmpeg build has no dshow input")
     val listOut = PointerPointer<AVDeviceInfoList>(1L)
     try {
+        // Once the list has failed for want of an audio device, it fails every time: the process lists
+        // through the log from then on.
+        if (dshowListFails) return dshowSourcesFromLog(dshow)
         val result = avdevice.avdevice_list_input_sources(dshow, null as BytePointer?, null, listOut)
         // dshow returns the audio category's result: with no audio capture device the list fails, and is
         // freed, whatever cameras there are.
-        if (result == AVERROR_EIO) return dshowSourcesFromLog(dshow)
+        if (result == AVERROR_EIO) {
+            dshowListFails = true
+            return dshowSourcesFromLog(dshow)
+        }
         check(result >= 0) { "avdevice_list_input_sources failed with $result" }
         val list = listOut.get(AVDeviceInfoList::class.java, 0L)
         if (list == null || list.isNull) return emptyList()
@@ -367,8 +373,14 @@ private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synch
         avutil.av_log_set_level(level)
         capture.close()
     }
-    parseDshowListing(log.toString())
+    parseDshowListing(log.toString()).also {
+        CameraKLogger.d(TAG, "FFmpeg's list_devices query found ${it.count { source -> source.isVideo }} video sources")
+    }
 }
+
+/** Whether dshow's device list failed with EIO in this process; it then fails on every call. */
+@Volatile
+private var dshowListFails = false
 
 /** Serialises the queries that swap FFmpeg's process-wide log callback. */
 private object DshowLogQuery
