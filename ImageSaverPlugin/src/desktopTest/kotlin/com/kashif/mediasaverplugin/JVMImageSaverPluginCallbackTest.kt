@@ -57,7 +57,8 @@ class JVMImageSaverPluginCallbackTest {
 
         val result = desktopSaver(home).save(gone, "not-an-image")
 
-        assertIs<CameraKResult.Failure>(result, "save result for a capture whose file is gone")
+        val failure = assertIs<CameraKResult.Failure>(result, "save result for a capture whose file is gone")
+        assertEquals(StorageFailure.NOT_FOUND, assertIs<CameraKError.Storage>(failure.error).kind)
     }
 
     // The 1.x case read the failure callback's text; in 2.0 the text a failure reaches anyone through
@@ -114,5 +115,13 @@ class JVMImageSaverPluginCallbackTest {
     private fun jpeg(): ByteArray {
         val image = BufferedImage(8, 8, BufferedImage.TYPE_3BYTE_BGR)
         return ByteArrayOutputStream().also { check(ImageIO.write(image, "jpg", it)) }.toByteArray()
+    }
+
+    // A capture path the platform cannot parse fails the save; it is not thrown at the caller.
+    @Test
+    fun aCapturePathThePlatformCannotParse_failsTheSave() = runTest {
+        val result = desktopSaver(home).save(FakeCaptures.image(path = "bad\u0000path.jpg"), "shot")
+
+        assertIs<CameraKResult.Failure>(result, "save result for an unparseable capture path")
     }
 }

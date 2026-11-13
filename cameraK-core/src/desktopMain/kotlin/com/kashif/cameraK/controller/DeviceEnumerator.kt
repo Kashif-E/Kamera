@@ -9,10 +9,15 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import org.bytedeco.ffmpeg.avdevice.AVDeviceInfo
 import org.bytedeco.ffmpeg.avdevice.AVDeviceInfoList
+import org.bytedeco.ffmpeg.avformat.AVFormatContext
+import org.bytedeco.ffmpeg.avformat.AVInputFormat
+import org.bytedeco.ffmpeg.avutil.AVDictionary
+import org.bytedeco.ffmpeg.avutil.LogCallback
 import org.bytedeco.ffmpeg.global.avdevice
 import org.bytedeco.ffmpeg.global.avformat
 import org.bytedeco.ffmpeg.global.avutil
 import org.bytedeco.javacpp.BytePointer
+import org.bytedeco.javacpp.Pointer
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
@@ -289,9 +294,20 @@ internal class VideoInputCaptureBackend : WindowsCaptureBackend {
 private fun dshowSources(): List<DshowSource> {
     avdevice.avdevice_register_all()
     val dshow = avformat.av_find_input_format("dshow") ?: error("This FFmpeg build has no dshow input")
-    val listOut = PointerPointer<AVDeviceInfoList>(1L)
+    // Once the list has failed for want of an audio device, it fails every time: the process lists
+    // through the log from then on.
+    if (dshowListFails) return dshowSourcesFromLog(dshow)
+    // JavaCPP does not zero the slot, and FFmpeg leaves it unwritten on some early errors; freed unwritten,
+    // it corrupted the heap (windows-2025 runner).
+    val listOut = PointerPointer<AVDeviceInfoList>(1L).put(0L, null as Pointer?)
     try {
         val result = avdevice.avdevice_list_input_sources(dshow, null as BytePointer?, null, listOut)
+        // dshow returns the audio category's result: with no audio capture device the list fails, and is
+        // freed, whatever cameras there are.
+        if (result == AVERROR_EIO) {
+            dshowListFails = true
+            return dshowSourcesFromLog(dshow)
+        }
         check(result >= 0) { "avdevice_list_input_sources failed with $result" }
         val list = listOut.get(AVDeviceInfoList::class.java, 0L)
         if (list == null || list.isNull) return emptyList()
@@ -308,6 +324,134 @@ private fun dshowSources(): List<DshowSource> {
         listOut.close()
     }
 }
+
+/**
+ * The dshow sources in the log of FFmpeg's list_devices query: a `"<friendly name>" (<media types>)`
+ * line for each device, then its `  Alternative name "<moniker>"`, each line prefixed by its context.
+ * A device that names no media type counts as video, as in [isVideo].
+ */
+internal fun parseDshowListing(log: String): List<DshowSource> {
+    val lines = log.lineSequence().map { it.replace(LOG_PREFIX, "") }.toList()
+    return lines.zipWithNext().mapNotNull { (device, next) ->
+        val (friendly, types) = DEVICE_LINE.matchEntire(device)?.destructured ?: return@mapNotNull null
+        val moniker = ALTERNATIVE_NAME_LINE.matchEntire(next)?.groupValues?.get(1) ?: return@mapNotNull null
+        val kinds = types.split(", ")
+        DshowSource(moniker, friendly, isVideo = "video" in kinds || "none" in kinds)
+    }
+}
+
+// FFmpeg's "[<class> @ <context>] " prefix, which can also land inside a line: the log callback's
+// line state is shared by every thread, so another thread's line can end mid-way through one.
+private val LOG_PREFIX = Regex("""\[\w+ @ [0-9A-Fa-fx]+] """)
+private val DEVICE_LINE = Regex(""""(.*)" \(([^()]*)\)""")
+private val ALTERNATIVE_NAME_LINE = Regex("""  Alternative name "(.*)"""")
+
+/**
+ * The dshow sources from FFmpeg's list_devices query, which logs every device, video first, whatever
+ * audio has. The query's log is read through [DshowLogTap], at INFO at least while it runs.
+ */
+private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synchronized(DshowLogTap) {
+    val log = StringBuffer()
+    val level = avutil.av_log_get_level()
+    if (level < avutil.AV_LOG_INFO) avutil.av_log_set_level(avutil.AV_LOG_INFO)
+    DshowLogTap.install()
+    DshowLogTap.recordFor(Thread.currentThread(), log)
+    val context = AVFormatContext(null)
+    val options = AVDictionary(null)
+    try {
+        avutil.av_dict_set(options, "list_devices", "true", 0)
+        // Always AVERROR_EXIT once the devices are logged; FFmpeg frees the context.
+        avformat.avformat_open_input(context, "dummy", dshow, options)
+    } finally {
+        DshowLogTap.recordFor(null, null)
+        avutil.av_dict_free(options)
+        avutil.av_log_set_level(level)
+    }
+    parseDshowListing(log.toString()).also {
+        CameraKLogger.d(TAG, "FFmpeg's list_devices query found ${it.count { source -> source.isVideo }} video sources")
+    }
+}
+
+/**
+ * FFmpeg's process-wide log callback once a list_devices query has run: installed once and never
+ * closed or replaced, it passes each line to the callback the app had set, or to standard error as
+ * FFmpeg's default does, and records the lines while a query runs. A callback set back after the query
+ * and the query's own closed one both left FFmpeg calling address 0 on its next line (windows-2025).
+ */
+private object DshowLogTap {
+    // The query's own thread and its log: dshow logs the devices on the thread that queries, while other
+    // threads' lines, logged at the same time, would break a device line apart.
+    @Volatile
+    private var recording: Pair<Thread, StringBuffer>? = null
+
+    @Volatile
+    private var app: LogCallback? = null
+    private var tap: LogCallback? = null
+
+    fun recordFor(thread: Thread?, log: StringBuffer?) {
+        recording = if (thread != null && log != null) thread to log else null
+    }
+
+    /**
+     * Makes the tap FFmpeg's callback, set again on every query. The app's callback is read once,
+     * before the first install: JavaCPP's getter gives no stable value for the tap (on windows-2025 its
+     * wrapper never compared equal to the tap, nor to its own earlier value), so read again it could be
+     * the tap itself, which then forwarded to itself until the stack overflowed. An app that sets its own
+     * FFmpeg log callback after CameraK first lists cameras through the log loses it at the next listing.
+     */
+    fun install() {
+        val installed = tap
+        if (installed != null) {
+            avutil.setLogCallback(installed)
+            return
+        }
+        app = avutil.logCallback()?.takeUnless { it.isNull }
+        val callback = object : LogCallback() {
+            // Called by FFmpeg: nothing may be thrown back into it, not even by the app's log sink.
+            override fun call(level: Int, msg: BytePointer) {
+                try {
+                    val (thread, log) = recording ?: (null to null)
+                    if (thread === Thread.currentThread()) log?.append(msg.string)
+                    if (!forwarded(level, msg)) System.err.print(msg.string)
+                } catch (e: Throwable) {
+                    warnSafely("An FFmpeg log line could not be read", e)
+                }
+            }
+        }
+        tap = callback
+        avutil.setLogCallback(callback)
+    }
+
+    // The app's callback, while it can be called. JavaCPP hands back a wrapper even when none was set,
+    // whose function pointer is null (windows-2025): that one is dropped after its first refusal.
+    private fun forwarded(level: Int, msg: BytePointer): Boolean {
+        val forward = app ?: return false
+        return try {
+            forward.call(level, msg)
+            true
+        } catch (e: RuntimeException) {
+            app = null
+            warnSafely("The earlier FFmpeg log callback could not be called; lines go to standard error", e)
+            false
+        }
+    }
+
+    // The app's log sink may throw; inside FFmpeg's callback nothing may.
+    private fun warnSafely(message: String, cause: Throwable) {
+        try {
+            CameraKLogger.w(TAG, message, cause)
+        } catch (e: Throwable) {
+            System.err.println("CameraK: $message ($cause); the log sink failed too: $e")
+        }
+    }
+}
+
+/** Whether dshow's device list failed with EIO in this process; it then fails on every call. */
+@Volatile
+private var dshowListFails = false
+
+/** AVERROR(EIO), which dshow's device list returns whenever either category is empty. */
+private const val AVERROR_EIO = -5
 
 // A source that names no media type is kept: only one that names others is left out.
 private fun AVDeviceInfo.isVideo(): Boolean {

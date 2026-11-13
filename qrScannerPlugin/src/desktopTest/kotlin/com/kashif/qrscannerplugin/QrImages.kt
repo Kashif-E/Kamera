@@ -12,7 +12,7 @@ import com.google.zxing.BarcodeFormat as ZxingFormat
 
 /**
  * A [width] x [height] scene with a code for [text] at ([left], [top]), or centred when they are
- * null, drawn in [dark] on [light]. A QR code is three quarters of the shorter side; a 1D barcode
+ * null, drawn in [dark] on [light]. A QR code or Data Matrix is three quarters of the shorter side; a 1D barcode
  * is three quarters of the width and a third of the height.
  */
 internal fun codeScene(
@@ -26,7 +26,7 @@ internal fun codeScene(
     top: Int? = null,
 ): BufferedImage {
     val (codeWidth, codeHeight) = when (format) {
-        ZxingFormat.QR_CODE -> (minOf(width, height) * 3 / 4).let { it to it }
+        ZxingFormat.QR_CODE, ZxingFormat.DATA_MATRIX -> (minOf(width, height) * 3 / 4).let { it to it }
         else -> width * 3 / 4 to height / 3
     }
     val matrix = MultiFormatWriter().encode(

@@ -194,4 +194,23 @@ class ZxingDecoderTest {
         assertEquals("héllo", found.rawValue)
         assertContentEquals("héllo".encodeToByteArray(), found.rawBytes)
     }
+
+    // #188: 1.x's Android scanner never tried Data Matrix, which its fixed format list left out. In 2.0 an
+    // app lists the formats it reads, and the decoder Android and desktop share reads a Data Matrix.
+    @Test
+    fun decodesADataMatrixWhenItIsAConfiguredFormat() {
+        val scene = codeScene("CAMERAK-DM-188", 320, 240, format = ZxingFormat.DATA_MATRIX)
+
+        val found = decoder(setOf(BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX)).decode(scene.lumaImage())
+
+        assertEquals(listOf("CAMERAK-DM-188"), found.map { it.rawValue })
+        assertEquals(BarcodeFormat.DATA_MATRIX, found.single().format)
+    }
+
+    @Test
+    fun aDataMatrixIsNotReadUnderTheQrOnlyDefault() {
+        val scene = codeScene("CAMERAK-DM-188", 320, 240, format = ZxingFormat.DATA_MATRIX)
+
+        assertEquals(emptyList(), decoder().decode(scene.lumaImage()))
+    }
 }
