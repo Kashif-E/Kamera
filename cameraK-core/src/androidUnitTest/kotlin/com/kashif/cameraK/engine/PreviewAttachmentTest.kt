@@ -6,17 +6,21 @@ import android.view.Display
 import androidx.camera.core.Preview
 import com.kashif.cameraK.engine.FakeAndroidPlatform.Companion.desired
 import com.kashif.cameraK.enums.AspectRatio
+import com.kashif.cameraK.enums.CameraDeviceType
+import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.frames.FrameSpec
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.InternalCameraKApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
@@ -131,6 +135,9 @@ class PreviewAttachmentTest {
         platform.settle(testScheduler)
 
         middle.close()
+        platform.settle(testScheduler)
+        assertSame(third, platform.boundPreview().surfaceProvider, "closing an older preview took the newest's surface")
+
         newest.close()
         platform.settle(testScheduler)
 
@@ -193,6 +200,27 @@ class PreviewAttachmentTest {
         platform.settle(testScheduler)
 
         assertNotNull(platform.boundPreview().surfaceProvider, "a bind with an idle ImageAnalysis has no stream")
+        engine.closeAndJoin()
+    }
+
+    // A registration closed on the analysis thread posts its consumer change to main; a rebind queued on main
+    // before it builds the new ImageAnalysis without an analyzer, so the bind must not count the old one's stream.
+    @Test
+    fun aRebindAsTheLastAnalyzerLeavesHasTheStandIn() = runTest {
+        val engine = platform.engine(testScheduler, CameraConfiguration { frameAnalysis = true })
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        val registration = engine.frames.register(FrameSpec(synchronous = true)) { }
+        platform.settle(testScheduler)
+        val applyConsumers = engine.framePipeline.onConsumersChanged
+        engine.framePipeline.onConsumersChanged = {}
+
+        registration.close()
+        val switch = async { engine.selectCamera(CameraSelection.ByLens(CameraLens.FRONT, CameraDeviceType.DEFAULT)) }
+        platform.settle(testScheduler)
+        assertIs<CameraKResult.Success<*>>(switch.await(), "the lens switch")
+
+        assertNotNull(platform.boundPreview().surfaceProvider, "the rebind left no stream as the last analyzer went")
+        engine.framePipeline.onConsumersChanged = applyConsumers
         engine.closeAndJoin()
     }
 

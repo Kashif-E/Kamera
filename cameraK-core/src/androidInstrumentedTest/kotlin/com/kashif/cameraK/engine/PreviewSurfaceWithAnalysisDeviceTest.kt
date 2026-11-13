@@ -18,6 +18,7 @@ import com.kashif.cameraK.frames.FrameSpec
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
+import com.kashif.cameraK.video.VideoConfiguration
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -113,6 +114,21 @@ internal class PreviewSurfaceWithAnalysisDeviceTest {
         }
     }
 
+    // A prepared recording binds a VideoCapture, which streams only while it records.
+    @Test
+    fun aPhotoIsCapturedWithAPreparedRecordingAndNoPreview() = driver.runCase {
+        val engine = startedEngine(CameraConfiguration())
+        try {
+            val prepared = engine.prepareRecording(VideoConfiguration { enableAudio = false })
+            assertEquals(CameraKResult.Success(Unit), prepared, "preparing the recording")
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(INDEX))
+            assertPhotoCaptured(engine, "with a prepared recording and no preview")
+        } finally {
+            engine.close()
+        }
+    }
+
     private suspend fun closePreviewAndWaitOutTheGrace(engine: CameraEngine) {
         val attachment = engine.preview.attach(drainingSurface, null)
         driver.settle()
@@ -127,8 +143,10 @@ internal class PreviewSurfaceWithAnalysisDeviceTest {
         (captured.value as? CapturedImage)?.path?.let { File(it).delete() }
     }
 
-    private suspend fun startedEngine(): CameraEngine {
-        val engine = driver.createEngine(CameraConfiguration { frameAnalysis = true })
+    private suspend fun startedEngine(
+        config: CameraConfiguration = CameraConfiguration { frameAnalysis = true },
+    ): CameraEngine {
+        val engine = driver.createEngine(config)
         driver.settle()
         val back = DesiredHardware(
             selection = CameraSelection.ByLens(CameraLens.BACK, CameraDeviceType.DEFAULT),
