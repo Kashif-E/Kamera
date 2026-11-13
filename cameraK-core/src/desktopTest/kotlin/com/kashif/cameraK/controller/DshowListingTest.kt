@@ -48,4 +48,14 @@ class DshowListingTest {
     fun aDeviceLineWithoutItsAlternativeNameIsLeftOut() {
         assertEquals(emptyList(), parseDshowListing("[dshow @ 01] \"Half\" (video)\n[dshow @ 01] unrelated\n"))
     }
+
+    // FFmpeg's log callback state is shared by every thread: another thread's line ending mid-way through a
+    // device line makes the next piece of it start with a context prefix.
+    @Test
+    fun aContextPrefixInsideALineIsStrippedToo() {
+        val log = "[dshow @ 0000a1] \"Unity Video Capture\"[dshow @ 0000a1]  (video)\n" +
+            "[dshow @ 0000a1]   Alternative name \"@device_sw_unity\"\n"
+
+        assertEquals(listOf("@device_sw_unity"), parseDshowListing(log).map { it.name })
+    }
 }

@@ -117,4 +117,16 @@ class GalleryAssetPathTest {
 
         assertContentEquals(capture.readBytes(), assertIs<CameraKResult.Success<ByteArray>>(sut.readBytes(saved)).value)
     }
+
+    // A dangling link in place of one CameraK folder fails reads in that folder only, not every read.
+    @Test
+    fun aDanglingDocumentsFolderLinkLeavesPicturesReadable() = runTest {
+        File(home, "Documents").mkdirs()
+        Files.createSymbolicLink(File(home, "Documents/CameraK").toPath(), File(home, "gone").toPath())
+        val config = MediaSaverConfig()
+        val sut = MediaSaverPlugin(config, DesktopGalleryStore(config, home), { error("never read") })
+        val saved = assertIs<CameraKResult.Success<SavedImage>>(sut.save(FakeCaptures.image(path = capture.path))).value
+
+        assertContentEquals(capture.readBytes(), assertIs<CameraKResult.Success<ByteArray>>(sut.readBytes(saved)).value)
+    }
 }

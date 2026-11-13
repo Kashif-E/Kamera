@@ -116,4 +116,12 @@ class JVMImageSaverPluginCallbackTest {
         val image = BufferedImage(8, 8, BufferedImage.TYPE_3BYTE_BGR)
         return ByteArrayOutputStream().also { check(ImageIO.write(image, "jpg", it)) }.toByteArray()
     }
+
+    // A capture path the platform cannot parse fails the save; it is not thrown at the caller.
+    @Test
+    fun aCapturePathThePlatformCannotParse_failsTheSave() = runTest {
+        val result = desktopSaver(home).save(FakeCaptures.image(path = "bad\u0000path.jpg"), "shot")
+
+        assertIs<CameraKResult.Failure>(result, "save result for an unparseable capture path")
+    }
 }
