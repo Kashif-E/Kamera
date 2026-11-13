@@ -26,6 +26,7 @@ private class DesktopMatrixPlatform(private val permissions: (CameraKPermission)
     override val deviceDescription = "${System.getProperty("os.name")} ${System.getProperty("os.version")}"
     override val reportDirectory: String = File(System.getProperty("user.home"), "camerak-matrix").path
     override val files: MatrixFiles = platformFiles
+    override val promptsOnOpen = System.getProperty("os.name").orEmpty().lowercase().contains("mac")
 
     override fun newHolder(config: CameraConfiguration, plugins: List<CameraKPlugin>): CameraKStateHolder =
         CameraKStateHolder(config, platformContext, plugins)

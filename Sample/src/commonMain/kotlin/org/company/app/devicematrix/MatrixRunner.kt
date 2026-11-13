@@ -68,6 +68,12 @@ internal interface MatrixPlatform {
     /** The permission's status as the app last read it; null before it has. */
     fun permission(permission: CameraKPermission): PermissionStatus?
 
+    /**
+     * Whether the camera's prompt shows only when the camera opens (macOS), with no microphone to ask
+     * for, rather than when the app asks.
+     */
+    val promptsOnOpen: Boolean get() = false
+
     /** One line under the tag CameraKMatrix. */
     fun log(line: String)
 }
@@ -123,8 +129,11 @@ internal class MatrixRunner(
         val started = clock.markNow()
         log("START ${platform.platformName}: ${platform.deviceDescription}; $args")
         // This phone must not be written to the photo library: gallery access is never asked for.
-        val permissions = listOf(CameraKPermission.CAMERA, CameraKPermission.MICROPHONE)
-            .map { it.name to awaitAnswer(it)?.toString() }
+        val permissions = if (platform.promptsOnOpen) {
+            promptByOpening()
+        } else {
+            listOf(CameraKPermission.CAMERA, CameraKPermission.MICROPHONE).map { it.name to awaitAnswer(it)?.toString() }
+        }
         val header = listOf(
             "platform" to platform.platformName,
             "device" to platform.deviceDescription,
@@ -224,6 +233,17 @@ internal class MatrixRunner(
             _progress.update { it.copy(current = "waiting for the $permission prompt") }
             delay(250)
         }
+    }
+
+    // The camera's prompt shows only once the camera opens, so a holder opens it while the runner waits
+    // for the answer; the microphone, which such a platform never opens, is read as it is.
+    private suspend fun promptByOpening(): List<Pair<String, String?>> {
+        val camera = withHolder(backCamera) { holder ->
+            holder.start()
+            awaitAnswer(CameraKPermission.CAMERA)
+        }
+        val microphone = platform.permission(CameraKPermission.MICROPHONE)
+        return listOf(CameraKPermission.CAMERA.name to camera?.toString(), CameraKPermission.MICROPHONE.name to microphone?.toString())
     }
 
     private suspend fun probe(): CameraCapabilities? = withHolder(backCamera) { holder ->

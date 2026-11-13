@@ -12,6 +12,7 @@ import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKPlugin
+import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.testing.FakeCapabilities
@@ -44,8 +45,10 @@ class MatrixRunnerTest {
         private val scope: TestScope,
         private val capabilities: CameraCapabilities = FakeCapabilities.backAndFront(),
         private val imageSize: (CameraConfiguration) -> MatrixSize = { MatrixSize(4000, 3000) },
+        override val promptsOnOpen: Boolean = false,
     ) : MatrixPlatform {
         val engines = mutableListOf<FakeCameraEngine>()
+        val holders = mutableListOf<CameraKStateHolder>()
         val captures = mutableListOf<String>()
         val lines = mutableListOf<String>()
         override val platformName = "test"
@@ -78,12 +81,19 @@ class MatrixRunnerTest {
                 CameraKResult.Success(FakeCaptures.image(file.path, size.width, size.height, config.imageFormat))
             }
             engines += engine
-            return scope.fakeCameraKStateHolder(config, engine, plugins)
+            return scope.fakeCameraKStateHolder(config, engine, plugins).also { holders += it }
         }
 
         override fun newMediaSaver(): MediaSaverPlugin? = null
 
-        override fun permission(permission: CameraKPermission): PermissionStatus = PermissionStatus.Granted
+        // Where the prompt comes with the camera's open (macOS), the camera stays NotDetermined until a
+        // holder starts, and the microphone, which desktop never opens, stays NotDetermined throughout.
+        override fun permission(permission: CameraKPermission): PermissionStatus = when {
+            !promptsOnOpen -> PermissionStatus.Granted
+            permission == CameraKPermission.CAMERA && holders.any { it.cameraState.value != CameraKState.Idle } ->
+                PermissionStatus.Granted
+            else -> PermissionStatus.NotDetermined
+        }
 
         override fun log(line: String) {
             lines += line
@@ -168,5 +178,21 @@ class MatrixRunnerTest {
 
         assertEquals(2, Regex(""""verdict":"PASS"""").findAll(report).count(), report)
         assertTrue(report.contains(""""cycles":20"""), report)
+    }
+
+    @Test
+    fun whereTheCameraPromptComesWithItsOpen_theRunnerOpensTheCameraInsteadOfWaiting() = runTest {
+        val platform = TestPlatform(this, promptsOnOpen = true)
+        val startStop = enumerateCases(FakeCapabilities.backAndFront())
+            .first { (it.spec as? LifecycleSpec)?.kind == LifecycleKind.START_STOP_20 }.index
+
+        MatrixRunner(
+            platform,
+            MatrixArgs(offset = startStop, sections = setOf(MatrixSection.LIFECYCLE), limit = 1),
+        ).run()
+
+        val log = platform.lines.joinToString("\n")
+        assertTrue(platform.lines.none { it.startsWith("BLOCKED") }, log)
+        assertEquals(1, Regex(""""verdict":"PASS"""").findAll(report).count(), report)
     }
 }
