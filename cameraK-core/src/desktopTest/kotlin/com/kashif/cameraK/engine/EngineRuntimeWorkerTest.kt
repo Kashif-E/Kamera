@@ -18,7 +18,10 @@ class EngineRuntimeWorkerTest {
         val second = withContext(worker.dispatcher) { Thread.currentThread() }
 
         assertSame(first, second, "two tasks ran on two threads")
-        assertEquals("CameraK-test-worker", first.name)
+        // kotlinx.coroutines' debug mode, on under the test JVM's assertions, appends " @coroutine#N" to a
+        // thread's name while a coroutine runs on it; the worker sets it back after this thread has resumed,
+        // so the read can see it (windows-2025 runner).
+        assertEquals("CameraK-test-worker", first.name.substringBefore(" @coroutine#"))
         assertTrue(first.isDaemon, "the worker thread would keep the JVM alive")
 
         worker.close()
