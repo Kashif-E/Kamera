@@ -346,20 +346,14 @@ private val ALTERNATIVE_NAME_LINE = Regex("""  Alternative name "(.*)"""")
 
 /**
  * The dshow sources from FFmpeg's list_devices query, which logs every device, video first, whatever
- * audio has. Its log goes to a callback of CameraK's own while it runs; the app's callback, or
- * FFmpeg's default, is set back after, and the log level is raised to INFO for the query only.
+ * audio has. The query's log is read through [DshowLogTap], at INFO at least while it runs.
  */
-private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synchronized(DshowLogQuery) {
+private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synchronized(DshowLogTap) {
     val log = StringBuffer()
-    val capture = object : LogCallback() {
-        override fun call(level: Int, msg: BytePointer) {
-            log.append(msg.string)
-        }
-    }
-    val previous: LogCallback? = avutil.logCallback()
     val level = avutil.av_log_get_level()
     if (level < avutil.AV_LOG_INFO) avutil.av_log_set_level(avutil.AV_LOG_INFO)
-    avutil.setLogCallback(capture)
+    DshowLogTap.install()
+    DshowLogTap.recording = log
     val context = AVFormatContext(null)
     val options = AVDictionary(null)
     try {
@@ -367,37 +361,50 @@ private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synch
         // Always AVERROR_EXIT once the devices are logged; FFmpeg frees the context.
         avformat.avformat_open_input(context, "dummy", dshow, options)
     } finally {
+        DshowLogTap.recording = null
         avutil.av_dict_free(options)
-        if (previous != null && !previous.isNull) {
-            avutil.setLogCallback(previous)
-        } else {
-            avutil.setLogCallback(StandardErrorLog)
-        }
         avutil.av_log_set_level(level)
-        capture.close()
     }
     parseDshowListing(log.toString()).also {
         CameraKLogger.d(TAG, "FFmpeg's list_devices query found ${it.count { source -> source.isVideo }} video sources")
     }
 }
 
+/**
+ * FFmpeg's process-wide log callback once a list_devices query has run: installed once and never
+ * closed or replaced, it passes each line to the callback the app had set, or to standard error as
+ * FFmpeg's default does, and records the lines while a query runs. A callback set back after the query
+ * and the query's own closed one both left FFmpeg calling address 0 on its next line (windows-2025).
+ */
+private object DshowLogTap {
+    @Volatile
+    var recording: StringBuffer? = null
+
+    @Volatile
+    private var app: LogCallback? = null
+    private var tap: LogCallback? = null
+
+    /** Makes the tap FFmpeg's callback, keeping the app's to pass lines to, unless it already is. */
+    fun install() {
+        val current = avutil.logCallback()
+        val installed = tap
+        if (installed != null && current != null && current.address() == installed.address()) return
+        app = current?.takeUnless { it.isNull }
+        val callback = installed ?: object : LogCallback() {
+            override fun call(level: Int, msg: BytePointer) {
+                recording?.append(msg.string)
+                val forward = app
+                if (forward != null) forward.call(level, msg) else System.err.print(msg.string)
+            }
+        }
+        tap = callback
+        avutil.setLogCallback(callback)
+    }
+}
+
 /** Whether dshow's device list failed with EIO in this process; it then fails on every call. */
 @Volatile
 private var dshowListFails = false
-
-/** Serialises the queries that swap FFmpeg's process-wide log callback. */
-private object DshowLogQuery
-
-/**
- * FFmpeg's lines to standard error, as its default callback writes them: set when the app had set no
- * callback of its own. A raw av_log callback thunk jumped to address 0 on Windows (windows-2025
- * runner); JavaCPP's LogCallback, which JavaCV's FFmpegLogCallback uses too, does not.
- */
-private object StandardErrorLog : LogCallback() {
-    override fun call(level: Int, msg: BytePointer) {
-        System.err.print(msg.string)
-    }
-}
 
 /** AVERROR(EIO), which dshow's device list returns whenever either category is empty. */
 private const val AVERROR_EIO = -5
