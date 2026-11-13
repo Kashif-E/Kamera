@@ -391,14 +391,32 @@ private object DshowLogTap {
         if (installed != null && current != null && current.address() == installed.address()) return
         app = current?.takeUnless { it.isNull }
         val callback = installed ?: object : LogCallback() {
+            // Called by FFmpeg: nothing may be thrown back into it.
             override fun call(level: Int, msg: BytePointer) {
-                recording?.append(msg.string)
-                val forward = app
-                if (forward != null) forward.call(level, msg) else System.err.print(msg.string)
+                try {
+                    recording?.append(msg.string)
+                    if (!forwarded(level, msg)) System.err.print(msg.string)
+                } catch (e: RuntimeException) {
+                    CameraKLogger.w(TAG, "An FFmpeg log line could not be read", e)
+                }
             }
         }
         tap = callback
         avutil.setLogCallback(callback)
+    }
+
+    // The app's callback, while it can be called. JavaCPP hands back a wrapper even when none was set,
+    // whose function pointer is null (windows-2025): that one is dropped after its first refusal.
+    private fun forwarded(level: Int, msg: BytePointer): Boolean {
+        val forward = app ?: return false
+        return try {
+            forward.call(level, msg)
+            true
+        } catch (e: NullPointerException) {
+            app = null
+            CameraKLogger.w(TAG, "FFmpeg had no log callback to pass lines on to; they go to standard error", e)
+            false
+        }
     }
 }
 
