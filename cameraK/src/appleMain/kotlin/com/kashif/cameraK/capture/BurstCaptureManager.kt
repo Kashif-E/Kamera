@@ -97,10 +97,6 @@ class BurstCaptureManager {
             try {
                 MemoryManager.updateMemoryStatus()
 
-                if (MemoryManager.isUnderMemoryPressure()) {
-                    MemoryManager.clearBufferPools()
-                }
-
                 captureFunction()
             } finally {
                 completeCapture(onComplete)

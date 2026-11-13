@@ -147,12 +147,6 @@ actual class CameraController(
         memoryManager.updateMemoryStatus()
     }
 
-    override fun viewDidDisappear(animated: Boolean) {
-        super.viewDidDisappear(animated)
-
-        memoryManager.clearBufferPools()
-    }
-
     fun getCameraPreviewLayer() = customCameraController.cameraPreviewLayer
 
     /**
@@ -465,10 +459,6 @@ actual class CameraController(
     actual fun toggleCameraLens() {
         memoryManager.updateMemoryStatus()
 
-        if (memoryManager.isUnderMemoryPressure()) {
-            memoryManager.clearBufferPools()
-        }
-
         cameraLens = if (cameraLens == CameraLens.BACK) CameraLens.FRONT else CameraLens.BACK
         customCameraController.switchCamera()
     }
@@ -500,7 +490,6 @@ actual class CameraController(
         // viewDidLoad() triggers setupCamera(). The session will start automatically
         // when ready, so we only need to handle the case where session IS ready.
         if (customCameraController.captureSession != null) {
-            memoryManager.clearBufferPools()
             customCameraController.startSession()
         }
         // If captureSession is null, onSessionReady will call startSession() when ready
@@ -524,7 +513,6 @@ actual class CameraController(
         movieFileOutput = null
         videoRecordingDelegate = null
         customCameraController.cleanupSession()
-        memoryManager.clearBufferPools()
     }
 
     @OptIn(ExperimentalForeignApi::class)

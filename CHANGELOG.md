@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed (breaking, iOS)
+- **`MemoryManager.getBuffer()`, `recycleBuffer()` and `clearBufferPools()` (iOS)**: the buffer pool had no callers left once capture listeners stopped receiving a pooled array (#160), so the pools could never hold anything and every `clearBufferPools()` call cleared three empty lists. The pool, its locks and those three public functions are gone. Memory-warning handling is unchanged: the notification still sets the pressure flag that `isUnderMemoryPressure()` and `getOptimalImageQuality()` report. The equivalent Android pool is also uncalled and is left for a separate change.
+
 ### Added
 - **`CameraController.getDirectory()`**: reports the [Directory] captures are written to. Lets a plugin tell whether `takePictureToFile()` has already stored the image where the plugin would save it.
 
