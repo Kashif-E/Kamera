@@ -13,6 +13,7 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.bytedeco.javacv.FrameGrabber
+import org.junit.Assume.assumeFalse
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -164,8 +165,9 @@ class DeviceEnumeratorTest {
     }
 
     // A V4L2 node as a FIFO, its sysfs folder (index 0 for a capture node, 1 for a metadata node) and
-    // the dev number udev's records are keyed on.
+    // the dev number udev's records are keyed on. Windows has no FIFOs: the Linux cases run elsewhere.
     private fun captureNode(number: Int, index: Int) {
+        assumeFalse("Linux device nodes are FIFOs, which Windows cannot make", isWindows)
         val node = File(dev, "video$number")
         val mkfifo = ProcessBuilder("mkfifo", node.path).inheritIO().start()
         check(mkfifo.waitFor() == 0 && node.exists()) { "mkfifo failed for ${node.path}" }
@@ -177,6 +179,7 @@ class DeviceEnumeratorTest {
     private fun path(number: Int) = File(dev, "video$number").path
 
     private companion object {
+        val isWindows = System.getProperty("os.name").orEmpty().startsWith("Windows")
         const val TIMEOUT_SECONDS = 10L
 
         fun webcam(id: String, lens: CameraLens = CameraLens.BACK, isExternal: Boolean = false) = LensInfo(
