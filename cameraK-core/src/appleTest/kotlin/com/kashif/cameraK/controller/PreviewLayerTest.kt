@@ -15,6 +15,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.objcPtr
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runCurrent
+import platform.AVFoundation.AVCaptureSession
+import platform.AVFoundation.AVCaptureVideoPreviewLayer
 import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSDate
 import platform.Foundation.NSRunLoop
@@ -169,6 +171,90 @@ class PreviewLayerTest {
 
         assertEquals(driver.session.avSession.objcPtr(), second.session?.objcPtr(), "the new layer's session")
         engine.close()
+    }
+
+    // Two previews of one holder, as in a crossfade or a preview in a dialog over a screen's: the session
+    // shows the newer. Once the newer leaves, the session goes back to the older, which still shows.
+    @Test
+    fun releasingTheNewestLayerGivesTheSessionBackToTheOneBefore() = driver.runCase {
+        val engine = driver.createEngine()
+        val first = engine.preview.createPreviewLayer()
+        val second = engine.preview.createPreviewLayer()
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        driver.settle()
+
+        engine.preview.releasePreviewLayer(second)
+        driver.settle()
+
+        assertEquals(driver.session.avSession.objcPtr(), first.session?.objcPtr(), "the older layer's session")
+        assertNull(second.session, "the released layer still holds the session")
+        engine.close()
+    }
+
+    // The older layer the session goes back to is mirrored and turned again: binding gives it a new connection.
+    @Test
+    fun theLayerTheSessionGoesBackToIsMirroredAndTurnedAgain() {
+        val driver = AppleEngineDriver(osVersion = 16)
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+            val front = CameraSelection.ByLens(CameraLens.FRONT, CameraDeviceType.DEFAULT)
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera(front)))
+            driver.settle()
+            val first = engine.preview.createPreviewLayer()
+            engine.preview.layOutPreviewLayer(first, PHONE_BOUNDS, UIInterfaceOrientationPortrait)
+            val second = engine.preview.createPreviewLayer()
+            driver.settle()
+            val turnsBefore = driver.boundPreviewTurns.size
+            val mirroringsBefore = driver.boundPreviewMirrorings.size
+
+            engine.preview.releasePreviewLayer(second)
+            driver.settle()
+
+            val turns = driver.boundPreviewTurns.drop(turnsBefore)
+            val mirrorings = driver.boundPreviewMirrorings.drop(mirroringsBefore)
+            assertTrue(first in turns, "the older layer was not turned once bound again")
+            assertTrue((first to true) in mirrorings, "the older layer was not mirrored once bound again")
+            engine.close()
+        }
+    }
+
+    // Releasing a layer the session no longer shows changes nothing for the one it shows.
+    @Test
+    fun releasingAnOlderLayerKeepsTheNewestBound() = driver.runCase {
+        val engine = driver.createEngine()
+        val first = engine.preview.createPreviewLayer()
+        val second = engine.preview.createPreviewLayer()
+        val third = engine.preview.createPreviewLayer()
+        driver.settle()
+
+        engine.preview.releasePreviewLayer(second)
+        engine.preview.releasePreviewLayer(third)
+        driver.settle()
+
+        assertEquals(driver.session.avSession.objcPtr(), first.session?.objcPtr(), "the oldest layer's session")
+        assertNull(second.session, "a released layer holds the session")
+        engine.close()
+    }
+
+    // A close takes away the layer it finds. A layer adopted after the close looked, from a preview composed
+    // as the holder closes, is not bound to the session the close tears down.
+    @Test
+    fun aLayerAdoptedAfterTheCloseLookedIsNotBound() {
+        val queue = SessionQueue()
+        val layers = PreviewLayers(queue, mirroring = { _, _ -> }, orienting = { _, _ -> }, rotating = { _, _ -> })
+        val session = AVCaptureSession()
+        layers.remove()
+
+        val layer = AVCaptureVideoPreviewLayer()
+        layers.adopt(layer, session) { false }
+        val drained = dispatch_semaphore_create(0)
+        queue.async { dispatch_semaphore_signal(drained) }
+        dispatch_semaphore_wait(drained, DISPATCH_TIME_FOREVER)
+
+        assertNull(layer.session, "a layer adopted after the close is bound to the closed session")
+        assertNull(layers.layer, "the closed previews took a new layer")
     }
 
     // From iOS 17 the rotation coordinator is made for the newest layer. A layer made while a start was

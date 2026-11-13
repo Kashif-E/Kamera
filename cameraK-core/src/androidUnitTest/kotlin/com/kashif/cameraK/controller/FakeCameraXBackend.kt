@@ -201,7 +201,11 @@ internal class FakeCameraXBackend : CameraXBackend {
         analyzers[analysis] = analyzer
     }
 
+    /** Runs as an analyzer is cleared, before it goes. */
+    var beforeClearAnalyzer: () -> Unit = {}
+
     override fun clearAnalyzer(analysis: ImageAnalysis) {
+        beforeClearAnalyzer()
         analyzers -= analysis
     }
 

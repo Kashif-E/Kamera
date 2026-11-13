@@ -6,6 +6,7 @@ import android.view.Display
 import androidx.camera.core.Preview
 import com.kashif.cameraK.engine.FakeAndroidPlatform.Companion.desired
 import com.kashif.cameraK.enums.AspectRatio
+import com.kashif.cameraK.frames.FrameSpec
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.utils.CameraKEngineApi
@@ -94,6 +95,122 @@ class PreviewAttachmentTest {
         platform.settle(testScheduler)
 
         assertSame(second, platform.boundPreview().surfaceProvider, "the stand-in replaced the new preview")
+        engine.closeAndJoin()
+    }
+
+    // Two previews of one holder, as in a preview in a dialog over a screen's: the newer draws. Once it
+    // closes, the older draws again instead of a stand-in.
+    @Test
+    fun closingTheNewestPreviewGivesTheCameraBackToTheOneBefore() = runTest {
+        val engine = platform.engine(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        engine.preview.attach(first, null)
+        val dialog = engine.preview.attach(second, null)
+        platform.settle(testScheduler)
+
+        dialog.close()
+        platform.settle(testScheduler)
+        advanceTimeBy(STAND_IN_GRACE_MS + 1)
+        platform.settle(testScheduler)
+
+        assertSame(first, platform.boundPreview().surfaceProvider, "the older preview did not get the camera back")
+        engine.closeAndJoin()
+    }
+
+    // Closing previews in any order leaves the newest still open drawing.
+    @Test
+    fun closingAnOlderPreviewKeepsTheNewestDrawing() = runTest {
+        val engine = platform.engine(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        val third = Preview.SurfaceProvider { }
+        engine.preview.attach(first, null)
+        val middle = engine.preview.attach(second, null)
+        val newest = engine.preview.attach(third, null)
+        platform.settle(testScheduler)
+
+        middle.close()
+        newest.close()
+        platform.settle(testScheduler)
+
+        assertSame(first, platform.boundPreview().surfaceProvider, "the oldest preview did not get the camera back")
+        engine.closeAndJoin()
+    }
+
+    // An ImageAnalysis with an analyzer keeps the capture session's repeating request with no preview
+    // surface, so a stand-in would only add a stream.
+    @Test
+    fun withAnAnalyzerNoStandInComes() = runTest {
+        val engine = platform.engine(testScheduler, CameraConfiguration { frameAnalysis = true })
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        engine.frames.register(FrameSpec(synchronous = true)) { }
+        platform.settle(testScheduler)
+        val attachment = engine.preview.attach(first, null)
+        platform.settle(testScheduler)
+
+        attachment.close()
+        platform.settle(testScheduler)
+        advanceTimeBy(STAND_IN_GRACE_MS + 1)
+        platform.settle(testScheduler)
+
+        assertNull(platform.boundPreview().surfaceProvider, "a stand-in came beside a streaming ImageAnalysis")
+        engine.closeAndJoin()
+    }
+
+    // Without an analyzer the ImageAnalysis is inactive in CameraX and streams nothing: the stand-in takes
+    // over before the last analyzer is cleared.
+    @Test
+    fun theStandInComesBeforeTheLastAnalyzerLeaves() = runTest {
+        val engine = platform.engine(testScheduler, CameraConfiguration { frameAnalysis = true })
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        val registration = engine.frames.register(FrameSpec(synchronous = true)) { }
+        platform.settle(testScheduler)
+        val attachment = engine.preview.attach(first, null)
+        platform.settle(testScheduler)
+        attachment.close()
+        platform.settle(testScheduler)
+        advanceTimeBy(STAND_IN_GRACE_MS + 1)
+        platform.settle(testScheduler)
+        val preview = platform.boundPreview()
+        var providerAsTheAnalyzerWent: Preview.SurfaceProvider? = null
+        platform.backend.beforeClearAnalyzer = { providerAsTheAnalyzerWent = preview.surfaceProvider }
+
+        registration.close()
+        platform.settle(testScheduler)
+
+        assertNotNull(providerAsTheAnalyzerWent, "the analyzer was cleared before the stand-in came")
+        engine.closeAndJoin()
+    }
+
+    // CameraX gives a session with no other stream one of its own, but counts an ImageAnalysis as one even
+    // without an analyzer, when it streams nothing: a photo then never completed (Galaxy S23).
+    @Test
+    fun aBindWithAnIdleAnalysisAndNoPreviewHasTheStandIn() = runTest {
+        val engine = platform.engine(testScheduler, CameraConfiguration { frameAnalysis = true })
+
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+
+        assertNotNull(platform.boundPreview().surfaceProvider, "a bind with an idle ImageAnalysis has no stream")
+        engine.closeAndJoin()
+    }
+
+    // An idle ImageAnalysis, bound with no analyzer, streams nothing: the stand-in comes as without one.
+    @Test
+    fun withAnIdleAnalysisTheStandInComes() = runTest {
+        val engine = platform.engine(testScheduler, CameraConfiguration { frameAnalysis = true })
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        val attachment = engine.preview.attach(first, null)
+        platform.settle(testScheduler)
+
+        attachment.close()
+        platform.settle(testScheduler)
+        advanceTimeBy(STAND_IN_GRACE_MS + 1)
+        platform.settle(testScheduler)
+
+        assertNotNull(platform.boundPreview().surfaceProvider, "no stand-in beside an idle ImageAnalysis")
         engine.closeAndJoin()
     }
 
