@@ -250,7 +250,10 @@ internal class AppleCameraEngine(
             return layer
         }
 
-        override fun releasePreviewLayer(layer: AVCaptureVideoPreviewLayer) = custom.releasePreviewLayer(layer)
+        override fun releasePreviewLayer(layer: AVCaptureVideoPreviewLayer) {
+            // The session goes back to an older preview's layer, which the rotation coordinator turns again.
+            custom.releasePreviewLayer(layer)?.let(rotation::adoptPreviewLayer)
+        }
 
         override fun layOut(
             layer: AVCaptureVideoPreviewLayer,

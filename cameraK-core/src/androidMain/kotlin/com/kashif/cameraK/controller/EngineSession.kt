@@ -272,7 +272,7 @@ internal class EngineSession(
         val preview = binder.buildPreview(binder.resolutionSelector(outputs?.preview), pinned) {
             backend.onPreviewFrame(it, ::onPreviewFrame)
         }
-        previewSource.bindTo(preview)
+        previewSource.bindTo(preview, withAnalysis = framePipeline.analysisRequested)
         stillCapturer.configure(binder.resolutionSelector(outputs?.still), controls.flashMode, pinned)
         // VideoCapture joins the group only while a recording needs it or it was prepared.
         val video = videoRecorder.useCaseForBind(pinned)

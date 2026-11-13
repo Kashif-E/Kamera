@@ -77,8 +77,9 @@ commands instead.
 
 ### Black preview
 
-Check `cameraState`: the preview shows a frame only while the camera is `Ready`. Two previews of one
-holder both show it; a preview never opens the camera itself.
+Check `cameraState`: the preview shows a frame only while the camera is `Ready`. A preview never
+opens the camera itself. Of two previews of one holder on Android or iOS, only the newer shows the
+camera, and the older shows it again once the newer leaves; desktop shows it in both.
 
 ### Overlay coordinates are off
 
