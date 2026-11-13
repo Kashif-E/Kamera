@@ -143,8 +143,12 @@ internal class FramePipeline(
             .apply { selector?.let { setResolutionSelector(it) } }
             .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
             .build()
+        // The new ImageAnalysis streams nothing until applyConsumers sets the analyzer, which it does only
+        // when someone consumes; told so, the preview source keeps the bind streaming meanwhile.
+        val streamed = streaming
         analysis = built
         multiplexerAttached = false
+        if (streamed) onStreamingChanged()
         applyConsumers()
         return built
     }

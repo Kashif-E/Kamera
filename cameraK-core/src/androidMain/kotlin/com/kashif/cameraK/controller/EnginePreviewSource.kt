@@ -46,6 +46,9 @@ internal class EnginePreviewSource(
     /** The Preview whose grace period ended with no preview attached: the stand-in is for it. */
     private var standInFor: Preview? = null
 
+    /** The Preview drawing into the stand-in now; its provider is not readable outside CameraX. */
+    private var standInOn: Preview? = null
+
     /** The Preview use case of the latest bind, or null before the first. */
     val boundPreview: Preview? get() = preview
 
@@ -57,7 +60,7 @@ internal class EnginePreviewSource(
         onMain {
             attachments += attachment
             standInFor = null
-            preview?.setSurfaceProvider(provider)
+            preview?.give(provider)
             onDisplayAttached()
         }
         return attachment
@@ -72,9 +75,14 @@ internal class EnginePreviewSource(
         val preview = preview
         if (preview == null || preview !== standInFor || current != null) return
         val wanted = !analysisStreaming()
-        val using = preview.surfaceProvider === DroppingPreviewSurface
-        if (wanted && !using) preview.setSurfaceProvider(DroppingPreviewSurface)
-        if (!wanted && using) preview.setSurfaceProvider(null)
+        val using = standInOn === preview
+        if (wanted && !using) preview.give(DroppingPreviewSurface)
+        if (!wanted && using) preview.give(null)
+    }
+
+    private fun Preview.give(provider: Preview.SurfaceProvider?) {
+        setSurfaceProvider(provider)
+        standInOn = if (provider === DroppingPreviewSurface) this else null
     }
 
     /**
@@ -85,9 +93,10 @@ internal class EnginePreviewSource(
      */
     fun bindTo(preview: Preview, withAnalysis: Boolean) {
         this.preview = preview
+        standInOn = null
         val attached = current
         if (attached != null) {
-            preview.setSurfaceProvider(attached.provider)
+            preview.give(attached.provider)
             return
         }
         standInFor = if (withAnalysis) preview else null
@@ -105,12 +114,12 @@ internal class EnginePreviewSource(
                 if (!wasCurrent) return@onMain
                 val next = current
                 if (next != null) {
-                    preview?.setSurfaceProvider(next.provider)
+                    preview?.give(next.provider)
                     onDisplayAttached()
                     return@onMain
                 }
                 val left = preview
-                left?.setSurfaceProvider(null)
+                left?.give(null)
                 launch {
                     delay(STAND_IN_GRACE_MS)
                     if (current == null && preview === left) {

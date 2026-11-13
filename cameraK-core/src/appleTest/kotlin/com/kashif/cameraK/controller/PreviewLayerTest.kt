@@ -231,7 +231,11 @@ class PreviewLayerTest {
 
         engine.preview.releasePreviewLayer(second)
         driver.settle()
-        assertEquals(driver.session.avSession.objcPtr(), third.session?.objcPtr(), "releasing an older layer unbound the newest")
+        assertEquals(
+            driver.session.avSession.objcPtr(),
+            third.session?.objcPtr(),
+            "releasing an older layer unbound the newest",
+        )
 
         engine.preview.releasePreviewLayer(third)
         driver.settle()
