@@ -46,16 +46,18 @@ internal class DesktopGalleryStore(
     override val galleryPermission: CameraKPermission? get() = null
 
     override suspend fun addImage(path: String, format: ImageFormat, name: String?): CameraKResult<GalleryAsset> =
-        write(Path.of(path), name, format.extension)
+        write(path, name, format.extension)
 
     override suspend fun addVideo(path: String, name: String?): CameraKResult<GalleryAsset> {
         val extension = path.substringAfterLast(File.separatorChar).substringAfterLast('.', "mp4")
-        return write(Path.of(path), name, extension)
+        return write(path, name, extension)
     }
 
-    private suspend fun write(source: Path, name: String?, extension: String): CameraKResult<GalleryAsset> =
+    private suspend fun write(path: String, name: String?, extension: String): CameraKResult<GalleryAsset> =
         withContext(Dispatchers.IO) {
+            var source: Path? = null
             try {
+                source = Path.of(path)
                 val baseName = name?.let { requireSafeFileName(it, "imageName") } ?: defaultImageName()
                 val folder = resolveOutputDirectory()
                 val file = createUniqueFile(folder, baseName, extension)
@@ -75,7 +77,7 @@ internal class DesktopGalleryStore(
                     CameraKError.Storage(
                         // Only the capture's own file missing is NOT_FOUND: Windows also reports a destination
                         // folder it cannot create under a file as a missing path.
-                        kind = if (e is NoSuchFileException && e.file == source.toString()) {
+                        kind = if (e is NoSuchFileException && e.file == source?.toString()) {
                             StorageFailure.NOT_FOUND
                         } else {
                             StorageFailure.NOT_WRITABLE
@@ -117,7 +119,7 @@ internal class DesktopGalleryStore(
             emptyList()
         }
         return (captureFolders + ownFolder)
-            .filter { (folder, base) -> isOwnFolder(folder, base) }
+            .filter { (folder, base) -> isOwnFolderOrLog(folder, base) }
             .map { (folder, _) -> resolvedPath(folder) }
     }
 
@@ -171,6 +173,15 @@ private fun resolvedPath(file: File): Path {
         existing = parent
     }
     return missing.fold(existing.toRealPath()) { path, name -> path.resolve(name) }
+}
+
+// A folder that cannot be resolved, a dangling link among them, is not one of the store's folders; the
+// others stay readable.
+private fun isOwnFolderOrLog(folder: File, base: File): Boolean = try {
+    isOwnFolder(folder, base)
+} catch (e: IOException) {
+    CameraKLogger.w(TAG, "A CameraK output folder could not be resolved; it is not read from", e)
+    false
 }
 
 // A failure the store describes itself, in a message with no path or user data.

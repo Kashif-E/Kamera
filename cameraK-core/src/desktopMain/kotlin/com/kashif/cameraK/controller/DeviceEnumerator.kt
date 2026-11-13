@@ -331,7 +331,7 @@ private fun dshowSources(): List<DshowSource> {
  * A device that names no media type counts as video, as in [isVideo].
  */
 internal fun parseDshowListing(log: String): List<DshowSource> {
-    val lines = log.lineSequence().map { it.replaceFirst(LOG_PREFIX, "") }.toList()
+    val lines = log.lineSequence().map { it.replace(LOG_PREFIX, "") }.toList()
     return lines.zipWithNext().mapNotNull { (device, next) ->
         val (friendly, types) = DEVICE_LINE.matchEntire(device)?.destructured ?: return@mapNotNull null
         val moniker = ALTERNATIVE_NAME_LINE.matchEntire(next)?.groupValues?.get(1) ?: return@mapNotNull null
@@ -340,7 +340,9 @@ internal fun parseDshowListing(log: String): List<DshowSource> {
     }
 }
 
-private val LOG_PREFIX = Regex("""^\[[^\]]*] """)
+// FFmpeg's "[<class> @ <context>] " prefix, which can also land inside a line: the log callback's
+// line state is shared by every thread, so another thread's line can end mid-way through one.
+private val LOG_PREFIX = Regex("""\[\w+ @ [0-9A-Fa-fx]+] """)
 private val DEVICE_LINE = Regex(""""(.*)" \(([^()]*)\)""")
 private val ALTERNATIVE_NAME_LINE = Regex("""  Alternative name "(.*)"""")
 
@@ -353,7 +355,7 @@ private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synch
     val level = avutil.av_log_get_level()
     if (level < avutil.AV_LOG_INFO) avutil.av_log_set_level(avutil.AV_LOG_INFO)
     DshowLogTap.install()
-    DshowLogTap.recording = log
+    DshowLogTap.recordFor(Thread.currentThread(), log)
     val context = AVFormatContext(null)
     val options = AVDictionary(null)
     try {
@@ -361,7 +363,7 @@ private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synch
         // Always AVERROR_EXIT once the devices are logged; FFmpeg frees the context.
         avformat.avformat_open_input(context, "dummy", dshow, options)
     } finally {
-        DshowLogTap.recording = null
+        DshowLogTap.recordFor(null, null)
         avutil.av_dict_free(options)
         avutil.av_log_set_level(level)
     }
@@ -377,38 +379,49 @@ private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synch
  * and the query's own closed one both left FFmpeg calling address 0 on its next line (windows-2025).
  */
 private object DshowLogTap {
+    // The query's own thread and its log: dshow logs the devices on the thread that queries, while other
+    // threads' lines, logged at the same time, would break a device line apart.
     @Volatile
-    var recording: StringBuffer? = null
+    private var recording: Pair<Thread, StringBuffer>? = null
 
     @Volatile
     private var app: LogCallback? = null
     private var tap: LogCallback? = null
 
+    // What JavaCPP's getter returned right after the tap was set: its wrapper of the tap, which does not
+    // compare equal to the tap itself, so a changed value means the app set a callback of its own since.
+    private var tapAsSeen: Long? = null
+
+    fun recordFor(thread: Thread?, log: StringBuffer?) {
+        recording = if (thread != null && log != null) thread to log else null
+    }
+
     /**
-     * Makes the tap FFmpeg's callback. The app's callback is read once, before the first install: read
-     * again, JavaCPP's wrapper of the tap itself did not compare equal to it, and the tap forwarded to
-     * itself until the stack overflowed (windows-2025).
+     * Makes the tap FFmpeg's callback, first taking the app's current one to pass lines to: at the
+     * first install, and again whenever the app has set its own since. Read while the tap was still
+     * set, the getter's wrapper of the tap did not compare equal to it, and the tap forwarded to itself
+     * until the stack overflowed (windows-2025), so the tap is recognised by [tapAsSeen] instead.
      */
     fun install() {
+        val seen = avutil.logCallback()?.address()
         val installed = tap
-        if (installed != null) {
-            avutil.setLogCallback(installed)
-            return
-        }
+        if (installed != null && seen == tapAsSeen) return
         app = avutil.logCallback()?.takeUnless { it.isNull }
-        val callback = object : LogCallback() {
-            // Called by FFmpeg: nothing may be thrown back into it.
+        val callback = installed ?: object : LogCallback() {
+            // Called by FFmpeg: nothing may be thrown back into it, not even by the app's log sink.
             override fun call(level: Int, msg: BytePointer) {
                 try {
-                    recording?.append(msg.string)
+                    val (thread, log) = recording ?: (null to null)
+                    if (thread === Thread.currentThread()) log?.append(msg.string)
                     if (!forwarded(level, msg)) System.err.print(msg.string)
-                } catch (e: RuntimeException) {
-                    CameraKLogger.w(TAG, "An FFmpeg log line could not be read", e)
+                } catch (e: Throwable) {
+                    warnSafely("An FFmpeg log line could not be read", e)
                 }
             }
         }
         tap = callback
         avutil.setLogCallback(callback)
+        tapAsSeen = avutil.logCallback()?.address()
     }
 
     // The app's callback, while it can be called. JavaCPP hands back a wrapper even when none was set,
@@ -420,8 +433,17 @@ private object DshowLogTap {
             true
         } catch (e: RuntimeException) {
             app = null
-            CameraKLogger.w(TAG, "The earlier FFmpeg log callback could not be called; lines go to standard error", e)
+            warnSafely("The earlier FFmpeg log callback could not be called; lines go to standard error", e)
             false
+        }
+    }
+
+    // The app's log sink may throw; inside FFmpeg's callback nothing may.
+    private fun warnSafely(message: String, cause: Throwable) {
+        try {
+            CameraKLogger.w(TAG, message, cause)
+        } catch (e: Throwable) {
+            System.err.println("CameraK: $message ($cause); the log sink failed too: $e")
         }
     }
 }

@@ -97,7 +97,11 @@ internal fun SmokeApp(args: SmokeArgs, onDone: (exitCode: Int) -> Unit) {
             holder.cameraState.first { it == CameraKState.Ready || it is CameraKState.Error }
         }
         println("CameraKSmoke: cameras=${holder.capabilities.value.allLenses.map { it.id }}")
-        val photo = if (state == CameraKState.Ready) holder.capture() else null
+        val photo = if (state == CameraKState.Ready) {
+            withTimeoutOrNull(args.timeoutSeconds * MILLIS_PER_SECOND) { holder.capture() }
+        } else {
+            null
+        }
         val bytes = (photo as? CameraKResult.Success)?.value?.path?.let { File(it).length() }
         val verdict = smokeVerdict(args.expect, state, photo, bytes)
         println("CameraKSmoke: ${verdict.line}")
