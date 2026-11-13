@@ -388,26 +388,25 @@ private object DshowLogTap {
     private var app: LogCallback? = null
     private var tap: LogCallback? = null
 
-    // What JavaCPP's getter returned right after the tap was set: its wrapper of the tap, which does not
-    // compare equal to the tap itself, so a changed value means the app set a callback of its own since.
-    private var tapAsSeen: Long? = null
-
     fun recordFor(thread: Thread?, log: StringBuffer?) {
         recording = if (thread != null && log != null) thread to log else null
     }
 
     /**
-     * Makes the tap FFmpeg's callback, first taking the app's current one to pass lines to: at the
-     * first install, and again whenever the app has set its own since. Read while the tap was still
-     * set, the getter's wrapper of the tap did not compare equal to it, and the tap forwarded to itself
-     * until the stack overflowed (windows-2025), so the tap is recognised by [tapAsSeen] instead.
+     * Makes the tap FFmpeg's callback, set again on every query. The app's callback is read once,
+     * before the first install: JavaCPP's getter gives no stable value for the tap (on windows-2025 its
+     * wrapper never compared equal to the tap, nor to its own earlier value), so read again it could be
+     * the tap itself, which then forwarded to itself until the stack overflowed. An app that sets its own
+     * FFmpeg log callback after CameraK first lists cameras through the log loses it at the next listing.
      */
     fun install() {
-        val seen = avutil.logCallback()?.address()
         val installed = tap
-        if (installed != null && seen == tapAsSeen) return
+        if (installed != null) {
+            avutil.setLogCallback(installed)
+            return
+        }
         app = avutil.logCallback()?.takeUnless { it.isNull }
-        val callback = installed ?: object : LogCallback() {
+        val callback = object : LogCallback() {
             // Called by FFmpeg: nothing may be thrown back into it, not even by the app's log sink.
             override fun call(level: Int, msg: BytePointer) {
                 try {
@@ -421,7 +420,6 @@ private object DshowLogTap {
         }
         tap = callback
         avutil.setLogCallback(callback)
-        tapAsSeen = avutil.logCallback()?.address()
     }
 
     // The app's callback, while it can be called. JavaCPP hands back a wrapper even when none was set,
