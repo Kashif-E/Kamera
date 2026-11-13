@@ -217,7 +217,7 @@ internal class MacDevices(
         return if (device == 0L) null else objc.string(objc.send(device, objc.selector("uniqueID")))
     }
 
-    private companion object {
+    internal companion object {
         const val AVFOUNDATION = "avfoundation"
 
         // AVCaptureDevicePosition.front
@@ -461,9 +461,16 @@ private fun AVDeviceInfo.isVideo(): Boolean {
     return (0 until count).any { types.get(it.toLong()) == avutil.AVMEDIA_TYPE_VIDEO }
 }
 
-/** An FFmpeg grabber for [input] at [size] and CameraK's frame rate, or at the camera's own mode. */
+/**
+ * An FFmpeg grabber for [input] at [size] and CameraK's frame rate, or at the camera's own mode. The
+ * avfoundation input has no own mode without a frame rate: it asks for 29.97 by default and opens only
+ * a format whose top rate matches, which no FaceTime camera mode does, so there it keeps CameraK's.
+ */
 internal fun ffmpegGrabber(input: DeviceInput, size: Pair<Int, Int>?): FrameGrabber =
-    FFmpegFrameGrabber(input.name).apply { input.format?.let { format = it } }.askFor(size)
+    FFmpegFrameGrabber(input.name).apply {
+        input.format?.let { format = it }
+        if (size == null && input.format == MacDevices.AVFOUNDATION) frameRate = DEFAULT_CAMERA_FRAME_RATE
+    }.askFor(size)
 
 // A desktop camera: no facing on Linux and Windows, no flash, no torch, no zoom (§2.4 desktop).
 private fun webcam(id: String, lens: CameraLens = CameraLens.BACK, isExternal: Boolean = false) = LensInfo(
