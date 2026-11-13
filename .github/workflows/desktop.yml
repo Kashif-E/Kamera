@@ -38,7 +38,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
 
       - name: Desktop tests (every module)
-        run: ./gradlew desktopTest --continue --no-daemon --write-verification-metadata sha256 || true
+        run: ./gradlew desktopTest --continue --no-daemon
 
       - name: Virtual camera (Linux, v4l2loopback fed an FFmpeg test pattern)
         if: runner.os == 'Linux'
@@ -67,21 +67,14 @@ jobs:
 
       - name: Run the Sample's smoke (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a -s "-screen 0 1920x1080x24" ./gradlew :Sample:run --no-daemon --write-verification-metadata sha256 --args="-cameraKSmoke -cameraKSmokeTimeout 90" || true
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" ./gradlew :Sample:run --no-daemon --args="-cameraKSmoke -cameraKSmokeTimeout 90"
 
       - name: Run the Sample's smoke (Windows)
         if: runner.os == 'Windows'
-        run: ./gradlew :Sample:run --no-daemon --write-verification-metadata sha256 --args="-cameraKSmoke -cameraKSmokeTimeout 90"; exit 0
-
-      - name: Upload the recorded verification metadata (temporary)
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: verification-metadata-${{ matrix.os }}
-          path: gradle/verification-metadata.xml
+        run: ./gradlew :Sample:run --no-daemon --args="-cameraKSmoke -cameraKSmokeTimeout 90"
 
       - name: Upload results
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: desktop-${{ matrix.os }}
