@@ -38,7 +38,10 @@ class DshowListingTest {
 
     @Test
     fun aListingWithNoDeviceIsEmpty() {
-        assertEquals(emptyList(), parseDshowListing("[dshow @ 01] Could not enumerate video devices (or none found).\n"))
+        assertEquals(
+            emptyList(),
+            parseDshowListing("[dshow @ 01] Could not enumerate video devices (or none found).\n"),
+        )
     }
 
     @Test
