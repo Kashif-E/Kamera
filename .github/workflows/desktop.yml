@@ -94,6 +94,15 @@ jobs:
           Write-Output "ffmpeg (1280x720@30 by alternative name) exit $LASTEXITCODE"
           if (Test-Path unity.png) { Get-Item unity.png | Select-Object Name, Length }
 
+      - name: "Diagnostics: JavaCV alone, then CameraK's dshow backend, grab the virtual camera (Windows)"
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        env:
+          CAMERAK_DSHOW_CAMERA: Unity Video Capture
+        run: |
+          ./gradlew :cameraK-core:desktopTest --no-daemon --tests "*WindowsCameraDeviceTest.javacvAloneGrabsAFrame" -i 2>&1 | Select-String "WindowsCameraDeviceTest|PASSED|FAILED|SKIPPED|NTSTATUS|exit value"
+          ./gradlew :cameraK-core:desktopTest --no-daemon --tests "*WindowsCameraDeviceTest.cameraKsDshowBackendListsAndGrabsAFrame" -i 2>&1 | Select-String "WindowsCameraDeviceTest|PASSED|FAILED|SKIPPED|NTSTATUS|exit value|list_devices"
+
       - name: Run the Sample's smoke (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a -s "-screen 0 1920x1080x24" ./gradlew :Sample:run --no-daemon --args="-cameraKSmoke -cameraKSmokeTimeout 90"
