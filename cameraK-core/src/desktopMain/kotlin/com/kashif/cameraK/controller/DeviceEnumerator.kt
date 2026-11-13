@@ -18,7 +18,7 @@ import org.bytedeco.ffmpeg.global.avdevice
 import org.bytedeco.ffmpeg.global.avformat
 import org.bytedeco.ffmpeg.global.avutil
 import org.bytedeco.javacpp.BytePointer
-import org.bytedeco.javacpp.Loader
+import org.bytedeco.javacpp.Pointer
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
@@ -364,7 +364,7 @@ private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synch
         if (previous != null && !previous.isNull) {
             avutil.setLogCallback(previous)
         } else {
-            avutil.av_log_set_callback(Callback_Pointer_int_String_Pointer(Loader.addressof("av_log_default_callback")))
+            avutil.av_log_set_callback(FfmpegDefaultLog)
         }
         avutil.av_log_set_level(level)
         capture.close()
@@ -374,6 +374,12 @@ private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synch
 
 /** Serialises the queries that swap FFmpeg's process-wide log callback. */
 private object DshowLogQuery
+
+/** FFmpeg's default log callback, called through Java: set back when the app had set no callback of its own. */
+private object FfmpegDefaultLog : Callback_Pointer_int_String_Pointer() {
+    override fun call(avcl: Pointer?, level: Int, fmt: String?, vl: Pointer?) =
+        avutil.av_log_default_callback(avcl, level, fmt, vl)
+}
 
 /** AVERROR(EIO), which dshow's device list returns whenever either category is empty. */
 private const val AVERROR_EIO = -5

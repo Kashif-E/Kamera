@@ -55,6 +55,11 @@ jobs:
           nohup ffmpeg -nostdin -loglevel error -re -f lavfi -i testsrc2=size=1280x720:rate=30 \
             -pix_fmt yuyv422 -f v4l2 /dev/video10 > ffmpeg-v4l2.log 2>&1 &
           sleep 5
+          # udev records a node's capabilities once, when it appears; with exclusive_caps that was
+          # output only, before the writer. Read them again now that the node captures.
+          sudo udevadm trigger --action=change --subsystem-match=video4linux
+          sudo udevadm settle
+          udevadm info /dev/video10 | grep V4L_CAPABILITIES || true
           # Diagnostics only: v4l2-ctl exits non-zero when /dev/video0 does not exist.
           v4l2-ctl --list-devices || true
           v4l2-ctl -d /dev/video10 --all | head -20 || true
@@ -92,3 +97,5 @@ jobs:
             */build/test-results/**
             cameraK/build/reports/screenshots-desktop/**
             ffmpeg-v4l2.log
+            Sample/hs_err_pid*.log
+            hs_err_pid*.log
