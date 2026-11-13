@@ -45,4 +45,31 @@ class WindowsCameraDeviceTest {
             grabber.release()
         }
     }
+
+    @Test
+    fun cameraKsDshowBackendListsTwiceWithoutOpening() {
+        assumeTrue("no CAMERAK_DSHOW_CAMERA", camera != null)
+        val backend = DshowCaptureBackend()
+        val first = backend.list().map { it.id }
+        val second = backend.list().map { it.id }
+        println("WindowsCameraDeviceTest listed $first then $second")
+        assertTrue(first.isNotEmpty() && first == second, "listed $first then $second")
+    }
+
+    @Test
+    fun javacvAloneGrabsByAlternativeName() {
+        val alternative = System.getenv("CAMERAK_DSHOW_ALT")
+        assumeTrue("no CAMERAK_DSHOW_ALT", alternative != null)
+        val grabber = FFmpegFrameGrabber("video=$alternative").apply {
+            format = "dshow"
+        }.askFor(DEFAULT_CAMERA_RESOLUTION)
+        grabber.start()
+        try {
+            val frame = assertNotNull<Frame>(grabber.grab(), "no frame from $alternative")
+            assertTrue(frame.imageWidth > 0, "an empty frame")
+        } finally {
+            grabber.stop()
+            grabber.release()
+        }
+    }
 }

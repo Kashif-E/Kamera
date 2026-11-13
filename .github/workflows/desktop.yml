@@ -92,6 +92,7 @@ jobs:
           $alt = (ffmpeg -hide_banner -f dshow -list_devices true -i dummy 2>&1 | Select-String 'Alternative name "(@device_sw[^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
           ffmpeg -hide_banner -f dshow -video_size 1280x720 -framerate 30 -i "video=$alt" -frames:v 1 -update 1 -y unity720.png 2>&1 | Select-Object -Last 6
           Write-Output "ffmpeg (1280x720@30 by alternative name) exit $LASTEXITCODE"
+          "CAMERAK_DSHOW_ALT=$alt" >> $env:GITHUB_ENV
           if (Test-Path unity.png) { Get-Item unity.png | Select-Object Name, Length }
 
       - name: "Diagnostics: JavaCV alone, then CameraK's dshow backend, grab the virtual camera (Windows)"
@@ -99,9 +100,12 @@ jobs:
         continue-on-error: true
         env:
           CAMERAK_DSHOW_CAMERA: Unity Video Capture
+        shell: pwsh
         run: |
-          ./gradlew :cameraK-core:desktopTest --no-daemon --tests "*WindowsCameraDeviceTest.javacvAloneGrabsAFrame" -i 2>&1 | Select-String "WindowsCameraDeviceTest|PASSED|FAILED|SKIPPED|NTSTATUS|exit value"
-          ./gradlew :cameraK-core:desktopTest --no-daemon --tests "*WindowsCameraDeviceTest.cameraKsDshowBackendListsAndGrabsAFrame" -i 2>&1 | Select-String "WindowsCameraDeviceTest|PASSED|FAILED|SKIPPED|NTSTATUS|exit value|list_devices"
+          foreach ($case in "javacvAloneGrabsAFrame", "javacvAloneGrabsByAlternativeName", "cameraKsDshowBackendListsTwiceWithoutOpening", "cameraKsDshowBackendListsAndGrabsAFrame") {
+            ./gradlew :cameraK-core:desktopTest --no-daemon --tests "*WindowsCameraDeviceTest.$case" -i 2>&1 | Select-String "WindowsCameraDeviceTest listed|FAILED|NTSTATUS|exit value|list_devices" | Select-Object -First 6
+            Write-Output "CASE $case exit $LASTEXITCODE"
+          }
 
       - name: Run the Sample's smoke (Linux)
         if: runner.os == 'Linux'
