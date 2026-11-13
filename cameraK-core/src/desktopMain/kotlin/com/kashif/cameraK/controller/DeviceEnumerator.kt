@@ -9,10 +9,16 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import org.bytedeco.ffmpeg.avdevice.AVDeviceInfo
 import org.bytedeco.ffmpeg.avdevice.AVDeviceInfoList
+import org.bytedeco.ffmpeg.avformat.AVFormatContext
+import org.bytedeco.ffmpeg.avformat.AVInputFormat
+import org.bytedeco.ffmpeg.avutil.AVDictionary
+import org.bytedeco.ffmpeg.avutil.Callback_Pointer_int_String_Pointer
+import org.bytedeco.ffmpeg.avutil.LogCallback
 import org.bytedeco.ffmpeg.global.avdevice
 import org.bytedeco.ffmpeg.global.avformat
 import org.bytedeco.ffmpeg.global.avutil
 import org.bytedeco.javacpp.BytePointer
+import org.bytedeco.javacpp.Loader
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
@@ -292,6 +298,9 @@ private fun dshowSources(): List<DshowSource> {
     val listOut = PointerPointer<AVDeviceInfoList>(1L)
     try {
         val result = avdevice.avdevice_list_input_sources(dshow, null as BytePointer?, null, listOut)
+        // dshow returns the audio category's result: with no audio capture device the list fails, and is
+        // freed, whatever cameras there are.
+        if (result == AVERROR_EIO) return dshowSourcesFromLog(dshow)
         check(result >= 0) { "avdevice_list_input_sources failed with $result" }
         val list = listOut.get(AVDeviceInfoList::class.java, 0L)
         if (list == null || list.isNull) return emptyList()
@@ -309,8 +318,65 @@ private fun dshowSources(): List<DshowSource> {
     }
 }
 
-/** The dshow sources in the older list_devices query's [log]; stub. */
-internal fun parseDshowListing(log: String): List<DshowSource> = emptyList()
+/**
+ * The dshow sources in the log of FFmpeg's list_devices query: a `"<friendly name>" (<media types>)`
+ * line for each device, then its `  Alternative name "<moniker>"`, each line prefixed by its context.
+ * A device that names no media type counts as video, as in [isVideo].
+ */
+internal fun parseDshowListing(log: String): List<DshowSource> {
+    val lines = log.lineSequence().map { it.replaceFirst(LOG_PREFIX, "") }.toList()
+    return lines.zipWithNext().mapNotNull { (device, next) ->
+        val (friendly, types) = DEVICE_LINE.matchEntire(device)?.destructured ?: return@mapNotNull null
+        val moniker = ALTERNATIVE_NAME_LINE.matchEntire(next)?.groupValues?.get(1) ?: return@mapNotNull null
+        val kinds = types.split(", ")
+        DshowSource(moniker, friendly, isVideo = "video" in kinds || "none" in kinds)
+    }
+}
+
+private val LOG_PREFIX = Regex("""^\[[^\]]*] """)
+private val DEVICE_LINE = Regex(""""(.*)" \(([^()]*)\)""")
+private val ALTERNATIVE_NAME_LINE = Regex("""  Alternative name "(.*)"""")
+
+/**
+ * The dshow sources from FFmpeg's list_devices query, which logs every device, video first, whatever
+ * audio has. Its log goes to a callback of CameraK's own while it runs; the app's callback, or
+ * FFmpeg's default, is set back after, and the log level is raised to INFO for the query only.
+ */
+private fun dshowSourcesFromLog(dshow: AVInputFormat): List<DshowSource> = synchronized(DshowLogQuery) {
+    val log = StringBuffer()
+    val capture = object : LogCallback() {
+        override fun call(level: Int, msg: BytePointer) {
+            log.append(msg.string)
+        }
+    }
+    val previous: LogCallback? = avutil.logCallback()
+    val level = avutil.av_log_get_level()
+    if (level < avutil.AV_LOG_INFO) avutil.av_log_set_level(avutil.AV_LOG_INFO)
+    avutil.setLogCallback(capture)
+    val context = AVFormatContext(null)
+    val options = AVDictionary(null)
+    try {
+        avutil.av_dict_set(options, "list_devices", "true", 0)
+        // Always AVERROR_EXIT once the devices are logged; FFmpeg frees the context.
+        avformat.avformat_open_input(context, "dummy", dshow, options)
+    } finally {
+        avutil.av_dict_free(options)
+        if (previous != null && !previous.isNull) {
+            avutil.setLogCallback(previous)
+        } else {
+            avutil.av_log_set_callback(Callback_Pointer_int_String_Pointer(Loader.addressof("av_log_default_callback")))
+        }
+        avutil.av_log_set_level(level)
+        capture.close()
+    }
+    parseDshowListing(log.toString())
+}
+
+/** Serialises the queries that swap FFmpeg's process-wide log callback. */
+private object DshowLogQuery
+
+/** AVERROR(EIO), which dshow's device list returns whenever either category is empty. */
+private const val AVERROR_EIO = -5
 
 // A source that names no media type is kept: only one that names others is left out.
 private fun AVDeviceInfo.isVideo(): Boolean {
