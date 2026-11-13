@@ -17,6 +17,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -45,21 +46,21 @@ internal class DesktopGalleryStore(
     override val galleryPermission: CameraKPermission? get() = null
 
     override suspend fun addImage(path: String, format: ImageFormat, name: String?): CameraKResult<GalleryAsset> =
-        write(name, format.extension) { file -> Files.copy(Path.of(path), file, StandardCopyOption.REPLACE_EXISTING) }
+        write(Path.of(path), name, format.extension)
 
     override suspend fun addVideo(path: String, name: String?): CameraKResult<GalleryAsset> {
         val extension = path.substringAfterLast(File.separatorChar).substringAfterLast('.', "mp4")
-        return write(name, extension) { file -> Files.copy(Path.of(path), file, StandardCopyOption.REPLACE_EXISTING) }
+        return write(Path.of(path), name, extension)
     }
 
-    private suspend fun write(name: String?, extension: String, fill: (Path) -> Unit): CameraKResult<GalleryAsset> =
+    private suspend fun write(source: Path, name: String?, extension: String): CameraKResult<GalleryAsset> =
         withContext(Dispatchers.IO) {
             try {
                 val baseName = name?.let { requireSafeFileName(it, "imageName") } ?: defaultImageName()
                 val folder = resolveOutputDirectory()
                 val file = createUniqueFile(folder, baseName, extension)
                 try {
-                    fill(file)
+                    Files.copy(source, file, StandardCopyOption.REPLACE_EXISTING)
                 } catch (e: Exception) {
                     deleteUnfinished(file, e)
                     throw e
@@ -72,7 +73,13 @@ internal class DesktopGalleryStore(
                 // The saver logs the failure once, with this cause.
                 CameraKResult.Failure(
                     CameraKError.Storage(
-                        kind = if (e is NoSuchFileException) StorageFailure.NOT_FOUND else StorageFailure.NOT_WRITABLE,
+                        // Only the capture's own file missing is NOT_FOUND: Windows also reports a destination
+                        // folder it cannot create under a file as a missing path.
+                        kind = if (e is NoSuchFileException && e.file == source.toString()) {
+                            StorageFailure.NOT_FOUND
+                        } else {
+                            StorageFailure.NOT_WRITABLE
+                        },
                         cause = e,
                     ),
                 )
@@ -111,7 +118,7 @@ internal class DesktopGalleryStore(
         }
         return (captureFolders + ownFolder)
             .filter { (folder, base) -> isOwnFolder(folder, base) }
-            .map { (folder, _) -> folder.canonicalFile.toPath() }
+            .map { (folder, _) -> resolvedPath(folder) }
     }
 
     override suspend fun read(asset: GalleryAsset): CameraKResult<ByteArray> = withContext(Dispatchers.IO) {
@@ -130,7 +137,7 @@ internal class DesktopGalleryStore(
      */
     private fun readOwn(path: String): ByteArray {
         val (file, roots) = try {
-            File(path).canonicalFile.toPath() to readRoots()
+            resolvedPath(File(path)) to readRoots()
         } catch (e: IOException) {
             throw IOException("Failed to resolve the image's path", e)
         }
@@ -148,7 +155,23 @@ internal class DesktopGalleryStore(
 // Whether [folder], a name in [base], resolves to exactly that name in [base] once symbolic links are
 // followed: false when the folder is itself a link, wherever it points. [base] may be a link.
 private fun isOwnFolder(folder: File, base: File): Boolean =
-    folder.canonicalFile.toPath() == base.canonicalFile.toPath().resolve(folder.name)
+    resolvedPath(folder) == resolvedPath(base).resolve(folder.name)
+
+/**
+ * [file]'s absolute path with `..` and every symbolic link and junction resolved, through the deepest
+ * part that exists; the rest is appended as named. File.canonicalFile follows no symbolic link on
+ * Windows, where a linked folder passed the checks above.
+ */
+private fun resolvedPath(file: File): Path {
+    var existing = file.toPath().toAbsolutePath().normalize()
+    val missing = ArrayDeque<String>()
+    while (!Files.exists(existing, LinkOption.NOFOLLOW_LINKS)) {
+        val parent = existing.parent ?: break
+        existing.fileName?.let { missing.addFirst(it.toString()) }
+        existing = parent
+    }
+    return missing.fold(existing.toRealPath()) { path, name -> path.resolve(name) }
+}
 
 // A failure the store describes itself, in a message with no path or user data.
 internal class SaveFailure(message: String) : IOException(message)

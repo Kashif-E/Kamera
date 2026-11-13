@@ -57,7 +57,8 @@ class JVMImageSaverPluginCallbackTest {
 
         val result = desktopSaver(home).save(gone, "not-an-image")
 
-        assertIs<CameraKResult.Failure>(result, "save result for a capture whose file is gone")
+        val failure = assertIs<CameraKResult.Failure>(result, "save result for a capture whose file is gone")
+        assertEquals(StorageFailure.NOT_FOUND, assertIs<CameraKError.Storage>(failure.error).kind)
     }
 
     // The 1.x case read the failure callback's text; in 2.0 the text a failure reaches anyone through
