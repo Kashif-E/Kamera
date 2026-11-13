@@ -384,13 +384,19 @@ private object DshowLogTap {
     private var app: LogCallback? = null
     private var tap: LogCallback? = null
 
-    /** Makes the tap FFmpeg's callback, keeping the app's to pass lines to, unless it already is. */
+    /**
+     * Makes the tap FFmpeg's callback. The app's callback is read once, before the first install: read
+     * again, JavaCPP's wrapper of the tap itself did not compare equal to it, and the tap forwarded to
+     * itself until the stack overflowed (windows-2025).
+     */
     fun install() {
-        val current = avutil.logCallback()
         val installed = tap
-        if (installed != null && current != null && current.address() == installed.address()) return
-        app = current?.takeUnless { it.isNull }
-        val callback = installed ?: object : LogCallback() {
+        if (installed != null) {
+            avutil.setLogCallback(installed)
+            return
+        }
+        app = avutil.logCallback()?.takeUnless { it.isNull }
+        val callback = object : LogCallback() {
             // Called by FFmpeg: nothing may be thrown back into it.
             override fun call(level: Int, msg: BytePointer) {
                 try {
@@ -412,9 +418,9 @@ private object DshowLogTap {
         return try {
             forward.call(level, msg)
             true
-        } catch (e: NullPointerException) {
+        } catch (e: RuntimeException) {
             app = null
-            CameraKLogger.w(TAG, "FFmpeg had no log callback to pass lines on to; they go to standard error", e)
+            CameraKLogger.w(TAG, "The earlier FFmpeg log callback could not be called; lines go to standard error", e)
             false
         }
     }
