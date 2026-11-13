@@ -3,17 +3,34 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import org.company.app.App
+import org.company.app.smoke.SmokeApp
+import org.company.app.smoke.smokeArgs
+import kotlin.system.exitProcess
 
-fun main() = application {
-    System.setProperty("compose.interop.blending", "true")
-    System.setProperty("compose.swing.render.on.layer", "true")
-    System.setProperty("compose.interop.blending", "true")
+// Launched with -cameraKSmoke (CI on Linux and Windows), the app opens the camera, takes one photo and
+// exits with the verdict instead of running the Sample.
+fun main(args: Array<String>) {
+    val smoke = smokeArgs(args.toList())
+    var exitCode = 0
+    // Compose exits the process with 0 when the last window closes unless told not to.
+    application(exitProcessOnExit = smoke == null) {
+        System.setProperty("compose.interop.blending", "true")
+        System.setProperty("compose.swing.render.on.layer", "true")
 
-    Window(
-        title = "CameraK",
-        state = rememberWindowState(width = 1440.dp, height = 1024.dp),
-        onCloseRequest = ::exitApplication,
-    ) {
-        App()
+        Window(
+            title = "CameraK",
+            state = rememberWindowState(width = 1440.dp, height = 1024.dp),
+            onCloseRequest = ::exitApplication,
+        ) {
+            if (smoke != null) {
+                SmokeApp(smoke) { code ->
+                    exitCode = code
+                    exitApplication()
+                }
+            } else {
+                App()
+            }
+        }
     }
+    if (smoke != null) exitProcess(exitCode)
 }
