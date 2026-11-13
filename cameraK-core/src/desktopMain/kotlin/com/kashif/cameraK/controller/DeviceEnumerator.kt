@@ -17,6 +17,7 @@ import org.bytedeco.ffmpeg.global.avdevice
 import org.bytedeco.ffmpeg.global.avformat
 import org.bytedeco.ffmpeg.global.avutil
 import org.bytedeco.javacpp.BytePointer
+import org.bytedeco.javacpp.Pointer
 import org.bytedeco.javacpp.PointerPointer
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FrameGrabber
@@ -293,11 +294,13 @@ internal class VideoInputCaptureBackend : WindowsCaptureBackend {
 private fun dshowSources(): List<DshowSource> {
     avdevice.avdevice_register_all()
     val dshow = avformat.av_find_input_format("dshow") ?: error("This FFmpeg build has no dshow input")
-    val listOut = PointerPointer<AVDeviceInfoList>(1L)
+    // Once the list has failed for want of an audio device, it fails every time: the process lists
+    // through the log from then on.
+    if (dshowListFails) return dshowSourcesFromLog(dshow)
+    // JavaCPP does not zero the slot, and FFmpeg leaves it unwritten on some early errors; freed unwritten,
+    // it corrupted the heap (windows-2025 runner).
+    val listOut = PointerPointer<AVDeviceInfoList>(1L).put(0L, null as Pointer?)
     try {
-        // Once the list has failed for want of an audio device, it fails every time: the process lists
-        // through the log from then on.
-        if (dshowListFails) return dshowSourcesFromLog(dshow)
         val result = avdevice.avdevice_list_input_sources(dshow, null as BytePointer?, null, listOut)
         // dshow returns the audio category's result: with no audio capture device the list fails, and is
         // freed, whatever cameras there are.
