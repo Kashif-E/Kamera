@@ -42,10 +42,22 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * How long a start may wait for the platform to open, hold or fail the camera before the holder
- * gives up with `Timeout(START)`: long enough for a cold CameraX bind or the macOS permission
- * prompt's first frame, short enough that a camera that never answers does not leave a spinner.
+ * gives up with `Timeout(START)`: long enough for a cold CameraX bind, short enough that a camera
+ * that never answers does not leave a spinner. A start at NotDetermined also gets
+ * [PERMISSION_PROMPT_TIMEOUT].
  */
 internal val START_TIMEOUT: Duration = 10.seconds
+
+/**
+ * How much longer a start may wait while its permission reads NotDetermined on a platform that
+ * prompts when the device opens (macOS): the open waits there for the user to answer the system's
+ * prompt, and the start's own deadline must not run out while the prompt is still being read.
+ */
+internal val PERMISSION_PROMPT_TIMEOUT: Duration = 60.seconds
+
+/** [base], plus [PERMISSION_PROMPT_TIMEOUT] while [status] says the open may be showing the system's prompt. */
+internal fun promptAwareTimeout(base: Duration, status: PermissionStatus): Duration =
+    if (status == PermissionStatus.NotDetermined) base + PERMISSION_PROMPT_TIMEOUT else base
 
 /**
  * How long `close()` waits for the engine to release the camera. A platform that never returns
@@ -310,7 +322,10 @@ internal class SessionLifecycle(
                     }
                     runtimeFailure.complete(Unit)
                 }
-                when (val started = withTimeoutOrNull(START_TIMEOUT) { engine.start(desiredHardware()) }) {
+                when (
+                    val started =
+                        withTimeoutOrNull(promptAwareTimeout(START_TIMEOUT, status)) { engine.start(desiredHardware()) }
+                ) {
                     null -> {
                         mirror.cancel()
                         stopEngine()
