@@ -73,6 +73,49 @@ class MediaChecksTest {
         assertNull(mp4DurationSeconds(noMoov.size.toLong(), noMoov::range))
         assertNull(videoBrand(testJpeg(4, 3)))
     }
+
+    @Test
+    fun anMp4sTracksAreItsHandlersAndMediaDurations() {
+        val file = testMp4(
+            durationUnits = 5333,
+            timescale = 1000,
+            tracks = listOf(Triple("vide", 15_360L, 81_920L), Triple("soun", 48_000L, 254_880L)),
+        )
+
+        assertEquals(
+            listOf(Mp4Track("vide", 81_920.0 / 15_360), Mp4Track("soun", 5.31)),
+            mp4Tracks(file.size.toLong(), file::range),
+        )
+        val noMoov = testMp4(durationUnits = 3000, timescale = 1000).let { it.copyOf(it.size - 48) }
+        assertEquals(emptyList(), mp4Tracks(noMoov.size.toLong(), noMoov::range))
+    }
+
+    @Test
+    fun aRecordingHasAnAudioTrackAsLongAsItsVideoExactlyWhenAudioWasAsked() {
+        val video = Mp4Track("vide", 5.333)
+
+        assertNull(audioTrackProblem(listOf(video, Mp4Track("soun", 5.31)), askedAudio = true))
+        assertNull(audioTrackProblem(listOf(video), askedAudio = false))
+        assertEquals("no audio track", audioTrackProblem(listOf(video), askedAudio = true))
+        assertEquals(
+            "an audio track, though audio was not asked",
+            audioTrackProblem(listOf(video, Mp4Track("soun", 5.31)), askedAudio = false),
+        )
+        assertEquals(
+            "audio 4.80 s against video 5.33 s",
+            audioTrackProblem(listOf(video, Mp4Track("soun", 4.8)), askedAudio = true),
+        )
+        assertEquals("no video track", audioTrackProblem(listOf(Mp4Track("soun", 5.31)), askedAudio = true))
+    }
+
+    @Test
+    fun anAudioTrackWhoseLoudestSampleIsUnderOne16BitStepIsDigitalSilence() {
+        assertNull(digitalSilenceProblem(null), "the platform cannot decode it")
+        assertNull(digitalSilenceProblem(-48.7), "a quiet room")
+        assertNull(digitalSilenceProblem(-89.0))
+        assertEquals("the audio is digital silence, its loudest sample -120.0 dBFS", digitalSilenceProblem(-120.0))
+        assertEquals("the audio is digital silence, every sample zero", digitalSilenceProblem(Double.NEGATIVE_INFINITY))
+    }
 }
 
 private fun ByteArray.range(offset: Long, length: Int): ByteArray =
@@ -143,7 +186,13 @@ internal fun testHeic(brand: String): ByteArray {
 }
 
 /** ftyp, an mdat, then a moov whose mvhd follows a udta box, as a muxer writes it. */
-internal fun testMp4(durationUnits: Long, timescale: Long, version: Int = 0, brand: String = "isom"): ByteArray {
+internal fun testMp4(
+    durationUnits: Long,
+    timescale: Long,
+    version: Int = 0,
+    brand: String = "isom",
+    tracks: List<Triple<String, Long, Long>> = emptyList(),
+): ByteArray {
     val ftyp = box("ftyp", Bytes().ascii(brand).u32(0x200).ascii("isom").ascii("mp42").build())
     val mdat = box("mdat", ByteArray(100))
     val mvhd = if (version == 0) {
@@ -151,6 +200,15 @@ internal fun testMp4(durationUnits: Long, timescale: Long, version: Int = 0, bra
     } else {
         box("mvhd", Bytes().u8(1, 0, 0, 0).u64(0).u64(0).u32(timescale).u64(durationUnits).build())
     }
-    val moov = box("moov", Bytes().bytes(box("udta", ByteArray(4))).bytes(mvhd).build())
+    // Each track: handler, media timescale, media duration; an mdhd before the hdlr, as muxers write them.
+    val traks = tracks.map { (handler, scale, units) ->
+        val mdhd = box("mdhd", Bytes().u32(0).u32(0).u32(0).u32(scale).u32(units).u32(0).build())
+        val hdlr = box("hdlr", Bytes().u32(0).u32(0).ascii(handler).u32(0).u32(0).u32(0).u8(0).build())
+        box("trak", Bytes().bytes(box("tkhd", ByteArray(84))).bytes(box("mdia", Bytes().bytes(mdhd).bytes(hdlr).build())).build())
+    }
+    val moov = box(
+        "moov",
+        Bytes().bytes(box("udta", ByteArray(4))).bytes(mvhd).apply { traks.forEach { bytes(it) } }.build(),
+    )
     return Bytes().bytes(ftyp).bytes(mdat).bytes(moov).build()
 }

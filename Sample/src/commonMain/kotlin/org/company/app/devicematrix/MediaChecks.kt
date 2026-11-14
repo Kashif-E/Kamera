@@ -149,6 +149,18 @@ internal fun mp4DurationSeconds(size: Long, read: (offset: Long, length: Int) ->
     return if (timescale == 0L) null else duration.toDouble() / timescale
 }
 
+/** One track of an MP4: its hdlr's handler type ("vide", "soun") and its mdhd's duration in seconds. */
+internal data class Mp4Track(val handler: String, val seconds: Double)
+
+/** The tracks of the movie in a file of [size] bytes, read through [read]; empty without a moov. */
+internal fun mp4Tracks(size: Long, read: (offset: Long, length: Int) -> ByteArray): List<Mp4Track> = emptyList()
+
+/** What is wrong with the recording's audio track given whether audio was asked; null when nothing. */
+internal fun audioTrackProblem(tracks: List<Mp4Track>, askedAudio: Boolean): String? = null
+
+/** Whether [peakDbfs], the loudest decoded sample, says the track is digital silence; null when it is not, or unknown. */
+internal fun digitalSilenceProblem(peakDbfs: Double?): String? = null
+
 private fun ByteArray.u8(at: Int): Int = this[at].toInt() and 0xFF
 
 private fun ByteArray.u16(at: Int): Int = if (at + 2 <= size) (u8(at) shl 8) or u8(at + 1) else 0
