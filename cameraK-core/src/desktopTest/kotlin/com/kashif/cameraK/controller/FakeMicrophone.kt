@@ -8,12 +8,15 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * A microphone whose chunks the test hands it ([deliver]), at the capture times the test sets. With
  * [failAfter], the read after that many chunks throws, as a line that is unplugged or closed by the OS.
- * A read blocks until a chunk arrives or the microphone is closed.
+ * With [endAfter], the read after that many chunks returns null, as a line the OS closed; with
+ * [closeFailure], close throws it. A read blocks until a chunk arrives or the microphone is closed.
  */
 internal class FakeMicrophone(
     override val sampleRate: Int = 48_000,
     override val channels: Int = 1,
     private val failAfter: Int? = null,
+    private val endAfter: Int? = null,
+    private val closeFailure: Exception? = null,
 ) : Microphone {
     private val chunks = LinkedBlockingQueue<AudioChunk>()
     private val delivered = AtomicInteger(0)
@@ -43,6 +46,8 @@ internal class FakeMicrophone(
         ) {
             throw IllegalStateException("The microphone was unplugged")
         }
+        // A line the OS closed: Java Sound's read returns nothing rather than throwing.
+        if (endAfter != null && delivered.get() >= endAfter) return null
         while (closed.count > 0) {
             val chunk = chunks.poll(5, TimeUnit.MILLISECONDS)
             if (chunk == null) {
@@ -55,5 +60,8 @@ internal class FakeMicrophone(
         return null
     }
 
-    override fun close() = closed.countDown()
+    override fun close() {
+        closed.countDown()
+        closeFailure?.let { throw it }
+    }
 }
