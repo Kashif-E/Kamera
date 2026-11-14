@@ -36,10 +36,12 @@ show a button that opens them.
 `Info.plist` lacks `NSCameraUsageDescription`, or `NSMicrophoneUsageDescription` for a recording
 with audio. See [Installation](getting-started/installation.md#ios).
 
-### macOS desktop: the packaged app cannot open the camera
+### macOS desktop: the packaged app cannot open the camera or record sound
 
-The bundle needs `NSCameraUsageDescription`, and a signed build with the hardened runtime the camera
-entitlement. `./gradlew run` hides the problem because the terminal holds the permission.
+The bundle needs `NSCameraUsageDescription`, and `NSMicrophoneUsageDescription` for a recording with
+audio; a signed build with the hardened runtime also needs the camera entitlement, and
+`com.apple.security.device.audio-input` for audio. `./gradlew run` hides the problem because the
+terminal holds the permissions.
 
 ## The camera does not open
 
@@ -116,7 +118,12 @@ not offer: most front cameras have no flash, and desktop has no flash, torch or 
 ## Recording
 
 - `Failure(Permission(MICROPHONE, status))`: `enableAudio = true` without the microphone permission.
-- `Failure(Unsupported(AUDIO))` on desktop: desktop records no audio.
+- `Failure(Unsupported(AUDIO))` on desktop: the machine has no microphone that records 16-bit audio.
+- `Failure(Hardware)` on desktop with `enableAudio = true`: the microphone exists but did not open (in
+  use, or refused by the system).
+- A desktop recording whose sound is silent: on macOS the microphone was denied while the first
+  recording ran (macOS gives silence until the answer), or on Windows "Let desktop apps access your
+  microphone" is off.
 - `Failure(Busy(LENS))` from a lens switch: switching is refused while recording.
 - A recording ended on its own: collect `CameraKEvent.RecordingEnded` from `holder.events`; its
   `reason` says why.

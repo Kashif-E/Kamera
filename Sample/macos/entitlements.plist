@@ -12,5 +12,8 @@
     <!-- The hardened runtime blocks the camera without this. -->
     <key>com.apple.security.device.camera</key>
     <true/>
+    <!-- And the microphone, for a recording with audio. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
 </dict>
 </plist>

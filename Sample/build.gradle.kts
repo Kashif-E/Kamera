@@ -164,14 +164,16 @@ compose.desktop {
             packageName = "org.company.app"
             packageVersion = "1.0.0"
 
-            // Without a camera usage description TCC denies or kills a packaged macOS app that opens
-            // the camera; the entitlements let a signed, hardened-runtime build use it too.
+            // Without a camera or microphone usage description TCC denies or kills a packaged macOS app
+            // that opens it; the entitlements let a signed, hardened-runtime build use them too.
             macOS {
                 infoPlist {
                     extraKeysRawXml =
                         """
                         <key>NSCameraUsageDescription</key>
                         <string>The CameraK sample shows the camera preview and takes photos and videos.</string>
+                        <key>NSMicrophoneUsageDescription</key>
+                        <string>The CameraK sample records sound with videos that have audio turned on.</string>
                         """.trimIndent()
                 }
                 entitlementsFile.set(project.file("macos/entitlements.plist"))

@@ -149,9 +149,10 @@ runtimeOnly("net.java.dev.jna:jna:5.14.0")   // desktopMain
 CameraK reads the camera's authorization and lists the cameras through it. Without JNA the app offers only the default camera, and `CameraKPermission.CAMERA` reads `NotDetermined` until the camera opens, which shows macOS's prompt.
 
 On macOS, a packaged app (DMG or PKG) that opens the camera without a camera usage description is
-denied or killed by the system's privacy controls (TCC). `./gradlew run` does not show the
-problem, because the terminal already holds the camera permission. Add the description, and the
-camera entitlement for a signed build with the hardened runtime, to `compose.desktop`:
+denied or killed by the system's privacy controls (TCC), and so is one that records audio without a
+microphone usage description. `./gradlew run` does not show the problem, because the terminal
+already holds the permissions. Add the descriptions, and the camera and microphone entitlements for
+a signed build with the hardened runtime, to `compose.desktop`:
 
 ```kotlin
 compose.desktop {
@@ -162,6 +163,9 @@ compose.desktop {
                     extraKeysRawXml = """
                         <key>NSCameraUsageDescription</key>
                         <string>This app needs camera access to capture photos</string>
+                        <!-- Recording with audio (enableAudio = true) -->
+                        <key>NSMicrophoneUsageDescription</key>
+                        <string>Microphone access is needed to record sound with videos</string>
                     """.trimIndent()
                 }
                 entitlementsFile.set(project.file("macos/entitlements.plist"))
@@ -172,7 +176,8 @@ compose.desktop {
 }
 ```
 
-Both entitlements files grant `com.apple.security.device.camera`, plus what the JVM and JavaCV's
+Both entitlements files grant `com.apple.security.device.camera`, and
+`com.apple.security.device.audio-input` for a recording with audio, plus what the JVM and JavaCV's
 native libraries need under the hardened runtime:
 
 ```xml
@@ -184,10 +189,15 @@ native libraries need under the hardened runtime:
 <true/>
 <key>com.apple.security.device.camera</key>
 <true/>
+<key>com.apple.security.device.audio-input</key>
+<true/>
 ```
 
-The desktop backend records no audio, so it needs no microphone description: a recording with `enableAudio = true` fails with `CameraKError.Unsupported(CameraFeature.AUDIO)`. The Sample's
-`Sample/build.gradle.kts` and `Sample/macos/` show the full setup.
+A recording with `enableAudio = true` records the default microphone on macOS, Linux and Windows. On
+macOS the system asks for the microphone the first time one starts (or `prepareRecording` runs), as
+it asks for the camera when the camera opens. A machine with no microphone fails the recording with
+`CameraKError.Unsupported(CameraFeature.AUDIO)`. The Sample's `Sample/build.gradle.kts` and
+`Sample/macos/` show the full setup.
 
 ## Step 3: Check the setup
 

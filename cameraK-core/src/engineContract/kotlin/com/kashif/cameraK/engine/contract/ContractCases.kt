@@ -56,7 +56,7 @@ internal class ContractCases(
         targetOrientation = null,
     )
 
-    // Desktop rejects enableAudio = true; no case here is about audio.
+    // No case here is about audio: an engine's microphone is the host's, and CI hosts have none.
     private val video = VideoConfiguration { enableAudio = false }
     private val reason = InterruptionReason.IN_USE_BY_ANOTHER_CLIENT
     private val success = CameraKResult.Success(Unit)
