@@ -31,6 +31,9 @@ internal interface CaptureLine {
 
     fun read(buffer: ByteArray, offset: Int, length: Int): Int
 
+    /** Bytes captured and not read yet. */
+    fun available(): Int = 0
+
     fun close()
 }
 
