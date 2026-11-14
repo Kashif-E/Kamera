@@ -7,7 +7,9 @@ import java.util.concurrent.ArrayBlockingQueue
 /**
  * Reads [microphone] on a thread of its own and queues its chunks for the recording, which alone
  * writes them to the recorder. A full queue (the encoder far behind) drops the newest chunk, logged
- * once. A read that throws is kept as [failure] and ends the reading; a close ends it quietly.
+ * once. A read that throws, or a line that ends without being closed (Java Sound's read returns
+ * nothing for a device the OS closed), is kept as [failure] and ends the reading; [close] ends it
+ * quietly.
  */
 internal class AudioFeed(private val microphone: Microphone, capacityChunks: Int = DEFAULT_CAPACITY) {
     val sampleRate: Int get() = microphone.sampleRate
@@ -27,7 +29,7 @@ internal class AudioFeed(private val microphone: Microphone, capacityChunks: Int
     private fun readUntilClosed() {
         try {
             while (true) {
-                val chunk = microphone.read() ?: return
+                val chunk = microphone.read() ?: break
                 if (!queue.offer(chunk) && dropLogged.compareAndSet(false, true)) {
                     CameraKLogger.w(TAG, "The recording fell behind the microphone; samples were dropped")
                 }
@@ -36,7 +38,11 @@ internal class AudioFeed(private val microphone: Microphone, capacityChunks: Int
             if (closed.value) return
             CameraKLogger.e(TAG, "Reading the microphone failed; the recording ends", e)
             failure = e
+            return
         }
+        if (closed.value) return
+        CameraKLogger.w(TAG, "The microphone stopped delivering samples; the recording ends")
+        failure = IllegalStateException("The microphone stopped delivering samples")
     }
 
     /** The chunks read since the last drain, oldest first. */
@@ -45,7 +51,11 @@ internal class AudioFeed(private val microphone: Microphone, capacityChunks: Int
     /** Closes the microphone and waits a moment for the reading thread to end; does nothing twice. */
     fun close() {
         if (!closed.compareAndSet(false, true)) return
-        microphone.close()
+        try {
+            microphone.close()
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Closing the microphone failed; the recording finishes without it", e)
+        }
         if (thread.isAlive) thread.join(CLOSE_WAIT_MILLIS)
     }
 
