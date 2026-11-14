@@ -31,4 +31,17 @@ class FakePermissionCheckerTest {
         assertTrue(checker.allowsOpen(PermissionStatus.NotDetermined))
         assertFalse(checker.allowsOpen(PermissionStatus.Denied(shouldShowRationale = true)))
     }
+
+    @Test
+    fun promptsOnOpenAtNotDeterminedOnlyWhereItMayOpenThere() {
+        val checker = FakePermissionChecker(initial = PermissionStatus.NotDetermined)
+        assertFalse(checker.promptsOnOpen(CameraKPermission.CAMERA, PermissionStatus.NotDetermined), "Android, iOS")
+
+        checker.allowsOpenWhenNotDetermined = true
+        assertTrue(checker.promptsOnOpen(CameraKPermission.CAMERA, PermissionStatus.NotDetermined), "a Mac")
+        assertFalse(checker.promptsOnOpen(CameraKPermission.CAMERA, PermissionStatus.Granted))
+
+        checker.promptsWhenNotDetermined = false
+        assertFalse(checker.promptsOnOpen(CameraKPermission.MICROPHONE, PermissionStatus.NotDetermined), "unreadable")
+    }
 }

@@ -582,6 +582,48 @@ class RecordingControllerTest {
     }
 
     @Test
+    fun aMicrophoneAtANotDeterminedThatShowsNoPromptTimesOutAtTheStartTimeout() = runTest {
+        // A Mac that could not read the microphone's authorization: no prompt is up to wait on.
+        val checker = FakePermissionChecker().apply {
+            setStatus(CameraKPermission.MICROPHONE, PermissionStatus.NotDetermined)
+            allowsOpenWhenNotDetermined = true
+            promptsWhenNotDetermined = false
+        }
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val holder = readyHolder(fake, cameraKTestEnvironment(checker))
+
+        val start = async { holder.startRecording(VideoConfiguration { enableAudio = true }) }
+        runCurrent()
+        advanceTimeBy(RECORDING_START_TIMEOUT + 1.milliseconds)
+        runCurrent()
+
+        assertTrue(start.isCompleted, "the start waited on a prompt that is not up")
+        val error = assertIs<CameraKError.Timeout>(assertIs<CameraKResult.Failure>(start.await()).error)
+        assertEquals(CameraOperation.RECORD_START, error.operation)
+    }
+
+    @Test
+    fun aMicrophonePromptDeniedWhileTheStartHangsGivesTheStatusItWasDeniedWith() = runTest {
+        val checker = FakePermissionChecker().apply {
+            setStatus(CameraKPermission.MICROPHONE, PermissionStatus.NotDetermined)
+            allowsOpenWhenNotDetermined = true
+        }
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val holder = readyHolder(fake, cameraKTestEnvironment(checker))
+
+        val start = async { holder.startRecording(VideoConfiguration { enableAudio = true }) }
+        runCurrent()
+        advanceTimeBy(3.seconds)
+        checker.setStatus(CameraKPermission.MICROPHONE, PermissionStatus.PermanentlyDenied)
+        advanceTimeBy(RECORDING_START_TIMEOUT + PERMISSION_PROMPT_TIMEOUT)
+        runCurrent()
+
+        val error = assertIs<CameraKError.Permission>(assertIs<CameraKResult.Failure>(start.await()).error)
+        assertEquals(CameraKPermission.MICROPHONE, error.permission)
+        assertEquals(PermissionStatus.PermanentlyDenied, error.status)
+    }
+
+    @Test
     fun startNotConfirmedInTimeIsTimeoutRecordStart() = runTest {
         val fake = FakeCameraEngine().apply { autoStartRecording = false }
         val holder = readyHolder(fake)

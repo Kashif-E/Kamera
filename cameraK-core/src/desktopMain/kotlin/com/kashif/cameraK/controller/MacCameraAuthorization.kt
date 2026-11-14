@@ -49,12 +49,15 @@ internal class MacCameraAuthorization(
     private val runtime: () -> ObjCRuntime = { JnaObjCRuntime() },
 ) : CameraAuthorization {
     /** The authorization status of [type]; NotDetermined whenever it cannot be read. */
-    fun status(type: MacMediaType): PermissionStatus {
+    fun status(type: MacMediaType): PermissionStatus = read(type) ?: PermissionStatus.NotDetermined
+
+    /** The authorization status of [type]; null when it cannot be read. */
+    fun read(type: MacMediaType): PermissionStatus? {
         val objc = try {
             runtime()
         } catch (e: LinkageError) {
             CameraKLogger.w(TAG, "JNA is not available, so the AVFoundation authorization reads as not determined", e)
-            return PermissionStatus.NotDetermined
+            return null
         }
         return try {
             // Reading the constant loads AVFoundation, which registers AVCaptureDevice with the runtime.
@@ -62,15 +65,15 @@ internal class MacCameraAuthorization(
             val device = objc.getClass("AVCaptureDevice")
             if (device == 0L || mediaType == 0L) {
                 CameraKLogger.w(TAG, "AVFoundation is not loaded, so the authorization reads as not determined")
-                return PermissionStatus.NotDetermined
+                return null
             }
             statusOf(objc.sendLong(device, objc.selector("authorizationStatusForMediaType:"), mediaType))
         } catch (e: Exception) {
             CameraKLogger.w(TAG, "Reading an AVFoundation authorization failed; it reads as not determined", e)
-            PermissionStatus.NotDetermined
+            null
         } catch (e: LinkageError) {
             CameraKLogger.w(TAG, "Reading an AVFoundation authorization failed; it reads as not determined", e)
-            PermissionStatus.NotDetermined
+            null
         }
     }
 

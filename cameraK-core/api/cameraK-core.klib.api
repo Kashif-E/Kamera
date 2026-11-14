@@ -206,6 +206,7 @@ abstract fun interface com.kashif.cameraK.frames/FrameAnalyzer { // com.kashif.c
 abstract fun interface com.kashif.cameraK.permissions/CameraKPermissionChecker { // com.kashif.cameraK.permissions/CameraKPermissionChecker|null[0]
     abstract fun status(com.kashif.cameraK.permissions/CameraKPermission): com.kashif.cameraK.permissions/PermissionStatus // com.kashif.cameraK.permissions/CameraKPermissionChecker.status|status(com.kashif.cameraK.permissions.CameraKPermission){}[0]
     open fun allowsOpen(com.kashif.cameraK.permissions/PermissionStatus): kotlin/Boolean // com.kashif.cameraK.permissions/CameraKPermissionChecker.allowsOpen|allowsOpen(com.kashif.cameraK.permissions.PermissionStatus){}[0]
+    open fun promptsOnOpen(com.kashif.cameraK.permissions/CameraKPermission, com.kashif.cameraK.permissions/PermissionStatus): kotlin/Boolean // com.kashif.cameraK.permissions/CameraKPermissionChecker.promptsOnOpen|promptsOnOpen(com.kashif.cameraK.permissions.CameraKPermission;com.kashif.cameraK.permissions.PermissionStatus){}[0]
 }
 
 abstract interface com.kashif.cameraK.engine/CameraEngine { // com.kashif.cameraK.engine/CameraEngine|null[0]

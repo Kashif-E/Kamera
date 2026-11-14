@@ -112,7 +112,10 @@ public final class com/kashif/cameraK/testing/FakePermissionChecker : com/kashif
 	public synthetic fun <init> (Lcom/kashif/cameraK/permissions/PermissionStatus;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun allowsOpen (Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
 	public final fun getAllowsOpenWhenNotDetermined ()Z
+	public final fun getPromptsWhenNotDetermined ()Z
+	public fun promptsOnOpen (Lcom/kashif/cameraK/permissions/CameraKPermission;Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
 	public final fun setAllowsOpenWhenNotDetermined (Z)V
+	public final fun setPromptsWhenNotDetermined (Z)V
 	public final fun setStatus (Lcom/kashif/cameraK/permissions/CameraKPermission;Lcom/kashif/cameraK/permissions/PermissionStatus;)V
 	public fun status (Lcom/kashif/cameraK/permissions/CameraKPermission;)Lcom/kashif/cameraK/permissions/PermissionStatus;
 }

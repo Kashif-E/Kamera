@@ -720,11 +720,13 @@ public final class com/kashif/cameraK/permissions/CameraKPermission : java/lang/
 
 public abstract interface class com/kashif/cameraK/permissions/CameraKPermissionChecker {
 	public fun allowsOpen (Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
+	public fun promptsOnOpen (Lcom/kashif/cameraK/permissions/CameraKPermission;Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
 	public abstract fun status (Lcom/kashif/cameraK/permissions/CameraKPermission;)Lcom/kashif/cameraK/permissions/PermissionStatus;
 }
 
 public final class com/kashif/cameraK/permissions/CameraKPermissionChecker$DefaultImpls {
 	public static fun allowsOpen (Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
+	public static fun promptsOnOpen (Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;Lcom/kashif/cameraK/permissions/CameraKPermission;Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
 }
 
 public final class com/kashif/cameraK/permissions/PermissionRequestRecord {
