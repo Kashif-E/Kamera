@@ -11,9 +11,11 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.CameraKPermissionChecker
+import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CommandRunner
+import com.kashif.cameraK.state.promptAwareTimeout
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
@@ -41,7 +43,9 @@ import kotlin.time.TimeSource
 
 /**
  * How long a recording start waits for the platform to confirm it before it gives up with
- * `Timeout(RECORD_START)` and stops whatever the engine began.
+ * `Timeout(RECORD_START)` and stops whatever the engine began. A start whose microphone reads
+ * NotDetermined also gets `PERMISSION_PROMPT_TIMEOUT`, and gives up with `Permission(MICROPHONE,
+ * NotDetermined)` while the prompt is still unanswered.
  */
 internal val RECORDING_START_TIMEOUT: Duration = 5.seconds
 
@@ -238,15 +242,17 @@ internal class RecordingController(
             var outcome: CameraKResult<RecordingState.Recording>? = null
             var engineCalled = false
             try {
-                microphoneRefusal(config)?.let {
+                val microphone = microphoneStatus(config)
+                microphoneRefusal(microphone)?.let {
                     outcome = it
                     return@withLock it.also { backToIdle(id) }
                 }
                 engineCalled = true
-                val started = withTimeoutOrNull(RECORDING_START_TIMEOUT) { confirmedStart(config, id) }
+                val timeout = promptAwareTimeout(RECORDING_START_TIMEOUT, microphone ?: PermissionStatus.Granted)
+                val started = withTimeoutOrNull(timeout) { confirmedStart(config, id) }
                 outcome = started ?: run {
                     withContext(NonCancellable) { stopUnconfirmed(id, "timed out") }
-                    CameraKResult.Failure(CameraKError.Timeout(CameraOperation.RECORD_START))
+                    CameraKResult.Failure(startTimeoutError(config))
                 }
                 outcome
             } finally {
@@ -260,14 +266,25 @@ internal class RecordingController(
             }
         }
 
-    private fun microphoneRefusal(config: VideoConfiguration): CameraKResult.Failure? {
-        if (!config.enableAudio) return null
-        val checker = permissionChecker ?: return null
-        val status = checker.status(CameraKPermission.MICROPHONE)
+    // The microphone's status when the recording records sound and a checker reads it; null otherwise.
+    private fun microphoneStatus(config: VideoConfiguration): PermissionStatus? =
+        if (config.enableAudio) permissionChecker?.status(CameraKPermission.MICROPHONE) else null
+
+    private fun microphoneRefusal(status: PermissionStatus?): CameraKResult.Failure? {
+        val checker = permissionChecker
+        if (status == null || checker == null) return null
         // Granted everywhere; desktop also records at NotDetermined, as macOS prompts when the microphone opens.
         if (checker.allowsOpen(status)) return null
         return CameraKResult.Failure(CameraKError.Permission(CameraKPermission.MICROPHONE, status))
     }
+
+    // A start that timed out with the microphone's prompt still unanswered is waiting on the user, as the camera's is.
+    private fun startTimeoutError(config: VideoConfiguration): CameraKError =
+        if (microphoneStatus(config) == PermissionStatus.NotDetermined) {
+            CameraKError.Permission(CameraKPermission.MICROPHONE, PermissionStatus.NotDetermined)
+        } else {
+            CameraKError.Timeout(CameraOperation.RECORD_START)
+        }
 
     // The engine's start, then its Started milestone, which the event collector turns into Recording.
     private suspend fun confirmedStart(config: VideoConfiguration, id: Long): CameraKResult<RecordingState.Recording> {

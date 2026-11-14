@@ -21,12 +21,12 @@ import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.plugin.CameraKPluginContext
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.COMMAND_DRAIN_TIMEOUT
-import com.kashif.cameraK.state.PERMISSION_PROMPT_TIMEOUT
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
 import com.kashif.cameraK.state.CameraKState
 import com.kashif.cameraK.state.CameraKStateHolder
+import com.kashif.cameraK.state.PERMISSION_PROMPT_TIMEOUT
 import com.kashif.cameraK.testing.FakeCameraEngine
 import com.kashif.cameraK.testing.FakeCapabilities
 import com.kashif.cameraK.testing.FakeCaptures
