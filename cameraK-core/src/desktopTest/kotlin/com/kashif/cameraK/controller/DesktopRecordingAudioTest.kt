@@ -114,7 +114,13 @@ class DesktopRecordingAudioTest {
             microphone.deliver(1_001)
             steps.frameAt(1_010)
             microphone.deliver(1_021)
-            steps.frameAt(1_030)
+            // The reader fails on its next read; the recording sees it at the next frame. The failure is
+            // set on the reader's thread a moment after that read, so a later frame may be the one.
+            var at = 1_030L
+            while (events.none { it is EngineRecordingEvent.Finalized } && at < 1_200) {
+                steps.frameAt(at)
+                at += 10
+            }
 
             val finalized = events.filterIsInstance<EngineRecordingEvent.Finalized>().single()
             assertEquals(RecordingEndReason.INTERRUPTED, finalized.reason)

@@ -103,8 +103,9 @@ internal val RECOVERY_TIMEOUT: Duration = 10.seconds
  * `outputDirectory`, used as given, else `Documents/CameraK` under the user's home (gallery
  * publishing is the media saver's, §6.1); recordings under their own `outputDirectory`,
  * else the configuration's, else the user's movies folder. HEIC is not a desktop format, so a start
- * configured with it fails with `Unsupported(IMAGE_FORMAT)`. A recording ([DesktopRecording]) is
- * video only (`enableAudio` is `Unsupported(AUDIO)`), enforces its limits itself, yields one
+ * configured with it fails with `Unsupported(IMAGE_FORMAT)`. A recording ([DesktopRecording]) with
+ * `enableAudio` records the default microphone ([DesktopMedia.microphone]): `Unsupported(AUDIO)`
+ * when there is none and `Hardware` when it does not open, before any file exists. It enforces its limits itself, yields one
  * `Finalized` in [recordingEvents], and is finalized before the camera closes on [stop] or [close]
  * (§2.3 rule 7). A camera switch during one is `Busy`.
  *
@@ -675,11 +676,19 @@ internal class DesktopCameraEngine(
         (video.outputDirectory ?: config.outputDirectory)?.let(::File)
             ?: File(File(media.userHome, moviesFolderName()), "CameraK")
 
-    /** Validates what [startRecording] would refuse; desktop has no output to add ahead of time. */
+    /**
+     * Validates what [startRecording] would refuse; desktop has no output to add ahead of time. With
+     * audio it opens the microphone and closes it again, which on macOS shows the prompt.
+     */
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> {
         if (isClosed()) return CameraKResult.Failure(CameraKError.Closed)
-        if (config.enableAudio) return unsupportedAudio()
         return onIo {
+            if (config.enableAudio) {
+                when (val microphone = openMicrophone()) {
+                    is CameraKResult.Failure -> return@onIo microphone
+                    is CameraKResult.Success -> microphone.value.close()
+                }
+            }
             try {
                 createOwnerOnlyDirectory(videoFolder(config))
                 CameraKResult.Success(Unit)
@@ -721,7 +730,6 @@ internal class DesktopCameraEngine(
             if (recording != null || recordingStarting) {
                 return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_START))
             }
-            if (video.enableAudio) return unsupportedAudio()
             recordingStarting = true
             startAbandoned = false
         }
@@ -755,32 +763,68 @@ internal class DesktopCameraEngine(
         return outcome.map { live }
     }
 
-    // The output file and an unstarted recorder for it.
+    // The microphone first, for a recording with audio, then the output file and an unstarted recorder for it.
     private fun newRecording(video: VideoConfiguration): CameraKResult<DesktopRecording> {
+        val microphone = if (video.enableAudio) {
+            when (val opened = openMicrophone()) {
+                is CameraKResult.Failure -> return opened
+                is CameraKResult.Success -> opened.value
+            }
+        } else {
+            null
+        }
         val folder = videoFolder(video)
         val file = try {
             createUniqueFile(folder, video.filePrefix, "mp4")
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Creating a recording's file failed", e)
+            microphone?.close()
             return CameraKResult.Failure(JavaCvErrorMapper.captureFailure(e, isDiskFull(folder)))
         }
         val recorder = try {
-            media.recorderFactory(file.absolutePath, video, null)
+            media.recorderFactory(file.absolutePath, video, microphone?.let { it.sampleRate to it.channels })
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Creating a recorder failed", e)
+            microphone?.close()
             file.delete()
             val error = JavaCvErrorMapper.recordingFailure(e, playable = false, file.absolutePath, isDiskFull(folder))
             return CameraKResult.Failure(error ?: CameraKError.Internal(e))
         }
         return CameraKResult.Success(
-            DesktopRecording(file.absolutePath, video, recorder, nanoClock, ::isDiskFull, recordingListener),
+            DesktopRecording(
+                file.absolutePath,
+                video,
+                recorder,
+                nanoClock,
+                ::isDiskFull,
+                recordingListener,
+                microphone,
+            ),
         )
+    }
+
+    /** The default microphone, open: `Unsupported(AUDIO)` when there is none, `Hardware` when it does not open. */
+    private fun openMicrophone(): CameraKResult<Microphone> {
+        val microphone = try {
+            media.microphone.open(nanoClock)
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Opening the microphone failed", e)
+            return CameraKResult.Failure(CameraKError.Hardware(null, e))
+        }
+        if (microphone == null) {
+            CameraKLogger.w(
+                TAG,
+                "No microphone supports a 16-bit capture format; a recording with audio is Unsupported",
+            )
+            return CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.AUDIO))
+        }
+        return CameraKResult.Success(microphone)
     }
 
     private val recordingListener = object : RecordingListener {
         override fun onStarted(recording: DesktopRecording): Boolean = synchronized(lock) {
             if (closed || this@DesktopCameraEngine.recording !== recording) return false
-            emitLocked(EngineRecordingEvent.Started(recording.path, hasAudio = false))
+            emitLocked(EngineRecordingEvent.Started(recording.path, hasAudio = recording.hasAudio))
             true
         }
 
@@ -836,12 +880,6 @@ internal class DesktopCameraEngine(
         if (!_recordingEvents.tryEmit(event)) {
             CameraKLogger.e(TAG, "A recording event was dropped: its collector is too far behind")
         }
-    }
-
-    // Decision 16: desktop records video only.
-    private fun unsupportedAudio(): CameraKResult.Failure {
-        CameraKLogger.w(TAG, "Desktop records no audio; a recording with enableAudio fails as Unsupported")
-        return CameraKResult.Failure(CameraKError.Unsupported(CameraFeature.AUDIO))
     }
 
     private fun isClosed(): Boolean = synchronized(lock) { closed }

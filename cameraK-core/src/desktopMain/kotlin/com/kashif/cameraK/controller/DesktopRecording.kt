@@ -21,8 +21,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.FrameRecorder
 import java.io.File
+import java.nio.ShortBuffer
 import kotlin.time.Duration.Companion.microseconds
 
 /** What a recording tells its engine, under the engine's lock. */
@@ -57,7 +59,14 @@ internal class DesktopRecording(
     private val nanoClock: () -> Long,
     private val diskFull: (File) -> Boolean,
     private val listener: RecordingListener,
+    microphone: Microphone? = null,
 ) {
+    // The microphone's samples, for a recording with audio; closed with the recorder.
+    private val audio: AudioFeed? = microphone?.let(::AudioFeed)
+
+    /** Whether the file gets an audio track. */
+    val hasAudio: Boolean get() = audio != null
+
     private val endReason = atomic<RecordingEndReason?>(null)
     private val started = CompletableDeferred<CameraKResult<String>>()
 
@@ -79,6 +88,10 @@ internal class DesktopRecording(
     private var framesWritten = 0
     private var lastFrameNumber = -1L
     private var lastTimestampMicros = 0L
+
+    // Per channel; written only by the recording's coroutine.
+    private var audioFramesWritten = 0L
+    private val audioFrame = Frame()
 
     /** Whether the recorder started and the engine announced it. */
     val isStarted: Boolean get() = clock != null && started.isCompleted
@@ -167,7 +180,7 @@ internal class DesktopRecording(
             while (!limited) {
                 val frame = frames.next() ?: break
                 limited = try {
-                    write(frame)
+                    writeAudio() || write(frame)
                 } finally {
                     frame.release()
                 }
@@ -204,6 +217,7 @@ internal class DesktopRecording(
             return false
         }
         clock = RecordingClock(nanoClock())
+        audio?.start()
         if (!listener.onStarted(this)) {
             stopAndRelease()
             deleteFile()
@@ -249,6 +263,7 @@ internal class DesktopRecording(
     }
 
     private fun finish(failure: Exception?) {
+        finishAudio()
         val stopFailure = stopAndRelease()
         val playable = framesWritten > 0 && stopFailure == null
         val endFailure = failure ?: stopFailure
@@ -297,7 +312,7 @@ internal class DesktopRecording(
         width = recorder.imageWidth,
         height = recorder.imageHeight,
         bitrateBps = config.quality.bitrateBps,
-        hasAudio = false,
+        hasAudio = hasAudio,
     )
 
     /** Stops then releases the recorder; the first failure (logged), or null. */
@@ -313,11 +328,75 @@ internal class DesktopRecording(
     }
 
     private fun release(): Exception? = try {
+        audio?.close()
         recorder.release()
         null
     } catch (e: Exception) {
         CameraKLogger.e(TAG, "Releasing the recorder failed", e)
         e
+    }
+
+    /** Writes the microphone's queued samples; true when the microphone failed, which ends the recording. */
+    private fun writeAudio(): Boolean {
+        val feed = audio ?: return false
+        // Read before the drain: every chunk queued before the failure is then written.
+        val failed = feed.failure
+        feed.drain().forEach { writeChunk(feed, it) }
+        if (failed == null) return false
+        endReason.compareAndSet(null, RecordingEndReason.INTERRUPTED)
+        return true
+    }
+
+    /**
+     * Writes [chunk] where the recording's clock puts it. Audio is stamped by sample count, so a chunk
+     * that would land more than [ALIGNMENT_MILLIS] after the samples written so far is preceded by
+     * silence (a microphone that starts late), and one that would land that far before them is
+     * dropped. A chunk from before the start or from inside a pause is dropped.
+     */
+    private fun writeChunk(feed: AudioFeed, chunk: AudioChunk) {
+        val micros = clock?.recordedMicrosAt(chunk.captureNanos) ?: return
+        val expected = micros * feed.sampleRate / 1_000_000
+        val tolerance = feed.sampleRate.toLong() * ALIGNMENT_MILLIS / 1_000
+        if (audioFramesWritten - expected > tolerance) return
+        if (expected - audioFramesWritten > tolerance) writeSilence(feed, expected - audioFramesWritten)
+        recordSamples(feed, chunk.samples, chunk.count)
+    }
+
+    private fun writeSilence(feed: AudioFeed, frames: Long) {
+        var left = frames
+        val silence = ShortArray(feed.sampleRate * feed.channels)
+        while (left > 0) {
+            val now = minOf(left, feed.sampleRate.toLong()).toInt()
+            recordSamples(feed, silence, now * feed.channels)
+            left -= now
+        }
+    }
+
+    private fun recordSamples(feed: AudioFeed, samples: ShortArray, count: Int) {
+        audioFrame.sampleRate = feed.sampleRate
+        audioFrame.audioChannels = feed.channels
+        audioFrame.samples = arrayOf(ShortBuffer.wrap(samples, 0, count))
+        recorder.record(audioFrame)
+        audioFramesWritten += count / feed.channels
+    }
+
+    /**
+     * Closes the microphone, writes what it had queued, then silence up to the last frame, so the
+     * audio track spans the video. A failure here keeps the file as it is.
+     */
+    private fun finishAudio() {
+        val feed = audio ?: return
+        feed.close()
+        try {
+            feed.drain().forEach { writeChunk(feed, it) }
+            if (framesWritten > 0) {
+                val end = lastTimestampMicros * feed.sampleRate / 1_000_000
+                val tolerance = feed.sampleRate.toLong() * ALIGNMENT_MILLIS / 1_000
+                if (end - audioFramesWritten > tolerance) writeSilence(feed, end - audioFramesWritten)
+            }
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Writing the recording's last audio failed; its audio ends early", e)
+        }
     }
 
     private fun deleteFile() {
@@ -329,6 +408,9 @@ internal class DesktopRecording(
 
     private companion object {
         const val TAG = "CameraK"
+
+        // Audio is put back on the clock only when it drifts further than one 20 ms chunk.
+        const val ALIGNMENT_MILLIS = 20L
     }
 }
 
