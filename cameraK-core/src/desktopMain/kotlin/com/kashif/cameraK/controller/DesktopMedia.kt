@@ -25,11 +25,13 @@ import javax.imageio.ImageWriteParam
  * @property userHome The folder the app-owned folders resolve under: the user's home.
  * @property recorderFactory A new, unstarted recorder for an output path and a configuration.
  * @property writeCapture Writes a still to a file in a format, throwing if it cannot.
+ * @property microphone Opens the default microphone for a recording with audio.
  */
 internal class DesktopMedia(
     val userHome: File = defaultUserHome(),
     val recorderFactory: (String, VideoConfiguration) -> FrameRecorder = ::createFrameRecorder,
     val writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage,
+    val microphone: MicrophoneOpener = JavaSoundMicrophoneOpener,
 )
 
 // user.home can be missing in sandboxed runtimes; fall back to the working directory, as the desktop
