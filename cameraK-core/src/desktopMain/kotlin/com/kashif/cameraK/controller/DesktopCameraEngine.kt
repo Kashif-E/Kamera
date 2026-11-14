@@ -765,7 +765,7 @@ internal class DesktopCameraEngine(
             return CameraKResult.Failure(JavaCvErrorMapper.captureFailure(e, isDiskFull(folder)))
         }
         val recorder = try {
-            media.recorderFactory(file.absolutePath, video)
+            media.recorderFactory(file.absolutePath, video, null)
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Creating a recorder failed", e)
             file.delete()

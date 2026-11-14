@@ -23,13 +23,14 @@ import javax.imageio.ImageWriteParam
  * Where and how the desktop engine writes its stills and recordings: the seams tests replace.
  *
  * @property userHome The folder the app-owned folders resolve under: the user's home.
- * @property recorderFactory A new, unstarted recorder for an output path and a configuration.
+ * @property recorderFactory A new, unstarted recorder for an output path, a configuration and, for a
+ *   recording with audio, the microphone's sample rate and channel count.
  * @property writeCapture Writes a still to a file in a format, throwing if it cannot.
  * @property microphone Opens the default microphone for a recording with audio.
  */
 internal class DesktopMedia(
     val userHome: File = defaultUserHome(),
-    val recorderFactory: (String, VideoConfiguration) -> FrameRecorder = ::createFrameRecorder,
+    val recorderFactory: (String, VideoConfiguration, Pair<Int, Int>?) -> FrameRecorder = ::createFrameRecorder,
     val writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage,
     val microphone: MicrophoneOpener = JavaSoundMicrophoneOpener,
 )
@@ -97,7 +98,11 @@ internal fun createUniqueFile(folder: File, prefix: String, extension: String): 
  * camera's frame size. Desktop captures no microphone audio, so the file has no audio track even
  * when audio is asked for: an AAC track with no samples would be empty.
  */
-internal fun createFrameRecorder(outputPath: String, configuration: VideoConfiguration): FrameRecorder {
+internal fun createFrameRecorder(
+    outputPath: String,
+    configuration: VideoConfiguration,
+    audio: Pair<Int, Int>? = null,
+): FrameRecorder {
     if (configuration.enableAudio) {
         CameraKLogger.w("CameraK", "Desktop records no audio; the video has no audio track")
     }

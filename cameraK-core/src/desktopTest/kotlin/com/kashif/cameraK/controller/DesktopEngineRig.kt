@@ -84,7 +84,7 @@ internal class DesktopEngineRig(
     /** The media an engine of the rig writes with: under [home], into [recorders]. */
     fun media(): DesktopMedia = DesktopMedia(
         userHome = home,
-        recorderFactory = { path, _ -> recorderScript(path).also { recorders += it } },
+        recorderFactory = { path, _, _ -> recorderScript(path).also { recorders += it } },
         writeCapture = { image, format, file -> writeCapture(image, format, file) },
     )
 

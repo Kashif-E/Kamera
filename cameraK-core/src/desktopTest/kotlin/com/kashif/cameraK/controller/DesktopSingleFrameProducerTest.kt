@@ -73,7 +73,7 @@ class DesktopSingleFrameProducerTest {
             CameraKEnvironment(CameraKDispatchers(main = Dispatchers.Default, default = Dispatchers.Default)),
             CustomGrabberSource(grabber),
             authorization = { PermissionStatus.Granted },
-            media = DesktopMedia(userHome = home, recorderFactory = { _, _ -> recorder }),
+            media = DesktopMedia(userHome = home, recorderFactory = { _, _, _ -> recorder }),
         )
 
     // Lets the camera deliver the one frame the start waits for, then holds the producer in its next grab().
