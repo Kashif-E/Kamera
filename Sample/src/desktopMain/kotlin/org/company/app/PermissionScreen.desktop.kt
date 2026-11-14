@@ -22,4 +22,5 @@ private fun openCameraPrivacySettings() {
     }
 }
 
-internal actual val cameraAsksWhenOpened: Boolean = false
+// macOS asks when the camera opens; Linux and Windows read Granted, so this changes nothing there.
+internal actual val cameraAsksWhenOpened: Boolean = true
