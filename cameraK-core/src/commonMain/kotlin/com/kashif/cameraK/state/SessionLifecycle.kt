@@ -48,6 +48,13 @@ import kotlin.time.Duration.Companion.seconds
 internal val START_TIMEOUT: Duration = 10.seconds
 
 /**
+ * How much longer a start may wait while its permission reads NotDetermined on a platform that
+ * prompts when the device opens (macOS): the open waits there for the user to answer the system's
+ * prompt, and the start's own deadline must not run out while the prompt is still being read.
+ */
+internal val PERMISSION_PROMPT_TIMEOUT: Duration = 60.seconds
+
+/**
  * How long `close()` waits for the engine to release the camera. A platform that never returns
  * cannot keep the holder, or the next holder waiting on the same device, open beyond it.
  */

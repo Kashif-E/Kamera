@@ -21,6 +21,7 @@ import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.plugin.CameraKPluginContext
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.COMMAND_DRAIN_TIMEOUT
+import com.kashif.cameraK.state.PERMISSION_PROMPT_TIMEOUT
 import com.kashif.cameraK.state.CameraConfiguration
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CameraKPlugin
@@ -528,6 +529,56 @@ class RecordingControllerTest {
         assertEquals(RecordingEndReason.MAX_DURATION, finished.reason)
         val ended = events.filterIsInstance<CameraKEvent.RecordingEnded>().single()
         assertEquals(CameraKResult.Success(video), ended.result)
+    }
+
+    @Test
+    fun aStartWaitingOnTheMicrophonePromptOutlastsTheStartTimeout() = runTest {
+        // Desktop: the microphone's open shows macOS's prompt and returns once it is answered.
+        val checker = FakePermissionChecker().apply {
+            setStatus(CameraKPermission.MICROPHONE, PermissionStatus.NotDetermined)
+            allowsOpenWhenNotDetermined = true
+        }
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val holder = readyHolder(fake, cameraKTestEnvironment(checker))
+
+        val start = async { holder.startRecording(VideoConfiguration { enableAudio = true }) }
+        runCurrent()
+        advanceTimeBy(RECORDING_START_TIMEOUT + 3.seconds)
+        runCurrent()
+        assertFalse(start.isCompleted, "the start gave up while the microphone prompt was up")
+        checker.setStatus(CameraKPermission.MICROPHONE, PermissionStatus.Granted)
+        fake.deliverRecordingStarted()
+        runCurrent()
+
+        assertIs<CameraKResult.Success<RecordingState.Recording>>(start.await())
+    }
+
+    @Test
+    fun aMicrophonePromptNeverAnsweredGivesPermissionNotDetermined() = runTest {
+        val checker = FakePermissionChecker().apply {
+            setStatus(CameraKPermission.MICROPHONE, PermissionStatus.NotDetermined)
+            allowsOpenWhenNotDetermined = true
+        }
+        val fake = FakeCameraEngine().apply { autoStartRecording = false }
+        val holder = readyHolder(fake, cameraKTestEnvironment(checker))
+
+        val start = async { holder.startRecording(VideoConfiguration { enableAudio = true }) }
+        runCurrent()
+        advanceTimeBy(RECORDING_START_TIMEOUT + PERMISSION_PROMPT_TIMEOUT - 1.milliseconds)
+        runCurrent()
+        assertFalse(start.isCompleted)
+        advanceTimeBy(2.milliseconds)
+        runCurrent()
+
+        val error = assertIs<CameraKError.Permission>(assertIs<CameraKResult.Failure>(start.await()).error)
+        assertEquals(CameraKPermission.MICROPHONE, error.permission)
+        assertEquals(PermissionStatus.NotDetermined, error.status)
+        assertEquals(RecordingState.Idle, holder.recordingState.value)
+        val calls = fake.calls
+        assertTrue(
+            calls.lastIndexOf("stopRecording") > calls.indexOf("startRecording"),
+            "the engine's unconfirmed recording was left running: $calls",
+        )
     }
 
     @Test

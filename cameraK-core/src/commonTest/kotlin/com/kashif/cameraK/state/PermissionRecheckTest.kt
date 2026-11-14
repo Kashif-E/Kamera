@@ -18,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * A permission granted while the holder shows Error(Permission) reaches Ready on the next re-check,
@@ -89,7 +90,8 @@ class PermissionRecheckTest {
     }
 
     @Test
-    fun startTimeoutWhileNotDeterminedGivesPermissionNotDetermined() = runTest {
+    fun aStartWaitingOnTheCameraPromptOutlastsTheStartTimeout() = runTest {
+        // macOS shows its camera prompt when the camera opens; the open returns once it is answered.
         val fake = FakeCameraEngine().apply { autoOpen = false }
         val checker = FakePermissionChecker(PermissionStatus.NotDetermined).apply { allowsOpenWhenNotDetermined = true }
         val holder = holder(fake, checker)
@@ -97,7 +99,30 @@ class PermissionRecheckTest {
         runCurrent()
         assertEquals(CameraKState.Starting, holder.cameraState.value, "the checker allows opening at NotDetermined")
 
-        advanceTimeBy(START_TIMEOUT + 1.milliseconds)
+        // The user reads the prompt for longer than a start may otherwise take, then allows.
+        advanceTimeBy(START_TIMEOUT + 5.seconds)
+        runCurrent()
+        assertEquals(CameraKState.Starting, holder.cameraState.value, "the start gave up while the prompt was up")
+        checker.setStatus(CameraKPermission.CAMERA, PermissionStatus.Granted)
+        fake.deliverOpen()
+        runCurrent()
+
+        assertIs<CameraKState.Ready>(holder.cameraState.value)
+        assertEquals(1, fake.startCalls)
+    }
+
+    @Test
+    fun aCameraPromptNeverAnsweredGivesPermissionNotDetermined() = runTest {
+        val fake = FakeCameraEngine().apply { autoOpen = false }
+        val checker = FakePermissionChecker(PermissionStatus.NotDetermined).apply { allowsOpenWhenNotDetermined = true }
+        val holder = holder(fake, checker)
+        holder.start()
+        runCurrent()
+
+        advanceTimeBy(START_TIMEOUT + PERMISSION_PROMPT_TIMEOUT - 1.milliseconds)
+        runCurrent()
+        assertEquals(CameraKState.Starting, holder.cameraState.value)
+        advanceTimeBy(2.milliseconds)
         runCurrent()
 
         val permission = holder.permissionError()
