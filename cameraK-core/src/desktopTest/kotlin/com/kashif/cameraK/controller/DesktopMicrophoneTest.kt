@@ -21,6 +21,9 @@ class DesktopMicrophoneTest {
         val reads = LinkedBlockingQueue<ByteArray>()
         val closed = CountDownLatch(1)
 
+        // Bytes captured and not read yet: what is still queued, as TargetDataLine.available() says.
+        override fun available(): Int = reads.sumOf { it.size }
+
         override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
             while (closed.count > 0) {
                 val bytes = reads.poll(10, TimeUnit.MILLISECONDS) ?: continue
@@ -67,6 +70,51 @@ class DesktopMicrophoneTest {
         assertEquals(960, chunk.count)
         assertEquals(1_080_000_000L, chunk.captureNanos, "read at 1.1 s, so its first sample is 20 ms earlier")
         assertEquals(listOf<Short>(1, 2, 3), chunk.samples.take(3))
+    }
+
+    // 20 ms of 48 kHz mono.
+    private fun chunk() = ByteArray(960 * 2)
+
+    @Test
+    fun chunksReadInABurstAreStampedByTheirPlaceInTheBacklog() {
+        // Java Sound hands a backlog over in a burst: six chunks read back to back at the same moment.
+        val line = ScriptedLine(format(48_000f, 1))
+        repeat(6) { line.reads += chunk() }
+        val microphone = JavaSoundMicrophone(line) { 1_200_000_000L }
+
+        val stamps = List(6) { assertNotNull(microphone.read()).captureNanos / 1_000_000 }
+
+        assertEquals(listOf(1_080L, 1_100L, 1_120L, 1_140L, 1_160L, 1_180L), stamps)
+    }
+
+    @Test
+    fun stampsFollowOnByTheSamplesReadWhenTheClockJitters() {
+        val line = ScriptedLine(format(48_000f, 1))
+        var now = 0L
+        val microphone = JavaSoundMicrophone(line) { now }
+
+        val stamps = listOf(1_100L, 1_125L, 1_137L).map { readAt ->
+            now = readAt * 1_000_000
+            line.reads += chunk()
+            assertNotNull(microphone.read()).captureNanos / 1_000_000
+        }
+
+        assertEquals(listOf(1_080L, 1_100L, 1_120L), stamps, "each chunk follows on from the last")
+    }
+
+    @Test
+    fun aGapInTheSamplesStartsTheStampsAfresh() {
+        // The line overran and lost samples: the next chunk is stamped by the clock again.
+        val line = ScriptedLine(format(48_000f, 1))
+        var now = 1_100_000_000L
+        val microphone = JavaSoundMicrophone(line) { now }
+        line.reads += chunk()
+        assertEquals(1_080L, assertNotNull(microphone.read()).captureNanos / 1_000_000)
+
+        now = 1_400_000_000L
+        line.reads += chunk()
+
+        assertEquals(1_380L, assertNotNull(microphone.read()).captureNanos / 1_000_000)
     }
 
     @Test

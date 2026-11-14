@@ -20,9 +20,11 @@ fun main(args: Array<String>) {
         System.setProperty("compose.interop.blending", "true")
         System.setProperty("compose.swing.render.on.layer", "true")
 
+        // Portrait, as the Sample is on a phone: the camera screen stacks its preview over its controls
+        // in a window taller than wide, and moves the controls to a side panel when it is made wider.
         Window(
             title = "CameraK",
-            state = rememberWindowState(width = 1440.dp, height = 1024.dp),
+            state = rememberWindowState(width = 460.dp, height = 780.dp),
             onCloseRequest = ::exitApplication,
         ) {
             if (smoke != null) {

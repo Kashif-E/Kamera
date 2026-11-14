@@ -381,14 +381,18 @@ internal class DesktopRecording(
     }
 
     /**
-     * Closes the microphone, writes what it had queued, then silence up to the last frame, so the
-     * audio track spans the video. A failure here keeps the file as it is.
+     * Closes the microphone, writes what it had queued up to the last frame (the audio ends with the
+     * video, within `maxDuration`), then silence up to that frame, so the audio track spans the video.
+     * A failure here keeps the file as it is.
      */
     private fun finishAudio() {
         val feed = audio ?: return
         feed.close()
         try {
-            feed.drain().forEach { writeChunk(feed, it) }
+            val beforeLastFrame = feed.drain().filter { chunk ->
+                clock?.recordedMicrosAt(chunk.captureNanos)?.let { it < lastTimestampMicros } == true
+            }
+            beforeLastFrame.forEach { writeChunk(feed, it) }
             if (framesWritten > 0) {
                 val end = lastTimestampMicros * feed.sampleRate / 1_000_000
                 val tolerance = feed.sampleRate.toLong() * ALIGNMENT_MILLIS / 1_000

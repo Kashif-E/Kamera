@@ -154,4 +154,52 @@ class DesktopRecordingAudioTest {
             )
         }
     }
+
+    @Test
+    fun aMicrophoneThatStopsDeliveringEndsTheRecordingInterrupted() = runTest {
+        val recording = recordingWithAudio(FakeMicrophone(endAfter = 1))
+        with(recording) {
+            microphone.deliver(1_001)
+            var at = 1_010L
+            while (events.none { it is EngineRecordingEvent.Finalized } && at < 1_200) {
+                steps.frameAt(at)
+                at += 10
+            }
+
+            val finalized = events.filterIsInstance<EngineRecordingEvent.Finalized>().single()
+            assertEquals(RecordingEndReason.INTERRUPTED, finalized.reason, "the audio stopped while hasAudio said true")
+            sut.close()
+            steps.rig.settle()
+        }
+    }
+
+    @Test
+    fun aMicrophoneWhoseCloseThrowsStillFinalizesTheRecording() = runTest {
+        val recording = recordingWithAudio(FakeMicrophone(closeFailure = IllegalStateException("CoreAudio refused")))
+        with(recording) {
+            microphone.deliver(1_001)
+            steps.frameAt(1_010)
+
+            assertIs<CameraKResult.Success<RecordedVideo>>(finish())
+
+            assertEquals(1, recorder.stopCount.get(), "the recorder was never stopped")
+            assertEquals(1, recorder.releaseCount.get(), "the recorder was never released")
+        }
+    }
+
+    @Test
+    fun audioCapturedAfterTheLastFrameIsLeftOut() = runTest {
+        val recording = recordingWithAudio()
+        with(recording) {
+            microphone.deliver(1_001)
+            steps.frameAt(1_010)
+            // The camera stops delivering; the microphone goes on until the stop.
+            microphone.deliver(1_021)
+            microphone.deliver(1_041)
+
+            assertIs<CameraKResult.Success<RecordedVideo>>(finish())
+
+            assertEquals(960L, recorder.samplesWritten.get(), "audio ran past the video's last frame")
+        }
+    }
 }

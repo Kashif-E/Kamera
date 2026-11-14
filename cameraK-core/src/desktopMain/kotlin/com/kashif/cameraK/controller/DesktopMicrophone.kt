@@ -4,6 +4,7 @@ import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.DataLine
 import javax.sound.sampled.TargetDataLine
+import kotlin.math.abs
 
 /** [count] interleaved 16-bit samples, the first captured at [captureNanos] on the engine's clock. */
 internal class AudioChunk(val samples: ShortArray, val count: Int, val captureNanos: Long)
@@ -31,6 +32,9 @@ internal interface CaptureLine {
 
     fun read(buffer: ByteArray, offset: Int, length: Int): Int
 
+    /** Bytes captured and not read yet. */
+    fun available(): Int = 0
+
     fun close()
 }
 
@@ -45,7 +49,11 @@ internal fun captureFormat(isSupported: (AudioFormat) -> Boolean): AudioFormat? 
 
 /**
  * The default microphone through Java Sound, the JDK's own capture API on macOS, Linux and Windows.
- * It reads 20 ms chunks, each stamped with the [nanoClock] time of its first sample.
+ * It reads 20 ms chunks, each stamped with the [nanoClock] time of its first sample. Java Sound hands
+ * samples over in bursts (a read waits about a quarter of the line's buffer, then the backlog comes
+ * at once), so the time a read returns says little: a chunk's time is worked out from the clock less
+ * what it and the backlog behind it hold, and a chunk that follows on from the last within
+ * [REANCHOR_NANOS] is stamped exactly where the last one ended, so the stamps advance by the samples.
  */
 internal class JavaSoundMicrophone(private val line: CaptureLine, private val nanoClock: () -> Long) : Microphone {
     override val sampleRate: Int = line.format.sampleRate.toInt()
@@ -55,6 +63,9 @@ internal class JavaSoundMicrophone(private val line: CaptureLine, private val na
     private val bytes = ByteArray(chunkSamples * 2)
 
     @Volatile private var closed = false
+
+    // Where the next chunk starts if no sample was lost; read only on the reading thread.
+    private var nextNanos: Long? = null
 
     override fun read(): AudioChunk? {
         var filled = 0
@@ -68,8 +79,11 @@ internal class JavaSoundMicrophone(private val line: CaptureLine, private val na
         val samples = ShortArray(count) { i ->
             ((bytes[2 * i].toInt() and 0xFF) or (bytes[2 * i + 1].toInt() shl 8)).toShort()
         }
-        val durationNanos = count / channels * 1_000_000_000L / sampleRate
-        return AudioChunk(samples, count, nanoClock() - durationNanos)
+        val backlogFrames = line.available() / 2 / channels
+        val estimate = nanoClock() - nanosOf(count / channels + backlogFrames)
+        val stamp = nextNanos?.takeIf { abs(estimate - it) <= REANCHOR_NANOS } ?: estimate
+        nextNanos = stamp + nanosOf(count / channels)
+        return AudioChunk(samples, count, stamp)
     }
 
     override fun close() {
@@ -77,8 +91,13 @@ internal class JavaSoundMicrophone(private val line: CaptureLine, private val na
         line.close()
     }
 
+    private fun nanosOf(frames: Int): Long = frames * 1_000_000_000L / sampleRate
+
     private companion object {
         const val CHUNKS_PER_SECOND = 50
+
+        // Further than this from where the samples say, the line lost samples (an overrun): start afresh.
+        const val REANCHOR_NANOS = 150_000_000L
     }
 }
 
@@ -87,6 +106,8 @@ private class TargetDataLineCapture(private val line: TargetDataLine) : CaptureL
     override val format: AudioFormat get() = line.format
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int = line.read(buffer, offset, length)
+
+    override fun available(): Int = line.available()
 
     override fun close() {
         line.stop()
