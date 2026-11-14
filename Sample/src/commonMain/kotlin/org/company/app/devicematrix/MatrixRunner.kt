@@ -74,6 +74,9 @@ internal interface MatrixPlatform {
      */
     val promptsOnOpen: Boolean get() = false
 
+    /** The loudest sample of the recording's audio, in dBFS (-inf for all zeros); null where it cannot be decoded. */
+    fun audioPeakDbfs(path: String): Double? = null
+
     /** One line under the tag CameraKMatrix. */
     fun log(line: String)
 }
@@ -923,6 +926,13 @@ internal class MatrixRunner(
                 )
             }
         }
+        val tracks = if (bytes != null && bytes > 0) {
+            mp4Tracks(bytes) { offset, length -> files.readRange(video.path, offset, length) }
+        } else {
+            emptyList()
+        }
+        val hasAudioTrack = tracks.any { it.handler == "soun" }
+        val peak = if (audio == true && hasAudioTrack) platform.audioPeakDbfs(video.path) else null
         files.delete(video.path)
         measures += listOf(
             "fileBytes" to bytes,
@@ -933,6 +943,8 @@ internal class MatrixRunner(
             "height" to video.height,
             "bitrateBps" to video.bitrateBps,
             "hasAudio" to video.hasAudio,
+            "tracks" to tracks.map { "${it.handler} ${it.seconds}" },
+            "audioPeakDbfs" to peak?.let { if (it.isFinite()) it else "-inf" },
         )
         val checks = mutableListOf<String>()
         when (bytes) {
@@ -944,6 +956,8 @@ internal class MatrixRunner(
             if (seconds == null || seconds <= 0.0) checks += "no movie duration in the mvhd box"
         }
         if (audio != null && video.hasAudio != audio) checks += "hasAudio ${video.hasAudio}, asked $audio"
+        if (audio != null && bytes != null && bytes > 0) audioTrackProblem(tracks, audio)?.let { checks += it }
+        digitalSilenceProblem(peak)?.let { checks += it }
         return checks
     }
 

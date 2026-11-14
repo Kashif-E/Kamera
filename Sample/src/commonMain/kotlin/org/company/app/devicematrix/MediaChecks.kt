@@ -5,6 +5,7 @@ import com.kashif.cameraK.enums.ImageFormat
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToLong
 
 // The ftyp major brands of HEIF stills and sequences (ISO/IEC 23008-12).
 private val heifBrands = setOf("heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1")
@@ -111,36 +112,37 @@ internal fun ratioMatches(width: Int, height: Int, aspectRatio: AspectRatio): Bo
 /** The major brand of an ISO base media file (MP4 or QuickTime): its ftyp box's, or null without one. */
 internal fun videoBrand(head: ByteArray): String? = if (head.ascii(4, 4) == "ftyp") head.ascii(8, 4) else null
 
-/**
- * The duration, in seconds, of the movie's mvhd box, walking the boxes of a file of [size] bytes
- * through [read] (offset, length); null when it has no moov or mvhd.
- */
-internal fun mp4DurationSeconds(size: Long, read: (offset: Long, length: Int) -> ByteArray): Double? {
-    // The payload's start and the box's end, for the first box of [type] between [start] and [end].
-    fun find(start: Long, end: Long, type: String): Pair<Long, Long>? {
-        var at = start
-        while (at + 8 <= end) {
-            val header = read(at, 16)
-            if (header.size < 8) return null
-            var boxSize = header.u32(0)
-            var headerSize = 8L
-            when (boxSize) {
-                1L -> {
-                    if (header.size < 16) return null
-                    boxSize = (header.u32(8) shl 32) or header.u32(12)
-                    headerSize = 16
-                }
-                0L -> boxSize = end - at
+/** A box of an ISO base media file: its type, where its payload starts and where it ends. */
+private class Mp4Box(val type: String?, val payload: Long, val end: Long)
+
+/** The boxes one after another between [start] and [end], read through [read], up to a malformed header. */
+private fun mp4Boxes(start: Long, end: Long, read: (offset: Long, length: Int) -> ByteArray): List<Mp4Box> {
+    val boxes = mutableListOf<Mp4Box>()
+    var at = start
+    while (at + 8 <= end) {
+        val header = read(at, 16)
+        if (header.size < 8) break
+        var boxSize = header.u32(0)
+        var headerSize = 8L
+        when (boxSize) {
+            1L -> {
+                if (header.size < 16) break
+                boxSize = (header.u32(8) shl 32) or header.u32(12)
+                headerSize = 16
             }
-            if (boxSize < headerSize) return null
-            if (header.ascii(4, 4) == type) return (at + headerSize) to min(at + boxSize, end)
-            at += boxSize
+            0L -> boxSize = end - at
         }
-        return null
+        if (boxSize < headerSize) break
+        boxes += Mp4Box(header.ascii(4, 4), at + headerSize, min(at + boxSize, end))
+        at += boxSize
     }
-    val moov = find(0, size, "moov") ?: return null
-    val mvhd = find(moov.first, moov.second, "mvhd") ?: return null
-    val body = read(mvhd.first, 32)
+    return boxes
+}
+
+private fun List<Mp4Box>.box(type: String): Mp4Box? = firstOrNull { it.type == type }
+
+// mvhd and mdhd share their start: version, flags, two times, the timescale and the duration.
+private fun headerSeconds(body: ByteArray): Double? {
     val (timescale, duration) = when {
         body.size >= 32 && body.u8(0) == 1 -> body.u32(20) to ((body.u32(24) shl 32) or body.u32(28))
         body.size >= 20 && body.u8(0) == 0 -> body.u32(12) to body.u32(16)
@@ -149,17 +151,66 @@ internal fun mp4DurationSeconds(size: Long, read: (offset: Long, length: Int) ->
     return if (timescale == 0L) null else duration.toDouble() / timescale
 }
 
+/**
+ * The duration, in seconds, of the movie's mvhd box, walking the boxes of a file of [size] bytes
+ * through [read] (offset, length); null when it has no moov or mvhd.
+ */
+internal fun mp4DurationSeconds(size: Long, read: (offset: Long, length: Int) -> ByteArray): Double? {
+    val moov = mp4Boxes(0, size, read).box("moov") ?: return null
+    val mvhd = mp4Boxes(moov.payload, moov.end, read).box("mvhd") ?: return null
+    return headerSeconds(read(mvhd.payload, 32))
+}
+
 /** One track of an MP4: its hdlr's handler type ("vide", "soun") and its mdhd's duration in seconds. */
 internal data class Mp4Track(val handler: String, val seconds: Double)
 
 /** The tracks of the movie in a file of [size] bytes, read through [read]; empty without a moov. */
-internal fun mp4Tracks(size: Long, read: (offset: Long, length: Int) -> ByteArray): List<Mp4Track> = emptyList()
+internal fun mp4Tracks(size: Long, read: (offset: Long, length: Int) -> ByteArray): List<Mp4Track> {
+    val moov = mp4Boxes(0, size, read).box("moov") ?: return emptyList()
+    return mp4Boxes(moov.payload, moov.end, read).filter { it.type == "trak" }.mapNotNull { trak ->
+        val mdia = mp4Boxes(trak.payload, trak.end, read).box("mdia") ?: return@mapNotNull null
+        val inside = mp4Boxes(mdia.payload, mdia.end, read)
+        // hdlr: version and flags, pre_defined, then the handler type.
+        val handler = inside.box("hdlr")?.let { read(it.payload + 8, 4).ascii(0, 4) } ?: return@mapNotNull null
+        val seconds = inside.box("mdhd")?.let { headerSeconds(read(it.payload, 32)) } ?: return@mapNotNull null
+        Mp4Track(handler, seconds)
+    }
+}
+
+// Each track ends on its own frame boundary: a video frame (33 ms at 30 fps) and an AAC frame (1024 samples,
+// 23 ms at 44.1 kHz) apart at either end, so two tracks that start and stop together end at most about 0.1 s apart.
+private const val TRACK_END_TOLERANCE_SECONDS = 0.1
 
 /** What is wrong with the recording's audio track given whether audio was asked; null when nothing. */
-internal fun audioTrackProblem(tracks: List<Mp4Track>, askedAudio: Boolean): String? = null
+internal fun audioTrackProblem(tracks: List<Mp4Track>, askedAudio: Boolean): String? {
+    val video = tracks.firstOrNull { it.handler == "vide" } ?: return "no video track"
+    val audio = tracks.firstOrNull { it.handler == "soun" }
+    return when {
+        !askedAudio -> if (audio != null) "an audio track, though audio was not asked" else null
+        audio == null -> "no audio track"
+        abs(audio.seconds - video.seconds) > TRACK_END_TOLERANCE_SECONDS ->
+            "audio ${audio.seconds.fixed(2)} s against video ${video.seconds.fixed(2)} s"
+        else -> null
+    }
+}
+
+// One step of 16-bit audio, 1/32768: a live microphone's noise floor is well above it, macOS's silence is zeros.
+private const val ONE_16_BIT_STEP_DBFS = -90.3
 
 /** Whether [peakDbfs], the loudest decoded sample, says the track is digital silence; null when it is not, or unknown. */
-internal fun digitalSilenceProblem(peakDbfs: Double?): String? = null
+internal fun digitalSilenceProblem(peakDbfs: Double?): String? = when {
+    peakDbfs == null || peakDbfs >= ONE_16_BIT_STEP_DBFS -> null
+    peakDbfs == Double.NEGATIVE_INFINITY -> "the audio is digital silence, every sample zero"
+    else -> "the audio is digital silence, its loudest sample ${peakDbfs.fixed(1)} dBFS"
+}
+
+private fun Double.fixed(places: Int): String {
+    var scale = 1L
+    repeat(places) { scale *= 10 }
+    val units = (abs(this) * scale).roundToLong()
+    val sign = if (this < 0 && units != 0L) "-" else ""
+    return "$sign${units / scale}.${(units % scale).toString().padStart(places, '0')}"
+}
 
 private fun ByteArray.u8(at: Int): Int = this[at].toInt() and 0xFF
 

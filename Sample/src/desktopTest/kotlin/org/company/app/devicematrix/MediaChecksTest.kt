@@ -204,7 +204,8 @@ internal fun testMp4(
     val traks = tracks.map { (handler, scale, units) ->
         val mdhd = box("mdhd", Bytes().u32(0).u32(0).u32(0).u32(scale).u32(units).u32(0).build())
         val hdlr = box("hdlr", Bytes().u32(0).u32(0).ascii(handler).u32(0).u32(0).u32(0).u8(0).build())
-        box("trak", Bytes().bytes(box("tkhd", ByteArray(84))).bytes(box("mdia", Bytes().bytes(mdhd).bytes(hdlr).build())).build())
+        val mdia = box("mdia", Bytes().bytes(mdhd).bytes(hdlr).build())
+        box("trak", Bytes().bytes(box("tkhd", ByteArray(84))).bytes(mdia).build())
     }
     val moov = box(
         "moov",
