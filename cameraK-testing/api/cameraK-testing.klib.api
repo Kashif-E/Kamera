@@ -128,6 +128,7 @@ final class com.kashif.cameraK.testing/FakePermissionChecker : com.kashif.camera
         final fun <set-promptsWhenNotDetermined>(kotlin/Boolean) // com.kashif.cameraK.testing/FakePermissionChecker.promptsWhenNotDetermined.<set-promptsWhenNotDetermined>|<set-promptsWhenNotDetermined>(kotlin.Boolean){}[0]
 
     final fun allowsOpen(com.kashif.cameraK.permissions/PermissionStatus): kotlin/Boolean // com.kashif.cameraK.testing/FakePermissionChecker.allowsOpen|allowsOpen(com.kashif.cameraK.permissions.PermissionStatus){}[0]
+    final fun promptsOnOpen(com.kashif.cameraK.permissions/CameraKPermission, com.kashif.cameraK.permissions/PermissionStatus): kotlin/Boolean // com.kashif.cameraK.testing/FakePermissionChecker.promptsOnOpen|promptsOnOpen(com.kashif.cameraK.permissions.CameraKPermission;com.kashif.cameraK.permissions.PermissionStatus){}[0]
     final fun setStatus(com.kashif.cameraK.permissions/CameraKPermission, com.kashif.cameraK.permissions/PermissionStatus) // com.kashif.cameraK.testing/FakePermissionChecker.setStatus|setStatus(com.kashif.cameraK.permissions.CameraKPermission;com.kashif.cameraK.permissions.PermissionStatus){}[0]
     final fun status(com.kashif.cameraK.permissions/CameraKPermission): com.kashif.cameraK.permissions/PermissionStatus // com.kashif.cameraK.testing/FakePermissionChecker.status|status(com.kashif.cameraK.permissions.CameraKPermission){}[0]
 }
