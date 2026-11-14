@@ -3,6 +3,7 @@ package com.kashif.cameraK.controller
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * A microphone whose chunks the test hands it ([deliver]), at the capture times the test sets. With
@@ -15,25 +16,40 @@ internal class FakeMicrophone(
     private val failAfter: Int? = null,
 ) : Microphone {
     private val chunks = LinkedBlockingQueue<AudioChunk>()
-    private var delivered = 0
+    private val delivered = AtomicInteger(0)
+    private val readsEntered = AtomicInteger(0)
 
     val closed = CountDownLatch(1)
     val readBlocked = CountDownLatch(1)
 
-    /** Queues [count] samples (all 1) captured at [captureNanos]. */
-    fun deliver(captureNanos: Long, count: Int = sampleRate / 50 * channels) {
-        chunks += AudioChunk(ShortArray(count) { 1 }, count, captureNanos)
+    /**
+     * Hands the reader [count] samples (all 1) captured at [millis] on the rig's clock, and returns once
+     * the reader has taken them and come back for more: the chunk is then in the recording's queue.
+     */
+    fun deliver(millis: Long, count: Int = sampleRate / 50 * channels) {
+        // The reader enters read() once per chunk it returns, plus the read it is blocked in.
+        val target = delivered.get() + chunks.size + 1
+        chunks += AudioChunk(ShortArray(count) { 1 }, count, millis * 1_000_000L)
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while ((delivered.get() < target || readsEntered.get() <= target) && System.nanoTime() < deadline) {
+            Thread.sleep(1)
+        }
     }
 
     override fun read(): AudioChunk? {
-        if (failAfter != null && delivered >= failAfter) throw IllegalStateException("The microphone was unplugged")
+        readsEntered.incrementAndGet()
+        if (failAfter != null &&
+            delivered.get() >= failAfter
+        ) {
+            throw IllegalStateException("The microphone was unplugged")
+        }
         while (closed.count > 0) {
             val chunk = chunks.poll(5, TimeUnit.MILLISECONDS)
             if (chunk == null) {
                 readBlocked.countDown()
                 continue
             }
-            delivered++
+            delivered.incrementAndGet()
             return chunk
         }
         return null
