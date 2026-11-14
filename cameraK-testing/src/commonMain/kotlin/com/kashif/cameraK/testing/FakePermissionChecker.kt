@@ -31,4 +31,7 @@ public class FakePermissionChecker(private val initial: PermissionStatus = Permi
 
     override fun allowsOpen(status: PermissionStatus): Boolean = status == PermissionStatus.Granted ||
         (allowsOpenWhenNotDetermined && status == PermissionStatus.NotDetermined)
+
+    override fun promptsOnOpen(permission: CameraKPermission, status: PermissionStatus): Boolean =
+        allowsOpenWhenNotDetermined && promptsWhenNotDetermined && status == PermissionStatus.NotDetermined
 }

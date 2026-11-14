@@ -39,7 +39,9 @@ scope.launch {
 `startRecording` returns once the platform confirms that recording began, with the
 `RecordingState.Recording` it is in. A second start while one is live is
 `Failure(Busy(RECORD_START))`, and a start the platform does not confirm within five seconds is
-`Failure(Timeout(RECORD_START))`.
+`Failure(Timeout(RECORD_START))`. On macOS the first start with audio opens the microphone, which
+shows the system's prompt and waits for the answer; that start gets 60 seconds more, and one the
+user leaves unanswered or denies is `Failure(Permission(MICROPHONE, status))`.
 
 `stopRecording` returns the finished `RecordedVideo`: its `path`, `duration`, `width`, `height`,
 `bitrateBps` and `hasAudio`. Stopping when nothing records is `Failure(InvalidState)`. A stop also

@@ -58,6 +58,12 @@ internal class DesktopPermissionChecker(osName: String, private val macRead: Mac
 
     override fun allowsOpen(status: PermissionStatus): Boolean =
         status == PermissionStatus.Granted || status == PermissionStatus.NotDetermined
+
+    // macOS's prompt is up only for a NotDetermined it reported; without JNA or AVFoundation nothing was asked.
+    override fun promptsOnOpen(permission: CameraKPermission, status: PermissionStatus): Boolean = isMac &&
+        permission != CameraKPermission.GALLERY_ADD &&
+        status == PermissionStatus.NotDetermined &&
+        macRead.readable(permission)
 }
 
 // The one desktop checker; tests replace it with one over a fake OS name and authorization read.
