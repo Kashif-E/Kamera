@@ -305,6 +305,34 @@ class RecordingControllerTest {
     }
 
     @Test
+    fun aMicrophoneTheCheckerLetsOpenAtNotDeterminedReachesTheEngine() = runTest {
+        // Desktop: macOS shows its microphone prompt when the microphone opens, so the start goes ahead.
+        val promptsOnOpen = FakePermissionChecker().apply {
+            setStatus(CameraKPermission.MICROPHONE, PermissionStatus.NotDetermined)
+            allowsOpenWhenNotDetermined = true
+        }
+        val desktop = FakeCameraEngine()
+        val started = readyHolder(desktop, cameraKTestEnvironment(promptsOnOpen))
+            .startRecording(VideoConfiguration { enableAudio = true })
+
+        assertIs<CameraKResult.Success<*>>(started)
+        assertEquals(1, desktop.count("startRecording"))
+
+        // Android and iOS ask before recording: NotDetermined is still refused there.
+        val asksFirst = FakePermissionChecker().apply {
+            setStatus(CameraKPermission.MICROPHONE, PermissionStatus.NotDetermined)
+        }
+        val mobile = FakeCameraEngine()
+        val refused = readyHolder(mobile, cameraKTestEnvironment(asksFirst))
+            .startRecording(VideoConfiguration { enableAudio = true })
+
+        val error = assertIs<CameraKError.Permission>(assertIs<CameraKResult.Failure>(refused).error)
+        assertEquals(CameraKPermission.MICROPHONE, error.permission)
+        assertEquals(PermissionStatus.NotDetermined, error.status)
+        assertEquals(0, mobile.count("startRecording"))
+    }
+
+    @Test
     fun selectCameraDuringEachRecordingStateIsBusyLens() = runTest {
         val fake = FakeCameraEngine().apply {
             autoStartRecording = false
