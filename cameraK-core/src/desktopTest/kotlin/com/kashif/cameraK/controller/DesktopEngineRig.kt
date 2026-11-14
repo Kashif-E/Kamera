@@ -81,11 +81,23 @@ internal class DesktopEngineRig(
     /** How the engines write a still to its file. */
     var writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage
 
+    /** The microphone the engines open for a recording with audio: none, as on a CI runner, unless a test sets one. */
+    var microphone: MicrophoneOpener = MicrophoneOpener { null }
+
+    /** The audio format each recorder was created with: null for a recording without audio. */
+    val recorderAudio = CopyOnWriteArrayList<Pair<Int, Int>?>()
+
     /** The media an engine of the rig writes with: under [home], into [recorders]. */
     fun media(): DesktopMedia = DesktopMedia(
         userHome = home,
-        recorderFactory = { path, _ -> recorderScript(path).also { recorders += it } },
+        recorderFactory = { path, _, audio ->
+            recorderScript(path).also {
+                recorders += it
+                recorderAudio += audio
+            }
+        },
         writeCapture = { image, format, file -> writeCapture(image, format, file) },
+        microphone = { clock -> microphone.open(clock) },
     )
 
     /** The device the engine last opened the camera on, as a grabber factory sees it. */

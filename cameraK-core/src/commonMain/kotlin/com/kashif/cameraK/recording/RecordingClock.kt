@@ -16,6 +16,9 @@ internal class RecordingClock(private val startNanos: Long) {
     private var resumedAtNanos = startNanos
     private var lastTimestampMicros = -1L
 
+    // Each pause that ended, as its start and end.
+    private val pauses = mutableListOf<Pair<Long, Long>>()
+
     /** Starts a pause at [nowNanos]; does nothing while already paused. */
     fun pause(nowNanos: Long): Unit = synchronized(lock) {
         if (pausedSinceNanos == null) pausedSinceNanos = nowNanos
@@ -25,6 +28,7 @@ internal class RecordingClock(private val startNanos: Long) {
     fun resume(nowNanos: Long): Unit = synchronized(lock) {
         val since = pausedSinceNanos ?: return
         pausedTotalNanos += nowNanos - since
+        pauses += since to nowNanos
         pausedSinceNanos = null
         resumedAtNanos = nowNanos
     }
@@ -40,6 +44,23 @@ internal class RecordingClock(private val startNanos: Long) {
         if (micros <= lastTimestampMicros) return null
         lastTimestampMicros = micros
         micros
+    }
+
+    /**
+     * The recorded time in microseconds at [captureNanos], the pauses before it left out, for samples
+     * that may be read long after they were captured; null when it is before the start or inside a
+     * pause. Unlike [timestampMicros] it keeps no state, so it can be asked about any instant.
+     */
+    fun recordedMicrosAt(captureNanos: Long): Long? = synchronized(lock) {
+        if (captureNanos <= startNanos) return null
+        pausedSinceNanos?.let { if (captureNanos >= it) return null }
+        var pausedNanos = 0L
+        for ((since, until) in pauses) {
+            if (captureNanos < since) break
+            if (captureNanos < until) return null
+            pausedNanos += until - since
+        }
+        (captureNanos - startNanos - pausedNanos) / 1_000
     }
 
     /** Recorded time up to [nowNanos], without the pauses. */

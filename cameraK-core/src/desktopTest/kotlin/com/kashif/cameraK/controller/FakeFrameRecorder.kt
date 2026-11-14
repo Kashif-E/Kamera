@@ -7,6 +7,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * An encoder with no internal locking, like FFmpeg's. It records `stop()`/`release()` while a
@@ -38,6 +39,13 @@ internal class FakeFrameRecorder(private val startFailure: Exception? = null) : 
     val stopCalled = CountDownLatch(1)
     val releasedLatch = CountDownLatch(1)
 
+    /** The samples of every audio frame recorded, all channels counted. */
+    val samplesWritten = AtomicLong(0)
+
+    /** The sample rate and channel count of each audio frame, and the thread that recorded it. */
+    val audioFormats: MutableList<Pair<Int, Int>> = CopyOnWriteArrayList()
+    val audioThreads: MutableList<String> = CopyOnWriteArrayList()
+
     /** The `timestamp` set on the recorder when each `record()` was called, in microseconds. */
     val timestamps: MutableList<Long> = CopyOnWriteArrayList()
 
@@ -61,6 +69,10 @@ internal class FakeFrameRecorder(private val startFailure: Exception? = null) : 
 
     override fun record(frame: Frame) {
         if (stopped) violations += "record() after stop()"
+        if (frame.image == null && frame.samples != null) {
+            recordAudio(frame)
+            return
+        }
         inFlight.incrementAndGet()
         timestamps += timestamp
         fiveFramesRecorded.countDown()
@@ -72,6 +84,18 @@ internal class FakeFrameRecorder(private val startFailure: Exception? = null) : 
         } finally {
             inFlight.decrementAndGet()
             records.release()
+        }
+    }
+
+    // Audio frames are counted apart from the video's records, timestamps and gates.
+    private fun recordAudio(frame: Frame) {
+        inFlight.incrementAndGet()
+        try {
+            audioThreads += Thread.currentThread().name
+            audioFormats += frame.sampleRate to frame.audioChannels
+            samplesWritten.addAndGet(frame.samples.sumOf { it.remaining() }.toLong())
+        } finally {
+            inFlight.decrementAndGet()
         }
     }
 

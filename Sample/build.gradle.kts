@@ -164,14 +164,16 @@ compose.desktop {
             packageName = "org.company.app"
             packageVersion = "1.0.0"
 
-            // Without a camera usage description TCC denies or kills a packaged macOS app that opens
-            // the camera; the entitlements let a signed, hardened-runtime build use it too.
+            // Without a camera or microphone usage description TCC denies or kills a packaged macOS app
+            // that opens it; the entitlements let a signed, hardened-runtime build use them too.
             macOS {
                 infoPlist {
                     extraKeysRawXml =
                         """
                         <key>NSCameraUsageDescription</key>
                         <string>The CameraK sample shows the camera preview and takes photos and videos.</string>
+                        <key>NSMicrophoneUsageDescription</key>
+                        <string>The CameraK sample records sound with videos that have audio turned on.</string>
                         """.trimIndent()
                 }
                 entitlementsFile.set(project.file("macos/entitlements.plist"))
@@ -194,7 +196,9 @@ compose.desktop {
 }
 
 // A packaged macOS app that opens the camera without NSCameraUsageDescription in its Info.plist is
-// denied or killed by TCC, and a hardened-runtime build also needs the camera entitlement.
+// denied or killed by TCC, and a hardened-runtime build also needs the camera entitlement. The same
+// holds for the microphone a recording with audio opens: NSMicrophoneUsageDescription and the
+// audio-input entitlement.
 // `./gradlew run` hides both, because the terminal already holds the camera permission. The lint
 // target of scripts/verify.sh runs this check.
 // The DSL is read when the check runs, after the whole script has configured it, so the check does
@@ -215,26 +219,33 @@ val macOsEntitlementFiles =
     }
 tasks.register("checkMacOsCameraPackaging") {
     group = rootProject.extra["lintGroup"] as String
-    description = "Fails if the packaged macOS app lacks a camera usage description or the camera entitlement"
+    description =
+        "Fails if the packaged macOS app lacks the camera's or the microphone's usage description or entitlement"
     inputs.property("extraKeysRawXml", macOsExtraPlistKeys)
     inputs.files(macOsEntitlementFiles)
     doLast {
         val plistKeys = macOsExtraPlistKeys.get()
         val entitlements = macOsEntitlementFiles.get()
         val problems = mutableListOf<String>()
-        val usage = Regex("""<key>NSCameraUsageDescription</key>\s*<string>\s*[^<\s][^<]*</string>""")
-        if (!usage.containsMatchIn(plistKeys)) {
-            problems += "macOS { infoPlist { extraKeysRawXml } } has no non-empty NSCameraUsageDescription"
+        for (key in listOf("NSCameraUsageDescription", "NSMicrophoneUsageDescription")) {
+            val usage = Regex("""<key>$key</key>\s*<string>\s*[^<\s][^<]*</string>""")
+            if (!usage.containsMatchIn(plistKeys)) {
+                problems += "macOS { infoPlist { extraKeysRawXml } } has no non-empty $key"
+            }
         }
-        val cameraEntitlement = Regex("""<key>com\.apple\.security\.device\.camera</key>\s*<true\s*/>""")
         if (entitlements.size < 2) {
             problems += "macOS { entitlementsFile / runtimeEntitlementsFile } are not both set"
         }
-        entitlements.filterNot { it.isFile && cameraEntitlement.containsMatchIn(it.readText()) }.forEach {
-            problems += "${it.name} does not grant com.apple.security.device.camera"
+        for (entitlement in listOf("com.apple.security.device.camera", "com.apple.security.device.audio-input")) {
+            val granted = Regex("""<key>${Regex.escape(entitlement)}</key>\s*<true\s*/>""")
+            entitlements.filterNot { it.isFile && granted.containsMatchIn(it.readText()) }.forEach {
+                problems += "${it.name} does not grant $entitlement"
+            }
         }
         if (problems.isNotEmpty()) {
-            throw GradleException("The macOS package cannot use the camera:\n" + problems.joinToString("\n"))
+            throw GradleException(
+                "The macOS package cannot use the camera or the microphone:\n" + problems.joinToString("\n"),
+            )
         }
     }
 }

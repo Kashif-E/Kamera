@@ -59,7 +59,7 @@ class DesktopNativeTeardownTest {
         CameraKEnvironment(CameraKDispatchers(main = Dispatchers.Default, default = Dispatchers.Default)),
         CustomGrabberSource(grabber),
         authorization = { PermissionStatus.Granted },
-        media = DesktopMedia(userHome = home, recorderFactory = { _, _ -> nextRecorder() }),
+        media = DesktopMedia(userHome = home, recorderFactory = { _, _, _ -> nextRecorder() }),
     )
 
     private suspend fun open(sut: DesktopCameraEngine) {

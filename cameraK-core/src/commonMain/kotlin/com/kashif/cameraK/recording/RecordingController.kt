@@ -11,7 +11,6 @@ import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.CameraKPermissionChecker
-import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CommandRunner
@@ -263,8 +262,10 @@ internal class RecordingController(
 
     private fun microphoneRefusal(config: VideoConfiguration): CameraKResult.Failure? {
         if (!config.enableAudio) return null
-        val status = permissionChecker?.status(CameraKPermission.MICROPHONE) ?: PermissionStatus.Granted
-        if (status == PermissionStatus.Granted) return null
+        val checker = permissionChecker ?: return null
+        val status = checker.status(CameraKPermission.MICROPHONE)
+        // Granted everywhere; desktop also records at NotDetermined, as macOS prompts when the microphone opens.
+        if (checker.allowsOpen(status)) return null
         return CameraKResult.Failure(CameraKError.Permission(CameraKPermission.MICROPHONE, status))
     }
 

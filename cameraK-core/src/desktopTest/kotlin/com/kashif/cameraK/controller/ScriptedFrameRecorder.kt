@@ -43,6 +43,23 @@ internal class ScriptedFrameRecorder(
     val stopCount = AtomicInteger(0)
     val releaseCount = AtomicInteger(0)
 
+    /** The samples of every audio frame written, all channels counted. */
+    val samplesWritten = java.util.concurrent.atomic.AtomicLong(0)
+
+    /** The sample rate and channel count of each audio frame written. */
+    val audioFormats: MutableList<Pair<Int, Int>> = CopyOnWriteArrayList()
+
+    /** The threads that wrote video frames, and audio frames. */
+    val videoThreads: MutableList<String> = CopyOnWriteArrayList()
+    val audioThreads: MutableList<String> = CopyOnWriteArrayList()
+
+    // Audio frames are counted apart: no timestamp, no file growth, no index for failRecord.
+    private fun recordAudio(frame: Frame) {
+        audioThreads += Thread.currentThread().name
+        audioFormats += frame.sampleRate to frame.audioChannels
+        samplesWritten.addAndGet(frame.samples.sumOf { it.remaining() }.toLong())
+    }
+
     /** The `timestamp` set when each frame was written, in microseconds. */
     val timestamps: MutableList<Long> = CopyOnWriteArrayList()
 
@@ -69,6 +86,11 @@ internal class ScriptedFrameRecorder(
     override fun flush() = Unit
 
     override fun record(frame: Frame) {
+        if (frame.image == null && frame.samples != null) {
+            recordAudio(frame)
+            return
+        }
+        videoThreads += Thread.currentThread().name
         val index = recordCount.getAndIncrement()
         failRecord(index)?.let {
             workers.bump()

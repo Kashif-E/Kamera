@@ -589,8 +589,10 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
 
     /**
      * Starts a recording and returns it once the platform confirms it started. A second start while
-     * one is live is `Failure(Busy(RECORD_START))`; with [VideoConfiguration.enableAudio] and no
-     * microphone permission it is `Failure(Permission(MICROPHONE, status))`, and nothing records; a
+     * one is live is `Failure(Busy(RECORD_START))`; with [VideoConfiguration.enableAudio] and a
+     * microphone status the platform does not record at (anything but Granted; desktop also records at
+     * NotDetermined, as macOS prompts when the microphone opens) it is
+     * `Failure(Permission(MICROPHONE, status))`, and nothing records; a
      * start the platform does not confirm within five seconds is `Failure(Timeout(RECORD_START))`.
      * Limits end the recording on the platform and arrive as [CameraKEvent.RecordingEnded].
      */

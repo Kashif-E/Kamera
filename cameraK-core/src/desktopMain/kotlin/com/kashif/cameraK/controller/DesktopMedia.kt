@@ -23,13 +23,16 @@ import javax.imageio.ImageWriteParam
  * Where and how the desktop engine writes its stills and recordings: the seams tests replace.
  *
  * @property userHome The folder the app-owned folders resolve under: the user's home.
- * @property recorderFactory A new, unstarted recorder for an output path and a configuration.
+ * @property recorderFactory A new, unstarted recorder for an output path, a configuration and, for a
+ *   recording with audio, the microphone's sample rate and channel count.
  * @property writeCapture Writes a still to a file in a format, throwing if it cannot.
+ * @property microphone Opens the default microphone for a recording with audio.
  */
 internal class DesktopMedia(
     val userHome: File = defaultUserHome(),
-    val recorderFactory: (String, VideoConfiguration) -> FrameRecorder = ::createFrameRecorder,
+    val recorderFactory: (String, VideoConfiguration, Pair<Int, Int>?) -> FrameRecorder = ::createFrameRecorder,
     val writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage,
+    val microphone: MicrophoneOpener = JavaSoundMicrophoneOpener,
 )
 
 // user.home can be missing in sandboxed runtimes; fall back to the working directory, as the desktop
@@ -92,19 +95,26 @@ internal fun createUniqueFile(folder: File, prefix: String, extension: String): 
 
 /**
  * An H.264 MP4 recorder for [configuration], sized from its quality until the controller sets the
- * camera's frame size. Desktop captures no microphone audio, so the file has no audio track even
- * when audio is asked for: an AAC track with no samples would be empty.
+ * camera's frame size. With [audio] (the microphone's sample rate and channel count) it also has an
+ * AAC track, written by sample count.
  */
-internal fun createFrameRecorder(outputPath: String, configuration: VideoConfiguration): FrameRecorder {
-    if (configuration.enableAudio) {
-        CameraKLogger.w("CameraK", "Desktop records no audio; the video has no audio track")
-    }
-    return FFmpegFrameRecorder(outputPath, configuration.quality.width, configuration.quality.height, 0).apply {
+internal fun createFrameRecorder(
+    outputPath: String,
+    configuration: VideoConfiguration,
+    audio: Pair<Int, Int>? = null,
+): FrameRecorder {
+    val (sampleRate, channels) = audio ?: (0 to 0)
+    return FFmpegFrameRecorder(outputPath, configuration.quality.width, configuration.quality.height, channels).apply {
         videoCodec = avcodec.AV_CODEC_ID_H264
         format = "mp4"
         // The time base for the capture-time timestamps set on each frame.
         frameRate = RECORDING_FRAME_RATE
         videoBitrate = configuration.quality.bitrateBps
+        if (audio != null) {
+            audioCodec = avcodec.AV_CODEC_ID_AAC
+            this.sampleRate = sampleRate
+            audioBitrate = AUDIO_BITRATE
+        }
     }
 }
 
@@ -153,6 +163,9 @@ private const val LOW_FREE_SPACE_BYTES = 1L shl 20
 
 // The encoder's frame rate: a camera faster than this is recorded at this rate.
 private const val RECORDING_FRAME_RATE = 30.0
+
+// AAC at 128 kbps, as Android's and iOS's recordings carry speech and room sound.
+private const val AUDIO_BITRATE = 128_000
 
 // Android compresses stills at 95 too, so a desktop JPEG matches it.
 private const val JPEG_QUALITY = 0.95f

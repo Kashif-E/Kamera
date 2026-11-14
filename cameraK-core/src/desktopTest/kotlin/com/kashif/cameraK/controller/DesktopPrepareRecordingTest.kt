@@ -2,12 +2,10 @@
 
 package com.kashif.cameraK.controller
 
-import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.error.StorageFailure
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
-import com.kashif.cameraK.video.VideoConfiguration
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import kotlin.test.Test
@@ -32,9 +30,6 @@ class DesktopPrepareRecordingTest {
         try {
             steps.open(sut)
             val events = steps.events(sut)
-
-            val audio = assertIs<CameraKResult.Failure>(sut.prepareRecording(VideoConfiguration { enableAudio = true }))
-            assertEquals(CameraFeature.AUDIO, assertIs<CameraKError.Unsupported>(audio.error).feature)
 
             val unwritable = sut.prepareRecording(steps.video(outputDirectory = File(notAFolder, "videos").path))
             val storage = assertIs<CameraKError.Storage>(assertIs<CameraKResult.Failure>(unwritable).error)
