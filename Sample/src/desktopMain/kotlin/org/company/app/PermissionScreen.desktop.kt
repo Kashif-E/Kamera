@@ -21,3 +21,5 @@ private fun openCameraPrivacySettings() {
         CameraKLogger.w("Sample", "Opening the camera privacy settings failed", e)
     }
 }
+
+internal actual val cameraAsksWhenOpened: Boolean = false

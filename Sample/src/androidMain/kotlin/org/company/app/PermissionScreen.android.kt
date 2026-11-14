@@ -25,3 +25,5 @@ internal actual fun rememberAppSettingsOpener(): (() -> Unit)? {
         }
     }
 }
+
+internal actual val cameraAsksWhenOpened: Boolean = false

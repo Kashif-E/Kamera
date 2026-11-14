@@ -111,6 +111,12 @@ internal fun samplePermissions(autoSave: Boolean): List<CameraKPermission> =
     listOf(CameraKPermission.CAMERA, CameraKPermission.MICROPHONE) +
         if (autoSave) listOf(CameraKPermission.GALLERY_ADD) else emptyList()
 
+/**
+ * Whether the Sample shows the camera at this camera permission status: granted, or not asked yet on
+ * a platform that [asksWhenOpened], where opening the camera is what shows the system's prompt.
+ */
+internal fun showsCamera(status: PermissionStatus?, asksWhenOpened: Boolean): Boolean = cameraGranted(status)
+
 /** Whether the Sample shows the camera for this camera permission status; Limited counts as granted. */
 internal fun cameraGranted(status: PermissionStatus?): Boolean =
     status == PermissionStatus.Granted || status == PermissionStatus.Limited
