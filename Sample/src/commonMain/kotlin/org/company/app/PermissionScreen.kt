@@ -100,3 +100,6 @@ internal fun PermissionScreen(
  */
 @Composable
 internal expect fun rememberAppSettingsOpener(): (() -> Unit)?
+
+/** Whether the system asks for the camera when it opens rather than when the app asks: macOS. */
+internal expect val cameraAsksWhenOpened: Boolean

@@ -12,3 +12,5 @@ private fun openAppSettings() {
     val url = NSURL.URLWithString(UIApplicationOpenSettingsURLString) ?: return
     UIApplication.sharedApplication.openURL(url, options = emptyMap<Any?, Any?>(), completionHandler = null)
 }
+
+internal actual val cameraAsksWhenOpened: Boolean = false

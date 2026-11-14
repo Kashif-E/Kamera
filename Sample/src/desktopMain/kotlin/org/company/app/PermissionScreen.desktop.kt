@@ -21,3 +21,6 @@ private fun openCameraPrivacySettings() {
         CameraKLogger.w("Sample", "Opening the camera privacy settings failed", e)
     }
 }
+
+// macOS asks when the camera opens; Linux and Windows read Granted, so this changes nothing there.
+internal actual val cameraAsksWhenOpened: Boolean = true

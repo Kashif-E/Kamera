@@ -56,6 +56,17 @@ class SamplePermissionsTest {
     }
 
     @Test
+    fun whereOpeningTheCameraAsksTheCameraIsShownBeforeItIsAnswered() {
+        // macOS shows its prompt when the camera opens: a permission screen there would wait forever.
+        assertTrue(showsCamera(PermissionStatus.NotDetermined, asksWhenOpened = true))
+        assertFalse(showsCamera(PermissionStatus.NotDetermined, asksWhenOpened = false))
+        assertFalse(showsCamera(PermissionStatus.PermanentlyDenied, asksWhenOpened = true))
+        assertFalse(showsCamera(PermissionStatus.Denied(shouldShowRationale = false), asksWhenOpened = true))
+        assertTrue(showsCamera(PermissionStatus.Granted, asksWhenOpened = false))
+        assertTrue(showsCamera(PermissionStatus.Limited, asksWhenOpened = false))
+    }
+
+    @Test
     fun aLimitedCameraIsGranted() {
         assertNull(permissionNotice(mapOf(CameraKPermission.CAMERA to PermissionStatus.Limited)))
         assertTrue(cameraGranted(PermissionStatus.Limited))
