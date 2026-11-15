@@ -177,4 +177,78 @@ class DesktopPermissionTest {
             assertFalse(platformPermissionPromptPending(context, CameraKPermission.CAMERA), "Linux has no prompt")
         }
     }
+
+    @Test
+    fun aMacRequestAsksOnlyAtANotDeterminedItCouldRead() {
+        val asked = CopyOnWriteArrayList<CameraKPermission>()
+        fun mac(status: PermissionStatus, readable: Boolean = true) = DesktopPermissionChecker(
+            "Mac OS X",
+            object : MacAuthorizationRead {
+                override fun status(permission: CameraKPermission) = status
+
+                override fun readable(permission: CameraKPermission) = readable
+
+                override fun request(permission: CameraKPermission): PermissionStatus {
+                    asked += permission
+                    return PermissionStatus.Granted
+                }
+            },
+        )
+
+        assertEquals(PermissionStatus.Granted, mac(PermissionStatus.NotDetermined).request(CameraKPermission.MICROPHONE))
+        assertEquals(listOf(CameraKPermission.MICROPHONE), asked.toList())
+        asked.clear()
+        assertEquals(
+            PermissionStatus.PermanentlyDenied,
+            mac(PermissionStatus.PermanentlyDenied).request(CameraKPermission.CAMERA),
+            "macOS never asks again after a denial",
+        )
+        assertEquals(
+            PermissionStatus.NotDetermined,
+            mac(PermissionStatus.NotDetermined, readable = false).request(CameraKPermission.CAMERA),
+            "without JNA nothing can be asked",
+        )
+        assertEquals(PermissionStatus.Granted, mac(PermissionStatus.NotDetermined).request(CameraKPermission.GALLERY_ADD))
+        val linux = DesktopPermissionChecker("Linux") { PermissionStatus.NotDetermined }
+        assertEquals(PermissionStatus.Granted, linux.request(CameraKPermission.CAMERA))
+        assertEquals(emptyList(), asked.toList(), "asked where no prompt can show")
+    }
+
+    @Test
+    fun aRequestAsksMacOSOffTheEventThreadThenReportsOnIt() {
+        val askedOn = CopyOnWriteArrayList<Boolean>()
+        var camera: PermissionStatus = PermissionStatus.NotDetermined
+        val checker = DesktopPermissionChecker(
+            "Mac OS X",
+            object : MacAuthorizationRead {
+                override fun status(permission: CameraKPermission) =
+                    if (permission == CameraKPermission.CAMERA) camera else PermissionStatus.Granted
+
+                override fun request(permission: CameraKPermission): PermissionStatus {
+                    askedOn += EventQueue.isDispatchThread()
+                    camera = PermissionStatus.Granted
+                    return camera
+                }
+            },
+        )
+        val reported = CountDownLatch(1)
+        var result: Map<CameraKPermission, PermissionStatus>? = null
+        var onEventThread = false
+
+        withChecker(checker) {
+            requestPlatformPermissions(context, listOf(CameraKPermission.CAMERA, CameraKPermission.MICROPHONE)) {
+                onEventThread = EventQueue.isDispatchThread()
+                result = it
+                reported.countDown()
+            }
+            assertTrue(reported.await(5, TimeUnit.SECONDS), "no result")
+        }
+
+        assertEquals(listOf(false), askedOn.toList(), "asked once, off the event thread")
+        assertTrue(onEventThread, "reported off the event thread")
+        assertEquals(
+            mapOf(CameraKPermission.CAMERA to PermissionStatus.Granted, CameraKPermission.MICROPHONE to PermissionStatus.Granted),
+            result,
+        )
+    }
 }

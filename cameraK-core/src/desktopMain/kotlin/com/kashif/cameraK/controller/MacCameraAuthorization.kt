@@ -4,6 +4,8 @@ import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.utils.CameraKLogger
 import com.sun.jna.NativeLibrary
 import com.sun.jna.Pointer
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 /** The camera's authorization status as the OS reports it. */
 internal fun interface CameraAuthorization {
@@ -27,6 +29,12 @@ internal interface ObjCRuntime {
 
     /** The text of the NSString at [string]; null for nil. */
     fun string(string: Long): String?
+
+    /** `objc_msgSend(receiver, selector, argument, block)` for a method that returns nothing. */
+    fun sendWithBlock(receiver: Long, selector: Long, argument: Long, block: Long)
+
+    /** A block taking one BOOL, which calls [onAnswer]; it stays alive until it is called. */
+    fun booleanBlock(onAnswer: (Boolean) -> Unit): Long
 }
 
 /** The AVFoundation media types whose authorization CameraK reads. */
@@ -77,6 +85,12 @@ internal class MacCameraAuthorization(
         }
     }
 
+    /**
+     * Asks macOS for [type] through AVFoundation, which shows its prompt at NotDetermined, and waits
+     * up to [wait] for the answer; then [read]s the status.
+     */
+    fun requestAccess(type: MacMediaType, wait: Duration = MAC_PROMPT_WAIT): PermissionStatus? = read(type)
+
     /** The camera's status: [status] of [MacMediaType.VIDEO]. */
     override fun cameraStatus(): PermissionStatus = status(MacMediaType.VIDEO)
 
@@ -117,9 +131,17 @@ internal class JnaObjCRuntime : ObjCRuntime {
     override fun send(receiver: Long, selector: Long): Long =
         objc.getFunction("objc_msgSend").invokeLong(arrayOf(Pointer(receiver), Pointer(selector)))
 
+    override fun sendWithBlock(receiver: Long, selector: Long, argument: Long, block: Long): Unit =
+        throw UnsupportedOperationException("not yet")
+
+    override fun booleanBlock(onAnswer: (Boolean) -> Unit): Long = throw UnsupportedOperationException("not yet")
+
     override fun string(string: Long): String? {
         if (string == 0L) return null
         val utf8 = send(string, selector("UTF8String"))
         return if (utf8 == 0L) null else Pointer(utf8).getString(0, "UTF-8")
     }
 }
+
+/** How long a request waits for the user to answer macOS's prompt, past any start's own deadline. */
+internal val MAC_PROMPT_WAIT = 2.minutes

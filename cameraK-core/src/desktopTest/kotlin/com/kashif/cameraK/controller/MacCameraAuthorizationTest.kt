@@ -3,6 +3,7 @@ package com.kashif.cameraK.controller
 import com.kashif.cameraK.permissions.PermissionStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * macOS camera authorization is `[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo]`,
@@ -106,19 +107,74 @@ class MacCameraAuthorizationTest {
         }
     }
 
+    @Test
+    fun aRequestAsksAVFoundationAndReadsTheStatusItAnswered() {
+        val runtime = FakeObjCRuntime(0, answer = 3)
+
+        assertEquals(PermissionStatus.Granted, MacCameraAuthorization { runtime }.requestAccess(MacMediaType.AUDIO))
+        val request = runtime.blockCalls.single()
+        assertEquals(FakeObjCRuntime.DEVICE_CLASS, request.receiver)
+        assertEquals(FakeObjCRuntime.REQUEST_SELECTOR, request.selector)
+        assertEquals(FakeObjCRuntime.AUDIO, request.argument)
+        assertEquals(listOf(true), runtime.answers, "the block heard the answer")
+    }
+
+    @Test
+    fun aRequestNobodyAnswersReadsTheStatusAfterItsWait() {
+        val runtime = FakeObjCRuntime(0, answer = null)
+
+        val status = MacCameraAuthorization { runtime }.requestAccess(MacMediaType.VIDEO, wait = 50.milliseconds)
+
+        assertEquals(PermissionStatus.NotDetermined, status)
+        assertEquals(FakeObjCRuntime.VIDEO, runtime.blockCalls.single().argument)
+    }
+
+    @Test
+    fun aRequestWithoutJnaAsksNothing() {
+        val withoutJna = MacCameraAuthorization { throw NoClassDefFoundError("com/sun/jna/Native") }
+
+        assertEquals(null, withoutJna.requestAccess(MacMediaType.AUDIO))
+    }
+
     /**
      * Answers [status] to `authorizationStatusForMediaType:` sent to AVCaptureDevice with
-     * AVMediaTypeVideo or AVMediaTypeAudio.
+     * AVMediaTypeVideo or AVMediaTypeAudio. A `requestAccessForMediaType:completionHandler:` sets
+     * the status to [answer] and calls the block with whether it is Authorized; a null [answer]
+     * leaves the prompt unanswered.
      */
-    private class FakeObjCRuntime(private val status: Long) : ObjCRuntime {
+    private class FakeObjCRuntime(@Volatile private var status: Long, private val answer: Long? = null) : ObjCRuntime {
         data class Call(val receiver: Long, val selector: Long, val argument: Long)
 
         val calls = mutableListOf<Call>()
+        val blockCalls = mutableListOf<Call>()
+        val answers = mutableListOf<Boolean>()
+        private val blocks = mutableMapOf<Long, (Boolean) -> Unit>()
 
         override fun getClass(name: String): Long = if (name == "AVCaptureDevice") DEVICE_CLASS else 0
 
-        override fun selector(name: String): Long =
-            if (name == "authorizationStatusForMediaType:") STATUS_SELECTOR else OTHER
+        override fun selector(name: String): Long = when (name) {
+            "authorizationStatusForMediaType:" -> STATUS_SELECTOR
+            "requestAccessForMediaType:completionHandler:" -> REQUEST_SELECTOR
+            else -> OTHER
+        }
+
+        override fun sendWithBlock(receiver: Long, selector: Long, argument: Long, block: Long) {
+            blockCalls += Call(receiver, selector, argument)
+            val answered = answer ?: return
+            if (receiver != DEVICE_CLASS || selector != REQUEST_SELECTOR) return
+            status = answered
+            // AVFoundation answers on a queue of its own.
+            Thread { blocks.getValue(block)(answered == 3L) }.start()
+        }
+
+        override fun booleanBlock(onAnswer: (Boolean) -> Unit): Long {
+            val block = BLOCK + blocks.size
+            blocks[block] = { granted ->
+                synchronized(answers) { answers += granted }
+                onAnswer(granted)
+            }
+            return block
+        }
 
         override fun sendLong(receiver: Long, selector: Long, argument: Long): Long {
             calls += Call(receiver, selector, argument)
@@ -144,6 +200,8 @@ class MacCameraAuthorizationTest {
             const val VIDEO = 0x3000L
             const val AUDIO = 0x3100L
             const val OTHER = 0x4000L
+            const val REQUEST_SELECTOR = 0x5000L
+            const val BLOCK = 0x6000L
         }
     }
 }

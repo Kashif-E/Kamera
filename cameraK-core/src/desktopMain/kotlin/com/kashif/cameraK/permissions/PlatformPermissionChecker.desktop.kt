@@ -15,6 +15,9 @@ internal fun interface MacAuthorizationRead {
 
     /** Whether macOS could be asked for [permission]'s authorization: a NotDetermined then means the prompt is still to come. */
     fun readable(permission: CameraKPermission): Boolean = true
+
+    /** Asks macOS for [permission], showing its prompt, and returns the status after the answer. */
+    fun request(permission: CameraKPermission): PermissionStatus = status(permission)
 }
 
 /**
@@ -64,6 +67,12 @@ internal class DesktopPermissionChecker(osName: String, private val macRead: Mac
         permission != CameraKPermission.GALLERY_ADD &&
         status == PermissionStatus.NotDetermined &&
         macRead.readable(permission)
+
+    /**
+     * The status of [permission] after asking for it: macOS's prompt shows, through AVFoundation, at a
+     * NotDetermined it could read; anything else is [status] as it is. Blocks until the answer.
+     */
+    fun request(permission: CameraKPermission): PermissionStatus = status(permission)
 }
 
 // The one desktop checker; tests replace it with one over a fake OS name and authorization read.
