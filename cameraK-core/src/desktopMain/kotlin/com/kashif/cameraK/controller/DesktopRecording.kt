@@ -19,6 +19,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bytedeco.javacv.Frame
@@ -178,6 +180,9 @@ internal class DesktopRecording(
             val frames = openFeed().also { feed = it }
             var limited = false
             while (!limited) {
+                // A recording behind the camera always finds a frame waiting, which next() returns
+                // without suspending, where a stop's cancellation is otherwise seen.
+                currentCoroutineContext().ensureActive()
                 val frame = frames.next() ?: break
                 limited = try {
                     writeAudio() || write(frame)
