@@ -159,4 +159,22 @@ class DesktopPermissionTest {
         // A status read per permission and nothing else: the seam has no prompt, and nothing asked twice.
         assertEquals(listOf(CameraKPermission.CAMERA, CameraKPermission.MICROPHONE), read.reads.toList())
     }
+
+    @Test
+    fun aMacPromptIsPendingOnlyWhileTheCameraOrMicrophoneReadsNotDetermined() {
+        var camera: PermissionStatus = PermissionStatus.NotDetermined
+        val mac = DesktopPermissionChecker("Mac OS X") {
+            if (it == CameraKPermission.CAMERA) camera else PermissionStatus.Granted
+        }
+        withChecker(mac) {
+            assertTrue(platformPermissionPromptPending(context, CameraKPermission.CAMERA))
+            assertFalse(platformPermissionPromptPending(context, CameraKPermission.MICROPHONE))
+            assertFalse(platformPermissionPromptPending(context, CameraKPermission.GALLERY_ADD))
+            camera = PermissionStatus.Granted
+            assertFalse(platformPermissionPromptPending(context, CameraKPermission.CAMERA), "answered")
+        }
+        withChecker(DesktopPermissionChecker("Linux") { PermissionStatus.NotDetermined }) {
+            assertFalse(platformPermissionPromptPending(context, CameraKPermission.CAMERA), "Linux has no prompt")
+        }
+    }
 }
