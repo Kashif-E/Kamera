@@ -86,11 +86,13 @@ class MatrixRunnerTest {
 
         override fun newMediaSaver(): MediaSaverPlugin? = null
 
-        // Where the prompt comes with the camera's open (macOS), the camera stays NotDetermined until a
-        // holder starts, and the microphone, which desktop never opens, stays NotDetermined throughout.
+        // Where the prompt comes with the device's open (macOS), the camera stays NotDetermined until a
+        // holder starts, and the microphone until a recording with audio starts.
         override fun permission(permission: CameraKPermission): PermissionStatus = when {
             !promptsOnOpen -> PermissionStatus.Granted
             permission == CameraKPermission.CAMERA && holders.any { it.cameraState.value != CameraKState.Idle } ->
+                PermissionStatus.Granted
+            permission == CameraKPermission.MICROPHONE && engines.any { "startRecording" in it.calls } ->
                 PermissionStatus.Granted
             else -> PermissionStatus.NotDetermined
         }
@@ -194,5 +196,22 @@ class MatrixRunnerTest {
         val log = platform.lines.joinToString("\n")
         assertTrue(platform.lines.none { it.startsWith("BLOCKED") }, log)
         assertEquals(1, Regex(""""verdict":"PASS"""").findAll(report).count(), report)
+    }
+
+    // The first audio case would otherwise meet the microphone's prompt inside its 10 s command timeout.
+    @Test
+    fun whereTheMicrophonePromptComesWithARecording_theRunnerAnswersItBeforeTheCases() = runTest {
+        val platform = TestPlatform(this, promptsOnOpen = true)
+        val startStop = enumerateCases(FakeCapabilities.backAndFront())
+            .first { (it.spec as? LifecycleSpec)?.kind == LifecycleKind.START_STOP_20 }.index
+
+        MatrixRunner(
+            platform,
+            MatrixArgs(offset = startStop, sections = setOf(MatrixSection.LIFECYCLE), limit = 1),
+        ).run()
+
+        assertTrue(""""permissions":{"CAMERA":"Granted","MICROPHONE":"Granted"}""" in report, report)
+        assertTrue(platform.engines.first().calls.none { it == "startRecording" }, "the camera's prompt holder recorded")
+        assertTrue(platform.engines.drop(1).first().calls.containsAll(listOf("startRecording", "stopRecording")))
     }
 }
