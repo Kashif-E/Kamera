@@ -81,6 +81,14 @@ internal class DesktopPermissionChecker(osName: String, private val macRead: Mac
         val status = status(permission)
         return if (promptsOnOpen(permission, status)) macRead.request(permission) else status
     }
+
+    /**
+     * What refuses opening [permission]'s device, after asking for it as [request] does; null when it
+     * may open.
+     */
+    fun requestToOpen(permission: CameraKPermission): PermissionStatus? = request(permission).takeUnless {
+        it == PermissionStatus.Granted || it == PermissionStatus.Limited || it == PermissionStatus.NotDetermined
+    }
 }
 
 // The one desktop checker; tests replace it with one over a fake OS name and authorization read.

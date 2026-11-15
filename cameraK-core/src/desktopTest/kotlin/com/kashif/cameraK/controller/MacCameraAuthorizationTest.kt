@@ -2,7 +2,10 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.permissions.PermissionStatus
 import kotlin.test.Test
+import com.kashif.cameraK.recording.RECORDING_START_TIMEOUT
+import com.kashif.cameraK.state.PERMISSION_PROMPT_TIMEOUT
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -131,6 +134,54 @@ class MacCameraAuthorizationTest {
     }
 
     @Test
+    fun aPackagedAppWithoutTheUsageKeyIsNotAsked() {
+        val runtime = FakeObjCRuntime(0, answer = 3, bundlePath = "/Applications/Some.app")
+
+        val status = MacCameraAuthorization { runtime }.requestAccess(MacMediaType.AUDIO)
+
+        assertEquals(PermissionStatus.NotDetermined, status)
+        assertEquals(emptyList(), runtime.blockCalls, "macOS was asked by an app that declares no reason")
+    }
+
+    @Test
+    fun aPackagedAppWithTheUsageKeyIsAsked() {
+        val runtime = FakeObjCRuntime(
+            0,
+            answer = 3,
+            bundlePath = "/Applications/Some.app",
+            info = mapOf("NSCameraUsageDescription" to "Takes photos."),
+        )
+
+        assertEquals(PermissionStatus.Granted, MacCameraAuthorization { runtime }.requestAccess(MacMediaType.VIDEO))
+        assertEquals(FakeObjCRuntime.VIDEO, runtime.blockCalls.single().argument)
+    }
+
+    // An unbundled JVM (`./gradlew run`) is asked for: macOS asks on behalf of the app that started it.
+    @Test
+    fun anUnbundledJvmIsAsked() {
+        val runtime = FakeObjCRuntime(0, answer = 3, bundlePath = "/Library/Java/JavaVirtualMachines/jdk/Contents/Home/bin")
+
+        assertEquals(PermissionStatus.Granted, MacCameraAuthorization { runtime }.requestAccess(MacMediaType.AUDIO))
+    }
+
+    @Test
+    fun aRequestWaitsNoLongerThanTheRecordingStartThatAsks() {
+        assertTrue(
+            MAC_PROMPT_WAIT <= RECORDING_START_TIMEOUT + PERMISSION_PROMPT_TIMEOUT,
+            "a request outlasting the start leaves the engine busy after the start reported",
+        )
+    }
+
+    // A shrinker may drop a field that is written and never read; the block's memory must not hang on one.
+    @Test
+    fun theNoOpBlocksMemoryHasNoOwnerAShrinkerCouldDrop() {
+        val holder = Class.forName("com.kashif.cameraK.controller.NoOpBlock", false, javaClass.classLoader)
+        val owners = holder.declaredFields.filter { !it.type.isPrimitive && it.name != "INSTANCE" }
+
+        assertEquals(emptyList(), owners.map { "${it.name}: ${it.type.name}" })
+    }
+
+    @Test
     fun aRequestWithoutJnaAsksNothing() {
         val withoutJna = MacCameraAuthorization { throw NoClassDefFoundError("com/sun/jna/Native") }
 
@@ -143,7 +194,12 @@ class MacCameraAuthorizationTest {
      * the status to [answer] a moment later, as the user does; a null [answer] leaves the prompt
      * unanswered.
      */
-    private class FakeObjCRuntime(@Volatile private var status: Long, private val answer: Long? = null) : ObjCRuntime {
+    private class FakeObjCRuntime(
+        @Volatile private var status: Long,
+        private val answer: Long? = null,
+        private val bundlePath: String? = null,
+        private val info: Map<String, String> = emptyMap(),
+    ) : ObjCRuntime {
         data class Call(val receiver: Long, val selector: Long, val argument: Long, val block: Long = 0)
 
         val calls = mutableListOf<Call>()
@@ -169,6 +225,10 @@ class MacCameraAuthorizationTest {
         }
 
         override fun noOpBlock(): Long = BLOCK
+
+        override fun mainBundlePath(): String? = bundlePath
+
+        override fun mainBundleInfo(key: String): String? = info[key]
 
         override fun sendLong(receiver: Long, selector: Long, argument: Long): Long {
             calls += Call(receiver, selector, argument)

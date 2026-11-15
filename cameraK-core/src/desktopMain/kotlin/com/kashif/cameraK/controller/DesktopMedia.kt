@@ -35,7 +35,7 @@ internal class DesktopMedia(
     val recorderFactory: (String, VideoConfiguration, Pair<Int, Int>?) -> FrameRecorder = ::createFrameRecorder,
     val writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage,
     val microphone: MicrophoneOpener = accessCheckedOpener(
-        { desktopPermissionChecker.request(CameraKPermission.MICROPHONE) },
+        { desktopPermissionChecker.requestToOpen(CameraKPermission.MICROPHONE) },
         JavaSoundMicrophoneOpener,
     ),
 )

@@ -121,7 +121,7 @@ class DesktopAudioTest {
         val microphone = FakeMicrophone()
         val opener = accessCheckedOpener({
             asked++
-            PermissionStatus.Granted
+            null
         }) { microphone }
 
         assertSame(microphone, opener.open { 0L })

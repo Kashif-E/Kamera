@@ -37,12 +37,18 @@ internal interface ObjCRuntime {
 
     /** A block that does nothing when called, for a completion handler whose answer is read afterwards. */
     fun noOpBlock(): Long
+
+    /** `[[NSBundle mainBundle] bundlePath]`; null when it cannot be read. */
+    fun mainBundlePath(): String?
+
+    /** The main bundle's Info.plist string for [key]; null when it has none. */
+    fun mainBundleInfo(key: String): String?
 }
 
 /** The AVFoundation media types whose authorization CameraK reads. */
-internal enum class MacMediaType(val constant: String) {
-    VIDEO("AVMediaTypeVideo"),
-    AUDIO("AVMediaTypeAudio"),
+internal enum class MacMediaType(val constant: String, val usageKey: String) {
+    VIDEO("AVMediaTypeVideo", "NSCameraUsageDescription"),
+    AUDIO("AVMediaTypeAudio", "NSMicrophoneUsageDescription"),
 }
 
 /**
@@ -180,6 +186,10 @@ internal class JnaObjCRuntime : ObjCRuntime {
     }
 
     override fun noOpBlock(): Long = NoOpBlock.address
+
+    override fun mainBundlePath(): String? = null
+
+    override fun mainBundleInfo(key: String): String? = null
 
     override fun string(string: Long): String? {
         if (string == 0L) return null

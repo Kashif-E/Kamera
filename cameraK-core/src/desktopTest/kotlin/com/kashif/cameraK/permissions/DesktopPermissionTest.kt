@@ -272,4 +272,37 @@ class DesktopPermissionTest {
             result,
         )
     }
+
+    @Test
+    fun theMicrophoneOpensOnlyOnAnAnswerOrWhereNothingCanAsk() {
+        fun mac(status: PermissionStatus, answer: PermissionStatus = status, readable: Boolean = true) =
+            DesktopPermissionChecker(
+                "Mac OS X",
+                object : MacAuthorizationRead {
+                    override fun status(permission: CameraKPermission) = status
+
+                    override fun readable(permission: CameraKPermission) = readable
+
+                    override fun request(permission: CameraKPermission) = answer
+                },
+            )
+        val microphone = CameraKPermission.MICROPHONE
+
+        assertNull(mac(PermissionStatus.NotDetermined, answer = PermissionStatus.Granted).requestToOpen(microphone))
+        assertEquals(
+            PermissionStatus.PermanentlyDenied,
+            mac(PermissionStatus.NotDetermined, answer = PermissionStatus.PermanentlyDenied).requestToOpen(microphone),
+        )
+        assertEquals(
+            PermissionStatus.NotDetermined,
+            mac(PermissionStatus.NotDetermined).requestToOpen(microphone),
+            "a prompt left unanswered refuses, rather than the open waiting on it with no deadline",
+        )
+        assertNull(
+            mac(PermissionStatus.NotDetermined, readable = false).requestToOpen(microphone),
+            "without JNA nothing was asked: the open shows macOS's prompt",
+        )
+        assertEquals(PermissionStatus.Restricted, mac(PermissionStatus.Restricted).requestToOpen(microphone))
+        assertNull(DesktopPermissionChecker("Linux") { PermissionStatus.NotDetermined }.requestToOpen(microphone))
+    }
 }
