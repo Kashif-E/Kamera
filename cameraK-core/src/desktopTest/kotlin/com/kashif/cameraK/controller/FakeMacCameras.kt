@@ -55,7 +55,7 @@ internal class FakeMacCameras(
     // Enumeration asks for nothing.
     override fun sendWithBlock(receiver: Long, selector: Long, argument: Long, block: Long) = Unit
 
-    override fun booleanBlock(onAnswer: (Boolean) -> Unit): Long = 0
+    override fun noOpBlock(): Long = 0
 
     private fun text(value: String): Long = synchronized(strings) {
         nextString += 1

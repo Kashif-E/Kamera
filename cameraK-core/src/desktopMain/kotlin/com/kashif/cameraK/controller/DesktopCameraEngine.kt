@@ -31,6 +31,7 @@ import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.error.InterruptionReason
 import com.kashif.cameraK.frames.FrameFormat
 import com.kashif.cameraK.frames.FrameSource
+import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.recording.RecordingEndReason
 import com.kashif.cameraK.recording.SHUTDOWN_STOP_TIMEOUT
 import com.kashif.cameraK.result.CameraKResult
@@ -803,10 +804,16 @@ internal class DesktopCameraEngine(
         )
     }
 
-    /** The default microphone, open: `Unsupported(AUDIO)` when there is none, `Hardware` when it does not open. */
+    /**
+     * The default microphone, open: `Permission(MICROPHONE, status)` when macOS refuses it,
+     * `Unsupported(AUDIO)` when there is none, `Hardware` when it does not open.
+     */
     private fun openMicrophone(): CameraKResult<Microphone> {
         val microphone = try {
             media.microphone.open(nanoClock)
+        } catch (e: MicrophoneRefused) {
+            CameraKLogger.w(TAG, "The microphone is refused (${e.status}); a recording with audio cannot start")
+            return CameraKResult.Failure(CameraKError.Permission(CameraKPermission.MICROPHONE, e.status))
         } catch (e: Exception) {
             CameraKLogger.e(TAG, "Opening the microphone failed", e)
             return CameraKResult.Failure(CameraKError.Hardware(null, e))

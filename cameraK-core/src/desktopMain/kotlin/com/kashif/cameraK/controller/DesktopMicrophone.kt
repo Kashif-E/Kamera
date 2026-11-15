@@ -31,7 +31,13 @@ internal fun interface MicrophoneOpener {
 internal class MicrophoneRefused(val status: PermissionStatus) : Exception("The microphone is $status")
 
 /** [open], after [access] says the microphone may be opened: it throws [MicrophoneRefused] when it may not. */
-internal fun accessCheckedOpener(access: () -> PermissionStatus, open: MicrophoneOpener): MicrophoneOpener = open
+internal fun accessCheckedOpener(access: () -> PermissionStatus, open: MicrophoneOpener): MicrophoneOpener =
+    MicrophoneOpener { nanoClock ->
+        when (val status = access()) {
+            PermissionStatus.Granted, PermissionStatus.NotDetermined, PermissionStatus.Limited -> open.open(nanoClock)
+            else -> throw MicrophoneRefused(status)
+        }
+    }
 
 /** What [JavaSoundMicrophone] reads: a started capture line. */
 internal interface CaptureLine {

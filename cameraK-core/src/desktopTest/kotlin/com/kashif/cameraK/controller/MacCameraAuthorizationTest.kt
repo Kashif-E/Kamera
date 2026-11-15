@@ -116,14 +116,15 @@ class MacCameraAuthorizationTest {
         assertEquals(FakeObjCRuntime.DEVICE_CLASS, request.receiver)
         assertEquals(FakeObjCRuntime.REQUEST_SELECTOR, request.selector)
         assertEquals(FakeObjCRuntime.AUDIO, request.argument)
-        assertEquals(listOf(true), runtime.answers, "the block heard the answer")
+        assertEquals(FakeObjCRuntime.BLOCK, request.block, "the completion handler")
     }
 
     @Test
     fun aRequestNobodyAnswersReadsTheStatusAfterItsWait() {
         val runtime = FakeObjCRuntime(0, answer = null)
 
-        val status = MacCameraAuthorization { runtime }.requestAccess(MacMediaType.VIDEO, wait = 50.milliseconds)
+        val status = MacCameraAuthorization { runtime }
+            .requestAccess(MacMediaType.VIDEO, wait = 50.milliseconds, poll = 10.milliseconds)
 
         assertEquals(PermissionStatus.NotDetermined, status)
         assertEquals(FakeObjCRuntime.VIDEO, runtime.blockCalls.single().argument)
@@ -139,16 +140,14 @@ class MacCameraAuthorizationTest {
     /**
      * Answers [status] to `authorizationStatusForMediaType:` sent to AVCaptureDevice with
      * AVMediaTypeVideo or AVMediaTypeAudio. A `requestAccessForMediaType:completionHandler:` sets
-     * the status to [answer] and calls the block with whether it is Authorized; a null [answer]
-     * leaves the prompt unanswered.
+     * the status to [answer] a moment later, as the user does; a null [answer] leaves the prompt
+     * unanswered.
      */
     private class FakeObjCRuntime(@Volatile private var status: Long, private val answer: Long? = null) : ObjCRuntime {
-        data class Call(val receiver: Long, val selector: Long, val argument: Long)
+        data class Call(val receiver: Long, val selector: Long, val argument: Long, val block: Long = 0)
 
         val calls = mutableListOf<Call>()
         val blockCalls = mutableListOf<Call>()
-        val answers = mutableListOf<Boolean>()
-        private val blocks = mutableMapOf<Long, (Boolean) -> Unit>()
 
         override fun getClass(name: String): Long = if (name == "AVCaptureDevice") DEVICE_CLASS else 0
 
@@ -159,22 +158,17 @@ class MacCameraAuthorizationTest {
         }
 
         override fun sendWithBlock(receiver: Long, selector: Long, argument: Long, block: Long) {
-            blockCalls += Call(receiver, selector, argument)
+            blockCalls += Call(receiver, selector, argument, block)
             val answered = answer ?: return
             if (receiver != DEVICE_CLASS || selector != REQUEST_SELECTOR) return
-            status = answered
-            // AVFoundation answers on a queue of its own.
-            Thread { blocks.getValue(block)(answered == 3L) }.start()
+            // The user answers on a thread of macOS's own, after the request has returned.
+            Thread {
+                Thread.sleep(20)
+                status = answered
+            }.start()
         }
 
-        override fun booleanBlock(onAnswer: (Boolean) -> Unit): Long {
-            val block = BLOCK + blocks.size
-            blocks[block] = { granted ->
-                synchronized(answers) { answers += granted }
-                onAnswer(granted)
-            }
-            return block
-        }
+        override fun noOpBlock(): Long = BLOCK
 
         override fun sendLong(receiver: Long, selector: Long, argument: Long): Long {
             calls += Call(receiver, selector, argument)
