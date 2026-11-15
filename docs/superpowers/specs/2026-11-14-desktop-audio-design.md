@@ -98,9 +98,10 @@ showed it: 16 video cases with audio BLOCKED on 2026-11-14.
 
 ## Known limits, documented rather than fixed
 
-- macOS: a user who denies the prompt of the first recording gets that recording with a silent track. Later
-  starts fail with `Permission`. (Corrected after the device check: the microphone's open waits for the
-  answer, so macOS does not record silence while the prompt is up.)
+- (Fixed after the device check.) macOS: Java Sound's own prompt left AVFoundation's microphone status
+  NotDetermined in the process after the answer, and a denial recorded silence. CameraK now asks through
+  AVFoundation's `requestAccessForMediaType:` before opening the microphone, so a denial fails the start
+  with `Permission` and the status reads the answer at once.
 - Windows: with "Let desktop apps access your microphone" off, Windows delivers silence, not an error. Java
   Sound cannot tell the two apart.
 - Linux and Windows real-microphone recording is tested only where someone has a machine with a microphone. CI

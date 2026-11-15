@@ -1,6 +1,8 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.enums.ImageFormat
+import com.kashif.cameraK.permissions.CameraKPermission
+import com.kashif.cameraK.permissions.desktopPermissionChecker
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import org.bytedeco.ffmpeg.global.avcodec
@@ -32,7 +34,10 @@ internal class DesktopMedia(
     val userHome: File = defaultUserHome(),
     val recorderFactory: (String, VideoConfiguration, Pair<Int, Int>?) -> FrameRecorder = ::createFrameRecorder,
     val writeCapture: (BufferedImage, ImageFormat, File) -> Unit = ::writeImage,
-    val microphone: MicrophoneOpener = JavaSoundMicrophoneOpener,
+    val microphone: MicrophoneOpener = accessCheckedOpener(
+        { desktopPermissionChecker.request(CameraKPermission.MICROPHONE) },
+        JavaSoundMicrophoneOpener,
+    ),
 )
 
 // user.home can be missing in sandboxed runtimes; fall back to the working directory, as the desktop

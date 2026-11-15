@@ -5,6 +5,7 @@ import com.kashif.cameraK.controller.MacMediaType
 import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.utils.InternalCameraKApi
 import java.awt.EventQueue
+import kotlin.concurrent.thread
 
 internal actual fun platformPermissionChecker(context: CameraKPlatformContext): CameraKPermissionChecker =
     desktopPermissionChecker
@@ -15,6 +16,9 @@ internal fun interface MacAuthorizationRead {
 
     /** Whether macOS could be asked for [permission]'s authorization: a NotDetermined then means the prompt is still to come. */
     fun readable(permission: CameraKPermission): Boolean = true
+
+    /** Asks macOS for [permission], showing its prompt, and returns the status after the answer. */
+    fun request(permission: CameraKPermission): PermissionStatus = status(permission)
 }
 
 /**
@@ -23,6 +27,7 @@ internal fun interface MacAuthorizationRead {
  * [MacCameraAuthorization.read] in production.
  */
 internal class JnaMacAuthorizationRead(
+    private val ask: (MacMediaType) -> PermissionStatus? = { MacCameraAuthorization().requestAccess(it) },
     private val read: (MacMediaType) -> PermissionStatus? = MacCameraAuthorization()::read,
 ) : MacAuthorizationRead {
     override fun status(permission: CameraKPermission): PermissionStatus =
@@ -30,6 +35,9 @@ internal class JnaMacAuthorizationRead(
 
     override fun readable(permission: CameraKPermission): Boolean =
         macMediaTypeOf(permission)?.let { read(it) != null } ?: true
+
+    override fun request(permission: CameraKPermission): PermissionStatus =
+        macMediaTypeOf(permission)?.let { ask(it) ?: PermissionStatus.NotDetermined } ?: PermissionStatus.Granted
 }
 
 /** The AVFoundation media type whose authorization is [permission]'s on macOS; null for the gallery, a folder. */
@@ -64,6 +72,15 @@ internal class DesktopPermissionChecker(osName: String, private val macRead: Mac
         permission != CameraKPermission.GALLERY_ADD &&
         status == PermissionStatus.NotDetermined &&
         macRead.readable(permission)
+
+    /**
+     * The status of [permission] after asking for it: macOS's prompt shows, through AVFoundation, at a
+     * NotDetermined it could read; anything else is [status] as it is. Blocks until the answer.
+     */
+    fun request(permission: CameraKPermission): PermissionStatus {
+        val status = status(permission)
+        return if (promptsOnOpen(permission, status)) macRead.request(permission) else status
+    }
 }
 
 // The one desktop checker; tests replace it with one over a fake OS name and authorization read.
@@ -89,11 +106,11 @@ public fun platformPermissionPromptPending(context: CameraKPlatformContext, perm
     desktopPermissionChecker.let { it.promptsOnOpen(permission, it.status(permission)) }
 
 /**
- * Prompts for nothing: it re-reads the statuses of [permissions] and calls [onResult] with them on
- * the AWT event thread, Compose Desktop's Main. Linux and Windows have no permission to ask for.
- * macOS shows its camera prompt when the camera opens, and asking from the JVM would need an
- * Objective-C block, which plain JNA cannot build. A macOS PermanentlyDenied can only be changed in
- * System Settings, so the app has to send the user there.
+ * Asks for [permissions] off the AWT event thread, then calls [onResult] with their statuses on it,
+ * Compose Desktop's Main. On macOS each camera or microphone permission at NotDetermined is asked
+ * through AVFoundation, which shows the prompt, and waits for the answer; Linux and Windows have no
+ * permission to ask for. A macOS PermanentlyDenied can only be changed in System Settings, so the
+ * app has to send the user there.
  */
 @InternalCameraKApi
 public fun requestPlatformPermissions(
@@ -101,5 +118,8 @@ public fun requestPlatformPermissions(
     permissions: List<CameraKPermission>,
     onResult: (Map<CameraKPermission, PermissionStatus>) -> Unit,
 ) {
-    EventQueue.invokeLater { onResult(permissions.associateWith { platformPermissionStatus(context, it) }) }
+    thread(isDaemon = true, name = "CameraK permission request") {
+        val statuses = permissions.associateWith { desktopPermissionChecker.request(it) }
+        EventQueue.invokeLater { onResult(statuses) }
+    }
 }

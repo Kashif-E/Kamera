@@ -3,6 +3,7 @@ package com.kashif.cameraK.controller
 import com.kashif.cameraK.permissions.PermissionStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * macOS camera authorization is `[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo]`,
@@ -106,19 +107,68 @@ class MacCameraAuthorizationTest {
         }
     }
 
+    @Test
+    fun aRequestAsksAVFoundationAndReadsTheStatusItAnswered() {
+        val runtime = FakeObjCRuntime(0, answer = 3)
+
+        assertEquals(PermissionStatus.Granted, MacCameraAuthorization { runtime }.requestAccess(MacMediaType.AUDIO))
+        val request = runtime.blockCalls.single()
+        assertEquals(FakeObjCRuntime.DEVICE_CLASS, request.receiver)
+        assertEquals(FakeObjCRuntime.REQUEST_SELECTOR, request.selector)
+        assertEquals(FakeObjCRuntime.AUDIO, request.argument)
+        assertEquals(FakeObjCRuntime.BLOCK, request.block, "the completion handler")
+    }
+
+    @Test
+    fun aRequestNobodyAnswersReadsTheStatusAfterItsWait() {
+        val runtime = FakeObjCRuntime(0, answer = null)
+
+        val status = MacCameraAuthorization { runtime }
+            .requestAccess(MacMediaType.VIDEO, wait = 50.milliseconds, poll = 10.milliseconds)
+
+        assertEquals(PermissionStatus.NotDetermined, status)
+        assertEquals(FakeObjCRuntime.VIDEO, runtime.blockCalls.single().argument)
+    }
+
+    @Test
+    fun aRequestWithoutJnaAsksNothing() {
+        val withoutJna = MacCameraAuthorization { throw NoClassDefFoundError("com/sun/jna/Native") }
+
+        assertEquals(null, withoutJna.requestAccess(MacMediaType.AUDIO))
+    }
+
     /**
      * Answers [status] to `authorizationStatusForMediaType:` sent to AVCaptureDevice with
-     * AVMediaTypeVideo or AVMediaTypeAudio.
+     * AVMediaTypeVideo or AVMediaTypeAudio. A `requestAccessForMediaType:completionHandler:` sets
+     * the status to [answer] a moment later, as the user does; a null [answer] leaves the prompt
+     * unanswered.
      */
-    private class FakeObjCRuntime(private val status: Long) : ObjCRuntime {
-        data class Call(val receiver: Long, val selector: Long, val argument: Long)
+    private class FakeObjCRuntime(@Volatile private var status: Long, private val answer: Long? = null) : ObjCRuntime {
+        data class Call(val receiver: Long, val selector: Long, val argument: Long, val block: Long = 0)
 
         val calls = mutableListOf<Call>()
+        val blockCalls = mutableListOf<Call>()
 
         override fun getClass(name: String): Long = if (name == "AVCaptureDevice") DEVICE_CLASS else 0
 
-        override fun selector(name: String): Long =
-            if (name == "authorizationStatusForMediaType:") STATUS_SELECTOR else OTHER
+        override fun selector(name: String): Long = when (name) {
+            "authorizationStatusForMediaType:" -> STATUS_SELECTOR
+            "requestAccessForMediaType:completionHandler:" -> REQUEST_SELECTOR
+            else -> OTHER
+        }
+
+        override fun sendWithBlock(receiver: Long, selector: Long, argument: Long, block: Long) {
+            blockCalls += Call(receiver, selector, argument, block)
+            val answered = answer ?: return
+            if (receiver != DEVICE_CLASS || selector != REQUEST_SELECTOR) return
+            // The user answers on a thread of macOS's own, after the request has returned.
+            Thread {
+                Thread.sleep(20)
+                status = answered
+            }.start()
+        }
+
+        override fun noOpBlock(): Long = BLOCK
 
         override fun sendLong(receiver: Long, selector: Long, argument: Long): Long {
             calls += Call(receiver, selector, argument)
@@ -144,6 +194,8 @@ class MacCameraAuthorizationTest {
             const val VIDEO = 0x3000L
             const val AUDIO = 0x3100L
             const val OTHER = 0x4000L
+            const val REQUEST_SELECTOR = 0x5000L
+            const val BLOCK = 0x6000L
         }
     }
 }

@@ -2,8 +2,12 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.utils.CameraKLogger
+import com.sun.jna.Memory
 import com.sun.jna.NativeLibrary
 import com.sun.jna.Pointer
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 
 /** The camera's authorization status as the OS reports it. */
 internal fun interface CameraAuthorization {
@@ -27,6 +31,12 @@ internal interface ObjCRuntime {
 
     /** The text of the NSString at [string]; null for nil. */
     fun string(string: Long): String?
+
+    /** `objc_msgSend(receiver, selector, argument, block)` for a method that returns nothing. */
+    fun sendWithBlock(receiver: Long, selector: Long, argument: Long, block: Long)
+
+    /** A block that does nothing when called, for a completion handler whose answer is read afterwards. */
+    fun noOpBlock(): Long
 }
 
 /** The AVFoundation media types whose authorization CameraK reads. */
@@ -77,6 +87,53 @@ internal class MacCameraAuthorization(
         }
     }
 
+    /**
+     * Asks macOS for [type] through AVFoundation, which shows its prompt at NotDetermined, then reads
+     * the status every [poll] until the prompt is answered, for up to [wait]. AVFoundation's status
+     * reads the answer at once in the process that asked; a prompt raised by anything else (Java
+     * Sound's open of the microphone) leaves it NotDetermined there until the app starts again.
+     */
+    fun requestAccess(
+        type: MacMediaType,
+        wait: Duration = MAC_PROMPT_WAIT,
+        poll: Duration = MAC_PROMPT_POLL,
+    ): PermissionStatus? {
+        val objc = try {
+            runtime()
+        } catch (e: LinkageError) {
+            CameraKLogger.w(TAG, "JNA is not available, so macOS cannot be asked for an authorization", e)
+            return null
+        }
+        try {
+            val mediaType = objc.pointerConstant("AVFoundation", type.constant)
+            val device = objc.getClass("AVCaptureDevice")
+            if (device == 0L || mediaType == 0L) {
+                CameraKLogger.w(TAG, "AVFoundation is not loaded, so macOS cannot be asked for an authorization")
+                return null
+            }
+            val request = objc.selector("requestAccessForMediaType:completionHandler:")
+            objc.sendWithBlock(device, request, mediaType, objc.noOpBlock())
+            val deadline = System.nanoTime() + wait.inWholeNanoseconds
+            while (read(type) == PermissionStatus.NotDetermined) {
+                if (System.nanoTime() >= deadline) {
+                    CameraKLogger.w(TAG, "macOS's prompt was not answered within $wait")
+                    break
+                }
+                Thread.sleep(poll.inWholeMilliseconds)
+            }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return null
+        } catch (e: Exception) {
+            CameraKLogger.w(TAG, "Asking macOS for an authorization failed", e)
+            return null
+        } catch (e: LinkageError) {
+            CameraKLogger.w(TAG, "Asking macOS for an authorization failed", e)
+            return null
+        }
+        return read(type)
+    }
+
     /** The camera's status: [status] of [MacMediaType.VIDEO]. */
     override fun cameraStatus(): PermissionStatus = status(MacMediaType.VIDEO)
 
@@ -117,9 +174,54 @@ internal class JnaObjCRuntime : ObjCRuntime {
     override fun send(receiver: Long, selector: Long): Long =
         objc.getFunction("objc_msgSend").invokeLong(arrayOf(Pointer(receiver), Pointer(selector)))
 
+    override fun sendWithBlock(receiver: Long, selector: Long, argument: Long, block: Long) {
+        objc.getFunction("objc_msgSend")
+            .invokeVoid(arrayOf(Pointer(receiver), Pointer(selector), Pointer(argument), Pointer(block)))
+    }
+
+    override fun noOpBlock(): Long = NoOpBlock.address
+
     override fun string(string: Long): String? {
         if (string == 0L) return null
         val utf8 = send(string, selector("UTF8String"))
         return if (utf8 == 0L) null else Pointer(utf8).getString(0, "UTF-8")
+    }
+}
+
+/** How long a request waits for the user to answer macOS's prompt, past any start's own deadline. */
+internal val MAC_PROMPT_WAIT = 2.minutes
+
+/** How often a request reads the status while macOS's prompt is up. */
+internal val MAC_PROMPT_POLL = 100.milliseconds
+
+/**
+ * A global Objective-C block (isa `_NSConcreteGlobalBlock`, so copying or releasing it does nothing)
+ * whose invoke is getpid, which ignores the block and the BOOL it is called with. Made once, on first
+ * use, and kept for the life of the process, since AVFoundation may call it after any request has
+ * returned. No member's type names JNA, so the class loads without it.
+ */
+private object NoOpBlock {
+    // The Block ABI's literal on a 64-bit Mac: isa, flags, reserved, invoke, descriptor.
+    private const val LITERAL_SIZE = 32L
+    private const val BLOCK_IS_GLOBAL = 1 shl 28
+
+    private val memory: List<Any>
+    val address: Long
+
+    init {
+        val system = NativeLibrary.getInstance("System")
+        val descriptor = Memory(16).apply {
+            setLong(0, 0)
+            setLong(8, LITERAL_SIZE)
+        }
+        val literal = Memory(LITERAL_SIZE).apply {
+            setPointer(0, system.getGlobalVariableAddress("_NSConcreteGlobalBlock"))
+            setInt(8, BLOCK_IS_GLOBAL)
+            setInt(12, 0)
+            setPointer(16, system.getFunction("getpid"))
+            setPointer(24, descriptor)
+        }
+        memory = listOf(literal, descriptor)
+        address = Pointer.nativeValue(literal)
     }
 }

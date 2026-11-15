@@ -54,8 +54,9 @@ public interface CameraKPermissionState {
  * - iOS asks AVFoundation for the camera and the microphone, and Photos for add-only access for
  *   [CameraKPermission.GALLERY_ADD]. iOS prompts once, so its denial is permanent. Below iOS 14 the
  *   gallery is never asked for and reads [PermissionStatus.NotDetermined]: saving raises the prompt.
- * - Desktop prompts for nothing: Linux and Windows have no camera permission, and macOS asks when
- *   the camera opens. A request re-reads the statuses.
+ * - Linux and Windows have no camera or microphone permission. macOS shows its prompt when the camera
+ *   or microphone opens, and a request shows it through AVFoundation for each that reads
+ *   [PermissionStatus.NotDetermined]; while one may be up, the statuses are read every half second.
  *
  * @param onResult Called on the main thread with every status after each [CameraKPermissionState.launchRequest].
  *

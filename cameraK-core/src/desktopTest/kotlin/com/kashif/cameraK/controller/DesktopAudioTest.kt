@@ -4,6 +4,8 @@ package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.permissions.CameraKPermission
+import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
@@ -80,6 +82,50 @@ class DesktopAudioTest {
             sut.close()
             rig.settle()
         }
+    }
+
+    @Test
+    fun aMicrophoneRefusedAtItsPromptIsPermissionAndNeverOpens() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        var opened = 0
+        rig.microphone = accessCheckedOpener({ PermissionStatus.PermanentlyDenied }) {
+            opened++
+            FakeMicrophone()
+        }
+        val steps = DesktopRecordingSteps(this, rig)
+        val sut = rig.engine()
+        try {
+            steps.open(sut)
+
+            val start = async { sut.startRecording(VideoConfiguration { enableAudio = true }) }
+            rig.settle()
+
+            val error = assertIs<CameraKError.Permission>(assertIs<CameraKResult.Failure>(start.await()).error)
+            assertEquals(CameraKPermission.MICROPHONE, error.permission)
+            assertEquals(PermissionStatus.PermanentlyDenied, error.status)
+            assertEquals(0, opened, "the refused microphone was opened")
+            assertEquals(emptyList(), rig.recorders.toList(), "a recorder was opened")
+            assertEquals(emptyList(), videosIn(rig.home), "a file was left")
+            val prepare =
+                assertIs<CameraKResult.Failure>(sut.prepareRecording(VideoConfiguration { enableAudio = true }))
+            assertIs<CameraKError.Permission>(prepare.error)
+        } finally {
+            sut.close()
+            rig.settle()
+        }
+    }
+
+    @Test
+    fun aMicrophoneAllowedAtItsPromptOpens() = runTest {
+        var asked = 0
+        val microphone = FakeMicrophone()
+        val opener = accessCheckedOpener({
+            asked++
+            PermissionStatus.Granted
+        }) { microphone }
+
+        assertSame(microphone, opener.open { 0L })
+        assertEquals(1, asked)
     }
 
     @Test

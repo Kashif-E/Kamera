@@ -25,7 +25,7 @@ public actual fun rememberCameraKPermissionState(
     val currentOnResult by rememberUpdatedState(onResult)
     SideEffect {
         state.request = {
-            // Prompts for nothing; core re-reads the statuses and delivers them on the event thread.
+            // Core asks macOS for what is still undecided and delivers the statuses on the event thread.
             requestPlatformPermissions(platformContext, requested) { statuses ->
                 state.publish(statuses)
                 currentOnResult(statuses)
