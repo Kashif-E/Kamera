@@ -239,14 +239,32 @@ internal class MatrixRunner(
     }
 
     // The camera's prompt shows only once the camera opens, so a holder opens it while the runner waits
-    // for the answer; the microphone, which such a platform never opens, is read as it is.
+    // for the answer; the microphone's shows only once a recording with audio starts, so one short
+    // recording raises it here, before any case's command timeout could run out on it.
     private suspend fun promptByOpening(): List<Pair<String, String?>> {
         val camera = withHolder(backCamera) { holder ->
             holder.start()
             awaitAnswer(CameraKPermission.CAMERA)
         }
-        val microphone = platform.permission(CameraKPermission.MICROPHONE)
+        val microphone = if (platform.permission(CameraKPermission.MICROPHONE) == PermissionStatus.NotDetermined) {
+            promptByRecording()
+        } else {
+            platform.permission(CameraKPermission.MICROPHONE)
+        }
         return listOf(CameraKPermission.CAMERA.name to camera?.toString(), CameraKPermission.MICROPHONE.name to microphone?.toString())
+    }
+
+    private suspend fun promptByRecording(): PermissionStatus? = withHolder(backCamera) { holder ->
+        if (!open(holder).ready) return@withHolder awaitAnswer(CameraKPermission.MICROPHONE)
+        log("WAITING for the MICROPHONE prompt: a recording with audio raises it")
+        // The holder waits for the prompt's answer itself, past which a start that never began comes back.
+        val started = withTimeoutOrNull(timing.permissionWait) {
+            holder.startRecording(VideoConfiguration { enableAudio = true })
+        }
+        if (started is CameraKResult.Success) {
+            (command { holder.stopRecording() } as? CameraKResult.Success)?.value?.let { files.delete(it.path) }
+        }
+        awaitAnswer(CameraKPermission.MICROPHONE)
     }
 
     private suspend fun probe(): CameraCapabilities? = withHolder(backCamera) { holder ->
