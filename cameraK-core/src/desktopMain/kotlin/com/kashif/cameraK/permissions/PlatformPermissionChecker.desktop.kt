@@ -80,6 +80,14 @@ public fun platformPermissionStatus(context: CameraKPlatformContext, permission:
     desktopPermissionChecker.status(permission)
 
 /**
+ * Whether macOS's prompt for [permission] may be up, answered outside the app's lifecycle: the
+ * permission reads NotDetermined on a Mac that could read it, where opening the device shows the
+ * prompt. `:cameraK`'s permission state reads the statuses again while this holds.
+ */
+@InternalCameraKApi
+public fun platformPermissionPromptPending(context: CameraKPlatformContext, permission: CameraKPermission): Boolean = false
+
+/**
  * Prompts for nothing: it re-reads the statuses of [permissions] and calls [onResult] with them on
  * the AWT event thread, Compose Desktop's Main. Linux and Windows have no permission to ask for.
  * macOS shows its camera prompt when the camera opens, and asking from the JVM would need an

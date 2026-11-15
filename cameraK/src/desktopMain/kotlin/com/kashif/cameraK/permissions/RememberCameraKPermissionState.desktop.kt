@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.utils.InternalCameraKApi
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(InternalCameraKApi::class)
 @Composable
@@ -30,5 +31,18 @@ public actual fun rememberCameraKPermissionState(
         }
     }
     RefreshOnResume(state)
+    RefreshWhilePromptPending(state) { requested.any { platformPermissionPromptPending(platformContext, it) } }
     return state
+}
+
+/** How often the statuses are read again while a macOS prompt may be up. */
+internal val PROMPT_POLL_INTERVAL = 500.milliseconds
+
+/**
+ * Reads [state] again every [PROMPT_POLL_INTERVAL] while [pending] holds. macOS's prompt shows when
+ * the camera or microphone opens and its answer is no lifecycle event of the app's window, so a
+ * resume may never come to read it.
+ */
+@Composable
+internal fun RefreshWhilePromptPending(state: PlatformPermissionState, pending: () -> Boolean) {
 }
