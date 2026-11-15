@@ -779,6 +779,7 @@ public final class com/kashif/cameraK/permissions/PermissionStatus$Restricted : 
 }
 
 public final class com/kashif/cameraK/permissions/PlatformPermissionChecker_desktopKt {
+	public static final fun platformPermissionPromptPending (Lcom/kashif/cameraK/platform/CameraKPlatformContext;Lcom/kashif/cameraK/permissions/CameraKPermission;)Z
 	public static final fun platformPermissionStatus (Lcom/kashif/cameraK/platform/CameraKPlatformContext;Lcom/kashif/cameraK/permissions/CameraKPermission;)Lcom/kashif/cameraK/permissions/PermissionStatus;
 	public static final fun requestPlatformPermissions (Lcom/kashif/cameraK/platform/CameraKPlatformContext;Ljava/util/List;Lkotlin/jvm/functions/Function1;)V
 }

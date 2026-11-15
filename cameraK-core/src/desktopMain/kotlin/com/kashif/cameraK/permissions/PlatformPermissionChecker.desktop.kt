@@ -85,7 +85,8 @@ public fun platformPermissionStatus(context: CameraKPlatformContext, permission:
  * prompt. `:cameraK`'s permission state reads the statuses again while this holds.
  */
 @InternalCameraKApi
-public fun platformPermissionPromptPending(context: CameraKPlatformContext, permission: CameraKPermission): Boolean = false
+public fun platformPermissionPromptPending(context: CameraKPlatformContext, permission: CameraKPermission): Boolean =
+    desktopPermissionChecker.let { it.promptsOnOpen(permission, it.status(permission)) }
 
 /**
  * Prompts for nothing: it re-reads the statuses of [permissions] and calls [onResult] with them on

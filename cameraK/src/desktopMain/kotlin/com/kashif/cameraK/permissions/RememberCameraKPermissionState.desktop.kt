@@ -1,12 +1,14 @@
 package com.kashif.cameraK.permissions
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import com.kashif.cameraK.platform.CameraKPlatformContext
 import com.kashif.cameraK.utils.InternalCameraKApi
+import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(InternalCameraKApi::class)
@@ -45,4 +47,11 @@ internal val PROMPT_POLL_INTERVAL = 500.milliseconds
  */
 @Composable
 internal fun RefreshWhilePromptPending(state: PlatformPermissionState, pending: () -> Boolean) {
+    val currentPending by rememberUpdatedState(pending)
+    LaunchedEffect(state) {
+        while (currentPending()) {
+            delay(PROMPT_POLL_INTERVAL)
+            state.refresh()
+        }
+    }
 }
