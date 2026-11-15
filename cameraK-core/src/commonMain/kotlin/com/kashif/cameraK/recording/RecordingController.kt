@@ -16,6 +16,7 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraKEvent
 import com.kashif.cameraK.state.CommandRunner
 import com.kashif.cameraK.state.promptAwareTimeout
+import com.kashif.cameraK.state.waitsOnUser
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
@@ -43,9 +44,9 @@ import kotlin.time.TimeSource
 
 /**
  * How long a recording start waits for the platform to confirm it before it gives up with
- * `Timeout(RECORD_START)` and stops whatever the engine began. A start whose microphone reads
- * NotDetermined also gets `PERMISSION_PROMPT_TIMEOUT`, and gives up with `Permission(MICROPHONE,
- * NotDetermined)` while the prompt is still unanswered.
+ * `Timeout(RECORD_START)` and stops whatever the engine began. A start whose microphone's open shows
+ * the system's prompt also gets `PERMISSION_PROMPT_TIMEOUT`; one that times out on the user gives up
+ * with `Permission(MICROPHONE, status)`, the status read again then.
  */
 internal val RECORDING_START_TIMEOUT: Duration = 5.seconds
 
@@ -248,11 +249,15 @@ internal class RecordingController(
                     return@withLock it.also { backToIdle(id) }
                 }
                 engineCalled = true
-                val timeout = promptAwareTimeout(RECORDING_START_TIMEOUT, microphone ?: PermissionStatus.Granted)
-                val started = withTimeoutOrNull(timeout) { confirmedStart(config, id) }
+                val prompting = microphone != null &&
+                    permissionChecker?.promptsOnOpen(CameraKPermission.MICROPHONE, microphone) == true
+                val started = withTimeoutOrNull(promptAwareTimeout(RECORDING_START_TIMEOUT, prompting)) {
+                    confirmedStart(config, id)
+                }
                 outcome = started ?: run {
+                    val error = startTimeoutError(config)
                     withContext(NonCancellable) { stopUnconfirmed(id, "timed out") }
-                    CameraKResult.Failure(startTimeoutError(config))
+                    CameraKResult.Failure(error)
                 }
                 outcome
             } finally {
@@ -278,13 +283,16 @@ internal class RecordingController(
         return CameraKResult.Failure(CameraKError.Permission(CameraKPermission.MICROPHONE, status))
     }
 
-    // A start that timed out with the microphone's prompt still unanswered is waiting on the user, as the camera's is.
-    private fun startTimeoutError(config: VideoConfiguration): CameraKError =
-        if (microphoneStatus(config) == PermissionStatus.NotDetermined) {
-            CameraKError.Permission(CameraKPermission.MICROPHONE, PermissionStatus.NotDetermined)
+    // A start that timed out on the microphone, read again: denied meanwhile, or its prompt still unanswered.
+    private fun startTimeoutError(config: VideoConfiguration): CameraKError {
+        val checker = permissionChecker
+        val status = microphoneStatus(config)
+        return if (checker != null && status != null && checker.waitsOnUser(CameraKPermission.MICROPHONE, status)) {
+            CameraKError.Permission(CameraKPermission.MICROPHONE, status)
         } else {
             CameraKError.Timeout(CameraOperation.RECORD_START)
         }
+    }
 
     // The engine's start, then its Started milestone, which the event collector turns into Recording.
     private suspend fun confirmedStart(config: VideoConfiguration, id: Long): CameraKResult<RecordingState.Recording> {

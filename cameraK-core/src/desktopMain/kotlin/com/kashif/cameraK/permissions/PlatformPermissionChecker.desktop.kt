@@ -12,18 +12,24 @@ internal actual fun platformPermissionChecker(context: CameraKPlatformContext): 
 /** macOS's authorization of one permission. Tests fake this, never the Objective-C runtime under it. */
 internal fun interface MacAuthorizationRead {
     fun status(permission: CameraKPermission): PermissionStatus
+
+    /** Whether macOS could be asked for [permission]'s authorization: a NotDetermined then means the prompt is still to come. */
+    fun readable(permission: CameraKPermission): Boolean = true
 }
 
 /**
  * macOS's authorization read over D1''s JNA seam, which owns the status mapping and the JNA-absent
- * rule. [read] is the status of one AVFoundation media type, [MacCameraAuthorization.status] in
- * production.
+ * rule. [read] is the status of one AVFoundation media type, null when it cannot be read,
+ * [MacCameraAuthorization.read] in production.
  */
 internal class JnaMacAuthorizationRead(
-    private val read: (MacMediaType) -> PermissionStatus = MacCameraAuthorization()::status,
+    private val read: (MacMediaType) -> PermissionStatus? = MacCameraAuthorization()::read,
 ) : MacAuthorizationRead {
     override fun status(permission: CameraKPermission): PermissionStatus =
-        macMediaTypeOf(permission)?.let(read) ?: PermissionStatus.Granted
+        macMediaTypeOf(permission)?.let { read(it) ?: PermissionStatus.NotDetermined } ?: PermissionStatus.Granted
+
+    override fun readable(permission: CameraKPermission): Boolean =
+        macMediaTypeOf(permission)?.let { read(it) != null } ?: true
 }
 
 /** The AVFoundation media type whose authorization is [permission]'s on macOS; null for the gallery, a folder. */
@@ -52,6 +58,12 @@ internal class DesktopPermissionChecker(osName: String, private val macRead: Mac
 
     override fun allowsOpen(status: PermissionStatus): Boolean =
         status == PermissionStatus.Granted || status == PermissionStatus.NotDetermined
+
+    // macOS's prompt is up only for a NotDetermined it reported; without JNA or AVFoundation nothing was asked.
+    override fun promptsOnOpen(permission: CameraKPermission, status: PermissionStatus): Boolean = isMac &&
+        permission != CameraKPermission.GALLERY_ADD &&
+        status == PermissionStatus.NotDetermined &&
+        macRead.readable(permission)
 }
 
 // The one desktop checker; tests replace it with one over a fake OS name and authorization read.

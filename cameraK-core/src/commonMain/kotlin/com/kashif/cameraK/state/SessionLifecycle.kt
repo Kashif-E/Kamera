@@ -43,21 +43,21 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * How long a start may wait for the platform to open, hold or fail the camera before the holder
  * gives up with `Timeout(START)`: long enough for a cold CameraX bind, short enough that a camera
- * that never answers does not leave a spinner. A start at NotDetermined also gets
- * [PERMISSION_PROMPT_TIMEOUT].
+ * that never answers does not leave a spinner. A start whose open shows the system's prompt
+ * (`CameraKPermissionChecker.promptsOnOpen`) also gets [PERMISSION_PROMPT_TIMEOUT].
  */
 internal val START_TIMEOUT: Duration = 10.seconds
 
 /**
- * How much longer a start may wait while its permission reads NotDetermined on a platform that
- * prompts when the device opens (macOS): the open waits there for the user to answer the system's
- * prompt, and the start's own deadline must not run out while the prompt is still being read.
+ * How much longer a start may wait when its open shows the system's prompt (macOS, at a NotDetermined
+ * it read): the open waits there for the user's answer, and the start's own deadline must not run
+ * out while the prompt is still being read.
  */
 internal val PERMISSION_PROMPT_TIMEOUT: Duration = 60.seconds
 
-/** [base], plus [PERMISSION_PROMPT_TIMEOUT] while [status] says the open may be showing the system's prompt. */
-internal fun promptAwareTimeout(base: Duration, status: PermissionStatus): Duration =
-    if (status == PermissionStatus.NotDetermined) base + PERMISSION_PROMPT_TIMEOUT else base
+/** [base], plus [PERMISSION_PROMPT_TIMEOUT] when the open shows the system's prompt and waits for its answer. */
+internal fun promptAwareTimeout(base: Duration, prompting: Boolean): Duration =
+    if (prompting) base + PERMISSION_PROMPT_TIMEOUT else base
 
 /**
  * How long `close()` waits for the engine to release the camera. A platform that never returns
@@ -73,17 +73,24 @@ internal val ENGINE_CLOSE_TIMEOUT: Duration = 5.seconds
 internal val PREVIOUS_CLOSE_TIMEOUT: Duration = 10.seconds
 
 /**
- * The state a start that timed out leaves: `Timeout(START)`, or `Permission(NotDetermined)` while
- * the checker still reports NotDetermined, because a platform that prompts on open (macOS) is still
- * waiting for the user's answer, and the re-check on resume then starts it.
+ * The state a start that timed out leaves, from the camera's status read again then:
+ * `Permission(status)` when the user denied it meanwhile, `Permission(NotDetermined)` while a prompt
+ * that opens with the camera (macOS) is still unanswered, so the re-check on resume starts it, and
+ * `Timeout(START)` otherwise.
  */
-internal fun startTimeoutState(status: PermissionStatus): CameraKState.Error = if (status ==
-    PermissionStatus.NotDetermined
-) {
-    CameraKState.Error(CameraKError.Permission(CameraKPermission.CAMERA, PermissionStatus.NotDetermined))
-} else {
-    CameraKState.Error(CameraKError.Timeout(CameraOperation.START))
+internal fun startTimeoutState(checker: CameraKPermissionChecker?): CameraKState.Error {
+    val status = checker?.status(CameraKPermission.CAMERA)
+    val error = if (checker != null && status != null && checker.waitsOnUser(CameraKPermission.CAMERA, status)) {
+        CameraKError.Permission(CameraKPermission.CAMERA, status)
+    } else {
+        CameraKError.Timeout(CameraOperation.START)
+    }
+    return CameraKState.Error(error)
 }
+
+/** Whether a start that timed out at [status] did so on the user: refused, or a prompt still up. */
+internal fun CameraKPermissionChecker.waitsOnUser(permission: CameraKPermission, status: PermissionStatus): Boolean =
+    !allowsOpen(status) || promptsOnOpen(permission, status)
 
 /**
  * The holder's session lifecycle: a desired lifecycle (stopped, running, closed) that one
@@ -301,6 +308,7 @@ internal class SessionLifecycle(
             transition { CameraKState.Error(CameraKError.Permission(CameraKPermission.CAMERA, status)) }
             return
         }
+        val prompting = checker?.promptsOnOpen(CameraKPermission.CAMERA, status) == true
         awaitPreviousClose()
         engineStarted = true
         // Open or Interrupted was reported for this session: the platform accepted it.
@@ -324,12 +332,15 @@ internal class SessionLifecycle(
                 }
                 when (
                     val started =
-                        withTimeoutOrNull(promptAwareTimeout(START_TIMEOUT, status)) { engine.start(desiredHardware()) }
+                        withTimeoutOrNull(promptAwareTimeout(START_TIMEOUT, prompting)) {
+                            engine.start(desiredHardware())
+                        }
                 ) {
                     null -> {
                         mirror.cancel()
                         stopEngine()
-                        transition { startTimeoutState(status) }
+                        val timedOut = startTimeoutState(checker)
+                        transition { timedOut }
                     }
                     is CameraKResult.Failure -> {
                         // Authoritative whether or not the engine also published Failed.

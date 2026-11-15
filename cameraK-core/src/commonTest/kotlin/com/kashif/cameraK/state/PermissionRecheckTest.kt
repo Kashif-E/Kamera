@@ -3,6 +3,7 @@
 package com.kashif.cameraK.state
 
 import com.kashif.cameraK.error.CameraKError
+import com.kashif.cameraK.error.CameraOperation
 import com.kashif.cameraK.permissions.CameraKPermission
 import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.testing.FakeCameraEngine
@@ -128,5 +129,46 @@ class PermissionRecheckTest {
         val permission = holder.permissionError()
         assertEquals(CameraKPermission.CAMERA, permission.permission)
         assertEquals(PermissionStatus.NotDetermined, permission.status)
+    }
+
+    @Test
+    fun aNotDeterminedThatShowsNoPromptTimesOutAtTheStartTimeout() = runTest {
+        // A Mac that could not read its authorization: the camera may open, but no prompt is up to wait on.
+        val fake = FakeCameraEngine().apply { autoOpen = false }
+        val checker = FakePermissionChecker(PermissionStatus.NotDetermined).apply {
+            allowsOpenWhenNotDetermined = true
+            promptsWhenNotDetermined = false
+        }
+        val holder = holder(fake, checker)
+        holder.start()
+        runCurrent()
+
+        advanceTimeBy(START_TIMEOUT + 1.milliseconds)
+        runCurrent()
+
+        val error = assertIs<CameraKState.Error>(holder.cameraState.value).error
+        assertEquals(CameraOperation.START, assertIs<CameraKError.Timeout>(error).operation)
+    }
+
+    @Test
+    fun aCameraPromptDeniedWhileTheOpenHangsGivesTheStatusItWasDeniedWith() = runTest {
+        val fake = FakeCameraEngine().apply { autoOpen = false }
+        val checker = FakePermissionChecker(PermissionStatus.NotDetermined).apply { allowsOpenWhenNotDetermined = true }
+        val holder = holder(fake, checker)
+        holder.start()
+        runCurrent()
+
+        advanceTimeBy(5.seconds)
+        checker.setStatus(CameraKPermission.CAMERA, PermissionStatus.PermanentlyDenied)
+        advanceTimeBy(START_TIMEOUT + PERMISSION_PROMPT_TIMEOUT)
+        runCurrent()
+
+        val permission = holder.permissionError()
+        assertEquals(CameraKPermission.CAMERA, permission.permission)
+        assertEquals(
+            PermissionStatus.PermanentlyDenied,
+            permission.status,
+            "the user denied it: Settings, not a prompt",
+        )
     }
 }

@@ -17,6 +17,12 @@ public class FakePermissionChecker(private val initial: PermissionStatus = Permi
 
     public var allowsOpenWhenNotDetermined: Boolean = false
 
+    /**
+     * Whether an open at NotDetermined shows a prompt, when [allowsOpenWhenNotDetermined] is set: a Mac
+     * that read its authorization. False stands for a Mac that could not read it, where no prompt is up.
+     */
+    public var promptsWhenNotDetermined: Boolean = true
+
     public fun setStatus(permission: CameraKPermission, status: PermissionStatus) {
         statuses.update { it + (permission to status) }
     }
@@ -25,4 +31,7 @@ public class FakePermissionChecker(private val initial: PermissionStatus = Permi
 
     override fun allowsOpen(status: PermissionStatus): Boolean = status == PermissionStatus.Granted ||
         (allowsOpenWhenNotDetermined && status == PermissionStatus.NotDetermined)
+
+    override fun promptsOnOpen(permission: CameraKPermission, status: PermissionStatus): Boolean =
+        allowsOpenWhenNotDetermined && promptsWhenNotDetermined && status == PermissionStatus.NotDetermined
 }

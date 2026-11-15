@@ -98,8 +98,9 @@ showed it: 16 video cases with audio BLOCKED on 2026-11-14.
 
 ## Known limits, documented rather than fixed
 
-- macOS: a user who denies the prompt while the first recording is running gets that recording with a silent
-  track, because macOS delivers silence until the answer. Later starts fail with `Permission`.
+- macOS: a user who denies the prompt of the first recording gets that recording with a silent track. Later
+  starts fail with `Permission`. (Corrected after the device check: the microphone's open waits for the
+  answer, so macOS does not record silence while the prompt is up.)
 - Windows: with "Let desktop apps access your microphone" off, Windows delivers silence, not an error. Java
   Sound cannot tell the two apart.
 - Linux and Windows real-microphone recording is tested only where someone has a machine with a microphone. CI

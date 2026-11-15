@@ -77,6 +77,28 @@ class DesktopPermissionTest {
     }
 
     @Test
+    fun aMacPromptsOnOpenOnlyAtANotDeterminedItRead() {
+        val read = DesktopPermissionChecker("Mac OS X", JnaMacAuthorizationRead { PermissionStatus.NotDetermined })
+        assertTrue(read.promptsOnOpen(CameraKPermission.CAMERA, PermissionStatus.NotDetermined))
+        assertTrue(read.promptsOnOpen(CameraKPermission.MICROPHONE, PermissionStatus.NotDetermined))
+        assertFalse(read.promptsOnOpen(CameraKPermission.CAMERA, PermissionStatus.Granted))
+        assertFalse(read.promptsOnOpen(CameraKPermission.GALLERY_ADD, PermissionStatus.NotDetermined), "a folder")
+
+        // Without JNA, or with AVFoundation unloaded, NotDetermined only means the OS could not be asked.
+        val unreadable = DesktopPermissionChecker("Mac OS X", JnaMacAuthorizationRead { null })
+        assertEquals(PermissionStatus.NotDetermined, unreadable.status(CameraKPermission.CAMERA))
+        assertTrue(unreadable.allowsOpen(PermissionStatus.NotDetermined), "the open may still prompt")
+        assertFalse(unreadable.promptsOnOpen(CameraKPermission.CAMERA, PermissionStatus.NotDetermined))
+
+        assertFalse(
+            DesktopPermissionChecker("Linux") { PermissionStatus.Granted }.promptsOnOpen(
+                CameraKPermission.CAMERA,
+                PermissionStatus.NotDetermined,
+            ),
+        )
+    }
+
+    @Test
     fun macStatusComesFromTheJnaSeam() {
         val withoutJna =
             JnaMacAuthorizationRead(MacCameraAuthorization { throw NoClassDefFoundError("com/sun/jna/Native") }::status)
