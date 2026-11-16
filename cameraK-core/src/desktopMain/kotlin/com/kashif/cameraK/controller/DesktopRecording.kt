@@ -83,6 +83,9 @@ internal class DesktopRecording(
 
     @Volatile private var ran = false
 
+    // Audio drained but captured after the last frame written: the recording's thread only.
+    private val heldAudio = ArrayDeque<AudioChunk>()
+
     // Guarded by the engine's lock, which pause and resume run under.
     private var paused = false
 
@@ -185,7 +188,7 @@ internal class DesktopRecording(
                 currentCoroutineContext().ensureActive()
                 val frame = frames.next() ?: break
                 limited = try {
-                    writeAudio() || write(frame)
+                    writeAudio(before = clock?.recordedMicrosAt(frame.captureNanos)) || write(frame)
                 } finally {
                     frame.release()
                 }
@@ -342,11 +345,23 @@ internal class DesktopRecording(
     }
 
     /** Writes the microphone's queued samples; true when the microphone failed, which ends the recording. */
-    private fun writeAudio(): Boolean {
+    /**
+     * Writes the queued audio captured before [before], the recorded time of the frame about to be
+     * written, and holds the rest for a later frame: frames can reach the recording well after they
+     * were captured, and audio written past the last frame would outlast the video. A frame inside a
+     * pause (null) writes none.
+     */
+    private fun writeAudio(before: Long?): Boolean {
         val feed = audio ?: return false
-        // Read before the drain: every chunk queued before the failure is then written.
+        // Read before the drain: every chunk queued before the failure is then written or held.
         val failed = feed.failure
-        feed.drain().forEach { writeChunk(feed, it) }
+        heldAudio.addAll(feed.drain())
+        while (heldAudio.isNotEmpty()) {
+            val micros = clock?.recordedMicrosAt(heldAudio.first().captureNanos)
+            if (micros != null && (before == null || micros >= before)) break
+            // Inside a pause or before the start (null): writeChunk drops it.
+            writeChunk(feed, heldAudio.removeFirst())
+        }
         if (failed == null) return false
         endReason.compareAndSet(null, RecordingEndReason.INTERRUPTED)
         return true
@@ -394,7 +409,7 @@ internal class DesktopRecording(
         val feed = audio ?: return
         feed.close()
         try {
-            val beforeLastFrame = feed.drain().filter { chunk ->
+            val beforeLastFrame = (heldAudio + feed.drain()).filter { chunk ->
                 clock?.recordedMicrosAt(chunk.captureNanos)?.let { it < lastTimestampMicros } == true
             }
             beforeLastFrame.forEach { writeChunk(feed, it) }
