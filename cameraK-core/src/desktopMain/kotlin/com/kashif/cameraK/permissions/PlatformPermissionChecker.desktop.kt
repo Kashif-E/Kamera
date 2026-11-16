@@ -81,6 +81,22 @@ internal class DesktopPermissionChecker(osName: String, private val macRead: Mac
         val status = status(permission)
         return if (promptsOnOpen(permission, status)) macRead.request(permission) else status
     }
+
+    /**
+     * What refuses opening [permission]'s device, after asking for it as [request] does; null when it
+     * may open.
+     */
+    fun requestToOpen(permission: CameraKPermission): PermissionStatus? {
+        val status = status(permission)
+        val asked = promptsOnOpen(permission, status)
+        return when (val answer = if (asked) macRead.request(permission) else status) {
+            PermissionStatus.Granted, PermissionStatus.Limited -> null
+            // Asked and left unanswered, or not asked for want of a usage key: the open would wait on
+            // macOS's prompt with no deadline, or end the app. Nothing asked (no JNA): the open asks.
+            PermissionStatus.NotDetermined -> if (asked) answer else null
+            else -> answer
+        }
+    }
 }
 
 // The one desktop checker; tests replace it with one over a fake OS name and authorization read.
@@ -97,9 +113,9 @@ public fun platformPermissionStatus(context: CameraKPlatformContext, permission:
     desktopPermissionChecker.status(permission)
 
 /**
- * Whether macOS's prompt for [permission] may be up, answered outside the app's lifecycle: the
- * permission reads NotDetermined on a Mac that could read it, where opening the device shows the
- * prompt. `:cameraK`'s permission state reads the statuses again while this holds.
+ * Whether [permission] reads NotDetermined on a Mac that could read it, where macOS's prompt may be
+ * up now or come with the device's open, and its answer comes outside the app's lifecycle.
+ * `:cameraK`'s permission state reads the statuses again while this holds.
  */
 @InternalCameraKApi
 public fun platformPermissionPromptPending(context: CameraKPlatformContext, permission: CameraKPermission): Boolean =

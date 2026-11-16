@@ -57,6 +57,10 @@ internal class FakeMacCameras(
 
     override fun noOpBlock(): Long = 0
 
+    override fun mainBundlePath(): String? = null
+
+    override fun mainBundleInfo(key: String): String? = null
+
     private fun text(value: String): Long = synchronized(strings) {
         nextString += 1
         strings[nextString] = value

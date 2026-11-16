@@ -56,7 +56,8 @@ public interface CameraKPermissionState {
  *   gallery is never asked for and reads [PermissionStatus.NotDetermined]: saving raises the prompt.
  * - Linux and Windows have no camera or microphone permission. macOS shows its prompt when the camera
  *   or microphone opens, and a request shows it through AVFoundation for each that reads
- *   [PermissionStatus.NotDetermined]; while one may be up, the statuses are read every half second.
+ *   [PermissionStatus.NotDetermined]; while any reads NotDetermined, the statuses are read every half
+ *   second. A packaged app is asked only for what its Info.plist gives a usage description for.
  *
  * @param onResult Called on the main thread with every status after each [CameraKPermissionState.launchRequest].
  *

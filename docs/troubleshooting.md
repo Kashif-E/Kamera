@@ -41,7 +41,9 @@ with audio. See [Installation](getting-started/installation.md#ios).
 The bundle needs `NSCameraUsageDescription`, and `NSMicrophoneUsageDescription` for a recording with
 audio; a signed build with the hardened runtime also needs the camera entitlement, and
 `com.apple.security.device.audio-input` for audio. `./gradlew run` hides the problem because the
-terminal holds the permissions.
+terminal holds the permissions. Without the usage description CameraK does not ask macOS at all: a
+warning names the missing key, the permission stays `NotDetermined`, and a recording with audio fails
+with `Permission(MICROPHONE, NotDetermined)`.
 
 ## The camera does not open
 

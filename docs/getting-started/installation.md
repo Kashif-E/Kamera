@@ -150,7 +150,9 @@ CameraK reads the camera's authorization and lists the cameras through it. Witho
 
 On macOS, a packaged app (DMG or PKG) that opens the camera without a camera usage description is
 denied or killed by the system's privacy controls (TCC), and so is one that records audio without a
-microphone usage description. `./gradlew run` does not show the problem, because the terminal
+microphone usage description. CameraK does not ask macOS for a permission the packaged app gives no
+usage description for: it logs the missing key, the permission stays `NotDetermined`, and a
+recording with audio fails with `Permission(MICROPHONE, NotDetermined)`. `./gradlew run` does not show the problem, because the terminal
 already holds the permissions. Add the descriptions, and the camera and microphone entitlements for
 a signed build with the hardened runtime, to `compose.desktop`:
 
@@ -194,8 +196,8 @@ native libraries need under the hardened runtime:
 ```
 
 A recording with `enableAudio = true` records the default microphone on macOS, Linux and Windows. On
-macOS the system asks for the microphone the first time one starts (or `prepareRecording` runs), as
-it asks for the camera when the camera opens. A machine with no microphone fails the recording with
+macOS CameraK asks for the microphone, which shows the system's prompt, the first time one starts or
+`prepareRecording` runs, and `launchRequest()` asks for the camera and the microphone it lists. A machine with no microphone fails the recording with
 `CameraKError.Unsupported(CameraFeature.AUDIO)`. The Sample's `Sample/build.gradle.kts` and
 `Sample/macos/` show the full setup.
 
