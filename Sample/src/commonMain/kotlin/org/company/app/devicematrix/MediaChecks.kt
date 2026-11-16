@@ -141,6 +141,12 @@ private fun mp4Boxes(start: Long, end: Long, read: (offset: Long, length: Int) -
 
 private fun List<Mp4Box>.box(type: String): Mp4Box? = firstOrNull { it.type == type }
 
+private fun headerTimescale(body: ByteArray): Long? = when {
+    body.size >= 32 && body.u8(0) == 1 -> body.u32(20)
+    body.size >= 20 && body.u8(0) == 0 -> body.u32(12)
+    else -> null
+}
+
 // mvhd and mdhd share their start: version, flags, two times, the timescale and the duration.
 private fun headerSeconds(body: ByteArray): Double? {
     val (timescale, duration) = when {
@@ -161,21 +167,51 @@ internal fun mp4DurationSeconds(size: Long, read: (offset: Long, length: Int) ->
     return headerSeconds(read(mvhd.payload, 32))
 }
 
-/** One track of an MP4: its hdlr's handler type ("vide", "soun") and its mdhd's duration in seconds. */
+/**
+ * One track of an MP4: its hdlr's handler type ("vide", "soun") and where its presentation ends, in
+ * seconds: its edit list's segments added up where it has one (a leading empty edit is a track that
+ * starts late), else its mdhd's media duration.
+ */
 internal data class Mp4Track(val handler: String, val seconds: Double)
 
 /** The tracks of the movie in a file of [size] bytes, read through [read]; empty without a moov. */
 internal fun mp4Tracks(size: Long, read: (offset: Long, length: Int) -> ByteArray): List<Mp4Track> {
     val moov = mp4Boxes(0, size, read).box("moov") ?: return emptyList()
-    return mp4Boxes(moov.payload, moov.end, read).filter { it.type == "trak" }.mapNotNull { trak ->
-        val mdia = mp4Boxes(trak.payload, trak.end, read).box("mdia") ?: return@mapNotNull null
+    val movie = mp4Boxes(moov.payload, moov.end, read)
+    val movieTimescale = movie.box("mvhd")?.let { headerTimescale(read(it.payload, 32)) }
+    return movie.filter { it.type == "trak" }.mapNotNull { trak ->
+        val parts = mp4Boxes(trak.payload, trak.end, read)
+        val mdia = parts.box("mdia") ?: return@mapNotNull null
         val inside = mp4Boxes(mdia.payload, mdia.end, read)
         // hdlr: version and flags, pre_defined, then the handler type.
         val handler = inside.box("hdlr")?.let { read(it.payload + 8, 4).ascii(0, 4) } ?: return@mapNotNull null
-        val seconds = inside.box("mdhd")?.let { headerSeconds(read(it.payload, 32)) } ?: return@mapNotNull null
-        Mp4Track(handler, seconds)
+        val media = inside.box("mdhd")?.let { headerSeconds(read(it.payload, 32)) } ?: return@mapNotNull null
+        val presented = parts.box("edts")
+            ?.let { edts -> mp4Boxes(edts.payload, edts.end, read).box("elst") }
+            ?.let { elst -> editListSeconds(elst, movieTimescale ?: return@let null, read) }
+        Mp4Track(handler, presented ?: media)
     }
 }
+
+// elst: version and flags, the entry count, then per entry the segment's duration in the movie's
+// timescale, the media time and the rate (v0 32-bit, v1 64-bit duration and time).
+private fun editListSeconds(elst: Mp4Box, movieTimescale: Long, read: (Long, Int) -> ByteArray): Double? {
+    val header = read(elst.payload, 8)
+    if (header.size < 8 || movieTimescale == 0L) return null
+    val wide = header.u8(0) == 1
+    val count = header.u32(4).toInt()
+    val entrySize = if (wide) 20 else 12
+    if (count <= 0 || count > MAX_EDITS || elst.payload + 8 + count.toLong() * entrySize > elst.end) return null
+    val entries = read(elst.payload + 8, count * entrySize)
+    val units = (0 until count).sumOf { i ->
+        val at = i * entrySize
+        if (wide) (entries.u32(at) shl 32) or entries.u32(at + 4) else entries.u32(at)
+    }
+    return units.toDouble() / movieTimescale
+}
+
+// More edits than a recording has are a malformed box, not a list to add up.
+private const val MAX_EDITS = 64
 
 // Each track ends on its own frame boundary: a video frame (33 ms at 30 fps) and an AAC frame (1024 samples,
 // 23 ms at 44.1 kHz) apart at either end, so two tracks that start and stop together end at most about 0.1 s apart.
