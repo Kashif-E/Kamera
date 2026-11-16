@@ -202,4 +202,24 @@ class DesktopRecordingAudioTest {
             assertEquals(960L, recorder.samplesWritten.get(), "audio ran past the video's last frame")
         }
     }
+
+    // Found on a loaded Mac: the camera's frames reached the recording up to 0.5 s late, and the audio,
+    // written up to the moment each frame arrived, ran that far past the video's end.
+    @Test
+    fun audioCapturedAfterAFrameWaitsForTheNextFrame() = runTest {
+        val recording = recordingWithAudio()
+        with(recording) {
+            microphone.deliver(1_001)
+            steps.frameAt(1_010)
+            microphone.deliver(1_021)
+            microphone.deliver(1_041)
+            microphone.deliver(1_061)
+            // The frame captured at 1030 arrives after the microphone's chunks to 1081, then the stop.
+            steps.frameAt(1_030)
+
+            assertIs<CameraKResult.Success<RecordedVideo>>(finish())
+
+            assertEquals(1_920L, recorder.samplesWritten.get(), "audio ran past the video's last frame")
+        }
+    }
 }
