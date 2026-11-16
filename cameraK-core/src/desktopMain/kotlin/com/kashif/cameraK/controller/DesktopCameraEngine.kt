@@ -679,7 +679,7 @@ internal class DesktopCameraEngine(
 
     /**
      * Validates what [startRecording] would refuse; desktop has no output to add ahead of time. With
-     * audio it opens the microphone and closes it again, which on macOS shows the prompt.
+     * audio it asks for the microphone (macOS's prompt, at NotDetermined) and opens and closes it.
      */
     override suspend fun prepareRecording(config: VideoConfiguration): CameraKResult<Unit> {
         if (isClosed()) return CameraKResult.Failure(CameraKError.Closed)

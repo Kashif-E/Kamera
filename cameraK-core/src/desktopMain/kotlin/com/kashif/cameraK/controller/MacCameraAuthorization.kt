@@ -1,13 +1,15 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.permissions.PermissionStatus
+import com.kashif.cameraK.recording.RECORDING_START_TIMEOUT
+import com.kashif.cameraK.state.PERMISSION_PROMPT_TIMEOUT
 import com.kashif.cameraK.utils.CameraKLogger
 import com.sun.jna.Memory
+import com.sun.jna.Native
 import com.sun.jna.NativeLibrary
 import com.sun.jna.Pointer
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.minutes
 
 /** The camera's authorization status as the OS reports it. */
 internal fun interface CameraAuthorization {
@@ -58,7 +60,8 @@ internal enum class MacMediaType(val constant: String, val usageKey: String) {
  * open itself shows macOS's prompt. Authorized is Granted, Denied is PermanentlyDenied (macOS never
  * asks again), Restricted is Restricted. The error mapper reads the camera's; PM''s desktop
  * permission checker reads the camera's and, through [status], the microphone's with the same
- * mapping and the same rule without JNA.
+ * mapping and the same rule without JNA. [requestAccess] asks macOS through AVFoundation, which shows
+ * its prompt, where the app may: a packaged app only for what its Info.plist gives a reason for.
  */
 internal class MacCameraAuthorization(
     // A lambda, not a constructor reference, so nothing resolves JnaObjCRuntime before the read.
@@ -117,6 +120,10 @@ internal class MacCameraAuthorization(
                 CameraKLogger.w(TAG, "AVFoundation is not loaded, so macOS cannot be asked for an authorization")
                 return null
             }
+            if (!declaresUsage(objc, type)) {
+                CameraKLogger.w(TAG, "The app's Info.plist has no ${type.usageKey}, so macOS is not asked for it")
+                return read(type)
+            }
             val request = objc.selector("requestAccessForMediaType:completionHandler:")
             objc.sendWithBlock(device, request, mediaType, objc.noOpBlock())
             val deadline = System.nanoTime() + wait.inWholeNanoseconds
@@ -138,6 +145,13 @@ internal class MacCameraAuthorization(
             return null
         }
         return read(type)
+    }
+
+    // macOS ends a packaged app (.app) that asks without its Info.plist giving the reason; an unbundled
+    // JVM is asked for on behalf of the app that started it, which gives its own.
+    private fun declaresUsage(objc: ObjCRuntime, type: MacMediaType): Boolean {
+        val bundle = objc.mainBundlePath() ?: return true
+        return !bundle.endsWith(".app") || objc.mainBundleInfo(type.usageKey) != null
     }
 
     /** The camera's status: [status] of [MacMediaType.VIDEO]. */
@@ -187,9 +201,18 @@ internal class JnaObjCRuntime : ObjCRuntime {
 
     override fun noOpBlock(): Long = NoOpBlock.address
 
-    override fun mainBundlePath(): String? = null
+    override fun mainBundlePath(): String? = string(send(mainBundle(), selector("bundlePath")))
 
-    override fun mainBundleInfo(key: String): String? = null
+    override fun mainBundleInfo(key: String): String? =
+        string(sendLong(mainBundle(), selector("objectForInfoDictionaryKey:"), nsString(key)))
+
+    private fun mainBundle(): Long = send(getClass("NSBundle"), selector("mainBundle"))
+
+    private fun nsString(text: String): Long {
+        val utf8 = Memory(text.toByteArray().size + 1L).apply { setString(0, text, "UTF-8") }
+        return objc.getFunction("objc_msgSend")
+            .invokeLong(arrayOf(Pointer(getClass("NSString")), Pointer(selector("stringWithUTF8String:")), utf8))
+    }
 
     override fun string(string: Long): String? {
         if (string == 0L) return null
@@ -198,8 +221,8 @@ internal class JnaObjCRuntime : ObjCRuntime {
     }
 }
 
-/** How long a request waits for the user to answer macOS's prompt, past any start's own deadline. */
-internal val MAC_PROMPT_WAIT = 2.minutes
+/** How long a request waits for the user to answer macOS's prompt: as long as a recording start that asks. */
+internal val MAC_PROMPT_WAIT = RECORDING_START_TIMEOUT + PERMISSION_PROMPT_TIMEOUT
 
 /** How often a request reads the status while macOS's prompt is up. */
 internal val MAC_PROMPT_POLL = 100.milliseconds
@@ -213,25 +236,26 @@ internal val MAC_PROMPT_POLL = 100.milliseconds
 private object NoOpBlock {
     // The Block ABI's literal on a 64-bit Mac: isa, flags, reserved, invoke, descriptor.
     private const val LITERAL_SIZE = 32L
+    private const val DESCRIPTOR_SIZE = 16L
     private const val BLOCK_IS_GLOBAL = 1 shl 28
 
-    private val memory: List<Any>
-    val address: Long
+    // malloc'd and never freed: no Java object owns the memory, so nothing frees it while AVFoundation holds the block.
+    val address: Long = Native.malloc(LITERAL_SIZE)
 
     init {
-        val system = NativeLibrary.getInstance("System")
-        val descriptor = Memory(16).apply {
+        val descriptor = Native.malloc(DESCRIPTOR_SIZE)
+        check(address != 0L && descriptor != 0L) { "The block's memory could not be allocated" }
+        Pointer(descriptor).apply {
             setLong(0, 0)
             setLong(8, LITERAL_SIZE)
         }
-        val literal = Memory(LITERAL_SIZE).apply {
+        val system = NativeLibrary.getInstance("System")
+        Pointer(address).apply {
             setPointer(0, system.getGlobalVariableAddress("_NSConcreteGlobalBlock"))
             setInt(8, BLOCK_IS_GLOBAL)
             setInt(12, 0)
             setPointer(16, system.getFunction("getpid"))
-            setPointer(24, descriptor)
+            setPointer(24, Pointer(descriptor))
         }
-        memory = listOf(literal, descriptor)
-        address = Pointer.nativeValue(literal)
     }
 }

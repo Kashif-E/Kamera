@@ -1,9 +1,9 @@
 package com.kashif.cameraK.controller
 
 import com.kashif.cameraK.permissions.PermissionStatus
-import kotlin.test.Test
 import com.kashif.cameraK.recording.RECORDING_START_TIMEOUT
 import com.kashif.cameraK.state.PERMISSION_PROMPT_TIMEOUT
+import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -159,7 +159,8 @@ class MacCameraAuthorizationTest {
     // An unbundled JVM (`./gradlew run`) is asked for: macOS asks on behalf of the app that started it.
     @Test
     fun anUnbundledJvmIsAsked() {
-        val runtime = FakeObjCRuntime(0, answer = 3, bundlePath = "/Library/Java/JavaVirtualMachines/jdk/Contents/Home/bin")
+        val runtime =
+            FakeObjCRuntime(0, answer = 3, bundlePath = "/Library/Java/JavaVirtualMachines/jdk/Contents/Home/bin")
 
         assertEquals(PermissionStatus.Granted, MacCameraAuthorization { runtime }.requestAccess(MacMediaType.AUDIO))
     }
