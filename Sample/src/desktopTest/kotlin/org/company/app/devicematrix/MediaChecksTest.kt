@@ -90,6 +90,23 @@ class MediaChecksTest {
         assertEquals(emptyList(), mp4Tracks(noMoov.size.toLong(), noMoov::range))
     }
 
+    // Found on a loaded Mac: the first frame came 0.11 s after the start, so the video's media ran
+    // 2.90 s from an empty edit of 0.11 s, while the audio, silence first, ran 3.04 s from the start.
+    @Test
+    fun aTrackEndsWhereItsEditListEndsALateStartIncluded() {
+        val file = testMp4(
+            durationUnits = 3040,
+            timescale = 1000,
+            tracks = listOf(Triple("vide", 15_360L, 44_544L), Triple("soun", 48_000L, 145_920L)),
+            emptyEdits = mapOf("vide" to 113L),
+        )
+
+        assertEquals(
+            listOf(Mp4Track("vide", 3.013), Mp4Track("soun", 3.04)),
+            mp4Tracks(file.size.toLong(), file::range),
+        )
+    }
+
     @Test
     fun aRecordingHasAnAudioTrackAsLongAsItsVideoExactlyWhenAudioWasAsked() {
         val video = Mp4Track("vide", 5.333)
@@ -192,6 +209,8 @@ internal fun testMp4(
     version: Int = 0,
     brand: String = "isom",
     tracks: List<Triple<String, Long, Long>> = emptyList(),
+    // A leading empty edit, in the movie's timescale, by handler: a track that starts that late.
+    emptyEdits: Map<String, Long> = emptyMap(),
 ): ByteArray {
     val ftyp = box("ftyp", Bytes().ascii(brand).u32(0x200).ascii("isom").ascii("mp42").build())
     val mdat = box("mdat", ByteArray(100))
@@ -205,7 +224,15 @@ internal fun testMp4(
         val mdhd = box("mdhd", Bytes().u32(0).u32(0).u32(0).u32(scale).u32(units).u32(0).build())
         val hdlr = box("hdlr", Bytes().u32(0).u32(0).ascii(handler).u32(0).u32(0).u32(0).u8(0).build())
         val mdia = box("mdia", Bytes().bytes(mdhd).bytes(hdlr).build())
-        box("trak", Bytes().bytes(box("tkhd", ByteArray(84))).bytes(mdia).build())
+        val edts = emptyEdits[handler]?.let { empty ->
+            // elst v0: the empty edit (media_time -1), then the media from its start, each at rate 1.
+            val media = units * timescale / scale
+            val elst = Bytes().u32(0).u32(2).u32(empty).u32(0xFFFFFFFF).u32(0x10000).u32(media).u32(0).u32(0x10000)
+            box("edts", box("elst", elst.build()))
+        }
+        val trak = Bytes().bytes(box("tkhd", ByteArray(84)))
+        edts?.let { trak.bytes(it) }
+        box("trak", trak.bytes(mdia).build())
     }
     val moov = box(
         "moov",
