@@ -147,9 +147,10 @@ class DesktopRecordingAudioTest {
             assertEquals(960L, recorder.samplesWritten.get())
             val recorderThreads = recorder.videoThreads.toSet()
             assertTrue(
-                recorder.audioThreads.isNotEmpty() && recorder.audioThreads.all {
-                    it in recorderThreads
-                },
+                recorder.audioThreads.isNotEmpty() &&
+                    recorder.audioThreads.all {
+                        it in recorderThreads
+                    },
                 "audio written off the recording's thread: ${recorder.audioThreads} vs $recorderThreads",
             )
         }
