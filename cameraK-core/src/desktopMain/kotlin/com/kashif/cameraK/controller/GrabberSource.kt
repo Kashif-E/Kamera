@@ -26,17 +26,20 @@ internal interface GrabberSource {
     /** A new grabber for [device]; [constrained] asks for CameraK's size and frame rate. */
     fun create(device: LensInfo, constrained: Boolean): FrameGrabber
 
-    /** Which size a constrained open of [device] would ask for that the camera is known to lack; null when none is. */
-    fun missingMode(device: LensInfo): MissingMode? = null
+    /** What is known of the mode a constrained open of [device] asks for; null when nothing is. */
+    fun knownMode(device: LensInfo): KnownMode? = null
 }
 
-/** A size CameraK would ask a camera for that the camera is known to lack. */
-internal enum class MissingMode {
-    /** The configuration's targetResolution. */
-    TARGET_RESOLUTION,
+/** What the camera's own list of modes says of the mode a constrained open asks for. */
+internal enum class KnownMode {
+    /** The camera has no mode at the configuration's targetResolution and CameraK's frame rate. */
+    TARGET_MISSING,
 
-    /** CameraK's default size, asked for when the configuration names none. */
-    DEFAULT_SIZE,
+    /** The camera has no mode at CameraK's default size and frame rate, asked for when no target is set. */
+    DEFAULT_MISSING,
+
+    /** The camera has a mode at the configuration's targetResolution and CameraK's frame rate. */
+    TARGET_PRESENT,
 }
 
 /** The configuration's targetResolution is a size the camera lacks; nothing was opened. */
@@ -62,15 +65,16 @@ internal suspend fun GrabberSource.open(
 ): OpenedDevice {
     // A failed avfoundation open followed at once by the retry's open and release crashed macOS's main
     // thread (objc_release on an AVCaptureDeviceInput), so a size the camera is known to lack is not asked.
-    when (if (canRelax) missingMode(device) else null) {
-        MissingMode.TARGET_RESOLUTION -> throw ModeUnavailableException(
+    val known = if (canRelax) knownMode(device) else null
+    when (known) {
+        KnownMode.TARGET_MISSING -> throw ModeUnavailableException(
             "The camera has no mode at the configured targetResolution and CameraK's frame rate",
         )
-        MissingMode.DEFAULT_SIZE -> {
+        KnownMode.DEFAULT_MISSING -> {
             CameraKLogger.w(TAG, "The camera has no mode at CameraK's size and frame rate; opening it at its own mode")
             return openOwnMode(device, own, release, os, earlier = null)
         }
-        null -> Unit
+        KnownMode.TARGET_PRESENT, null -> Unit
     }
     val constrained = create(device, constrained = true).also { prepare(it, os) }
     try {
@@ -81,6 +85,8 @@ internal suspend fun GrabberSource.open(
         return OpenedDevice(constrained, relaxed = false)
     } catch (e: Exception) {
         if (e is CancellationException || !canRelax || JavaCvErrorMapper.isNativeLibraryMissing(e)) throw e
+        // The camera has the target: the failure is the camera's, and the own mode could only be released at once.
+        if (known == KnownMode.TARGET_PRESENT) throw e
         CameraKLogger.w(TAG, "Opening the camera at CameraK's size and frame rate failed; retrying at its own mode", e)
         own(null)
         release(constrained)
@@ -189,11 +195,14 @@ internal class EnumeratedDeviceSource(
     override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = defaultCameraOverride?.invoke()
         ?: devices.open(device.id, if (constrained) targetResolution ?: DEFAULT_CAMERA_RESOLUTION else null)
 
-    override fun missingMode(device: LensInfo): MissingMode? {
+    override fun knownMode(device: LensInfo): KnownMode? {
         if (defaultCameraOverride != null) return null
         val size = targetResolution ?: DEFAULT_CAMERA_RESOLUTION
-        if (devices.hasMode(device.id, size, DEFAULT_CAMERA_FRAME_RATE) != false) return null
-        return if (targetResolution != null) MissingMode.TARGET_RESOLUTION else MissingMode.DEFAULT_SIZE
+        return when (devices.hasMode(device.id, size, DEFAULT_CAMERA_FRAME_RATE)) {
+            null -> null
+            true -> if (targetResolution != null) KnownMode.TARGET_PRESENT else null
+            false -> if (targetResolution != null) KnownMode.TARGET_MISSING else KnownMode.DEFAULT_MISSING
+        }
     }
 }
 

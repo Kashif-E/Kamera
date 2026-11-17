@@ -239,6 +239,11 @@ def release_step_problems(job: dict, steps: List[dict], uploads: List[int]) -> L
     return problems
 
 
+def runs_select_xcode(run: str) -> bool:
+    """Whether a step's script runs scripts/select_xcode.sh itself, not only naming it."""
+    return any(line.strip().split(" ")[0] in (SELECT_XCODE, "./" + SELECT_XCODE) for line in run.splitlines())
+
+
 def release_workflow_problems(release: dict, build: dict) -> List[str]:
     """What lets [release], the publish workflow, publish a commit [build]'s harness did not test, a tag
     other than VERSION_NAME, or an upload nobody approved."""
@@ -280,7 +285,10 @@ def release_workflow_problems(release: dict, build: dict) -> List[str]:
     if not harness_runners:
         problems.append(f"{BUILD_WORKFLOW.relative_to(ROOT)}: no job runs scripts/verify.sh --full")
     for job_id, job in build_jobs.items():
-        if FULL_HARNESS.search(run_text(job)) and SELECT_XCODE not in run_text(job):
+        runs = [str(step.get("run", "")) for step in as_list(job.get("steps")) if isinstance(step, dict)]
+        harness_at = next((index for index, run in enumerate(runs) if FULL_HARNESS.search(run)), None)
+        select_at = next((index for index, run in enumerate(runs) if runs_select_xcode(run)), None)
+        if harness_at is not None and (select_at is None or select_at > harness_at):
             problems.append(
                 f"{BUILD_WORKFLOW.relative_to(ROOT)}: job {job_id} runs the harness on the image's default Xcode; "
                 f"run {SELECT_XCODE} first"
@@ -309,7 +317,7 @@ def release_workflow_problems(release: dict, build: dict) -> List[str]:
         )
         uploads = [index for index, step in enumerate(steps) if PUBLISH_TASK.search(str(step.get("run", "")))]
         upload = uploads[0] if uploads else None
-        select = next((index for index, step in enumerate(steps) if SELECT_XCODE in str(step.get("run", ""))), None)
+        select = next((index for index, step in enumerate(steps) if runs_select_xcode(str(step.get("run", "")))), None)
         if select is None or upload is None or select > upload:
             problems.append(f"{name}: job {job_id} publishes on the image's default Xcode; run {SELECT_XCODE} first")
         problems += [f"{name}: job {job_id} {problem}" for problem in release_step_problems(job, steps, uploads)]
@@ -421,6 +429,15 @@ def self_test() -> None:
         default_xcode_build,
     ):
         accepted.append("the harness on the image's default Xcode")
+    for label, steps in {
+        "the harness selecting Xcode after it ran": [{"run": "scripts/verify.sh --full"}, {"run": "scripts/select_xcode.sh"}],
+        "the harness only naming the script": [{"run": "echo scripts/select_xcode.sh"}, {"run": "scripts/verify.sh --full"}],
+    }.items():
+        late_build = {"on": {"workflow_call": None}, "jobs": {"full": {"runs-on": "macos-15", "steps": steps}}}
+        if not release_workflow_problems(
+            fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]), late_build
+        ):
+            accepted.append(label)
     second_job = (
         "  relocations:\n    needs: [verify, publish]\n    runs-on: macos-15\n    environment: maven-central\n"
         "    steps:\n" + FIXTURE_XCODE + FIXTURE_TAG_GUARD + FIXTURE_RELOCATIONS

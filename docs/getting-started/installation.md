@@ -6,7 +6,7 @@
 - Target platforms:
     - **Android**: API 23+ (Android 6.0)
     - **iOS**: iOS 16.0+ on arm64 devices and Apple-silicon simulators (there are no Intel-simulator artifacts since 2.0)
-    - **Xcode**: 26.4 or later to build the iOS app. CameraK 2.0 is built with Kotlin 2.4.10, which is tested with Xcode 26.4, and the Compose Multiplatform 1.11 that `camerak` brings links iOS 26 SDK classes: Xcode 16 fails the app's link with `Undefined symbols: _OBJC_CLASS_$_UIViewLayoutRegion`
+    - **Xcode**: 26.3 or later to build the iOS app (CameraK's CI builds with 26.3 and 26.4.1). CameraK 2.0 is built with Kotlin 2.4.10, which is tested with Xcode 26.4, and the Compose Multiplatform 1.11 that `camerak` brings links iOS 26 SDK classes: Xcode 16 fails the app's link with `Undefined symbols: _OBJC_CLASS_$_UIViewLayoutRegion`
     - **Desktop**: JDK 17+
 
 ## Step 1: Add Dependencies

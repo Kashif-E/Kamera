@@ -114,7 +114,7 @@ class DesktopStartResultTest {
             object : GrabberSource by rig.source {
                 override val canRelax: Boolean = true
 
-                override fun missingMode(device: LensInfo): MissingMode = MissingMode.TARGET_RESOLUTION
+                override fun knownMode(device: LensInfo): KnownMode = KnownMode.TARGET_MISSING
             },
             authorization = { PermissionStatus.Granted },
         )
