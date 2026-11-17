@@ -53,6 +53,27 @@ class VerdictTest {
         assertEquals(Verdict.FAIL, judge(noFront, heicUnsupported, emptyList()).verdict)
     }
 
+    // Desktop capabilities list no sizes and no microphone: a refusal of either is the camera's or the
+    // machine's answer, and a success is as right.
+    @Test
+    fun anUndecidableRefusal_isUnsupportedOk_andItsSuccessPasses() {
+        val noTarget = Outcome.Refused("start", CameraKError.Unsupported(CameraFeature.TARGET_RESOLUTION))
+        val undecidable = desktopUndecidable("desktop", targetResolution = true, audio = false)
+        assertEquals(Verdict.UNSUPPORTED_OK, judge(noTarget, undecidable, emptyList()).verdict)
+        assertEquals(Verdict.PASS, judge(Outcome.Completed, undecidable, emptyList()).verdict)
+        val noMicrophone = Outcome.Refused("startRecording", CameraKError.Unsupported(CameraFeature.AUDIO))
+        assertEquals(
+            Verdict.UNSUPPORTED_OK,
+            judge(
+                noMicrophone,
+                desktopUndecidable("desktop", targetResolution = false, audio = true),
+                emptyList(),
+            ).verdict,
+        )
+        assertEquals(Verdict.FAIL, judge(noTarget, desktopUndecidable("android", true, false), emptyList()).verdict)
+        assertEquals(Verdict.FAIL, judge(noMicrophone, undecidable, emptyList()).verdict)
+    }
+
     @Test
     fun timeoutsExceptionsAndOtherErrorsFail_andAMissingPermissionBlocks() {
         val timeout = judge(Outcome.TimedOut("capture"), Prediction.NONE, emptyList())

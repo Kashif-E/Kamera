@@ -318,7 +318,8 @@ internal class MatrixRunner(
 
     private suspend fun photoGroup(group: List<MatrixCase>) {
         val key = (group.first().spec as PhotoSpec).holderKey
-        val startPrediction = photoStartPrediction(capabilities, key)
+        val startPrediction = photoStartPrediction(capabilities, key) +
+            desktopUndecidable(platform.platformName, targetResolution = key.targetResolution != null, audio = false)
         val config = CameraConfiguration {
             cameraLens = key.lens
             cameraDeviceType = key.deviceType
@@ -851,7 +852,12 @@ internal class MatrixRunner(
                     record(
                         it,
                         opened.failure(),
-                        videoPrediction(capabilities, it.spec as VideoSpec),
+                        videoPrediction(capabilities, it.spec as VideoSpec) +
+                            desktopUndecidable(
+                                platform.platformName,
+                                targetResolution = false,
+                                audio = (it.spec as VideoSpec).audio,
+                            ),
                         listOf("readyMs" to opened.readyMs),
                     )
                 }
@@ -864,7 +870,8 @@ internal class MatrixRunner(
 
     private suspend fun videoCase(holder: CameraKStateHolder, case: MatrixCase, spec: VideoSpec, readyMs: Long) {
         log("BEGIN #${case.index} ${case.id}")
-        val predicted = videoPrediction(capabilities, spec)
+        val predicted = videoPrediction(capabilities, spec) +
+            desktopUndecidable(platform.platformName, targetResolution = false, audio = spec.audio)
         val measures = mutableListOf<Pair<String, Any?>>(
             "readyMs" to readyMs,
             "capabilityVideoQualities" to capabilities.supportedVideoQualities.map { it.name }.sorted(),

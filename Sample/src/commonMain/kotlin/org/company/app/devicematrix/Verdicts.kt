@@ -34,6 +34,8 @@ internal data class Prediction(
     val unsupported: Set<CameraFeature> = emptySet(),
     val noCamera: Boolean = false,
     val mayStillSucceed: Boolean = false,
+    /** Features the capabilities cannot predict here: refusing one is foreseen, and succeeding is right too. */
+    val undecidable: Set<CameraFeature> = emptySet(),
 ) {
     val refuses: Boolean get() = noCamera || unsupported.isNotEmpty()
 
@@ -41,6 +43,7 @@ internal data class Prediction(
         unsupported + other.unsupported,
         noCamera || other.noCamera,
         mayStillSucceed || other.mayStillSucceed,
+        undecidable + other.undecidable,
     )
 
     companion object {
@@ -80,8 +83,9 @@ internal fun judge(outcome: Outcome, predicted: Prediction, failedChecks: List<S
         is Outcome.Refused -> {
             val error = outcome.error
             val what = "${outcome.step}: ${describe(error)}"
-            val foreseen = (error is CameraKError.Unsupported && error.feature in predicted.unsupported) ||
-                (error is CameraKError.NoCamera && predicted.noCamera)
+            val foreseen =
+                (error is CameraKError.Unsupported && error.feature in predicted.unsupported + predicted.undecidable) ||
+                    (error is CameraKError.NoCamera && predicted.noCamera)
             when {
                 error is CameraKError.Permission -> Judgement(Verdict.BLOCKED, what)
                 failedChecks.isNotEmpty() -> failing(what)
@@ -208,3 +212,20 @@ internal fun analysisPrediction(capabilities: CameraCapabilities, spec: Analysis
     }
     return lensPrediction(capabilities, spec.lens) + format
 }
+
+/**
+ * What desktop capabilities cannot say: they list no sizes, so a [targetResolution] the camera lacks is
+ * `Unsupported(TARGET_RESOLUTION)` only at start, and no microphone, so a recording with [audio] on a
+ * machine without one is `Unsupported(AUDIO)`. Nothing on other platforms.
+ */
+internal fun desktopUndecidable(platformName: String, targetResolution: Boolean, audio: Boolean): Prediction =
+    if (platformName != "desktop") {
+        Prediction.NONE
+    } else {
+        Prediction(
+            undecidable = setOfNotNull(
+                CameraFeature.TARGET_RESOLUTION.takeIf { targetResolution },
+                CameraFeature.AUDIO.takeIf { audio },
+            ),
+        )
+    }
