@@ -31,6 +31,12 @@ internal interface ObjCRuntime {
     /** `objc_msgSend(receiver, selector)` for a method with no argument that returns an object or an NSInteger. */
     fun send(receiver: Long, selector: Long): Long
 
+    /** `objc_msgSend(receiver, selector)` for a method with no argument that returns a double. */
+    fun sendDouble(receiver: Long, selector: Long): Double
+
+    /** The C function [function] of [library], called with one pointer, returning at most eight bytes. */
+    fun callLong(library: String, function: String, argument: Long): Long
+
     /** The text of the NSString at [string]; null for nil. */
     fun string(string: Long): String?
 
@@ -193,6 +199,10 @@ internal class JnaObjCRuntime : ObjCRuntime {
 
     override fun send(receiver: Long, selector: Long): Long =
         objc.getFunction("objc_msgSend").invokeLong(arrayOf(Pointer(receiver), Pointer(selector)))
+
+    override fun sendDouble(receiver: Long, selector: Long): Double = 0.0
+
+    override fun callLong(library: String, function: String, argument: Long): Long = 0
 
     override fun sendWithBlock(receiver: Long, selector: Long, argument: Long, block: Long) {
         objc.getFunction("objc_msgSend")

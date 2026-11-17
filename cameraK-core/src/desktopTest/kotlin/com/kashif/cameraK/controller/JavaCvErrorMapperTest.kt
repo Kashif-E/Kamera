@@ -84,6 +84,33 @@ class JavaCvErrorMapperTest {
         assertSame(ownMode, owned, "the caller does not own the grabber that opened")
     }
 
+    // A failed avfoundation open, then the retry's open and release, crashed macOS's main thread twice in
+    // three full device matrices (objc_release on an AVCaptureDeviceInput); a size known to be missing is
+    // never asked for.
+    @Test
+    fun aDefaultSizeTheCameraLacksOpensAtItsOwnModeWithoutAFailedOpen() = runBlocking {
+        val ownMode = OpeningGrabber(null)
+        val source = ScriptedSource(canRelax = true, ownMode, missing = MissingMode.DEFAULT_SIZE)
+        val released = mutableListOf<FrameGrabber>()
+
+        val opened = source.open(device, own = {}, release = { released += it }, os = OperatingSystem.MAC)
+
+        assertSame(ownMode, opened.grabber)
+        assertTrue(opened.relaxed)
+        assertEquals(listOf(false), source.constrainedRequests, "the size the camera lacks was asked for")
+        assertEquals(emptyList(), released)
+    }
+
+    @Test
+    fun aTargetResolutionTheCameraLacksIsRefusedBeforeAnyGrabberIsMade() = runBlocking {
+        val source = ScriptedSource(canRelax = true, OpeningGrabber(null), missing = MissingMode.TARGET_RESOLUTION)
+
+        assertFailsWith<ModeUnavailableException> {
+            source.open(device, own = {}, release = {}, os = OperatingSystem.MAC)
+        }
+        assertEquals(emptyList(), source.constrainedRequests, "a grabber was made for a size the camera lacks")
+    }
+
     @Test
     fun openFailureIsNotRetriedWhenTheSourceCannotRelax() = runBlocking {
         val failure = FrameGrabber.Exception(openError(-5, "Input/output error"))
@@ -271,10 +298,16 @@ class JavaCvErrorMapperTest {
     private val device =
         LensInfo("", CameraDeviceType.DEFAULT, CameraLens.BACK, 1f, 1f, hasFlash = false, isLogical = false)
 
-    private class ScriptedSource(override val canRelax: Boolean, vararg grabbers: FrameGrabber) : GrabberSource {
+    private class ScriptedSource(
+        override val canRelax: Boolean,
+        vararg grabbers: FrameGrabber,
+        private val missing: MissingMode? = null,
+    ) : GrabberSource {
         private val next = ArrayDeque(grabbers.toList())
         val constrainedRequests = mutableListOf<Boolean>()
         override fun deviceKey(device: LensInfo): Any = this
+
+        override fun missingMode(device: LensInfo): MissingMode? = missing
 
         override fun create(device: LensInfo, constrained: Boolean): FrameGrabber {
             constrainedRequests += constrained

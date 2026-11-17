@@ -105,6 +105,31 @@ class DesktopStartResultTest {
         }
     }
 
+    @Test
+    fun aTargetResolutionTheCameraIsKnownToLackIsUnsupportedWithoutOpeningIt() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val sut = DesktopCameraEngine(
+            CameraConfiguration { targetResolution = Resolution(7680, 4320) },
+            rig.environment(),
+            object : GrabberSource by rig.source {
+                override val canRelax: Boolean = true
+
+                override fun missingMode(device: LensInfo): MissingMode = MissingMode.TARGET_RESOLUTION
+            },
+            authorization = { PermissionStatus.Granted },
+        )
+        try {
+            val start = async { sut.start(desired) }
+            rig.settle()
+
+            val error = assertIs<CameraKError.Unsupported>(assertIs<CameraKResult.Failure>(start.await()).error)
+            assertEquals(CameraFeature.TARGET_RESOLUTION, error.feature)
+            assertEquals(0, rig.camera.startCount, "the camera was opened for a size it lacks")
+        } finally {
+            sut.close()
+        }
+    }
+
     /** The rig's camera behind a source that fails the constrained open and allows the retry. */
     private class RelaxingSource(private val camera: GrabberSource) : GrabberSource by camera {
         override val canRelax: Boolean = true

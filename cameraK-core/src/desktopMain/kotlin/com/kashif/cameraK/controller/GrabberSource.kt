@@ -25,7 +25,22 @@ internal interface GrabberSource {
 
     /** A new grabber for [device]; [constrained] asks for CameraK's size and frame rate. */
     fun create(device: LensInfo, constrained: Boolean): FrameGrabber
+
+    /** Which size a constrained open of [device] would ask for that the camera is known to lack; null when none is. */
+    fun missingMode(device: LensInfo): MissingMode? = null
 }
+
+/** A size CameraK would ask a camera for that the camera is known to lack. */
+internal enum class MissingMode {
+    /** The configuration's targetResolution. */
+    TARGET_RESOLUTION,
+
+    /** CameraK's default size, asked for when the configuration names none. */
+    DEFAULT_SIZE,
+}
+
+/** The configuration's targetResolution is a size the camera lacks; nothing was opened. */
+internal class ModeUnavailableException(message: String) : Exception(message)
 
 /** A started grabber, and whether it opened only at the camera's own mode. */
 internal class OpenedDevice(val grabber: FrameGrabber, val relaxed: Boolean)

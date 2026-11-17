@@ -38,6 +38,9 @@ internal interface DesktopDevices {
      * The id of [desktopLensInfo], the one default entry, opens the system's default camera.
      */
     fun open(id: String, size: Pair<Int, Int>?): FrameGrabber
+
+    /** Whether the camera [id] has a [size] mode at [frameRate]; null when that cannot be read. */
+    fun hasMode(id: String, size: Pair<Int, Int>, frameRate: Double): Boolean? = null
 }
 
 /** No camera has the selected id any more: it was unplugged after enumeration. */

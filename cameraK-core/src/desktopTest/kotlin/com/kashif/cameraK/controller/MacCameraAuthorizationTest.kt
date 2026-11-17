@@ -201,6 +201,10 @@ class MacCameraAuthorizationTest {
         private val bundlePath: String? = null,
         private val info: Map<String, String> = emptyMap(),
     ) : ObjCRuntime {
+        override fun sendDouble(receiver: Long, selector: Long): Double = 0.0
+
+        override fun callLong(library: String, function: String, argument: Long): Long = 0
+
         data class Call(val receiver: Long, val selector: Long, val argument: Long, val block: Long = 0)
 
         val calls = mutableListOf<Call>()
