@@ -28,8 +28,8 @@ import kotlin.time.Duration.Companion.seconds
 internal val COMMAND_DRAIN_TIMEOUT: Duration = 2.seconds
 
 /**
- * How long a capture waits for the platform's answer before it returns `Timeout(CAPTURE)`: longer than any
- * capture a camera takes, flash precapture and maximum quality included.
+ * How long the holder waits for an engine's capture, CameraK's own transcoding and writing included,
+ * before it returns `Timeout(CAPTURE)`: well past a capture with flash precapture at maximum quality.
  */
 internal val CAPTURE_TIMEOUT: Duration = 30.seconds
 
