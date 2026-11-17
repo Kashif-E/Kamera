@@ -67,7 +67,7 @@ internal class PreviewSurfaceWithAnalysisDeviceTest {
         try {
             assertPhotoCaptured(engine, "with an idle analysis and no preview")
         } finally {
-            engine.close()
+            engine.closeAndJoin()
         }
     }
 
@@ -79,7 +79,7 @@ internal class PreviewSurfaceWithAnalysisDeviceTest {
             assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(INDEX))
             assertPhotoCaptured(engine, "with an idle analysis after the preview went")
         } finally {
-            engine.close()
+            engine.closeAndJoin()
         }
     }
 
@@ -94,7 +94,7 @@ internal class PreviewSurfaceWithAnalysisDeviceTest {
             assertPhotoCaptured(engine, "with an analyzer after the preview went")
         } finally {
             registration.close()
-            engine.close()
+            engine.closeAndJoin()
         }
     }
 
@@ -110,7 +110,7 @@ internal class PreviewSurfaceWithAnalysisDeviceTest {
             assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(INDEX))
             assertPhotoCaptured(engine, "once the last analyzer left with no preview")
         } finally {
-            engine.close()
+            engine.closeAndJoin()
         }
     }
 
@@ -125,7 +125,7 @@ internal class PreviewSurfaceWithAnalysisDeviceTest {
             assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(INDEX))
             assertPhotoCaptured(engine, "with a prepared recording and no preview")
         } finally {
-            engine.close()
+            engine.closeAndJoin()
         }
     }
 
