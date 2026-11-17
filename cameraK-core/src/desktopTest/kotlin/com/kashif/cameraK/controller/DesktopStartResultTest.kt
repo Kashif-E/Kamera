@@ -10,7 +10,6 @@ import com.kashif.cameraK.enums.CameraDeviceType
 import com.kashif.cameraK.enums.CameraLens
 import com.kashif.cameraK.enums.FlashMode
 import com.kashif.cameraK.enums.TorchMode
-import com.kashif.cameraK.error.CameraFeature
 import com.kashif.cameraK.error.CameraKError
 import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
@@ -84,8 +83,10 @@ class DesktopStartResultTest {
         }
     }
 
+    // targetResolution is a target, as on Android and iOS: a camera that opens only without it streams
+    // at its own mode rather than failing the start.
     @Test
-    fun aTargetResolutionTheCameraOpensOnlyWithoutIsUnsupported() = runTest {
+    fun aTargetResolutionTheCameraOpensOnlyWithoutStartsAtTheCamerasOwnMode() = runTest {
         val rig = DesktopEngineRig(testScheduler)
         val sut = DesktopCameraEngine(
             CameraConfiguration { targetResolution = Resolution(7680, 4320) },
@@ -97,24 +98,32 @@ class DesktopStartResultTest {
             val start = async { sut.start(desired) }
             rig.settle()
 
-            val error = assertIs<CameraKError.Unsupported>(assertIs<CameraKResult.Failure>(start.await()).error)
-            assertEquals(CameraFeature.TARGET_RESOLUTION, error.feature)
-            assertEquals(rig.camera.startCount, rig.camera.releaseCount, "the camera opened at its own mode was kept")
+            assertEquals(CameraKResult.Success(Unit), start.await())
+            assertIs<EngineState.Open>(sut.state.value)
+            assertEquals(1, rig.camera.startCount - rig.camera.releaseCount, "the camera opened at its own mode")
         } finally {
             sut.close()
         }
     }
 
+    // On macOS the source reads the camera's modes and asks for the listed size nearest the target, so
+    // no avfoundation open fails (a failed open, then a quick reopen and release, crashed the app).
     @Test
-    fun aTargetResolutionTheCameraIsKnownToLackIsUnsupportedWithoutOpeningIt() = runTest {
+    fun aTargetResolutionTheCameraLacksOpensAtTheListedSizeNearestIt() = runTest {
         val rig = DesktopEngineRig(testScheduler)
+        val asked = mutableListOf<Pair<Int, Int>>()
         val sut = DesktopCameraEngine(
             CameraConfiguration { targetResolution = Resolution(7680, 4320) },
             rig.environment(),
             object : GrabberSource by rig.source {
                 override val canRelax: Boolean = true
 
-                override fun knownMode(device: LensInfo): KnownMode = KnownMode.TARGET_MISSING
+                override fun knownMode(device: LensInfo): KnownMode = KnownMode.Listed(1920 to 1080)
+
+                override fun create(device: LensInfo, size: Pair<Int, Int>): FrameGrabber {
+                    asked += size
+                    return rig.source.create(device, constrained = true)
+                }
             },
             authorization = { PermissionStatus.Granted },
         )
@@ -122,9 +131,9 @@ class DesktopStartResultTest {
             val start = async { sut.start(desired) }
             rig.settle()
 
-            val error = assertIs<CameraKError.Unsupported>(assertIs<CameraKResult.Failure>(start.await()).error)
-            assertEquals(CameraFeature.TARGET_RESOLUTION, error.feature)
-            assertEquals(0, rig.camera.startCount, "the camera was opened for a size it lacks")
+            assertEquals(CameraKResult.Success(Unit), start.await())
+            assertEquals(listOf(1920 to 1080), asked, "the sizes asked for")
+            assertEquals(1, rig.camera.startCount, "the camera's opens")
         } finally {
             sut.close()
         }

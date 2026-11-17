@@ -20,6 +20,7 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
+import com.kashif.cameraK.video.qualityToRecord
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -155,16 +156,16 @@ internal class VideoRecorder(
     /** Binds VideoCapture for [config] ahead of a start; it stays until the engine stops. Main thread. */
     suspend fun prepare(config: VideoConfiguration): CameraKResult<Unit> {
         if (active != null) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_PREPARE))
-        val fallback = qualityFallback(config) ?: return unsupportedQuality()
-        bindVideoCapture(config.quality, fallback)?.let { return CameraKResult.Failure(it) }
+        val (recorded, fallback) = recordingQuality(config) ?: return unsupportedQuality()
+        bindVideoCapture(recorded.quality, fallback)?.let { return CameraKResult.Failure(it) }
         prepared = true
         return CameraKResult.Success(Unit)
     }
 
     /** Starts a recording and returns its file's path once CameraX reports the start. Main thread. */
-    suspend fun start(config: VideoConfiguration): CameraKResult<String> {
+    suspend fun start(requested: VideoConfiguration): CameraKResult<String> {
         if (active != null) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.RECORD_START))
-        val fallback = qualityFallback(config) ?: return unsupportedQuality()
+        val (config, fallback) = recordingQuality(requested) ?: return unsupportedQuality()
         val lazyBind = videoCapture == null || videoQuality != config.quality || videoPin != host.pinnedPhysicalId
         var started = false
         try {
@@ -430,23 +431,22 @@ internal class VideoRecorder(
         }
     }
 
-    // CameraX's quality, from the bound camera's own set (§6.3), with the fallback CameraX applies;
-    // null when the set names other qualities only. An empty set, from a query that threw (logged
-    // where it ran) or that CameraX answered with none, says nothing about the camera, so the request
-    // goes to CameraX with 1.x's fallback.
-    private suspend fun qualityFallback(config: VideoConfiguration): QualityFallback? {
+    // [config] with the quality it records on the bound camera (§6.3, VideoConfiguration.qualityToRecord),
+    // and the fallback CameraX applies; null when the camera records no quality the configuration takes.
+    // An empty set, from a query that threw (logged where it ran) or that CameraX answered with none,
+    // says nothing about the camera, so the request goes to CameraX with 1.x's fallback.
+    private suspend fun recordingQuality(config: VideoConfiguration): Pair<VideoConfiguration, QualityFallback>? {
         val known = host.videoQualities()
-        return when {
-            known.isEmpty() -> {
-                CameraKLogger.w(
-                    TAG,
-                    "The camera's video qualities are unknown; recording ${config.quality} with CameraX's fallback",
-                )
-                QualityFallback.LOWER_OR_HIGHER
-            }
-            config.quality in known -> QualityFallback.HIGHER_OR_LOWER
-            else -> null
+        if (known.isEmpty()) {
+            CameraKLogger.w(
+                TAG,
+                "The camera's video qualities are unknown; recording ${config.quality} with CameraX's fallback",
+            )
+            return config to QualityFallback.LOWER_OR_HIGHER
         }
+        val quality = config.qualityToRecord(known) ?: return null
+        val recorded = if (quality == config.quality) config else config.copy { this.quality = quality }
+        return recorded to QualityFallback.HIGHER_OR_LOWER
     }
 
     private fun unsupportedQuality(): CameraKResult.Failure =

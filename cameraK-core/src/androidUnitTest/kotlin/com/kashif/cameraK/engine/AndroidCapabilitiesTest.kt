@@ -123,6 +123,24 @@ class AndroidCapabilitiesTest {
         engine.closeAndJoin()
     }
 
+    // A recording that leaves the quality at its default is not refused for it: a camera that
+    // records no FHD (the emulator's, many front cameras) records the nearest quality below it.
+    @Test
+    fun theDefaultQualityOnACameraWithoutItRecordsTheNearestLowerQuality() = runTest {
+        platform.backend.supportedQualities = setOf(VideoQuality.SD, VideoQuality.HD, VideoQuality.UHD)
+        val engine = platform.engine(testScheduler)
+        open(platform, engine)
+
+        startRecording(platform, engine, VideoConfiguration { enableAudio = false })
+
+        val build = platform.backend.videoCaptureBuilds.single()
+        assertEquals(VideoQuality.HD, build.quality, "the quality recorded")
+        assertEquals(VideoQuality.HD.bitrateBps, build.bitrateBps, "the Recorder's target bitrate")
+        platform.backend.recordings.single().finalize()
+        platform.settle(testScheduler)
+        engine.closeAndJoin()
+    }
+
     @Test
     fun recorderTargetBitrateIsTheQualitysBitrate() = runTest {
         val engine = platform.engine(testScheduler)

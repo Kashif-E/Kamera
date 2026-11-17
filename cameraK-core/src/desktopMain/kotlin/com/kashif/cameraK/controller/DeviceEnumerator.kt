@@ -40,8 +40,8 @@ internal interface DesktopDevices {
      */
     fun open(id: String, size: Pair<Int, Int>?): FrameGrabber
 
-    /** Whether the camera [id] has a [size] mode at [frameRate]; null when that cannot be read. */
-    fun hasMode(id: String, size: Pair<Int, Int>, frameRate: Double): Boolean? = null
+    /** The sizes the camera [id] has a mode for at [frameRate]; null when they cannot be read. */
+    fun sizes(id: String, frameRate: Double): List<Pair<Int, Int>>? = null
 }
 
 /** No camera has the selected id any more: it was unplugged after enumeration. */
@@ -185,19 +185,19 @@ internal class MacDevices(
         openInput(input(id) ?: throw DeviceGoneException("The selected camera is no longer connected"), size)
 
     /**
-     * Whether the camera [id] has a [size] mode with a frame rate range topping out at [frameRate], read
-     * from its `formats` as FFmpeg's avfoundation input matches them (configure_video_device takes a rate
-     * only at a range's maximum, so a 1-60 range does not open at 30). Null when the camera or the runtime
-     * cannot be read, when it lists no format, and for the default entry: FFmpeg opens that as its own
+     * The sizes of the camera [id]'s modes with a frame rate range topping out at [frameRate], read from
+     * its `formats` as FFmpeg's avfoundation input matches them (configure_video_device takes a rate only
+     * at a range's maximum, so a 1-60 range does not open at 30). Null when the camera or the runtime
+     * cannot be read, when it lists no such mode, and for the default entry: FFmpeg opens that as its own
      * device 0, which need not be AVFoundation's default device.
      */
-    override fun hasMode(id: String, size: Pair<Int, Int>, frameRate: Double): Boolean? = try {
+    override fun sizes(id: String, frameRate: Double): List<Pair<Int, Int>>? = try {
         val objc = runtime()
-        device(objc, id)?.let { modes(objc, it) }?.takeIf { it.isNotEmpty() }?.any { mode ->
-            mode.width == size.first &&
-                mode.height == size.second &&
-                mode.frameRates.any { (_, max) -> abs(max - frameRate) < RATE_SLACK }
-        }
+        device(objc, id)?.let { modes(objc, it) }
+            ?.filter { mode -> mode.frameRates.any { (_, max) -> abs(max - frameRate) < RATE_SLACK } }
+            ?.map { it.width to it.height }
+            ?.distinct()
+            ?.takeIf { it.isNotEmpty() }
     } catch (e: Exception) {
         CameraKLogger.w(TAG, "Reading the camera's formats failed; its size is asked for without a check", e)
         null

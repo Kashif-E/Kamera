@@ -15,6 +15,7 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
+import com.kashif.cameraK.video.qualityToRecord
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
@@ -129,8 +130,11 @@ internal class AppleRecorder(
 
     private val audioRefusalLogged = atomic(false)
 
-    suspend fun prepare(config: VideoConfiguration): CameraKResult<Unit> {
-        refusal(config, CameraOperation.RECORD_PREPARE)?.let { return it }
+    suspend fun prepare(requested: VideoConfiguration): CameraKResult<Unit> {
+        val config = when (val recordable = recordable(requested, CameraOperation.RECORD_PREPARE)) {
+            is CameraKResult.Failure -> return recordable
+            is CameraKResult.Success -> recordable.value
+        }
         return onQueue("preparing a recording") {
             when {
                 active != null -> failure(CameraKError.Busy(CameraOperation.RECORD_PREPARE))
@@ -150,8 +154,11 @@ internal class AppleRecorder(
         }
     }
 
-    suspend fun start(config: VideoConfiguration): CameraKResult<String> {
-        refusal(config, CameraOperation.RECORD_START)?.let { return it }
+    suspend fun start(requested: VideoConfiguration): CameraKResult<String> {
+        val config = when (val recordable = recordable(requested, CameraOperation.RECORD_START)) {
+            is CameraKResult.Failure -> return recordable
+            is CameraKResult.Success -> recordable.value
+        }
         val path = try {
             moviePath(config)
         } catch (e: Exception) {
@@ -510,8 +517,11 @@ internal class AppleRecorder(
 
     // ─── Any thread ──────────────────────────────────────────────────────────────────────────────
 
-    /** Why [config] cannot be recorded on this camera, before anything reaches the session. */
-    private fun refusal(config: VideoConfiguration, operation: CameraOperation): CameraKResult.Failure? {
+    /**
+     * [config] with the quality it records on this camera (VideoConfiguration.qualityToRecord), or why
+     * it cannot be recorded, before anything reaches the session.
+     */
+    private fun recordable(config: VideoConfiguration, operation: CameraOperation): CameraKResult<VideoConfiguration> {
         if (config.enableAudio && !hasUsageDescription(MICROPHONE_USAGE_KEY)) {
             val cause = IllegalStateException(
                 "Recording with audio needs $MICROPHONE_USAGE_KEY in the app's Info.plist; " +
@@ -522,10 +532,9 @@ internal class AppleRecorder(
             }
             return failure(CameraKError.Unsupported(CameraFeature.AUDIO, cause))
         }
-        if (config.quality !in supportedQualities()) {
-            return failure(CameraKError.Unsupported(CameraFeature.VIDEO_QUALITY))
-        }
-        return null
+        val quality = config.qualityToRecord(supportedQualities())
+            ?: return failure(CameraKError.Unsupported(CameraFeature.VIDEO_QUALITY))
+        return CameraKResult.Success(if (quality == config.quality) config else config.copy { this.quality = quality })
     }
 
     /**

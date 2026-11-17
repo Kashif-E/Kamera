@@ -10,6 +10,7 @@ import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
 import com.kashif.cameraK.video.VideoQuality
 import platform.AVFoundation.AVCaptureMovieFileOutput
+import platform.AVFoundation.AVCaptureSessionPreset1280x720
 import platform.AVFoundation.AVCaptureSessionPreset1920x1080
 import platform.AVFoundation.AVCaptureSessionPreset3840x2160
 import platform.AVFoundation.AVCaptureSessionPresetPhoto
@@ -23,7 +24,7 @@ import kotlin.test.assertTrue
  * A supported VideoConfiguration.quality is applied in the movie transaction (w6 decision G2, CC-24):
  * the session runs the quality's preset from the movie's start (FHD is 1920x1080) and returns to the
  * still preset after the recording's Finalized, prepared or not. A quality the bound camera cannot record is
- * Unsupported(VIDEO_QUALITY), and nothing is changed.
+ * Unsupported(VIDEO_QUALITY), and nothing is changed, unless the app left the quality at its default.
  */
 class VideoQualityTest {
     private val driver = AppleEngineDriver()
@@ -86,6 +87,25 @@ class VideoQualityTest {
                 "the prepared movie output left the session after the $recording recording",
             )
         }
+        engine.close()
+    }
+
+    // A recording that leaves the quality at its default is not refused for it: a camera with no FHD
+    // preset records at the nearest preset below it.
+    @Test
+    fun theDefaultQualityOnACameraWithoutItRunsTheNearestLowerPreset() = driver.runCase {
+        driver.back.supportedPresets = setOf(AVCaptureSessionPresetPhoto!!, AVCaptureSessionPreset1280x720!!)
+        val engine = driver.createEngine()
+        driver.settle()
+        assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+        var presetAtStart: String? = null
+        driver.movieRecorder.onStart = { presetAtStart = driver.session.presets.last() }
+
+        val recording = startEngineRecording(driver, engine, VideoConfiguration()).also { written += it.path }
+        assertEquals(AVCaptureSessionPreset1280x720, presetAtStart, "the preset when the movie started")
+
+        finishRecording(driver, recording)
+        driver.settle()
         engine.close()
     }
 
