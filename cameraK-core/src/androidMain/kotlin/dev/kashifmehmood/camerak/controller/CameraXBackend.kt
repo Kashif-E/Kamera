@@ -1,0 +1,321 @@
+package dev.kashifmehmood.camerak.controller
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
+import androidx.annotation.OptIn
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfo
+import androidx.camera.core.CameraInfoUnavailableException
+import androidx.camera.core.DynamicRange
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.MeteringPoint
+import androidx.camera.core.Preview
+import androidx.camera.core.SurfaceOrientedMeteringPointFactory
+import androidx.camera.core.UseCase
+import androidx.camera.core.UseCaseGroup
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FallbackStrategy
+import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
+import androidx.lifecycle.LifecycleOwner
+import dev.kashifmehmood.camerak.utils.CameraKLogger
+import dev.kashifmehmood.camerak.video.VideoQuality
+import java.io.File
+import java.util.concurrent.Executor
+
+private const val TAG = "CameraK"
+
+/**
+ * The slice of [ProcessCameraProvider] that [AndroidCameraEngine] binds through. The provider is shared
+ * by the whole process, so it offers no unbindAll(): a controller unbinds only what it bound. A bind
+ * names the [ResolvedCamera]; the binding turns it into CameraX's selector.
+ */
+internal interface CameraBinding {
+    fun unbind(vararg useCases: UseCase)
+
+    fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, useCaseGroup: UseCaseGroup): Camera
+
+    fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, vararg useCases: UseCase): Camera
+
+    /** Whether CameraX offers a camera that [camera]'s selector selects, so a bind of it can succeed. */
+    fun hasCamera(camera: ResolvedCamera): Boolean
+
+    /** The camera id of [camera], one a bind returned. */
+    fun cameraIdOf(camera: Camera): String
+}
+
+/** A recording CameraX is running. */
+internal interface RecordingSession {
+    fun stop()
+
+    fun pause()
+
+    fun resume()
+}
+
+/**
+ * A milestone CameraX reports for a recording, reduced to what the engine reads: its
+ * [VideoRecordEvent.Start], [VideoRecordEvent.Pause], [VideoRecordEvent.Resume] and
+ * [VideoRecordEvent.Finalize]. Status events are not passed on.
+ */
+internal sealed interface RecordingEvent {
+    data object Started : RecordingEvent
+
+    data object Paused : RecordingEvent
+
+    data object Resumed : RecordingEvent
+}
+
+/**
+ * How a recording ended: CameraX's [VideoRecordEvent.Finalize], reduced to what the controller reads.
+ * [error] is one of the `VideoRecordEvent.Finalize.ERROR_*` codes.
+ */
+internal class RecordingFinalized(val error: Int, val cause: Throwable?, val recordedDurationNanos: Long) :
+    RecordingEvent {
+    val hasError: Boolean get() = error != VideoRecordEvent.Finalize.ERROR_NONE
+}
+
+/** The CameraX FallbackStrategy a Recorder's QualitySelector is built with. */
+internal enum class QualityFallback {
+    /** `FallbackStrategy.higherQualityOrLowerThan(requested)`. */
+    HIGHER_OR_LOWER,
+
+    /** `FallbackStrategy.lowerQualityOrHigherThan(requested)`, 1.x's rule. */
+    LOWER_OR_HIGHER,
+}
+
+/**
+ * The CameraX entry points [AndroidCameraEngine] calls that need camera hardware: obtaining the
+ * process camera provider, taking a still and recording video. Production uses
+ * [CameraXBackend.Default]; unit tests substitute a backend that runs without a camera.
+ */
+internal interface CameraXBackend {
+    /**
+     * Requests the camera provider and runs [onResult] on [executor] with it, or with the failure.
+     */
+    fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit)
+
+    fun takePicture(
+        imageCapture: ImageCapture,
+        options: ImageCapture.OutputFileOptions,
+        executor: Executor,
+        callback: ImageCapture.OnImageSavedCallback,
+    )
+
+    /**
+     * Starts recording [videoCapture] into [output] and runs [onEvent] on [executor] for each of its
+     * milestones: when it starts, pauses and resumes, and when it ends, however it ends.
+     */
+    fun startRecording(
+        videoCapture: VideoCapture<Recorder>,
+        context: Context,
+        output: FileOutputOptions,
+        withAudio: Boolean,
+        executor: Executor,
+        onEvent: (RecordingEvent) -> Unit,
+    ): RecordingSession
+
+    /**
+     * A VideoCapture over a new Recorder for [quality], with [bitrateBps] as the encoder's target
+     * video bitrate when it is set, and [fallback] as CameraX's rule when the camera cannot record
+     * [quality], pinned to [pinnedPhysicalId] as the other use cases of a bind on a physical lens are:
+     * unpinned, it streams from the logical camera's own lens. Builds no platform session, so it may
+     * run off the main thread.
+     */
+    @OptIn(ExperimentalCamera2Interop::class)
+    fun buildVideoCapture(
+        quality: VideoQuality,
+        bitrateBps: Int?,
+        fallback: QualityFallback,
+        pinnedPhysicalId: String?,
+    ): VideoCapture<Recorder> {
+        val cameraXQuality = quality.toCameraXQuality()
+        val strategy = when (fallback) {
+            QualityFallback.HIGHER_OR_LOWER -> FallbackStrategy.higherQualityOrLowerThan(cameraXQuality)
+            QualityFallback.LOWER_OR_HIGHER -> FallbackStrategy.lowerQualityOrHigherThan(cameraXQuality)
+        }
+        val recorder = Recorder.Builder()
+            .setQualitySelector(QualitySelector.from(cameraXQuality, strategy))
+            .apply { bitrateBps?.let { setTargetVideoEncodingBitRate(it) } }
+            .build()
+        return VideoCapture.Builder(recorder)
+            .apply { pinnedPhysicalId?.let { Camera2Interop.Extender(this).setPhysicalCameraId(it) } }
+            .build()
+    }
+
+    /**
+     * The qualities the camera behind [cameraInfo] records in SDR. It reads the camera's encoder
+     * profiles and the codec list, so it runs off the main thread.
+     */
+    fun videoQualities(cameraInfo: CameraInfo): Set<VideoQuality> =
+        Recorder.getVideoCapabilities(cameraInfo).getSupportedQualities(DynamicRange.SDR)
+            .mapNotNull { quality -> VideoQuality.entries.firstOrNull { it.toCameraXQuality() == quality } }
+            .toSet()
+
+    /**
+     * §4.1's playable probe over a finished recording's [file], with the size and bitrate it reads.
+     * It reads and parses the file, so it runs off the main thread.
+     */
+    fun probeRecording(file: File): RecordingProbe = probeRecordedFile(file)
+
+    /** Makes [analyzer] the consumer of [analysis]'s frames, run on [executor]. */
+    fun setAnalyzer(analysis: ImageAnalysis, executor: Executor, analyzer: ImageAnalysis.Analyzer)
+
+    /** Stops delivering [analysis]'s frames to any consumer. */
+    fun clearAnalyzer(analysis: ImageAnalysis)
+
+    /**
+     * Runs [onFrame] on the camera's thread for each frame the preview built from [previewBuilder]
+     * produces, from the first one on.
+     */
+    fun onPreviewFrame(previewBuilder: Preview.Builder, onFrame: () -> Unit)
+
+    /**
+     * Runs [onReport] on the camera's thread with the capture session, the exposure compensation index and the
+     * autofocus state (null when the result carries none) of each capture result of the sessions the ImageCapture
+     * built from [imageCaptureBuilder] joins, from the first one on. The session's repeating request carries every
+     * bound use case's callback, so the results arrive with or without a preview surface.
+     */
+    @OptIn(ExperimentalCamera2Interop::class)
+    fun onCaptureReported(
+        imageCaptureBuilder: ImageCapture.Builder,
+        onReport: (session: Any, index: Int, afState: Int?) -> Unit,
+    ) {
+        Camera2Interop.Extender(imageCaptureBuilder).setSessionCaptureCallback(
+            object : CameraCaptureSession.CaptureCallback() {
+                override fun onCaptureCompleted(
+                    session: CameraCaptureSession,
+                    request: CaptureRequest,
+                    result: TotalCaptureResult,
+                ) {
+                    result.get(CaptureResult.CONTROL_AE_EXPOSURE_COMPENSATION)?.let {
+                        onReport(session, it, result.get(CaptureResult.CONTROL_AF_STATE))
+                    }
+                }
+            },
+        )
+    }
+
+    /**
+     * The flash mode [imageCapture] holds, read back after each set and each bind: flash has no
+     * CameraX observer, so this read-back is the platform's report (design §2.3 rule 5).
+     */
+    fun flashModeOf(imageCapture: ImageCapture): Int = imageCapture.flashMode
+
+    /**
+     * How [preview] is drawn, from its `getResolutionInfo()`: the buffer size, the ViewPort's crop and the
+     * rotation to the display. Null until a surface is attached.
+     */
+    fun previewGeometry(preview: Preview): PreviewGeometry? =
+        preview.resolutionInfo?.let { PreviewGeometry(it.resolution, it.cropRect, it.rotationDegrees) }
+
+    /** The metering point at the buffer pixel ([x], [y]) of a [width] by [height] output surface. */
+    fun meteringPoint(x: Float, y: Float, width: Int, height: Int): MeteringPoint =
+        SurfaceOrientedMeteringPointFactory(width.toFloat(), height.toFloat()).createPoint(x, y)
+
+    object Default : CameraXBackend {
+        override fun requestProvider(context: Context, executor: Executor, onResult: (Result<CameraBinding>) -> Unit) {
+            val future = ProcessCameraProvider.getInstance(context)
+            future.addListener({ onResult(runCatching { ProcessCameraBinding(future.get()) }) }, executor)
+        }
+
+        override fun takePicture(
+            imageCapture: ImageCapture,
+            options: ImageCapture.OutputFileOptions,
+            executor: Executor,
+            callback: ImageCapture.OnImageSavedCallback,
+        ) {
+            imageCapture.takePicture(options, executor, callback)
+        }
+
+        override fun setAnalyzer(analysis: ImageAnalysis, executor: Executor, analyzer: ImageAnalysis.Analyzer) {
+            analysis.setAnalyzer(executor, analyzer)
+        }
+
+        override fun clearAnalyzer(analysis: ImageAnalysis) = analysis.clearAnalyzer()
+
+        @OptIn(ExperimentalCamera2Interop::class)
+        override fun onPreviewFrame(previewBuilder: Preview.Builder, onFrame: () -> Unit) {
+            Camera2Interop.Extender(previewBuilder).setSessionCaptureCallback(
+                object : CameraCaptureSession.CaptureCallback() {
+                    override fun onCaptureCompleted(
+                        session: CameraCaptureSession,
+                        request: CaptureRequest,
+                        result: TotalCaptureResult,
+                    ) = onFrame()
+                },
+            )
+        }
+
+        @SuppressLint("MissingPermission") // The caller asks for audio only when RECORD_AUDIO is granted.
+        override fun startRecording(
+            videoCapture: VideoCapture<Recorder>,
+            context: Context,
+            output: FileOutputOptions,
+            withAudio: Boolean,
+            executor: Executor,
+            onEvent: (RecordingEvent) -> Unit,
+        ): RecordingSession {
+            val pending = videoCapture.output.prepareRecording(context, output)
+            if (withAudio) pending.withAudioEnabled()
+            val recording = pending.start(executor) { event ->
+                when (event) {
+                    is VideoRecordEvent.Start -> onEvent(RecordingEvent.Started)
+                    is VideoRecordEvent.Pause -> onEvent(RecordingEvent.Paused)
+                    is VideoRecordEvent.Resume -> onEvent(RecordingEvent.Resumed)
+                    is VideoRecordEvent.Finalize -> onEvent(
+                        RecordingFinalized(event.error, event.cause, event.recordingStats.recordedDurationNanos),
+                    )
+                    else -> Unit
+                }
+            }
+            return object : RecordingSession {
+                override fun stop() = recording.stop()
+
+                override fun pause() = recording.pause()
+
+                override fun resume() = recording.resume()
+            }
+        }
+    }
+}
+
+private class ProcessCameraBinding(private val provider: ProcessCameraProvider) : CameraBinding {
+    override fun unbind(vararg useCases: UseCase) = provider.unbind(*useCases)
+
+    override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, useCaseGroup: UseCaseGroup): Camera =
+        provider.bindToLifecycle(owner, camera.toCameraSelector(), useCaseGroup)
+
+    override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, vararg useCases: UseCase): Camera =
+        provider.bindToLifecycle(owner, camera.toCameraSelector(), *useCases)
+
+    // A camera whose info cannot be read is left to the bind, which reports what CameraX refuses.
+    override fun hasCamera(camera: ResolvedCamera): Boolean = try {
+        provider.hasCamera(camera.toCameraSelector())
+    } catch (e: CameraInfoUnavailableException) {
+        CameraKLogger.e(TAG, "Reading which cameras CameraX offers failed", e)
+        true
+    }
+
+    @OptIn(ExperimentalCamera2Interop::class)
+    override fun cameraIdOf(camera: Camera): String = Camera2CameraInfo.from(camera.cameraInfo).cameraId
+}
+
+private fun VideoQuality.toCameraXQuality(): Quality = when (this) {
+    VideoQuality.SD -> Quality.SD
+    VideoQuality.HD -> Quality.HD
+    VideoQuality.FHD -> Quality.FHD
+    VideoQuality.UHD -> Quality.UHD
+}

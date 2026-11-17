@@ -2,17 +2,17 @@
 
 package org.company.app
 
-import com.kashif.cameraK.capture.RecordedVideo
-import com.kashif.cameraK.error.CameraKError
-import com.kashif.cameraK.error.CameraOperation
-import com.kashif.cameraK.error.StorageFailure
-import com.kashif.cameraK.recording.RecordingEndReason
-import com.kashif.cameraK.recording.RecordingState
-import com.kashif.cameraK.recording.elapsed
-import com.kashif.cameraK.result.CameraKResult
-import com.kashif.cameraK.utils.CameraKEngineApi
-import com.kashif.cameraK.utils.CameraKLogger
-import com.kashif.cameraK.video.VideoConfiguration
+import dev.kashifmehmood.camerak.capture.RecordedVideo
+import dev.kashifmehmood.camerak.error.CameraKError
+import dev.kashifmehmood.camerak.error.CameraOperation
+import dev.kashifmehmood.camerak.error.StorageFailure
+import dev.kashifmehmood.camerak.recording.RecordingEndReason
+import dev.kashifmehmood.camerak.recording.RecordingState
+import dev.kashifmehmood.camerak.recording.elapsed
+import dev.kashifmehmood.camerak.result.CameraKResult
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import dev.kashifmehmood.camerak.utils.CameraKLogger
+import dev.kashifmehmood.camerak.video.VideoConfiguration
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

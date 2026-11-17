@@ -1,7 +1,7 @@
 package org.company.app
 
 import androidx.compose.runtime.Composable
-import com.kashif.cameraK.enums.DeviceOrientation
+import dev.kashifmehmood.camerak.enums.DeviceOrientation
 
 /**
  * The way the screen is turned from the device's natural position, as the device orientation it

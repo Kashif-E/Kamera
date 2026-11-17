@@ -2,7 +2,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.kashif.cameraK.utils.CameraKLogger
+import dev.kashifmehmood.camerak.utils.CameraKLogger
 import org.company.app.App
 import org.company.app.smoke.SmokeApp
 import org.company.app.smoke.smokeArgs

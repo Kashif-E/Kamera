@@ -111,7 +111,7 @@ declares).
 ## R8
 
 CameraK ships no consumer keep rules. If a minified build fails inside CameraK, add
-`-keep class com.kashif.cameraK.** { *; }` and report the issue.
+`-keep class dev.kashifmehmood.camerak.** { *; }` and report the issue.
 
 ## Platform notes
 

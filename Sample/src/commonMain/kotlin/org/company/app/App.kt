@@ -19,9 +19,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalInspectionMode
-import com.kashif.cameraK.permissions.CameraKPermission
-import com.kashif.cameraK.permissions.PermissionStatus
-import com.kashif.cameraK.permissions.rememberCameraKPermissionState
+import dev.kashifmehmood.camerak.permissions.CameraKPermission
+import dev.kashifmehmood.camerak.permissions.PermissionStatus
+import dev.kashifmehmood.camerak.permissions.rememberCameraKPermissionState
 import kotlinx.coroutines.launch
 import org.company.app.designsystem.SampleSnackbarHost
 import org.company.app.designsystem.SampleTheme

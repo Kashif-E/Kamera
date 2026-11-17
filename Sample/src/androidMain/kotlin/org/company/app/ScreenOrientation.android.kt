@@ -11,7 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
-import com.kashif.cameraK.enums.DeviceOrientation
+import dev.kashifmehmood.camerak.enums.DeviceOrientation
 
 // The display's rotation, as the library pairs a target orientation with a Surface rotation. A half
 // turn, from one landscape to the other, recreates no activity, and not every Android version reports

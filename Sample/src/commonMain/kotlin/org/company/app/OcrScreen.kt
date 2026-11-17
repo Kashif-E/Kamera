@@ -11,10 +11,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
-import com.kashif.ocrplugin.OcrConfig
-import com.kashif.ocrplugin.OcrLevel
-import com.kashif.ocrplugin.OcrPlugin
-import com.kashif.ocrplugin.rememberOcrPlugin
+import dev.kashifmehmood.camerak.ocr.OcrConfig
+import dev.kashifmehmood.camerak.ocr.OcrLevel
+import dev.kashifmehmood.camerak.ocr.OcrPlugin
+import dev.kashifmehmood.camerak.ocr.rememberOcrPlugin
 import org.company.app.designsystem.PrimaryButton
 import org.company.app.designsystem.SampleTheme
 import org.company.app.designsystem.SegmentedControl

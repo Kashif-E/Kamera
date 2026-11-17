@@ -1,0 +1,13 @@
+package dev.kashifmehmood.camerak.capture
+
+import android.net.Uri
+import dev.kashifmehmood.camerak.utils.CameraKPlatformApi
+import dev.kashifmehmood.camerak.utils.InternalCameraKApi
+
+/** The MediaStore entry, a `content://` URI. */
+@CameraKPlatformApi
+public val GalleryAsset.uri: Uri get() = payload as Uri
+
+/** Builds the handle for a MediaStore entry. Only the media saver plugin produces gallery assets. */
+@InternalCameraKApi
+public fun GalleryAsset(displayName: String, uri: Uri): GalleryAsset = GalleryAsset(displayName, payload = uri)

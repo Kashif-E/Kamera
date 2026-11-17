@@ -106,7 +106,7 @@ Row {
 
 `uiState` changes only when the platform reports the change, so the label shows what the camera is
 doing, not what was asked. `cycleFlashMode`, `toggleTorch` and `toggleLens` are in
-`com.kashif.cameraK.controls`.
+`dev.kashifmehmood.camerak.controls`.
 
 ## 5. Add a plugin
 

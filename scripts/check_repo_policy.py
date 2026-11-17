@@ -1255,7 +1255,7 @@ def sources_outside_modules(settings_text: str, files: List[str]) -> List[str]:
 # The appleMain declarations 2.0 makes internal (design §10.4): the AVFoundation session the engine
 # drives was the 1.x controller's public base class.
 APPLE_ENGINE_INTERNALS = {
-    "cameraK-core/src/appleMain/kotlin/com/kashif/cameraK/controller/CustomCameraController.kt": "CustomCameraController",
+    "cameraK-core/src/appleMain/kotlin/dev/kashifmehmood/camerak/controller/CustomCameraController.kt": "CustomCameraController",
 }
 
 
@@ -1279,9 +1279,9 @@ def apple_internal_problems(files: Dict[str, str], internals: Dict[str, str] = A
 # each stays a facade that delegates. DesktopCameraEngine.kt and cameraK-testing's FakeCameraEngine.kt
 # are over the limit too and outside W12's splits; splitting them would add their paths here.
 SPLIT_ENGINE_FILES = [
-    "cameraK-core/src/androidMain/kotlin/com/kashif/cameraK/controller/AndroidCameraEngine.kt",
-    "cameraK-core/src/appleMain/kotlin/com/kashif/cameraK/controller/AppleCameraEngine.kt",
-    "cameraK-core/src/appleMain/kotlin/com/kashif/cameraK/controller/CustomCameraController.kt",
+    "cameraK-core/src/androidMain/kotlin/dev/kashifmehmood/camerak/controller/AndroidCameraEngine.kt",
+    "cameraK-core/src/appleMain/kotlin/dev/kashifmehmood/camerak/controller/AppleCameraEngine.kt",
+    "cameraK-core/src/appleMain/kotlin/dev/kashifmehmood/camerak/controller/CustomCameraController.kt",
 ]
 ENGINE_FILE_LINE_LIMIT = 600
 
@@ -1480,24 +1480,24 @@ def check_module_sources() -> List[str]:
     found = engine_file_size_problems(engine_texts, engine_paths, limit=3)
     if [problem.split(" ", 1)[0] for problem in found] != ["a/BigCameraEngine.kt", "c/GoneCameraEngine.kt"]:
         raise CheckError(f"engine_files_stay_small misjudges its fixture: {found}")
-    clashing = {"a/X.kt": "package com.kashif.ocrPlugin\n", "b/Y.kt": "// x\npackage com.kashif.ocrplugin\n"}
-    distinct = {"a/X.kt": "package com.kashif.ocrplugin\n", "b/Y.kt": "package com.kashif.qrscannerplugin\n"}
-    model = "ocrPlugin/model/com/kashif/{}/tessdata/eng.traineddata"
+    clashing = {"a/X.kt": "package dev.kashifmehmood.camerak.Ocr\n", "b/Y.kt": "// x\npackage dev.kashifmehmood.camerak.ocr\n"}
+    distinct = {"a/X.kt": "package dev.kashifmehmood.camerak.ocr\n", "b/Y.kt": "package dev.kashifmehmood.camerak.qrscanner\n"}
+    model = "ocrPlugin/model/dev/kashifmehmood/camerak/{}/tessdata/eng.traineddata"
     if (
         len(case_only_package_clashes(clashing, [])) != 1
-        or case_only_package_clashes(distinct, [model.format("ocrplugin")])
-        or len(case_only_package_clashes(distinct, [model.format("ocrPlugin")])) != 1
+        or case_only_package_clashes(distinct, [model.format("ocr")])
+        or len(case_only_package_clashes(distinct, [model.format("Ocr")])) != 1
     ):
         raise CheckError("no_two_packages_differ_only_in_case misjudges its fixture")
     planted_scripts = {
         "ocrPlugin": 'android {\n    namespace = "com.kashif.ocr_plugin"\n}\n',
-        "cameraK-core": 'android {\n    namespace = "com.kashif.cameraK"\n}\n',
-        "qrScannerPlugin": 'android {\n    namespace = "com.kashif.qrscannerplugin"\n}\n',
+        "cameraK-core": 'android {\n    namespace = "dev.kashifmehmood.camerak"\n}\n',
+        "qrScannerPlugin": 'android {\n    namespace = "dev.kashifmehmood.camerak.qrscanner"\n}\n',
     }
     planted_packages = {
-        "ocrPlugin": ["com.kashif.ocrplugin"],
-        "cameraK-core": ["com.kashif.cameraK.state", "com.kashif.cameraK.engine"],
-        "qrScannerPlugin": ["com.kashif.qrscannerplugin"],
+        "ocrPlugin": ["dev.kashifmehmood.camerak.ocr"],
+        "cameraK-core": ["dev.kashifmehmood.camerak.state", "dev.kashifmehmood.camerak.engine"],
+        "qrScannerPlugin": ["dev.kashifmehmood.camerak.qrscanner"],
     }
     planted_atomics = {
         "cameraK-core/src/desktopMain/kotlin/X.kt": "package x\n\nimport java.util.concurrent.atomic.AtomicLong\n",
@@ -1515,16 +1515,16 @@ def check_module_sources() -> List[str]:
     found = android_namespace_problems(planted_scripts, planted_packages)
     if len(found) != 1 or not found[0].startswith("ocrPlugin:"):
         raise CheckError(f"android_namespace_matches_package misjudges its fixture: {found}")
-    # com.kashif is a parent of every plugin's package, so only uniqueness rejects two modules on it.
+    # dev.kashifmehmood.camerak is a parent of every plugin's package, so only uniqueness rejects two modules on it.
     shared_scripts = {
-        "ocrPlugin": 'android {\n    namespace = "com.kashif"\n}\n',
-        "qrScannerPlugin": 'android {\n    namespace = "com.kashif"\n}\n',
-        "analyzerPlugin": 'android {\n    namespace = "com.kashif.analyzerplugin"\n}\n',
+        "ocrPlugin": 'android {\n    namespace = "dev.kashifmehmood.camerak"\n}\n',
+        "qrScannerPlugin": 'android {\n    namespace = "dev.kashifmehmood.camerak"\n}\n',
+        "analyzerPlugin": 'android {\n    namespace = "dev.kashifmehmood.camerak.analyzer"\n}\n',
     }
     shared_packages = {
-        "ocrPlugin": ["com.kashif.ocrplugin"],
-        "qrScannerPlugin": ["com.kashif.qrscannerplugin"],
-        "analyzerPlugin": ["com.kashif.analyzerplugin"],
+        "ocrPlugin": ["dev.kashifmehmood.camerak.ocr"],
+        "qrScannerPlugin": ["dev.kashifmehmood.camerak.qrscanner"],
+        "analyzerPlugin": ["dev.kashifmehmood.camerak.analyzer"],
     }
     found = android_namespace_problems(shared_scripts, shared_packages)
     if len(found) != 1 or "ocrPlugin" not in found[0] or "qrScannerPlugin" not in found[0]:
@@ -1615,7 +1615,7 @@ RELEASE_GATE_BENCHMARKS = [
     "SquareCaptureBenchmark.shutterToFileWithAndWithoutTheSquareViewPort",
     "VideoBindBenchmark.videoBindMainThreadTime",
 ]
-BENCHMARK_SOURCES = "benchmark/src/main/kotlin/com/kashif/cameraK/benchmark"
+BENCHMARK_SOURCES = "benchmark/src/main/kotlin/dev/kashifmehmood/camerak/benchmark"
 INSTRUMENTED_COMPILE = ":cameraK-core:compileDebugAndroidTestKotlinAndroid"
 BENCHMARK_BUILD = re.compile(r'":benchmark:(?:compile|assemble)[A-Za-z]*"')
 INSTRUMENTED_SOURCES = "cameraK-core/src/androidInstrumentedTest"

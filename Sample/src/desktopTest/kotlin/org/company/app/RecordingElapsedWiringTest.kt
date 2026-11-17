@@ -7,11 +7,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ImageComposeScene
-import com.kashif.cameraK.recording.RecordingState
-import com.kashif.cameraK.result.CameraKResult
-import com.kashif.cameraK.state.CameraKState
-import com.kashif.cameraK.testing.FakeCameraEngine
-import com.kashif.cameraK.testing.fakeCameraKStateHolder
+import dev.kashifmehmood.camerak.recording.RecordingState
+import dev.kashifmehmood.camerak.result.CameraKResult
+import dev.kashifmehmood.camerak.state.CameraKState
+import dev.kashifmehmood.camerak.testing.FakeCameraEngine
+import dev.kashifmehmood.camerak.testing.fakeCameraKStateHolder
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher

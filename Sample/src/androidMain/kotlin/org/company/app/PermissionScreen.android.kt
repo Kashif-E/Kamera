@@ -7,7 +7,7 @@ import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import com.kashif.cameraK.utils.CameraKLogger
+import dev.kashifmehmood.camerak.utils.CameraKLogger
 
 @Composable
 internal actual fun rememberAppSettingsOpener(): (() -> Unit)? {

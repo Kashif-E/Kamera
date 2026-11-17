@@ -1,0 +1,81 @@
+@file:OptIn(CameraKEngineApi::class, ExperimentalCoroutinesApi::class)
+
+package dev.kashifmehmood.camerak.state
+
+import dev.kashifmehmood.camerak.error.CameraKError
+import dev.kashifmehmood.camerak.plugin.CameraKPluginContext
+import dev.kashifmehmood.camerak.testing.FakeCameraEngine
+import dev.kashifmehmood.camerak.testing.cameraKTestEnvironment
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlin.reflect.KVisibility
+import kotlin.reflect.full.primaryConstructor
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
+
+/**
+ * `CameraKEvent` is open (Decision 8): an abstract class only CameraK can extend. `PluginFailed`
+ * carries the failing plugin's id and a `CameraKError`; a thrown exception arrives as `Internal`
+ * with the throwable as its cause.
+ */
+class CameraKEventShapeTest {
+    private class ThrowingOnAttach(private val failure: Throwable) : CameraKPlugin {
+        override fun onAttach(context: CameraKPluginContext): Unit = throw failure
+
+        override fun onDetach() = Unit
+    }
+
+    private fun TestScope.holderWith(plugins: List<CameraKPlugin> = emptyList()): CameraKStateHolder =
+        CameraKStateHolder(CameraConfiguration(), { _, _ -> FakeCameraEngine() }, plugins, cameraKTestEnvironment())
+
+    private fun TestScope.pluginFailures(holder: CameraKStateHolder): List<CameraKEvent.PluginFailed> {
+        val received = mutableListOf<CameraKEvent.PluginFailed>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            holder.events.collect { if (it is CameraKEvent.PluginFailed) received += it }
+        }
+        return received
+    }
+
+    @Test
+    fun eventIsAnAbstractClassWithAnInternalConstructor() {
+        val event = CameraKEvent::class
+        assertTrue(event.isAbstract, "CameraKEvent is not abstract")
+        assertFalse(event.isSealed, "CameraKEvent is sealed, so a when over it cannot grow in a minor release")
+        assertTrue(event.constructors.isNotEmpty(), "CameraKEvent has no constructor to check")
+        event.constructors.forEach { constructor ->
+            assertEquals(KVisibility.INTERNAL, constructor.visibility, "a CameraKEvent constructor: $constructor")
+        }
+    }
+
+    // Only CameraK builds the event: from H2' its plugins did, behind @InternalCameraKApi; since P1
+    // only core's plugin host does, so the constructor is internal (design §10.4).
+    @Test
+    fun pluginFailedConstructorIsInternal() {
+        val constructor = assertNotNull(CameraKEvent.PluginFailed::class.primaryConstructor)
+        assertEquals(KVisibility.INTERNAL, constructor.visibility, "PluginFailed's constructor")
+    }
+
+    @Test
+    fun pluginFailedCarriesPluginIdAndCameraKError() = runTest {
+        val failure = IllegalStateException("attach failed")
+        val holder = holderWith(listOf(ThrowingOnAttach(failure)))
+        val failures = pluginFailures(holder)
+
+        holder.start()
+        runCurrent()
+
+        val reported = failures.single()
+        assertEquals("ThrowingOnAttach", reported.pluginId)
+        assertSame(failure, assertIs<CameraKError.Internal>(reported.error).cause)
+    }
+}

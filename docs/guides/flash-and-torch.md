@@ -14,7 +14,7 @@ scope.launch {
 
 `setFlashMode` returns `Failure(CameraKError.Unsupported(...))` for a mode the current camera does
 not offer, such as any mode but OFF on most front cameras. `cycleFlashMode()` (in
-`com.kashif.cameraK.controls`) skips the modes the camera lacks, so it never fails for that
+`dev.kashifmehmood.camerak.controls`) skips the modes the camera lacks, so it never fails for that
 reason.
 
 ## Torch

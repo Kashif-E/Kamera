@@ -12,7 +12,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.cameraK.benchmark"
+    namespace = "dev.kashifmehmood.camerak.benchmark"
     compileSdk =
         libs.versions.android.compileSdk
             .get()

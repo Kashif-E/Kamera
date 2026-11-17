@@ -10,7 +10,7 @@ import androidx.compose.runtime.saveable.SaverScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.runComposeUiTest
-import com.kashif.cameraK.enums.DeviceOrientation
+import dev.kashifmehmood.camerak.enums.DeviceOrientation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull

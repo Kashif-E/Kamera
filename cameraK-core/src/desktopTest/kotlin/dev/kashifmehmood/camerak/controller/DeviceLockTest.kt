@@ -1,0 +1,93 @@
+@file:OptIn(CameraKEngineApi::class)
+
+package dev.kashifmehmood.camerak.controller
+
+import dev.kashifmehmood.camerak.capabilities.LensInfo
+import dev.kashifmehmood.camerak.engine.CameraSelection
+import dev.kashifmehmood.camerak.engine.DesiredHardware
+import dev.kashifmehmood.camerak.engine.EngineState
+import dev.kashifmehmood.camerak.engine.desktopEngine
+import dev.kashifmehmood.camerak.enums.CameraDeviceType
+import dev.kashifmehmood.camerak.enums.CameraLens
+import dev.kashifmehmood.camerak.enums.FlashMode
+import dev.kashifmehmood.camerak.enums.TorchMode
+import dev.kashifmehmood.camerak.platform.CameraKPlatformContext
+import dev.kashifmehmood.camerak.result.CameraKResult
+import dev.kashifmehmood.camerak.state.CameraConfiguration
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.bytedeco.javacv.FrameGrabber
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+/**
+ * The per-device lock is keyed on the resolved device id, not on one default camera
+ * (CameraGrabber.kt's `defaultCamera`): engines on two devices open at the same time, and a second
+ * engine on a device waits until the first has released it (§2.4 desktop). The ids are new strings
+ * per enumeration, as a real enumeration's are.
+ */
+class DeviceLockTest {
+    @Test
+    fun differentIdsOpenConcurrentlySameIdSerializes() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val opens = CopyOnWriteArrayList<Pair<String, ScriptedFrameGrabber>>()
+        val devices = object : DesktopDevices {
+            // StringBuilder: each enumeration's ids are new String instances.
+            override fun list(): List<LensInfo> = listOf("usb-a", "usb-b").map { webcam(StringBuilder(it).toString()) }
+
+            override fun open(id: String, size: Pair<Int, Int>?): FrameGrabber =
+                rig.newCamera().also { opens += id to it }
+        }
+        fun engine() =
+            desktopEngine(CameraConfiguration(), CameraKPlatformContext(), rig.environment(), devices = devices)
+        val onA = engine()
+        val onB = engine()
+        val secondOnA = engine()
+        try {
+            runCurrent()
+
+            val a = async { onA.start(desiredOn("usb-a")) }
+            rig.settle()
+            assertEquals(CameraKResult.Success(Unit), a.await())
+
+            val b = async { onB.start(desiredOn("usb-b")) }
+            rig.settle()
+            assertEquals(CameraKResult.Success(Unit), b.await(), "a second device opens while the first is open")
+
+            val secondA = async { secondOnA.start(desiredOn("usb-a")) }
+            rig.settle()
+            assertEquals(EngineState.Opening, secondOnA.state.value, "a second engine opened a device that is in use")
+            assertEquals(listOf("usb-a", "usb-b"), opens.map { it.first }, "devices opened")
+
+            // Not a plain stop(): while the case suspends on the producer's threads, runTest would
+            // skip virtual time and fire the open engines' no-frame watchdogs.
+            val stopA = async { onA.stop() }
+            rig.settle()
+            stopA.await()
+
+            assertEquals(CameraKResult.Success(Unit), secondA.await(), "the device once its first engine released it")
+            assertEquals(listOf("usb-a", "usb-b", "usb-a"), opens.map { it.first })
+            assertEquals(1, opens[0].second.releaseCount, "the first engine's grabber before the second opened")
+            assertEquals(EngineState.Open, onB.state.value)
+        } finally {
+            onA.close()
+            onB.close()
+            secondOnA.close()
+            rig.settle()
+        }
+    }
+
+    private fun desiredOn(id: String) = DesiredHardware(
+        selection = CameraSelection.ById(id),
+        flashMode = FlashMode.OFF,
+        torchMode = TorchMode.OFF,
+        zoomRatio = 1f,
+        targetOrientation = null,
+    )
+
+    private fun webcam(id: String) =
+        LensInfo(id, CameraDeviceType.DEFAULT, CameraLens.BACK, 1f, 1f, hasFlash = false, isLogical = false)
+}

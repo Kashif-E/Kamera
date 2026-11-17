@@ -1,0 +1,53 @@
+@file:OptIn(CameraKEngineApi::class)
+
+package dev.kashifmehmood.camerak.capabilities
+
+import dev.kashifmehmood.camerak.enums.CameraDeviceType
+import dev.kashifmehmood.camerak.enums.CameraLens
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import kotlin.reflect.full.primaryConstructor
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+/**
+ * LensInfo is a plain class: a public data class cannot gain a field without breaking binary
+ * compatibility, through copy and componentN. It keeps value equality.
+ */
+class LensInfoShapeTest {
+    private fun lens(id: String = "0", isExternal: Boolean = false) = LensInfo(
+        id = id,
+        deviceType = CameraDeviceType.WIDE_ANGLE,
+        lens = CameraLens.BACK,
+        minZoom = 0.5f,
+        maxZoom = 10f,
+        hasFlash = true,
+        isLogical = true,
+        isExternal = isExternal,
+    )
+
+    @Test
+    fun isAPlainClassWithValueEquality() {
+        val generated = LensInfo::class.java.methods.map { it.name }
+            .filter { it == "copy" || it.startsWith("copy$") || it.matches(Regex("component\\d+")) }
+        assertTrue(generated.isEmpty(), "LensInfo still has data-class members: $generated")
+
+        assertEquals(lens(), lens())
+        assertEquals(lens().hashCode(), lens().hashCode())
+        assertNotEquals(lens(), lens(id = "1"))
+        assertNotEquals(lens(), lens(isExternal = true))
+        assertTrue("isExternal=false" in lens().toString(), "toString names every field: ${lens()}")
+    }
+
+    @Test
+    fun constructorRequiresEngineApiOptIn() {
+        val constructor = assertNotNull(LensInfo::class.primaryConstructor)
+        val annotations = constructor.annotations.map { it.annotationClass.qualifiedName }
+        assertTrue(
+            annotations.contains(CameraKEngineApi::class.qualifiedName),
+            "LensInfo's constructor annotations: $annotations",
+        )
+    }
+}

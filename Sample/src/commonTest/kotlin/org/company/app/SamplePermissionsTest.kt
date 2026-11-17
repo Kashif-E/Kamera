@@ -1,7 +1,7 @@
 package org.company.app
 
-import com.kashif.cameraK.permissions.CameraKPermission
-import com.kashif.cameraK.permissions.PermissionStatus
+import dev.kashifmehmood.camerak.permissions.CameraKPermission
+import dev.kashifmehmood.camerak.permissions.PermissionStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

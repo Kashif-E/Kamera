@@ -142,7 +142,7 @@ dependencies {
 tasks.named<Test>("desktopTest") {
     val benchmarkSources =
         rootProject.layout.projectDirectory.dir(
-            "benchmark/src/main/kotlin/com/kashif/cameraK/benchmark",
+            "benchmark/src/main/kotlin/dev/kashifmehmood/camerak/benchmark",
         )
     inputs.dir(benchmarkSources).withPropertyName("benchmarkSources").withPathSensitivity(PathSensitivity.RELATIVE)
     systemProperty("camerak.benchmarkSources", benchmarkSources.asFile.absolutePath)

@@ -19,9 +19,9 @@ import com.composables.icons.lucide.SlidersHorizontal
 import com.composables.icons.lucide.SwitchCamera
 import com.composables.icons.lucide.Zap
 import com.composables.icons.lucide.ZapOff
-import com.kashif.cameraK.enums.AspectRatio
-import com.kashif.cameraK.enums.FlashMode
-import com.kashif.cameraK.enums.TorchMode
+import dev.kashifmehmood.camerak.enums.AspectRatio
+import dev.kashifmehmood.camerak.enums.FlashMode
+import dev.kashifmehmood.camerak.enums.TorchMode
 import org.company.app.designsystem.CameraTopBar
 import org.company.app.designsystem.CaptureDock
 import org.company.app.designsystem.CircleIconButton

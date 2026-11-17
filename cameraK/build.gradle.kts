@@ -64,9 +64,9 @@ kotlin {
 }
 
 android {
-    // Not com.kashif.cameraK: that is camerak-core's, and two libraries in one app may not share a
+    // Not dev.kashifmehmood.camerak: that is camerak-core's, and two libraries in one app may not share a
     // namespace. It names only the generated R class; no Kotlin package changes.
-    namespace = "com.kashif.cameraK.compose"
+    namespace = "dev.kashifmehmood.camerak.compose"
 }
 
 // The Compose compiler's stability reports, which checkComposableStability reads. The compiler writes
@@ -240,7 +240,7 @@ tasks.named<Jar>("allMetadataJar") {
 val repositoryUrl = providers.gradleProperty("POM_URL").get()
 
 // The API site's look and source links. The @sample functions the KDoc names live in the desktop tests
-// (com.kashif.cameraK.samples); only commonMain gets them, since Dokka refuses two source sets that
+// (dev.kashifmehmood.camerak.samples); only commonMain gets them, since Dokka refuses two source sets that
 // share a sample root.
 dokka {
     moduleName.set("CameraK")

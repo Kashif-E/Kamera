@@ -1,0 +1,114 @@
+@file:OptIn(CameraKEngineApi::class, ExperimentalCoroutinesApi::class)
+
+package dev.kashifmehmood.camerak.lifecycle
+
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import dev.kashifmehmood.camerak.engine.CameraEngineFactory
+import dev.kashifmehmood.camerak.permissions.CameraKPermission
+import dev.kashifmehmood.camerak.permissions.PermissionStatus
+import dev.kashifmehmood.camerak.state.CameraConfiguration
+import dev.kashifmehmood.camerak.state.CameraKState
+import dev.kashifmehmood.camerak.state.CameraKStateHolder
+import dev.kashifmehmood.camerak.testing.FakeCameraEngine
+import dev.kashifmehmood.camerak.testing.FakePermissionChecker
+import dev.kashifmehmood.camerak.testing.cameraKTestEnvironment
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+
+/**
+ * `bindToLifecycle` (design §7.2), the app-owned path: at least STARTED starts the holder, below it
+ * stops it, each move to RESUMED re-checks the permission, and closing the binding stops the holder
+ * and stops following the lifecycle.
+ */
+class LifecycleBindingTest {
+    private class Host : LifecycleOwner {
+        val registry = LifecycleRegistry.createUnsafe(this)
+        override val lifecycle: Lifecycle get() = registry
+    }
+
+    private fun TestScope.holderOver(fake: FakeCameraEngine, checker: FakePermissionChecker) = CameraKStateHolder(
+        CameraConfiguration(),
+        CameraEngineFactory { _, _ -> fake },
+        emptyList(),
+        cameraKTestEnvironment(checker),
+    )
+
+    @Test
+    fun closingTheBindingStopsTheHolder() = runTest {
+        val fake = FakeCameraEngine()
+        val holder = holderOver(fake, FakePermissionChecker())
+        val host = Host()
+        val binding = holder.bindToLifecycle(host.registry)
+
+        host.registry.currentState = Lifecycle.State.STARTED
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value, "STARTED did not start the holder")
+
+        binding.close()
+        runCurrent()
+        assertEquals(CameraKState.Idle, holder.cameraState.value, "closing the binding did not stop the holder")
+        assertEquals(listOf("start", "stop"), fake.calls)
+
+        host.registry.currentState = Lifecycle.State.RESUMED
+        runCurrent()
+        assertEquals(CameraKState.Idle, holder.cameraState.value, "a closed binding still follows the lifecycle")
+        assertEquals(listOf("start", "stop"), fake.calls)
+    }
+
+    @Test
+    fun droppingBelowStartedStopsTheHolderAndStartedStartsItAgain() = runTest {
+        val fake = FakeCameraEngine()
+        val holder = holderOver(fake, FakePermissionChecker())
+        val host = Host()
+        holder.bindToLifecycle(host.registry)
+
+        host.registry.currentState = Lifecycle.State.RESUMED
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value, "RESUMED did not start the holder")
+
+        // A pause alone keeps the camera: the host is still STARTED.
+        host.registry.currentState = Lifecycle.State.STARTED
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value, "a pause stopped the holder")
+        assertEquals(listOf("start"), fake.calls)
+
+        host.registry.currentState = Lifecycle.State.CREATED
+        runCurrent()
+        assertEquals(CameraKState.Idle, holder.cameraState.value, "dropping below STARTED did not stop the holder")
+        assertEquals(listOf("start", "stop"), fake.calls)
+
+        host.registry.currentState = Lifecycle.State.STARTED
+        runCurrent()
+        assertIs<CameraKState.Ready>(holder.cameraState.value, "a second STARTED did not start the holder again")
+        assertEquals(listOf("start", "stop", "start"), fake.calls)
+    }
+
+    @Test
+    fun resumeRechecksPermission() = runTest {
+        val checker = FakePermissionChecker(PermissionStatus.Denied(shouldShowRationale = true))
+        val holder = holderOver(FakeCameraEngine(), checker)
+        val host = Host()
+        holder.bindToLifecycle(host.registry)
+
+        host.registry.currentState = Lifecycle.State.RESUMED
+        runCurrent()
+        assertIs<CameraKState.Error>(holder.cameraState.value, "state is ${holder.cameraState.value}")
+
+        // The system dialog pauses and resumes the host without a stop.
+        host.registry.currentState = Lifecycle.State.STARTED
+        runCurrent()
+        checker.setStatus(CameraKPermission.CAMERA, PermissionStatus.Granted)
+        host.registry.currentState = Lifecycle.State.RESUMED
+        runCurrent()
+
+        assertIs<CameraKState.Ready>(holder.cameraState.value, "the resume did not re-check the permission")
+    }
+}

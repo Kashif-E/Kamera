@@ -45,5 +45,5 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.mediasaverplugin"
+    namespace = "dev.kashifmehmood.camerak.mediasaver"
 }

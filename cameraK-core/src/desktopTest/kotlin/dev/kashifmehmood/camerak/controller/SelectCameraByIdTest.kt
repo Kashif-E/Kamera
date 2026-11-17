@@ -1,0 +1,260 @@
+@file:OptIn(CameraKEngineApi::class)
+
+package dev.kashifmehmood.camerak.controller
+
+import dev.kashifmehmood.camerak.capabilities.LensInfo
+import dev.kashifmehmood.camerak.capabilities.capabilitiesOf
+import dev.kashifmehmood.camerak.engine.CameraSelection
+import dev.kashifmehmood.camerak.engine.DesiredHardware
+import dev.kashifmehmood.camerak.engine.EngineState
+import dev.kashifmehmood.camerak.enums.CameraDeviceType
+import dev.kashifmehmood.camerak.enums.CameraLens
+import dev.kashifmehmood.camerak.enums.FlashMode
+import dev.kashifmehmood.camerak.enums.TorchMode
+import dev.kashifmehmood.camerak.error.CameraKError
+import dev.kashifmehmood.camerak.error.CameraOperation
+import dev.kashifmehmood.camerak.permissions.PermissionStatus
+import dev.kashifmehmood.camerak.result.CameraKResult
+import dev.kashifmehmood.camerak.state.CameraConfiguration
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.bytedeco.javacv.Frame
+import org.bytedeco.javacv.FrameGrabber
+import kotlin.concurrent.thread
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.time.Duration.Companion.milliseconds
+
+/**
+ * `selectCamera(ById)` on an open desktop engine moves the grab loop to that enumerated device and
+ * returns once its first frame arrives, with the new camera reported; an id the engine did not
+ * enumerate is NoCamera and leaves the open camera as it was (§2.4 desktop, §4.1 row 2). A device
+ * that does not open returns its open error, and the engine reopens the camera it had. A device that
+ * opens but delivers no frame within the engine's no-frame bound is given up: the engine reopens the
+ * camera it had and stays Open, and the switch is `Timeout(LENS)`, or `Timeout(DEVICE_TYPE)` when only
+ * the device type would have changed (D2' carry-over 3, Decision 7).
+ */
+class SelectCameraByIdTest {
+    private val first = webcam("usb-first")
+    private val second = webcam("usb-second")
+
+    @Test
+    fun opensTheGrabberForThatId() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val sut = rig.engine(enumerate = { capabilitiesOf(listOf(first, second)) })
+        try {
+            open(rig, sut, CameraSelection.ById(first.id))
+            assertEquals(first.id, rig.openedDeviceId)
+
+            val switched = async { sut.selectCamera(CameraSelection.ById(second.id)) }
+            rig.settle()
+
+            assertEquals(CameraKResult.Success(second), switched.await())
+            assertEquals(second.id, rig.openedDeviceId, "the device the grabber was opened for")
+            assertEquals(second, sut.hardware.value.camera, "the reported camera")
+            assertEquals(EngineState.Open, sut.state.value)
+            assertEquals(2, rig.camera.startCount, "grabber starts")
+            assertEquals(1, rig.camera.releaseCount, "the first device's grabber was not released")
+        } finally {
+            sut.close()
+        }
+    }
+
+    @Test
+    fun unknownIdIsNoCamera() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val sut = rig.engine(enumerate = { capabilitiesOf(listOf(first, second)) })
+        try {
+            open(rig, sut, CameraSelection.ById(first.id))
+
+            val result = sut.selectCamera(CameraSelection.ById("not-a-device"))
+            rig.settle()
+
+            assertIs<CameraKError.NoCamera>(assertIs<CameraKResult.Failure>(result).error)
+            assertEquals(EngineState.Open, sut.state.value, "a failed selection changed the state")
+            assertEquals(first, sut.hardware.value.camera, "a failed selection changed the camera")
+            assertEquals(1, rig.camera.startCount, "a failed selection reopened the camera")
+            assertEquals(0, rig.camera.releaseCount)
+        } finally {
+            sut.close()
+        }
+    }
+
+    @Test
+    fun aDeviceThatDoesNotOpenReturnsItsErrorAndThePreviousCameraReopens() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val refused = FrameGrabber.Exception("avformat_open_input() error -5: Could not open input \"1\".")
+        val source = object : GrabberSource {
+            override fun deviceKey(device: LensInfo): Any = device.id
+
+            override val canRelax: Boolean = false
+
+            override fun create(device: LensInfo, constrained: Boolean): FrameGrabber =
+                if (device.id == second.id) RefusesToOpen(refused) else rig.camera
+        }
+        val sut = DesktopCameraEngine(
+            CameraConfiguration(),
+            rig.environment(),
+            source,
+            authorization = { PermissionStatus.Granted },
+            enumerate = { capabilitiesOf(listOf(first, second)) },
+        )
+        try {
+            open(rig, sut, CameraSelection.ById(first.id))
+
+            val switched = async { sut.selectCamera(CameraSelection.ById(second.id)) }
+            rig.settle()
+
+            val error = assertIs<CameraKError.Hardware>(assertIs<CameraKResult.Failure>(switched.await()).error)
+            assertEquals(-5, error.platformCode)
+            assertEquals(EngineState.Open, sut.state.value, "the engine after a switch that failed")
+            assertEquals(first, sut.hardware.value.camera, "the camera after a switch that failed")
+            assertEquals(2, rig.camera.startCount, "the previous camera was not reopened")
+        } finally {
+            sut.close()
+        }
+    }
+
+    @Test
+    fun aDeviceThatOpensButDeliversNoFrameRevertsAfterNoFrameTimeoutAndIsTimeoutLens() = runTest {
+        val silent = webcam("usb-silent", CameraLens.FRONT)
+        assertSilentSwitchReverts(silent, CameraOperation.LENS)
+    }
+
+    @Test
+    fun aSilentDeviceOfTheSameLensIsTimeoutDeviceType() = runTest {
+        val silent = webcam("usb-wide", CameraLens.BACK, CameraDeviceType.WIDE_ANGLE)
+        assertSilentSwitchReverts(silent, CameraOperation.DEVICE_TYPE)
+    }
+
+    // The engine's coroutines on a scheduler of their own, as the contract driver runs them. While the
+    // caller waits on the producer's real thread for the new device's first frame, its virtual time
+    // skips ahead; that is not the device staying silent for NO_FRAME_TIMEOUT.
+    @Test
+    fun aSwitchTimesTheFirstFrameOnTheEnginesClockNotTheCallers() = runTest {
+        val rig = DesktopEngineRig(TestCoroutineScheduler(), caseScheduler = testScheduler)
+        val second = webcam("usb-second", CameraLens.FRONT)
+        val late = rig.newCamera().apply { holdOpen = true }
+        val source = object : GrabberSource {
+            override fun deviceKey(device: LensInfo): Any = device.id
+
+            override val canRelax: Boolean = false
+
+            override fun create(device: LensInfo, constrained: Boolean): FrameGrabber =
+                if (device.id == second.id) late else rig.camera
+        }
+        val sut = DesktopCameraEngine(
+            CameraConfiguration(),
+            rig.environment(),
+            source,
+            authorization = { PermissionStatus.Granted },
+            enumerate = { capabilitiesOf(listOf(first, second)) },
+        )
+        try {
+            open(rig, sut, CameraSelection.ById(first.id))
+            val firstFrame = thread(name = "camerak-test-late-frame") {
+                Thread.sleep(LATE_FRAME_MILLIS)
+                late.deliverFrame()
+            }
+
+            // Called directly, as the contract kit calls it: nothing settles the engine meanwhile.
+            val switched = sut.selectCamera(CameraSelection.ById(second.id))
+            firstFrame.join()
+
+            assertEquals(second.id, assertIs<CameraKResult.Success<LensInfo>>(switched, "the switch").value.id)
+            assertEquals(1, late.startCount, "the other device's opens")
+        } finally {
+            sut.close()
+            rig.settle()
+        }
+    }
+
+    // A switch from [first] to [silent], which opens and then delivers nothing, ends as Timeout([operation]).
+    private suspend fun TestScope.assertSilentSwitchReverts(silent: LensInfo, operation: CameraOperation) {
+        val rig = DesktopEngineRig(testScheduler)
+        val silentCamera = rig.newCamera().apply { holdOpen = true }
+        val source = object : GrabberSource {
+            override fun deviceKey(device: LensInfo): Any = device.id
+
+            override val canRelax: Boolean = false
+
+            override fun create(device: LensInfo, constrained: Boolean): FrameGrabber =
+                if (device.id == silent.id) silentCamera else rig.camera
+        }
+        val sut = DesktopCameraEngine(
+            CameraConfiguration(),
+            rig.environment(),
+            source,
+            authorization = { PermissionStatus.Granted },
+            enumerate = { capabilitiesOf(listOf(first, silent)) },
+        )
+        try {
+            open(rig, sut, CameraSelection.ById(first.id))
+
+            val switched = async { sut.selectCamera(CameraSelection.ById(silent.id)) }
+            rig.settle()
+            assertEquals(1, silentCamera.startCount, "the switch did not open the other device")
+            assertFalse(switched.isCompleted, "the switch returned before the other device's first frame")
+
+            advanceTimeBy(NO_FRAME_TIMEOUT - 1.milliseconds)
+            runCurrent()
+            rig.settle()
+            assertFalse(switched.isCompleted, "the switch gave up before the no-frame timeout")
+
+            advanceTimeBy(1.milliseconds)
+            runCurrent()
+            rig.settle()
+
+            val error = assertIs<CameraKError.Timeout>(assertIs<CameraKResult.Failure>(switched.await()).error)
+            assertEquals(operation, error.operation)
+            assertEquals(EngineState.Open, sut.state.value, "the engine after a switch to a silent device")
+            assertEquals(first, sut.hardware.value.camera, "the camera after a switch to a silent device")
+            assertEquals(2, rig.camera.startCount, "the previous camera was not reopened")
+            assertEquals(1, silentCamera.releaseCount, "the silent device was not released")
+        } finally {
+            sut.close()
+            rig.settle()
+        }
+    }
+
+    private class RefusesToOpen(private val failure: Exception) : FrameGrabber() {
+        override fun start(): Unit = throw failure
+
+        override fun stop() = Unit
+
+        override fun trigger() = Unit
+
+        override fun grab(): Frame? = null
+
+        override fun release() = Unit
+    }
+
+    private suspend fun TestScope.open(rig: DesktopEngineRig, sut: DesktopCameraEngine, selection: CameraSelection) {
+        val start = async { sut.start(desiredOn(selection)) }
+        rig.settle()
+        assertEquals(CameraKResult.Success(Unit), start.await())
+    }
+
+    private fun desiredOn(selection: CameraSelection) = DesiredHardware(
+        selection = selection,
+        flashMode = FlashMode.OFF,
+        torchMode = TorchMode.OFF,
+        zoomRatio = 1f,
+        targetOrientation = null,
+    )
+
+    private companion object {
+        // Far longer than the caller's virtual time takes to skip ahead.
+        const val LATE_FRAME_MILLIS = 200L
+
+        fun webcam(id: String, lens: CameraLens = CameraLens.BACK, type: CameraDeviceType = CameraDeviceType.DEFAULT) =
+            LensInfo(id, type, lens, 1f, 1f, hasFlash = false, isLogical = false)
+    }
+}

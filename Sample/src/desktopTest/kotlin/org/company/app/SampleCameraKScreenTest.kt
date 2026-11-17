@@ -8,11 +8,11 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
-import com.kashif.cameraK.error.CameraKError
-import com.kashif.cameraK.state.CameraKState
-import com.kashif.cameraK.state.CameraKStateHolder
-import com.kashif.cameraK.testing.FakeCameraEngine
-import com.kashif.cameraK.testing.fakeCameraKStateHolder
+import dev.kashifmehmood.camerak.error.CameraKError
+import dev.kashifmehmood.camerak.state.CameraKState
+import dev.kashifmehmood.camerak.state.CameraKStateHolder
+import dev.kashifmehmood.camerak.testing.FakeCameraEngine
+import dev.kashifmehmood.camerak.testing.fakeCameraKStateHolder
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent

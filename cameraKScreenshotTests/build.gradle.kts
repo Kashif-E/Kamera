@@ -16,7 +16,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.cameraK.screenshots"
+    namespace = "dev.kashifmehmood.camerak.screenshots"
     compileSdk =
         libs.versions.android.compileSdk
             .get()

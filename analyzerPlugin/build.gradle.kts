@@ -34,5 +34,5 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.analyzerplugin"
+    namespace = "dev.kashifmehmood.camerak.analyzer"
 }

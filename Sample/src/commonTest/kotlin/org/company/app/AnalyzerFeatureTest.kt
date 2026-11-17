@@ -2,8 +2,8 @@
 
 package org.company.app
 
-import com.kashif.analyzerplugin.AnalyzerPlugin
-import com.kashif.analyzerplugin.EncodedFrame
+import dev.kashifmehmood.camerak.analyzer.AnalyzerPlugin
+import dev.kashifmehmood.camerak.analyzer.EncodedFrame
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch

@@ -1,11 +1,11 @@
 package org.company.app.smoke
 
-import com.kashif.cameraK.capture.CapturedImage
-import com.kashif.cameraK.enums.ImageFormat
-import com.kashif.cameraK.error.CameraKError
-import com.kashif.cameraK.result.CameraKResult
-import com.kashif.cameraK.state.CameraKState
-import com.kashif.cameraK.utils.CameraKEngineApi
+import dev.kashifmehmood.camerak.capture.CapturedImage
+import dev.kashifmehmood.camerak.enums.ImageFormat
+import dev.kashifmehmood.camerak.error.CameraKError
+import dev.kashifmehmood.camerak.result.CameraKResult
+import dev.kashifmehmood.camerak.state.CameraKState
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

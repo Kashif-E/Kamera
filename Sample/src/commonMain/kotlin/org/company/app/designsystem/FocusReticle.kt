@@ -22,8 +22,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.kashif.cameraK.compose.FocusOutcome
-import com.kashif.cameraK.compose.FocusTap
+import dev.kashifmehmood.camerak.compose.FocusOutcome
+import dev.kashifmehmood.camerak.compose.FocusTap
 import kotlin.math.roundToInt
 
 /**

@@ -1,10 +1,10 @@
 package org.company.app
 
-import com.kashif.cameraK.error.CameraKError
-import com.kashif.cameraK.error.StorageFailure
-import com.kashif.cameraK.permissions.CameraKPermission
-import com.kashif.cameraK.permissions.PermissionStatus
-import com.kashif.cameraK.result.CameraKResult
+import dev.kashifmehmood.camerak.error.CameraKError
+import dev.kashifmehmood.camerak.error.StorageFailure
+import dev.kashifmehmood.camerak.permissions.CameraKPermission
+import dev.kashifmehmood.camerak.permissions.PermissionStatus
+import dev.kashifmehmood.camerak.result.CameraKResult
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest

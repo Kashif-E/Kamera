@@ -54,7 +54,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.qrscannerplugin"
+    namespace = "dev.kashifmehmood.camerak.qrscanner"
 }
 
 // The @sample functions the KDoc names. Only commonMain gets them: Dokka refuses two source sets that

@@ -7,9 +7,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import com.kashif.analyzerplugin.AnalyzerPlugin
-import com.kashif.analyzerplugin.EncodedFrame
-import com.kashif.analyzerplugin.rememberAnalyzerPlugin
+import dev.kashifmehmood.camerak.analyzer.AnalyzerPlugin
+import dev.kashifmehmood.camerak.analyzer.EncodedFrame
+import dev.kashifmehmood.camerak.analyzer.rememberAnalyzerPlugin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

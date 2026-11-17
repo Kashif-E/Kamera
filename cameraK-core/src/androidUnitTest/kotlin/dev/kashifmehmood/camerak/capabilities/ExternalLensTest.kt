@@ -1,0 +1,103 @@
+package dev.kashifmehmood.camerak.capabilities
+
+import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import androidx.camera.camera2.internal.Camera2CameraInfoImpl
+import androidx.camera.camera2.internal.compat.CameraManagerCompat
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.core.CameraInfo
+import androidx.test.core.app.ApplicationProvider
+import dev.kashifmehmood.camerak.controller.CameraSelectorResolver
+import dev.kashifmehmood.camerak.controller.toCameraSelector
+import dev.kashifmehmood.camerak.enums.CameraDeviceType
+import dev.kashifmehmood.camerak.enums.CameraLens
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadow.api.Shadow
+import org.robolectric.shadows.ShadowCameraCharacteristics
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+
+/**
+ * Chromebooks, tablets and TVs report USB cameras as LENS_FACING_EXTERNAL. Such a camera faces
+ * neither way, CameraX never selects it for a back-facing request, and it must not stand in for a
+ * back lens.
+ */
+@RunWith(RobolectricTestRunner::class)
+class ExternalLensTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
+
+    @Before
+    fun cameras() {
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        shadowOf(manager).addCamera("0", characteristics(CameraCharacteristics.LENS_FACING_BACK, focalLengthMm = 4.4f))
+        shadowOf(manager).addCamera("1", characteristics(CameraCharacteristics.LENS_FACING_FRONT, focalLengthMm = 2.2f))
+        shadowOf(manager).addCamera(
+            "5",
+            // A USB camera that focuses close enough to classify as MACRO, a type the back side lacks.
+            characteristics(CameraCharacteristics.LENS_FACING_EXTERNAL, focalLengthMm = 12f, minFocusDiopters = 25f),
+        )
+    }
+
+    @Test
+    fun externalCamera_isReportedAsExternalAndBuiltInOnesAreNot() {
+        val external = LensEnumerator.snapshot(context).associate { it.info.id to it.info.isExternal }
+
+        assertEquals(mapOf("0" to false, "1" to false, "5" to true), external)
+    }
+
+    @Test
+    fun backLenses_doNotIncludeTheExternalCamera() {
+        val capabilities = capabilitiesOf(LensEnumerator.snapshot(context).map { it.info })
+
+        assertEquals(listOf("0"), capabilities.lenses(CameraLens.BACK).map { it.id })
+        assertEquals(listOf("1"), capabilities.lenses(CameraLens.FRONT).map { it.id })
+    }
+
+    @Test
+    fun backDeviceTypeSwitch_neverTargetsTheExternalCamera() {
+        val snapshot = LensEnumerator.snapshot(context)
+        assertEquals(CameraDeviceType.MACRO, snapshot.single { it.info.id == "5" }.info.deviceType)
+
+        val target = snapshot.deviceTypeTarget(CameraLens.BACK, CameraDeviceType.MACRO)
+
+        assertNull(target?.info?.id, "a back MACRO switch targeted the external camera")
+    }
+
+    @Test
+    fun selectingTheExternalCameraById_selectsItAndNoBuiltInCamera() {
+        val resolver = CameraSelectorResolver { LensEnumerator.snapshot(context) }
+        val selector = assertNotNull(resolver.resolveId("5"), "the external camera's id did not resolve")
+            .toCameraSelector()
+        // The cameras as CameraX offers them, each read from the same Camera2 characteristics.
+        val cameraManager = CameraManagerCompat.from(context)
+        val offered: List<CameraInfo> = listOf("0", "1", "5").map { Camera2CameraInfoImpl(it, cameraManager) }
+
+        val selected = selector.filter(offered).map { Camera2CameraInfo.from(it).cameraId }
+
+        assertEquals(listOf("5"), selected, "selecting the external camera by id selected another camera")
+    }
+
+    private fun characteristics(
+        facing: Int,
+        focalLengthMm: Float,
+        minFocusDiopters: Float = 0f,
+    ): CameraCharacteristics {
+        val characteristics = ShadowCameraCharacteristics.newCameraCharacteristics()
+        Shadow.extract<ShadowCameraCharacteristics>(characteristics).apply {
+            set(CameraCharacteristics.LENS_FACING, facing)
+            set(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS, floatArrayOf(focalLengthMm))
+            set(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE, minFocusDiopters)
+            set(
+                CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES,
+                intArrayOf(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE),
+            )
+        }
+        return characteristics
+    }
+}

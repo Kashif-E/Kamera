@@ -2,10 +2,10 @@
 
 package org.company.app
 
-import com.kashif.cameraK.capture.CapturedImage
-import com.kashif.cameraK.enums.ImageFormat
-import com.kashif.cameraK.result.CameraKResult
-import com.kashif.cameraK.utils.CameraKEngineApi
+import dev.kashifmehmood.camerak.capture.CapturedImage
+import dev.kashifmehmood.camerak.enums.ImageFormat
+import dev.kashifmehmood.camerak.result.CameraKResult
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent

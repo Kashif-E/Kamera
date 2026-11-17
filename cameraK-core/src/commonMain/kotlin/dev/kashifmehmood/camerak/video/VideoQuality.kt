@@ -1,0 +1,16 @@
+package dev.kashifmehmood.camerak.video
+
+/**
+ * Closed: video quality presets mapping to platform-native resolution selectors. A new preset waits
+ * for a major release.
+ *
+ * @property width Target frame width in pixels.
+ * @property height Target frame height in pixels.
+ * @property bitrateBps Target video bitrate in bits per second.
+ */
+public enum class VideoQuality(public val width: Int, public val height: Int, public val bitrateBps: Int) {
+    SD(640, 480, 1_500_000),
+    HD(1280, 720, 5_000_000),
+    FHD(1920, 1080, 10_000_000),
+    UHD(3840, 2160, 50_000_000),
+}

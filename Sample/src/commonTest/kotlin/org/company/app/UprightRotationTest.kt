@@ -1,6 +1,6 @@
 package org.company.app
 
-import com.kashif.cameraK.enums.DeviceOrientation
+import dev.kashifmehmood.camerak.enums.DeviceOrientation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

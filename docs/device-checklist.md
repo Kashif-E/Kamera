@@ -17,15 +17,15 @@ Each line below runs one benchmark. With the Pixel 7 the only device `adb device
 all five. The results are under `benchmark/build/outputs/connected_android_test_additional_output/`.
 
 - `BindCountBenchmark.exactlyOneBindToFirstFrame`:
-  `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.BindCountBenchmark#exactlyOneBindToFirstFrame`
+  `-Pandroid.testInstrumentationRunnerArguments.class=dev.kashifmehmood.camerak.benchmark.BindCountBenchmark#exactlyOneBindToFirstFrame`
 - `BindCountBenchmark.zeroRebindsOnAnalyzerRegisterAndUnregister`:
-  `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.BindCountBenchmark#zeroRebindsOnAnalyzerRegisterAndUnregister`
+  `-Pandroid.testInstrumentationRunnerArguments.class=dev.kashifmehmood.camerak.benchmark.BindCountBenchmark#zeroRebindsOnAnalyzerRegisterAndUnregister`
 - `TimeToFirstFrameBenchmark.againstBareCameraX`:
-  `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.TimeToFirstFrameBenchmark#againstBareCameraX`
+  `-Pandroid.testInstrumentationRunnerArguments.class=dev.kashifmehmood.camerak.benchmark.TimeToFirstFrameBenchmark#againstBareCameraX`
 - `SquareCaptureBenchmark.shutterToFileWithAndWithoutTheSquareViewPort` (runs at 4:3, then 1:1):
-  `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.SquareCaptureBenchmark`
+  `-Pandroid.testInstrumentationRunnerArguments.class=dev.kashifmehmood.camerak.benchmark.SquareCaptureBenchmark`
 - `VideoBindBenchmark.videoBindMainThreadTime`:
-  `-Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.VideoBindBenchmark#videoBindMainThreadTime`
+  `-Pandroid.testInstrumentationRunnerArguments.class=dev.kashifmehmood.camerak.benchmark.VideoBindBenchmark#videoBindMainThreadTime`
 
 The benchmarks drive these Sample controls, by their labels: the camera screen's `Flip Camera` button
 (the camera is Ready once it shows), the shutter (`Take photo`, and in the video mode `Start recording`
@@ -62,11 +62,11 @@ the main thread.
 - [ ] **Engine contract over real CameraX.** The device subset of the engine contract passes:
       ```
       ./gradlew :cameraK-core:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=\
-      com.kashif.cameraK.engine.AndroidCameraEngineDeviceContractTest#stateIsOpenOrInterruptedWhenStartReturnsSuccess,\
-      com.kashif.cameraK.engine.AndroidCameraEngineDeviceContractTest#callsAfterCloseReturnClosed,\
-      com.kashif.cameraK.engine.AndroidCameraEngineDeviceContractTest#closeIsIdempotentAndReleasesOnce,\
-      com.kashif.cameraK.engine.AndroidCameraEngineDeviceContractTest#reportedCameraIsTheOneTheEngineOpenedOn,\
-      com.kashif.cameraK.engine.AndroidCameraEngineDeviceContractTest#desiredHardwareReappliedAfterRestartAndCameraSwitch
+      dev.kashifmehmood.camerak.engine.AndroidCameraEngineDeviceContractTest#stateIsOpenOrInterruptedWhenStartReturnsSuccess,\
+      dev.kashifmehmood.camerak.engine.AndroidCameraEngineDeviceContractTest#callsAfterCloseReturnClosed,\
+      dev.kashifmehmood.camerak.engine.AndroidCameraEngineDeviceContractTest#closeIsIdempotentAndReleasesOnce,\
+      dev.kashifmehmood.camerak.engine.AndroidCameraEngineDeviceContractTest#reportedCameraIsTheOneTheEngineOpenedOn,\
+      dev.kashifmehmood.camerak.engine.AndroidCameraEngineDeviceContractTest#desiredHardwareReappliedAfterRestartAndCameraSwitch
       ```
       Run without the class filter, the other cases report as skipped: each needs a fault hook or a
       sub-interface the device driver does not have.
@@ -74,7 +74,7 @@ the main thread.
       a physical lens of its logical back camera, streams from that lens:
       ```
       ./gradlew :cameraK-core:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=\
-      com.kashif.cameraK.engine.PhysicalLensRecordingDeviceTest
+      dev.kashifmehmood.camerak.engine.PhysicalLensRecordingDeviceTest
       ```
 - [ ] **VideoCapture bind on Main.** Record the `CameraK.videoBind` time from the benchmark above,
       and check that the preview does not stall when recording starts.

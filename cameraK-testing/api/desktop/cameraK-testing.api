@@ -1,12 +1,12 @@
-public final class com/kashif/cameraK/testing/CameraKTestEnvironmentKt {
-	public static final fun cameraKTestEnvironment (Lkotlinx/coroutines/test/TestScope;Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;)Lcom/kashif/cameraK/engine/CameraKEnvironment;
-	public static synthetic fun cameraKTestEnvironment$default (Lkotlinx/coroutines/test/TestScope;Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;ILjava/lang/Object;)Lcom/kashif/cameraK/engine/CameraKEnvironment;
+public final class dev/kashifmehmood/camerak/testing/CameraKTestEnvironmentKt {
+	public static final fun cameraKTestEnvironment (Lkotlinx/coroutines/test/TestScope;Ldev/kashifmehmood/camerak/permissions/CameraKPermissionChecker;)Ldev/kashifmehmood/camerak/engine/CameraKEnvironment;
+	public static synthetic fun cameraKTestEnvironment$default (Lkotlinx/coroutines/test/TestScope;Ldev/kashifmehmood/camerak/permissions/CameraKPermissionChecker;ILjava/lang/Object;)Ldev/kashifmehmood/camerak/engine/CameraKEnvironment;
 }
 
-public final class com/kashif/cameraK/testing/FakeCameraEngine : com/kashif/cameraK/engine/CameraEngine {
+public final class dev/kashifmehmood/camerak/testing/FakeCameraEngine : dev/kashifmehmood/camerak/engine/CameraEngine {
 	public fun <init> ()V
-	public fun <init> (Lcom/kashif/cameraK/capabilities/CameraCapabilities;Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;F)V
-	public synthetic fun <init> (Lcom/kashif/cameraK/capabilities/CameraCapabilities;Lcom/kashif/cameraK/enums/FlashMode;Lcom/kashif/cameraK/enums/TorchMode;FILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ldev/kashifmehmood/camerak/capabilities/CameraCapabilities;Ldev/kashifmehmood/camerak/enums/FlashMode;Ldev/kashifmehmood/camerak/enums/TorchMode;F)V
+	public synthetic fun <init> (Ldev/kashifmehmood/camerak/capabilities/CameraCapabilities;Ldev/kashifmehmood/camerak/enums/FlashMode;Ldev/kashifmehmood/camerak/enums/TorchMode;FILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun capture (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun close ()V
 	public fun closeAndJoin (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -14,15 +14,15 @@ public final class com/kashif/cameraK/testing/FakeCameraEngine : com/kashif/came
 	public final fun deliverRecordingFinalized ()V
 	public final fun deliverRecordingStarted ()V
 	public final fun endInterruption ()V
-	public final fun fail (Lcom/kashif/cameraK/error/CameraKError;)V
-	public final fun failNextFocus (Lcom/kashif/cameraK/error/CameraKError;)V
-	public final fun failOpen (Lcom/kashif/cameraK/error/CameraKError;)V
-	public final fun finishRecording (Lcom/kashif/cameraK/result/CameraKResult;Lcom/kashif/cameraK/recording/RecordingEndReason;)V
-	public fun focusAt (Lcom/kashif/cameraK/controls/NormalizedPoint;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun fail (Ldev/kashifmehmood/camerak/error/CameraKError;)V
+	public final fun failNextFocus (Ldev/kashifmehmood/camerak/error/CameraKError;)V
+	public final fun failOpen (Ldev/kashifmehmood/camerak/error/CameraKError;)V
+	public final fun finishRecording (Ldev/kashifmehmood/camerak/result/CameraKResult;Ldev/kashifmehmood/camerak/recording/RecordingEndReason;)V
+	public fun focusAt (Ldev/kashifmehmood/camerak/controls/NormalizedPoint;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getAppliedCameraId ()Ljava/lang/String;
 	public final fun getAppliedExposureCompensationIndex ()I
-	public final fun getAppliedFlashMode ()Lcom/kashif/cameraK/enums/FlashMode;
-	public final fun getAppliedTorchMode ()Lcom/kashif/cameraK/enums/TorchMode;
+	public final fun getAppliedFlashMode ()Ldev/kashifmehmood/camerak/enums/FlashMode;
+	public final fun getAppliedTorchMode ()Ldev/kashifmehmood/camerak/enums/TorchMode;
 	public final fun getAppliedZoomRatio ()F
 	public final fun getAutoFinalizeRecording ()Z
 	public final fun getAutoOpen ()Z
@@ -31,13 +31,13 @@ public final class com/kashif/cameraK/testing/FakeCameraEngine : com/kashif/came
 	public fun getCapabilities ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getCaptureResult ()Lkotlin/jvm/functions/Function1;
 	public final fun getCloseCalls ()I
-	public final fun getConfiguration ()Lcom/kashif/cameraK/state/CameraConfiguration;
+	public final fun getConfiguration ()Ldev/kashifmehmood/camerak/state/CameraConfiguration;
 	public fun getDeviceOrientation ()Lkotlinx/coroutines/flow/StateFlow;
-	public final fun getFakeFrames ()Lcom/kashif/cameraK/testing/FakeFrameSource;
-	public fun getFrames ()Lcom/kashif/cameraK/frames/FrameSource;
+	public final fun getFakeFrames ()Ldev/kashifmehmood/camerak/testing/FakeFrameSource;
+	public fun getFrames ()Ldev/kashifmehmood/camerak/frames/FrameSource;
 	public fun getHardware ()Lkotlinx/coroutines/flow/StateFlow;
-	public final fun getLastFocusPoint ()Lcom/kashif/cameraK/controls/NormalizedPoint;
-	public fun getPreview ()Lcom/kashif/cameraK/engine/PlatformPreviewSource;
+	public final fun getLastFocusPoint ()Ldev/kashifmehmood/camerak/controls/NormalizedPoint;
+	public fun getPreview ()Ldev/kashifmehmood/camerak/engine/PlatformPreviewSource;
 	public fun getRecordingEvents ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getReleaseCount ()I
 	public final fun getSetZoomCalls ()I
@@ -47,95 +47,95 @@ public final class com/kashif/cameraK/testing/FakeCameraEngine : com/kashif/came
 	public final fun getSupportsPause ()Z
 	public fun getZoom ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun holdNextCapture ()V
-	public final fun interrupt-1p3bEoE (Ljava/lang/String;)V
+	public final fun interrupt-xQtocEc (Ljava/lang/String;)V
 	public fun pauseRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun prepareRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun prepareRecording (Ldev/kashifmehmood/camerak/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun releaseCapture ()V
 	public final fun reopenAfterFailure ()V
 	public final fun reportCamera (Ljava/lang/String;)V
 	public final fun reportExposureIndex (I)V
-	public final fun reportFlash (Lcom/kashif/cameraK/enums/FlashMode;)V
-	public final fun reportTorch (Lcom/kashif/cameraK/enums/TorchMode;)V
+	public final fun reportFlash (Ldev/kashifmehmood/camerak/enums/FlashMode;)V
+	public final fun reportTorch (Ldev/kashifmehmood/camerak/enums/TorchMode;)V
 	public final fun reportZoom (FFF)V
-	public static synthetic fun reportZoom$default (Lcom/kashif/cameraK/testing/FakeCameraEngine;FFFILjava/lang/Object;)V
+	public static synthetic fun reportZoom$default (Ldev/kashifmehmood/camerak/testing/FakeCameraEngine;FFFILjava/lang/Object;)V
 	public fun resetFocusAndExposure (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun resumeRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun selectCamera (Lcom/kashif/cameraK/engine/CameraSelection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun selectCamera (Ldev/kashifmehmood/camerak/engine/CameraSelection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setAutoFinalizeRecording (Z)V
 	public final fun setAutoOpen (Z)V
 	public final fun setAutoStartRecording (Z)V
 	public final fun setCaptureResult (Lkotlin/jvm/functions/Function1;)V
-	public final fun setConfiguration (Lcom/kashif/cameraK/state/CameraConfiguration;)V
+	public final fun setConfiguration (Ldev/kashifmehmood/camerak/state/CameraConfiguration;)V
 	public fun setExposureCompensation (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun setFlashMode (Lcom/kashif/cameraK/enums/FlashMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun setFlashMode (Ldev/kashifmehmood/camerak/enums/FlashMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setSupportsPause (Z)V
-	public fun setTargetOrientation (Lcom/kashif/cameraK/enums/DeviceOrientation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun setTorchMode (Lcom/kashif/cameraK/enums/TorchMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun setTargetOrientation (Ldev/kashifmehmood/camerak/enums/DeviceOrientation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun setTorchMode (Ldev/kashifmehmood/camerak/enums/TorchMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setZoom (FLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun start (Lcom/kashif/cameraK/engine/DesiredHardware;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun startRecording (Lcom/kashif/cameraK/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public final fun startReturnsWithoutPublishing (Lcom/kashif/cameraK/error/CameraKError;)V
+	public fun start (Ldev/kashifmehmood/camerak/engine/DesiredHardware;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun startRecording (Ldev/kashifmehmood/camerak/video/VideoConfiguration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun startReturnsWithoutPublishing (Ldev/kashifmehmood/camerak/error/CameraKError;)V
 	public fun stop (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun stopRecording (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun throwFromNextCallback ()V
 }
 
-public final class com/kashif/cameraK/testing/FakeCameraKStateHolderKt {
-	public static final fun fakeCameraKStateHolder (Lkotlinx/coroutines/test/TestScope;Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/testing/FakeCameraEngine;Ljava/util/List;Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;)Lcom/kashif/cameraK/state/CameraKStateHolder;
-	public static synthetic fun fakeCameraKStateHolder$default (Lkotlinx/coroutines/test/TestScope;Lcom/kashif/cameraK/state/CameraConfiguration;Lcom/kashif/cameraK/testing/FakeCameraEngine;Ljava/util/List;Lcom/kashif/cameraK/permissions/CameraKPermissionChecker;ILjava/lang/Object;)Lcom/kashif/cameraK/state/CameraKStateHolder;
+public final class dev/kashifmehmood/camerak/testing/FakeCameraKStateHolderKt {
+	public static final fun fakeCameraKStateHolder (Lkotlinx/coroutines/test/TestScope;Ldev/kashifmehmood/camerak/state/CameraConfiguration;Ldev/kashifmehmood/camerak/testing/FakeCameraEngine;Ljava/util/List;Ldev/kashifmehmood/camerak/permissions/CameraKPermissionChecker;)Ldev/kashifmehmood/camerak/state/CameraKStateHolder;
+	public static synthetic fun fakeCameraKStateHolder$default (Lkotlinx/coroutines/test/TestScope;Ldev/kashifmehmood/camerak/state/CameraConfiguration;Ldev/kashifmehmood/camerak/testing/FakeCameraEngine;Ljava/util/List;Ldev/kashifmehmood/camerak/permissions/CameraKPermissionChecker;ILjava/lang/Object;)Ldev/kashifmehmood/camerak/state/CameraKStateHolder;
 }
 
-public final class com/kashif/cameraK/testing/FakeCapabilities {
+public final class dev/kashifmehmood/camerak/testing/FakeCapabilities {
 	public static final field BACK_ID Ljava/lang/String;
 	public static final field FRONT_ID Ljava/lang/String;
-	public static final field INSTANCE Lcom/kashif/cameraK/testing/FakeCapabilities;
-	public final fun backAndFront (Ljava/util/Set;Z)Lcom/kashif/cameraK/capabilities/CameraCapabilities;
-	public static synthetic fun backAndFront$default (Lcom/kashif/cameraK/testing/FakeCapabilities;Ljava/util/Set;ZILjava/lang/Object;)Lcom/kashif/cameraK/capabilities/CameraCapabilities;
+	public static final field INSTANCE Ldev/kashifmehmood/camerak/testing/FakeCapabilities;
+	public final fun backAndFront (Ljava/util/Set;Z)Ldev/kashifmehmood/camerak/capabilities/CameraCapabilities;
+	public static synthetic fun backAndFront$default (Ldev/kashifmehmood/camerak/testing/FakeCapabilities;Ljava/util/Set;ZILjava/lang/Object;)Ldev/kashifmehmood/camerak/capabilities/CameraCapabilities;
 }
 
-public final class com/kashif/cameraK/testing/FakeCaptures {
-	public static final field INSTANCE Lcom/kashif/cameraK/testing/FakeCaptures;
-	public final fun image (Ljava/lang/String;IILcom/kashif/cameraK/enums/ImageFormat;)Lcom/kashif/cameraK/capture/CapturedImage;
-	public static synthetic fun image$default (Lcom/kashif/cameraK/testing/FakeCaptures;Ljava/lang/String;IILcom/kashif/cameraK/enums/ImageFormat;ILjava/lang/Object;)Lcom/kashif/cameraK/capture/CapturedImage;
-	public final fun video-WPwdCS8 (Ljava/lang/String;JIIZ)Lcom/kashif/cameraK/capture/RecordedVideo;
-	public static synthetic fun video-WPwdCS8$default (Lcom/kashif/cameraK/testing/FakeCaptures;Ljava/lang/String;JIIZILjava/lang/Object;)Lcom/kashif/cameraK/capture/RecordedVideo;
+public final class dev/kashifmehmood/camerak/testing/FakeCaptures {
+	public static final field INSTANCE Ldev/kashifmehmood/camerak/testing/FakeCaptures;
+	public final fun image (Ljava/lang/String;IILdev/kashifmehmood/camerak/enums/ImageFormat;)Ldev/kashifmehmood/camerak/capture/CapturedImage;
+	public static synthetic fun image$default (Ldev/kashifmehmood/camerak/testing/FakeCaptures;Ljava/lang/String;IILdev/kashifmehmood/camerak/enums/ImageFormat;ILjava/lang/Object;)Ldev/kashifmehmood/camerak/capture/CapturedImage;
+	public final fun video-WPwdCS8 (Ljava/lang/String;JIIZ)Ldev/kashifmehmood/camerak/capture/RecordedVideo;
+	public static synthetic fun video-WPwdCS8$default (Ldev/kashifmehmood/camerak/testing/FakeCaptures;Ljava/lang/String;JIIZILjava/lang/Object;)Ldev/kashifmehmood/camerak/capture/RecordedVideo;
 }
 
-public final class com/kashif/cameraK/testing/FakeFrameSource : com/kashif/cameraK/frames/FrameSource {
-	public final fun emit (Lcom/kashif/cameraK/frames/CameraFrame;)V
-	public fun register (Lcom/kashif/cameraK/frames/FrameSpec;Lcom/kashif/cameraK/frames/FrameAnalyzer;)Lcom/kashif/cameraK/frames/FrameRegistration;
+public final class dev/kashifmehmood/camerak/testing/FakeFrameSource : dev/kashifmehmood/camerak/frames/FrameSource {
+	public final fun emit (Ldev/kashifmehmood/camerak/frames/CameraFrame;)V
+	public fun register (Ldev/kashifmehmood/camerak/frames/FrameSpec;Ldev/kashifmehmood/camerak/frames/FrameAnalyzer;)Ldev/kashifmehmood/camerak/frames/FrameRegistration;
 }
 
-public final class com/kashif/cameraK/testing/FakePermissionChecker : com/kashif/cameraK/permissions/CameraKPermissionChecker {
+public final class dev/kashifmehmood/camerak/testing/FakePermissionChecker : dev/kashifmehmood/camerak/permissions/CameraKPermissionChecker {
 	public fun <init> ()V
-	public fun <init> (Lcom/kashif/cameraK/permissions/PermissionStatus;)V
-	public synthetic fun <init> (Lcom/kashif/cameraK/permissions/PermissionStatus;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public fun allowsOpen (Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
+	public fun <init> (Ldev/kashifmehmood/camerak/permissions/PermissionStatus;)V
+	public synthetic fun <init> (Ldev/kashifmehmood/camerak/permissions/PermissionStatus;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun allowsOpen (Ldev/kashifmehmood/camerak/permissions/PermissionStatus;)Z
 	public final fun getAllowsOpenWhenNotDetermined ()Z
 	public final fun getPromptsWhenNotDetermined ()Z
-	public fun promptsOnOpen (Lcom/kashif/cameraK/permissions/CameraKPermission;Lcom/kashif/cameraK/permissions/PermissionStatus;)Z
+	public fun promptsOnOpen (Ldev/kashifmehmood/camerak/permissions/CameraKPermission;Ldev/kashifmehmood/camerak/permissions/PermissionStatus;)Z
 	public final fun setAllowsOpenWhenNotDetermined (Z)V
 	public final fun setPromptsWhenNotDetermined (Z)V
-	public final fun setStatus (Lcom/kashif/cameraK/permissions/CameraKPermission;Lcom/kashif/cameraK/permissions/PermissionStatus;)V
-	public fun status (Lcom/kashif/cameraK/permissions/CameraKPermission;)Lcom/kashif/cameraK/permissions/PermissionStatus;
+	public final fun setStatus (Ldev/kashifmehmood/camerak/permissions/CameraKPermission;Ldev/kashifmehmood/camerak/permissions/PermissionStatus;)V
+	public fun status (Ldev/kashifmehmood/camerak/permissions/CameraKPermission;)Ldev/kashifmehmood/camerak/permissions/PermissionStatus;
 }
 
-public final class com/kashif/cameraK/testing/TestFrame : com/kashif/cameraK/frames/CameraFrame {
-	public static final field Companion Lcom/kashif/cameraK/testing/TestFrame$Companion;
-	public fun getCropRect ()Lcom/kashif/cameraK/frames/FrameRect;
-	public fun getFormat ()Lcom/kashif/cameraK/frames/FrameFormat;
+public final class dev/kashifmehmood/camerak/testing/TestFrame : dev/kashifmehmood/camerak/frames/CameraFrame {
+	public static final field Companion Ldev/kashifmehmood/camerak/testing/TestFrame$Companion;
+	public fun getCropRect ()Ldev/kashifmehmood/camerak/frames/FrameRect;
+	public fun getFormat ()Ldev/kashifmehmood/camerak/frames/FrameFormat;
 	public fun getHeight ()I
 	public fun getPlanes ()Ljava/util/List;
 	public fun getRotationDegrees ()I
 	public fun getTimestampNanos ()J
 	public fun getWidth ()I
-	public fun retain ()Lcom/kashif/cameraK/frames/RetainedFrame;
+	public fun retain ()Ldev/kashifmehmood/camerak/frames/RetainedFrame;
 }
 
-public final class com/kashif/cameraK/testing/TestFrame$Companion {
-	public final fun luma (II[BIIJLcom/kashif/cameraK/frames/FrameRect;)Lcom/kashif/cameraK/testing/TestFrame;
-	public static synthetic fun luma$default (Lcom/kashif/cameraK/testing/TestFrame$Companion;II[BIIJLcom/kashif/cameraK/frames/FrameRect;ILjava/lang/Object;)Lcom/kashif/cameraK/testing/TestFrame;
-	public final fun rgba (II[BIIJLcom/kashif/cameraK/frames/FrameRect;)Lcom/kashif/cameraK/testing/TestFrame;
-	public static synthetic fun rgba$default (Lcom/kashif/cameraK/testing/TestFrame$Companion;II[BIIJLcom/kashif/cameraK/frames/FrameRect;ILjava/lang/Object;)Lcom/kashif/cameraK/testing/TestFrame;
+public final class dev/kashifmehmood/camerak/testing/TestFrame$Companion {
+	public final fun luma (II[BIIJLdev/kashifmehmood/camerak/frames/FrameRect;)Ldev/kashifmehmood/camerak/testing/TestFrame;
+	public static synthetic fun luma$default (Ldev/kashifmehmood/camerak/testing/TestFrame$Companion;II[BIIJLdev/kashifmehmood/camerak/frames/FrameRect;ILjava/lang/Object;)Ldev/kashifmehmood/camerak/testing/TestFrame;
+	public final fun rgba (II[BIIJLdev/kashifmehmood/camerak/frames/FrameRect;)Ldev/kashifmehmood/camerak/testing/TestFrame;
+	public static synthetic fun rgba$default (Ldev/kashifmehmood/camerak/testing/TestFrame$Companion;II[BIIJLdev/kashifmehmood/camerak/frames/FrameRect;ILjava/lang/Object;)Ldev/kashifmehmood/camerak/testing/TestFrame;
 }
 

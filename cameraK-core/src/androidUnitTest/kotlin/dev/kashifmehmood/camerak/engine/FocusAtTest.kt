@@ -1,0 +1,400 @@
+@file:OptIn(CameraKEngineApi::class)
+
+package dev.kashifmehmood.camerak.engine
+
+import android.graphics.Rect
+import android.hardware.camera2.CaptureResult
+import android.util.Size
+import androidx.camera.core.FocusMeteringAction
+import dev.kashifmehmood.camerak.capabilities.LensInfo
+import dev.kashifmehmood.camerak.controller.AndroidCameraEngine
+import dev.kashifmehmood.camerak.controller.MeteringPointBuild
+import dev.kashifmehmood.camerak.controller.PreviewGeometry
+import dev.kashifmehmood.camerak.controls.NormalizedPoint
+import dev.kashifmehmood.camerak.engine.FakeAndroidPlatform.Companion.CONTRACT_CAMERAS
+import dev.kashifmehmood.camerak.engine.FakeAndroidPlatform.Companion.desired
+import dev.kashifmehmood.camerak.enums.CameraDeviceType
+import dev.kashifmehmood.camerak.enums.CameraLens
+import dev.kashifmehmood.camerak.error.CameraFeature
+import dev.kashifmehmood.camerak.error.CameraKError
+import dev.kashifmehmood.camerak.error.CameraOperation
+import dev.kashifmehmood.camerak.result.CameraKResult
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
+
+/**
+ * `focusAt` on CameraX (w13 Z-focus-android, G1): the tap is mapped through the preview's crop,
+ * rotation and mirror to a buffer pixel, metered with AF, AE and AWB where the camera supports each,
+ * with CameraX's default auto-cancel, and CameraX's outcome is mapped: focused or metering-only is
+ * Success, and so is AF that ended without locking, as on iOS, where focus that stops adjusting succeeds;
+ * AF still searching when CameraX gives up is Timeout. A request a newer one, a reset or a rebind
+ * superseded is Busy, one the camera's closing cancelled is Closed, anything else Hardware. Without a
+ * preview surface there is no geometry to map through, so the tap is InvalidState.
+ */
+@RunWith(RobolectricTestRunner::class)
+class FocusAtTest {
+    private val platform = FakeAndroidPlatform(CONTRACT_CAMERAS, meteringOf = FakeAndroidPlatform.CONTRACT_METERING)
+
+    @Test
+    fun aTapMetersAtTheBufferPixelThePreviewDrawsThere() = runTest {
+        // 16:9 cropped from a 4:3 buffer, drawn turned 90 degrees: (0.25, 0.1) on screen is buffer pixel (64, 330).
+        platform.backend.previewGeometryReported = PreviewGeometry(Size(640, 480), Rect(0, 60, 640, 420), 90)
+        val engine = open()
+
+        assertEquals(CameraKResult.Success(Unit), engine.focusAt(NormalizedPoint(0.25f, 0.1f)))
+
+        assertEquals(MeteringPointBuild(64f, 330f, 640, 480), platform.backend.meteringPoints.last())
+        val request = platform.camera!!.metering.focusRequests.single()
+        assertEquals(setOf(AF, AE, AWB), request.flags, "the back camera meters AF, AE and AWB")
+        assertTrue(request.action.isAutoCancelEnabled, "CameraX's own auto-cancel returns to continuous metering")
+        assertEquals(5_000L, request.action.autoCancelDurationInMillis, "CameraX's default auto-cancel")
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun theFrontCamerasMirroredPreviewIsUndone() = runTest {
+        // A full 4:3 buffer drawn turned 270 degrees and mirrored: (0.25, 0.1) on screen is buffer pixel (576, 360).
+        platform.backend.previewGeometryReported = PreviewGeometry(Size(640, 480), Rect(0, 0, 640, 480), 270)
+        val engine = open()
+        selectFront(engine)
+
+        assertEquals(CameraKResult.Success(Unit), engine.focusAt(NormalizedPoint(0.25f, 0.1f)))
+
+        assertEquals(MeteringPointBuild(576f, 360f, 640, 480), platform.backend.meteringPoints.last())
+        engine.closeAndJoin()
+    }
+
+    // CameraX completes an AF action unsuccessful both when AF ends NOT_FOCUSED_LOCKED and when its 5 s deadline
+    // passes while AF still scans; the state is read from a capture result reported once CameraX has completed.
+    @Test
+    fun afThatEndsWithoutLockingSucceeds() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        metering.focusRequests.single().complete(focused = false)
+        platform.settle(testScheduler)
+        assertFalse(focus.isCompleted, "focusAt returned before a capture result showed how AF ended")
+        platform.backend.reportExposure(0, afState = CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED)
+        platform.settle(testScheduler)
+
+        assertEquals(CameraKResult.Success(Unit), focus.await())
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun afStillSearchingWhenCameraXGivesUpIsTimeout() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        // A result before the deadline: AF had not ended then, whatever it reported.
+        platform.backend.reportExposure(0, afState = CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED)
+        metering.focusRequests.single().complete(focused = false)
+        platform.settle(testScheduler)
+        platform.backend.reportExposure(0, afState = CaptureResult.CONTROL_AF_STATE_ACTIVE_SCAN)
+        platform.settle(testScheduler)
+
+        assertEquals(CameraOperation.FOCUS_POINT, assertIs<CameraKError.Timeout>(failure(focus.await())).operation)
+        engine.closeAndJoin()
+    }
+
+    // CameraX also gives up when nothing streams, and a result may carry no exposure index, which the seam needs.
+    @Test
+    fun noResultWithinASecondOfCameraXsAnswerIsTimeout() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        metering.focusRequests.single().complete(focused = false)
+        platform.settle(testScheduler)
+        testScheduler.advanceTimeBy(999)
+        platform.settle(testScheduler)
+        assertFalse(focus.isCompleted, "focusAt gave up on the result within the second")
+        testScheduler.advanceTimeBy(2)
+        platform.settle(testScheduler)
+
+        assertTrue(focus.isCompleted, "focusAt waited past a second for a result")
+        assertEquals(CameraOperation.FOCUS_POINT, assertIs<CameraKError.Timeout>(failure(focus.await())).operation)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aStopBeforeAResultShowsHowAfEndedIsClosed() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        metering.focusRequests.single().complete(focused = false)
+        platform.settle(testScheduler)
+        engine.stop()
+        platform.settle(testScheduler)
+
+        assertEquals(AndroidCameraEngine.CLOSED, focus.await())
+        engine.closeAndJoin()
+    }
+
+    // CameraX reports isFocusSuccessful false for an action without AF: metering alone completes the tap.
+    @Test
+    fun aFixedFocusCameraMetersWithoutAfAndSucceedsOnceCameraXCompletes() = runTest {
+        val engine = open()
+        selectFront(engine)
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        val request = metering.focusRequests.single()
+        assertEquals(setOf(AE, AWB), request.flags, "AF, which the fixed-focus camera lacks, was not dropped")
+        request.complete(focused = false)
+        platform.settle(testScheduler)
+
+        assertEquals(CameraKResult.Success(Unit), focus.await())
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aNewerFocusSupersedesThePendingOneWithBusy() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+
+        val first = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        val second = async { engine.focusAt(NormalizedPoint(0.2f, 0.2f)) }
+        platform.settle(testScheduler)
+        metering.focusRequests.last().complete(focused = true)
+        platform.settle(testScheduler)
+
+        assertEquals(CameraOperation.FOCUS_POINT, assertIs<CameraKError.Busy>(failure(first.await())).operation)
+        assertEquals(CameraKResult.Success(Unit), second.await())
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aResetSupersedesThePendingFocusWithBusy() = runTest {
+        val engine = open()
+        platform.camera!!.metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.resetFocusAndExposure())
+        platform.settle(testScheduler)
+
+        assertEquals(CameraOperation.FOCUS_POINT, assertIs<CameraKError.Busy>(failure(focus.await())).operation)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aCameraSwitchSupersedesThePendingFocusWithBusy() = runTest {
+        val engine = open()
+        platform.camera!!.metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        selectFront(engine)
+
+        assertEquals(CameraOperation.FOCUS_POINT, assertIs<CameraKError.Busy>(failure(focus.await())).operation)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun theCameraClosingUnderAPendingFocusIsClosed() = runTest {
+        val engine = open()
+        platform.camera!!.metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        engine.stop()
+        platform.settle(testScheduler)
+
+        assertIs<CameraKError.Closed>(failure(focus.await()))
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aStopUnderAPendingFocusIsClosedEvenWhenAStartOnAnotherCameraFollowsAtOnce() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+        // CameraX cancels the request on its own thread, after the restart has bound the front camera.
+        metering.closeLeavesPending = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        engine.stop()
+        platform.settle(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired.onLens(CameraLens.FRONT)))
+        platform.settle(testScheduler)
+        assertEquals(FRONT.id, engine.hardware.value.camera?.id, "the restart bound the front camera")
+        metering.failPending()
+        platform.settle(testScheduler)
+
+        assertIs<CameraKError.Closed>(failure(focus.await()), "the stop cut the request short, not the start")
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aStopUnderAPendingFocusIsClosedWhenTheSameCameraStartsAgain() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+        metering.closeLeavesPending = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        engine.stop()
+        platform.settle(testScheduler)
+        assertEquals(CameraKResult.Success(Unit), engine.start(desired))
+        platform.settle(testScheduler)
+        metering.failPending()
+        platform.settle(testScheduler)
+
+        assertIs<CameraKError.Closed>(failure(focus.await()))
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aSwitchWhoseCancellationArrivesLateIsBusy() = runTest {
+        val engine = open()
+        val metering = platform.camera!!.metering
+        metering.holdFocus = true
+        metering.closeLeavesPending = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        selectFront(engine)
+        metering.failPending()
+        platform.settle(testScheduler)
+
+        assertEquals(CameraOperation.FOCUS_POINT, assertIs<CameraKError.Busy>(failure(focus.await())).operation)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aCloseUnderAPendingFocusIsClosed() = runTest {
+        val engine = open()
+        platform.camera!!.metering.holdFocus = true
+
+        val focus = async { engine.focusAt(CENTRE) }
+        platform.settle(testScheduler)
+        engine.close()
+        platform.settle(testScheduler)
+
+        assertIs<CameraKError.Closed>(failure(focus.await()))
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun anyOtherFailureIsHardwareWithItsCause() = runTest {
+        val engine = open()
+        val cause = IllegalStateException("the capture session refused the request")
+        platform.camera!!.metering.focusFailure = cause
+
+        val error = assertIs<CameraKError.Hardware>(failure(engine.focusAt(CENTRE)))
+
+        assertEquals(null, error.platformCode)
+        assertSame(cause, error.cause)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun withoutAPreviewSurfaceTheTapIsInvalidState() = runTest {
+        platform.backend.previewGeometryReported = null
+        val engine = open()
+
+        val error = assertIs<CameraKError.InvalidState>(failure(engine.focusAt(CENTRE)))
+
+        assertEquals(CameraOperation.FOCUS_POINT, error.operation)
+        assertTrue(platform.camera!!.metering.focusRequests.isEmpty(), "a point was guessed without the geometry")
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun aCameraThatMetersAtNoPointIsUnsupported() = runTest {
+        val platform = FakeAndroidPlatform(CONTRACT_CAMERAS)
+        val engine = platform.engine(testScheduler)
+        open(platform, engine)
+
+        val error = assertIs<CameraKError.Unsupported>(failure(engine.focusAt(CENTRE)))
+
+        assertEquals(CameraFeature.FOCUS_POINT, error.feature)
+        assertFalse(engine.capabilities.value.supportsFocusPoint(CONTRACT_CAMERAS.first().id))
+        assertTrue(platform.camera!!.metering.focusRequests.isEmpty())
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun focusAtLeavesHardwareAlone() = runTest {
+        val engine = open()
+        val hardware = engine.hardware.value
+
+        assertEquals(CameraKResult.Success(Unit), engine.focusAt(CENTRE))
+        platform.settle(testScheduler)
+
+        assertEquals(hardware, engine.hardware.value)
+        engine.closeAndJoin()
+    }
+
+    @Test
+    fun afterCloseEveryFocusAndExposureCallIsClosedWithoutReachingCameraX() = runTest {
+        val engine = open()
+        val camera = platform.camera!!
+        engine.close()
+        platform.settle(testScheduler)
+
+        assertIs<CameraKError.Closed>(failure(engine.focusAt(CENTRE)))
+        assertIs<CameraKError.Closed>(failure(engine.setExposureCompensation(2)))
+        assertIs<CameraKError.Closed>(failure(engine.resetFocusAndExposure()))
+        assertTrue(camera.metering.focusRequests.isEmpty(), "focusAt reached CameraX after close")
+        assertTrue(camera.metering.exposureRequests.isEmpty(), "setExposureCompensation reached CameraX after close")
+        assertEquals(0, camera.metering.cancelCalls, "resetFocusAndExposure reached CameraX after close")
+        engine.closeAndJoin()
+    }
+
+    private suspend fun TestScope.open(): AndroidCameraEngine =
+        platform.engine(testScheduler).also { open(platform, it) }
+
+    private suspend fun TestScope.selectFront(engine: AndroidCameraEngine) {
+        val selected = engine.selectCamera(CameraSelection.ByLens(CameraLens.FRONT, CameraDeviceType.DEFAULT))
+        assertEquals(FRONT.id, assertIs<CameraKResult.Success<LensInfo>>(selected, "select the front camera").value.id)
+        platform.settle(testScheduler)
+    }
+
+    private fun failure(result: CameraKResult<*>): CameraKError = assertIs<CameraKResult.Failure>(result).error
+
+    private fun DesiredHardware.onLens(lens: CameraLens) = DesiredHardware(
+        CameraSelection.ByLens(lens, CameraDeviceType.DEFAULT),
+        flashMode,
+        torchMode,
+        zoomRatio,
+        targetOrientation,
+        exposureCompensationIndex,
+    )
+
+    private companion object {
+        val CENTRE = NormalizedPoint(0.5f, 0.5f)
+        val FRONT = CONTRACT_CAMERAS.single { it.lens == CameraLens.FRONT }
+        const val AF = FocusMeteringAction.FLAG_AF
+        const val AE = FocusMeteringAction.FLAG_AE
+        const val AWB = FocusMeteringAction.FLAG_AWB
+    }
+}

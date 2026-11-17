@@ -17,9 +17,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
-import com.kashif.qrscannerplugin.BarcodeFormat
-import com.kashif.qrscannerplugin.QRScannerPlugin
-import com.kashif.qrscannerplugin.rememberQRScannerPlugin
+import dev.kashifmehmood.camerak.qrscanner.BarcodeFormat
+import dev.kashifmehmood.camerak.qrscanner.QRScannerPlugin
+import dev.kashifmehmood.camerak.qrscanner.rememberQRScannerPlugin
 import org.company.app.designsystem.Eyebrow
 import org.company.app.designsystem.OverlayLabel
 import org.company.app.designsystem.PrimaryButton

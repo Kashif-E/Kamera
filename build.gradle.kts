@@ -664,32 +664,32 @@ fun cameraComposeVersionProblems(catalog: String): List<String> {
 // VideoCaptureResult left with C1': it is an ERROR-level hint nothing produces.
 val strippedStableTypes =
     listOf(
-        "com.kashif.cameraK.capabilities.LensInfo",
-        "com.kashif.cameraK.capabilities.CameraCapabilities",
-        "com.kashif.cameraK.state.CameraKState",
-        "com.kashif.cameraK.state.CameraKState.*",
-        "com.kashif.cameraK.state.CameraUIState",
-        "com.kashif.cameraK.state.CameraKEvent",
-        "com.kashif.cameraK.state.CameraKEvent.*",
-        "com.kashif.cameraK.state.CameraConfiguration",
-        "com.kashif.cameraK.state.CameraKStateHolder",
-        "com.kashif.cameraK.video.VideoConfiguration",
+        "dev.kashifmehmood.camerak.capabilities.LensInfo",
+        "dev.kashifmehmood.camerak.capabilities.CameraCapabilities",
+        "dev.kashifmehmood.camerak.state.CameraKState",
+        "dev.kashifmehmood.camerak.state.CameraKState.*",
+        "dev.kashifmehmood.camerak.state.CameraUIState",
+        "dev.kashifmehmood.camerak.state.CameraKEvent",
+        "dev.kashifmehmood.camerak.state.CameraKEvent.*",
+        "dev.kashifmehmood.camerak.state.CameraConfiguration",
+        "dev.kashifmehmood.camerak.state.CameraKStateHolder",
+        "dev.kashifmehmood.camerak.video.VideoConfiguration",
     )
 
 // The 2.0 value types UI' adds to cameraK/compose-stability.conf (design §10.3); core never annotated them.
 val addedStableTypes =
     listOf(
-        "com.kashif.cameraK.state.ZoomState",
-        "com.kashif.cameraK.recording.RecordingState",
-        "com.kashif.cameraK.recording.RecordingState.*",
-        "com.kashif.cameraK.error.CameraKError",
-        "com.kashif.cameraK.error.CameraKError.*",
-        "com.kashif.cameraK.capture.CapturedImage",
-        "com.kashif.cameraK.capture.RecordedVideo",
-        "com.kashif.cameraK.result.CameraKResult",
-        "com.kashif.cameraK.result.CameraKResult.*",
+        "dev.kashifmehmood.camerak.state.ZoomState",
+        "dev.kashifmehmood.camerak.recording.RecordingState",
+        "dev.kashifmehmood.camerak.recording.RecordingState.*",
+        "dev.kashifmehmood.camerak.error.CameraKError",
+        "dev.kashifmehmood.camerak.error.CameraKError.*",
+        "dev.kashifmehmood.camerak.capture.CapturedImage",
+        "dev.kashifmehmood.camerak.capture.RecordedVideo",
+        "dev.kashifmehmood.camerak.result.CameraKResult",
+        "dev.kashifmehmood.camerak.result.CameraKResult.*",
         // W12 Y-focus-api: FocusTap's point.
-        "com.kashif.cameraK.controls.NormalizedPoint",
+        "dev.kashifmehmood.camerak.controls.NormalizedPoint",
     )
 
 // What is wrong with cameraK/compose-stability.conf's [confLines] given the Kotlin types the published
@@ -1679,8 +1679,8 @@ tasks.register("checkBuildGateRules") {
                     val all =
                         listOf("core", "camera2", "view", "lifecycle", "video").map { "androidx.camera:camera-$it" }
                     val dump =
-                        "public final class com/kashif/cameraK/frames/CameraFrameKt {\n" +
-                            "\tpublic static final fun getImageProxy (Lcom/kashif/cameraK/frames/CameraFrame;)" +
+                        "public final class dev/kashifmehmood/camerak/frames/CameraFrameKt {\n" +
+                            "\tpublic static final fun getImageProxy (Ldev/kashifmehmood/camerak/frames/CameraFrame;)" +
                             "Landroidx/camera/core/ImageProxy;\n}\n"
                     val exact = cameraxApiScopeProblems(listOf("androidx.camera:camera-core"), dump)
                     listOfNotNull(
@@ -2696,7 +2696,7 @@ tasks.register("checkNoLibraryFrameworks") {
 // --only screenshots runs just the screenshot classes from cameraK's desktop suite.
 if ("screenshots" in verifyTargets && "desktop" !in verifyTargets) {
     project(":cameraK").tasks.withType<Test>().matching { it.name == "desktopTest" }.configureEach {
-        filter.includeTestsMatching("com.kashif.cameraK.screenshots.*")
+        filter.includeTestsMatching("dev.kashifmehmood.camerak.screenshots.*")
     }
 }
 

@@ -1,0 +1,214 @@
+@file:OptIn(CameraKEngineApi::class)
+
+package dev.kashifmehmood.camerak.controller
+
+import dev.kashifmehmood.camerak.capabilities.LensInfo
+import dev.kashifmehmood.camerak.engine.CameraSelection
+import dev.kashifmehmood.camerak.engine.contract.AppleEngineDriver
+import dev.kashifmehmood.camerak.enums.CameraDeviceType
+import dev.kashifmehmood.camerak.enums.CameraLens
+import dev.kashifmehmood.camerak.enums.QualityPrioritization
+import dev.kashifmehmood.camerak.result.CameraKResult
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+/**
+ * A lens or device-type switch swaps the camera input inside one configuration transaction on the
+ * running session: it never stops the session, it removes the camera input rather than whatever
+ * input comes first, a refused input leaves the previous camera in place, and it does not cut an
+ * active recording. The engine's selectCamera returns once the new input is live, and a refused input
+ * returns a failure with the previous camera kept.
+ */
+class LensSwitchTest {
+    private val back = FakeDevice(isFront = false, maxVideoZoomFactor = 10.0)
+    private val front = FakeDevice(isFront = true, maxVideoZoomFactor = 4.0)
+    private val telephoto = FakeDevice(isFront = false, maxVideoZoomFactor = 15.0)
+    private val session = RecordingSession()
+    private val errors = mutableListOf<CustomCameraController.CameraException>()
+
+    private val controller = CustomCameraController(
+        qualityPrioritization = QualityPrioritization.NONE,
+        sessionFactory = { session },
+        cameraDevices = { lens, type ->
+            when {
+                type == CameraDeviceType.TELEPHOTO -> telephoto
+                lens == CameraLens.FRONT -> front
+                else -> back
+            }
+        },
+    ).also { it.onError = { error -> errors += error } }
+
+    private fun startRunning() {
+        controller.setupSession()
+        controller.startSession()
+        drainSessionThenMain(controller)
+        assertTrue(session.isRunning, "the session did not start")
+        assertEquals(listOf(back.input), session.inputs, "setup did not attach the back camera")
+    }
+
+    @AfterTest
+    fun tearDown() {
+        controller.cleanupSession()
+        drainSessionThenMain(controller)
+    }
+
+    @Test
+    fun aSwitchSwapsTheCameraInputWithoutStoppingTheSession() {
+        startRunning()
+        val before = session.calls.size
+
+        controller.switchCamera()
+        drainSessionThenMain(controller)
+
+        val calls = session.calls.drop(before)
+        assertFalse(calls.any { it.op == "stopRunning" }, "the switch stopped the running session: $calls")
+        assertEquals(listOf(front.input), session.inputs)
+        assertTrue(session.isRunning)
+        val swap = calls.filter { it.op == "removeInput" || it.op == "addInput" }
+        assertTrue(
+            swap.isNotEmpty() &&
+                swap.all {
+                    it.openConfigurations == 1
+                },
+            "inputs swapped outside one transaction: $swap",
+        )
+        assertEquals(0, session.openConfigurations, "the switch left a configuration open")
+    }
+
+    @Test
+    fun theMicrophoneSurvivesLensSwitches() {
+        startRunning()
+        val microphone = captureInputWithoutCamera()
+        controller.addInputUnlessPresent(
+            what = "the microphone",
+            isPresent = { it === microphone },
+            create = { Result.success(microphone) },
+        )
+
+        controller.switchCamera()
+        controller.switchCamera()
+        drainSessionThenMain(controller)
+
+        val inputs = session.inputs
+        assertTrue(microphone in inputs, "a lens switch removed the microphone: $inputs")
+        assertEquals(
+            setOf(back.input, microphone),
+            inputs.toSet(),
+            "the session should hold the back camera and the microphone",
+        )
+        assertEquals(2, inputs.size, "the session holds a stray input: $inputs")
+    }
+
+    @Test
+    fun aRefusedLensInputLeavesThePreviousCameraInPlace() {
+        startRunning()
+        session.refuse(front.input!!)
+
+        controller.switchCamera()
+        drainSessionThenMain(controller)
+
+        assertEquals(listOf(back.input), session.inputs, "a refused switch left the session without its camera")
+        assertEquals(10f, controller.getMaxZoom(), "the controller believes it moved to the front camera")
+        assertTrue(session.isRunning)
+        assertEquals(1, errors.size, "a refused switch was not reported: $errors")
+
+        // The controller still knows it is on the back camera, so the next switch goes to the front.
+        session.allow(front.input!!)
+        controller.switchCamera()
+        drainSessionThenMain(controller)
+        assertEquals(listOf(front.input), session.inputs)
+    }
+
+    /**
+     * A switch whose new input is refused, and whose previous input the session will not take back,
+     * leaves the session without a camera; the controller must not go on as if the previous one were
+     * there.
+     */
+    @Test
+    fun aSwitchThatCannotPutThePreviousCameraBackLeavesNoCameraInUse() {
+        startRunning()
+        session.refuse(front.input!!)
+        session.refuse(back.input!!)
+
+        controller.switchCamera()
+        drainSessionThenMain(controller)
+
+        assertEquals(emptyList(), session.inputs, "the session's inputs")
+        assertEquals(null, controller.currentDevice, "the controller believes a camera the session lost is in use")
+        assertEquals(1, errors.size, "the lost camera was not reported: $errors")
+    }
+
+    @Test
+    fun aRefusedDeviceTypeLeavesThePreviousCameraInPlace() {
+        startRunning()
+        session.refuse(telephoto.input!!)
+
+        controller.switchToDeviceType(CameraDeviceType.TELEPHOTO)
+        drainSessionThenMain(controller)
+
+        assertEquals(listOf(back.input), session.inputs, "a refused device type left the session without its camera")
+        assertEquals(10f, controller.getMaxZoom(), "the controller believes it moved to the telephoto camera")
+        assertEquals(1, errors.size, "a refused device-type switch was not reported: $errors")
+    }
+
+    @Test
+    fun aSwitchDuringARecordingIsRefused() {
+        startRunning()
+        controller.recordingInProgress = { true }
+        val before = session.calls.size
+
+        controller.switchCamera()
+        drainSessionThenMain(controller)
+
+        val calls = session.calls.drop(before).filter { it.op != "inputs" }
+        assertEquals(emptyList(), calls.map { it.toString() }, "a switch during a recording touched the session")
+        assertEquals(listOf(back.input), session.inputs)
+        assertEquals(1, errors.size, "the refused switch was not reported: $errors")
+    }
+
+    @Test
+    fun switchReturnsWhenNewInputIsLive() {
+        val driver = AppleEngineDriver(adjustableBack = true)
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+
+            val switched = engine.selectCamera(CameraSelection.ById(AppleEngineDriver.FRONT_ID))
+
+            // Read before any settle: the switch had already happened when selectCamera returned.
+            assertEquals(AppleEngineDriver.FRONT_ID, assertIs<CameraKResult.Success<LensInfo>>(switched).value.id)
+            assertEquals(
+                listOf(driver.front.input),
+                driver.session.inputs,
+                "the session's input when selectCamera returned",
+            )
+            assertTrue(driver.session.isRunning, "the session stopped for the switch")
+            assertEquals(AppleEngineDriver.FRONT_ID, engine.hardware.value.camera?.id, "the reported camera")
+            engine.close()
+        }
+    }
+
+    @Test
+    fun refusedInputRevertsLensAndReturnsFailure() {
+        val driver = AppleEngineDriver(adjustableBack = true)
+        driver.runCase {
+            val engine = driver.createEngine()
+            driver.settle()
+            assertEquals(CameraKResult.Success(Unit), engine.start(backCamera()))
+            driver.session.refuse(driver.front.input!!)
+
+            val refused = engine.selectCamera(CameraSelection.ById(AppleEngineDriver.FRONT_ID))
+
+            assertIs<CameraKResult.Failure>(refused, "a switch whose input the session refused")
+            assertEquals(listOf(driver.back.input), driver.session.inputs, "the previous camera is not back in place")
+            assertEquals(AppleEngineDriver.BACK_ID, engine.hardware.value.camera?.id, "the reported camera")
+            engine.close()
+        }
+    }
+}

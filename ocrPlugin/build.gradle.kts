@@ -73,12 +73,12 @@ tasks.named<Test>("desktopTest") {
     doFirst { testWorkingDir.mkdirs() }
     systemProperty(
         "ocr.tessdataDir",
-        rootProject.file("ocrTessdata/src/main/resources/com/kashif/ocrplugin/tessdata").absolutePath,
+        rootProject.file("ocrTessdata/src/main/resources/dev/kashifmehmood/camerak/ocr/tessdata").absolutePath,
     )
 }
 
 android {
-    namespace = "com.kashif.ocrplugin"
+    namespace = "dev.kashifmehmood.camerak.ocr"
 }
 
 // The @sample functions the KDoc names. Only commonMain gets them: Dokka refuses two source sets that

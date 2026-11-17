@@ -10,10 +10,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
-import com.kashif.cameraK.enums.AspectRatio
-import com.kashif.cameraK.state.CameraKState
-import com.kashif.cameraK.testing.FakeCameraEngine
-import com.kashif.cameraK.testing.fakeCameraKStateHolder
+import dev.kashifmehmood.camerak.enums.AspectRatio
+import dev.kashifmehmood.camerak.state.CameraKState
+import dev.kashifmehmood.camerak.testing.FakeCameraEngine
+import dev.kashifmehmood.camerak.testing.fakeCameraKStateHolder
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest

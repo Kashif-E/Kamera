@@ -1,43 +1,43 @@
-public final class com/kashif/ocrplugin/OCRProcessor {
+public final class dev/kashifmehmood/camerak/ocr/OCRProcessor {
 	public static final field $stable I
-	public fun <init> (Lcom/kashif/ocrplugin/OcrConfig;)V
-	public synthetic fun <init> (Lcom/kashif/ocrplugin/OcrConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (Lcom/kashif/ocrplugin/TesseractLibrary;Ljava/lang/String;Ljava/lang/String;Lcom/kashif/ocrplugin/LoggedOnce;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ldev/kashifmehmood/camerak/ocr/OcrConfig;)V
+	public synthetic fun <init> (Ldev/kashifmehmood/camerak/ocr/OcrConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ldev/kashifmehmood/camerak/ocr/TesseractLibrary;Ljava/lang/String;Ljava/lang/String;Ldev/kashifmehmood/camerak/ocr/LoggedOnce;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun close ()V
 	public final fun scanImage (Ljava/awt/image/BufferedImage;)Ljava/lang/String;
 }
 
-public final class com/kashif/ocrplugin/OcrConfig {
+public final class dev/kashifmehmood/camerak/ocr/OcrConfig {
 	public static final field $stable I
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getLevel-5WJfq1U ()Ljava/lang/String;
+	public final fun getLevel-59ZYupk ()Ljava/lang/String;
 	public final fun getMaxFps ()F
-	public final fun getRegion ()Lcom/kashif/cameraK/frames/FrameRect;
+	public final fun getRegion ()Ldev/kashifmehmood/camerak/frames/FrameRect;
 	public final fun getTessdataPath ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class com/kashif/ocrplugin/OcrConfig$Builder {
+public final class dev/kashifmehmood/camerak/ocr/OcrConfig$Builder {
 	public static final field $stable I
-	public final fun getLevel-5WJfq1U ()Ljava/lang/String;
+	public final fun getLevel-59ZYupk ()Ljava/lang/String;
 	public final fun getMaxFps ()F
-	public final fun getRegion ()Lcom/kashif/cameraK/frames/FrameRect;
+	public final fun getRegion ()Ldev/kashifmehmood/camerak/frames/FrameRect;
 	public final fun getTessdataPath ()Ljava/lang/String;
-	public final fun setLevel-TErN_dY (Ljava/lang/String;)V
+	public final fun setLevel-ITOe1VE (Ljava/lang/String;)V
 	public final fun setMaxFps (F)V
-	public final fun setRegion (Lcom/kashif/cameraK/frames/FrameRect;)V
+	public final fun setRegion (Ldev/kashifmehmood/camerak/frames/FrameRect;)V
 	public final fun setTessdataPath (Ljava/lang/String;)V
 }
 
-public final class com/kashif/ocrplugin/OcrConfigKt {
-	public static final fun OcrConfig (Lkotlin/jvm/functions/Function1;)Lcom/kashif/ocrplugin/OcrConfig;
-	public static synthetic fun OcrConfig$default (Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/kashif/ocrplugin/OcrConfig;
+public final class dev/kashifmehmood/camerak/ocr/OcrConfigKt {
+	public static final fun OcrConfig (Lkotlin/jvm/functions/Function1;)Ldev/kashifmehmood/camerak/ocr/OcrConfig;
+	public static synthetic fun OcrConfig$default (Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ldev/kashifmehmood/camerak/ocr/OcrConfig;
 }
 
-public final class com/kashif/ocrplugin/OcrLevel {
-	public static final field Companion Lcom/kashif/ocrplugin/OcrLevel$Companion;
-	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/kashif/ocrplugin/OcrLevel;
+public final class dev/kashifmehmood/camerak/ocr/OcrLevel {
+	public static final field Companion Ldev/kashifmehmood/camerak/ocr/OcrLevel$Companion;
+	public static final synthetic fun box-impl (Ljava/lang/String;)Ldev/kashifmehmood/camerak/ocr/OcrLevel;
 	public fun equals (Ljava/lang/Object;)Z
 	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
 	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
@@ -49,33 +49,33 @@ public final class com/kashif/ocrplugin/OcrLevel {
 	public final synthetic fun unbox-impl ()Ljava/lang/String;
 }
 
-public final class com/kashif/ocrplugin/OcrLevel$Companion {
-	public final fun getACCURATE-5WJfq1U ()Ljava/lang/String;
-	public final fun getFAST-5WJfq1U ()Ljava/lang/String;
+public final class dev/kashifmehmood/camerak/ocr/OcrLevel$Companion {
+	public final fun getACCURATE-59ZYupk ()Ljava/lang/String;
+	public final fun getFAST-59ZYupk ()Ljava/lang/String;
 }
 
-public final class com/kashif/ocrplugin/OcrPlugin : com/kashif/cameraK/state/CameraKPlugin {
+public final class dev/kashifmehmood/camerak/ocr/OcrPlugin : dev/kashifmehmood/camerak/state/CameraKPlugin {
 	public static final field $stable I
-	public fun <init> (Lcom/kashif/ocrplugin/OcrConfig;)V
-	public synthetic fun <init> (Lcom/kashif/ocrplugin/OcrConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun getConfig ()Lcom/kashif/ocrplugin/OcrConfig;
+	public fun <init> (Ldev/kashifmehmood/camerak/ocr/OcrConfig;)V
+	public synthetic fun <init> (Ldev/kashifmehmood/camerak/ocr/OcrConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getConfig ()Ldev/kashifmehmood/camerak/ocr/OcrConfig;
 	public fun getId ()Ljava/lang/String;
 	public fun getNeedsFrames ()Z
 	public final fun getResults ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getStatus ()Lkotlinx/coroutines/flow/StateFlow;
-	public fun onAttach (Lcom/kashif/cameraK/plugin/CameraKPluginContext;)V
+	public fun onAttach (Ldev/kashifmehmood/camerak/plugin/CameraKPluginContext;)V
 	public fun onDetach ()V
 	public final fun pause ()V
-	public final fun recognize-Q_Ndi2g (Lcom/kashif/cameraK/capture/CapturedImage;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun recognize-Q_Ndi2g$default (Lcom/kashif/ocrplugin/OcrPlugin;Lcom/kashif/cameraK/capture/CapturedImage;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun recognize-R2r0IsQ (Ldev/kashifmehmood/camerak/capture/CapturedImage;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun recognize-R2r0IsQ$default (Ldev/kashifmehmood/camerak/ocr/OcrPlugin;Ldev/kashifmehmood/camerak/capture/CapturedImage;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun resume ()V
 }
 
-public final class com/kashif/ocrplugin/OcrPluginKt {
-	public static final fun rememberOcrPlugin (Lcom/kashif/ocrplugin/OcrConfig;Landroidx/compose/runtime/Composer;II)Lcom/kashif/ocrplugin/OcrPlugin;
+public final class dev/kashifmehmood/camerak/ocr/OcrPluginKt {
+	public static final fun rememberOcrPlugin (Ldev/kashifmehmood/camerak/ocr/OcrConfig;Landroidx/compose/runtime/Composer;II)Ldev/kashifmehmood/camerak/ocr/OcrPlugin;
 }
 
-public final class com/kashif/ocrplugin/RecognizedText {
+public final class dev/kashifmehmood/camerak/ocr/RecognizedText {
 	public static final field $stable I
 	public fun <init> (Ljava/lang/String;Ljava/util/List;J)V
 	public fun equals (Ljava/lang/Object;)Z
@@ -86,16 +86,16 @@ public final class com/kashif/ocrplugin/RecognizedText {
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class com/kashif/ocrplugin/TessdataNotFoundException : java/lang/IllegalStateException {
+public final class dev/kashifmehmood/camerak/ocr/TessdataNotFoundException : java/lang/IllegalStateException {
 	public static final field $stable I
 	public fun <init> (Ljava/lang/String;)V
 }
 
-public final class com/kashif/ocrplugin/TextBlock {
+public final class dev/kashifmehmood/camerak/ocr/TextBlock {
 	public static final field $stable I
-	public fun <init> (Ljava/lang/String;Lcom/kashif/cameraK/frames/FrameRect;Ljava/lang/Float;)V
+	public fun <init> (Ljava/lang/String;Ldev/kashifmehmood/camerak/frames/FrameRect;Ljava/lang/Float;)V
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getBounds ()Lcom/kashif/cameraK/frames/FrameRect;
+	public final fun getBounds ()Ldev/kashifmehmood/camerak/frames/FrameRect;
 	public final fun getConfidence ()Ljava/lang/Float;
 	public final fun getText ()Ljava/lang/String;
 	public fun hashCode ()I

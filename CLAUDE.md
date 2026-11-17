@@ -19,7 +19,7 @@ scripts/verify.sh                        # Verification harness (CI runs this); 
 ./gradlew Sample:run                     # Run desktop sample app
 ./gradlew dokkaGeneratePublicationHtml   # Generate API docs
 ./gradlew cameraK-core:desktopTest       # Run JVM tests for a module
-./gradlew cameraK-core:desktopTest --tests "com.kashif.cameraK.video.VideoTypesTest"  # Single test class
+./gradlew cameraK-core:desktopTest --tests "dev.kashifmehmood.camerak.video.VideoTypesTest"  # Single test class
 ```
 
 Tests live in each module's `commonTest` (e.g. `cameraK-core/src/commonTest`). They run per-target — `desktopTest` is the fastest loop; `iosSimulatorArm64Test` / `testDebugUnitTest` cover the other targets.
@@ -59,7 +59,7 @@ All published library modules target: `androidTarget`, `jvm("desktop")`, `iosArm
 
 ## Key Conventions
 
-- Packages: `com.kashif.cameraK` (core, Compose UI, testing), `com.kashif.mediasaverplugin`, `com.kashif.qrscannerplugin`, `com.kashif.ocrplugin`, `com.kashif.analyzerplugin` (plugins, all lowercase)
+- Packages: `dev.kashifmehmood.camerak` (core, Compose UI, testing), `dev.kashifmehmood.camerak.mediasaver`, `dev.kashifmehmood.camerak.qrscanner`, `dev.kashifmehmood.camerak.ocr`, `dev.kashifmehmood.camerak.analyzer` (plugins, all lowercase)
 - Formatting: Spotless + ktlint 1.5.0 with `.editorconfig`. Composable function naming is exempt from ktlint rules.
 - JVM toolchain: Java 17
 - Android: minSdk 23, compileSdk 36

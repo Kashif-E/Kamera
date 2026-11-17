@@ -1,7 +1,7 @@
 package org.company.app
 
 import androidx.compose.runtime.Composable
-import com.kashif.cameraK.utils.CameraKLogger
+import dev.kashifmehmood.camerak.utils.CameraKLogger
 import java.awt.Desktop
 import java.io.IOException
 import java.net.URI

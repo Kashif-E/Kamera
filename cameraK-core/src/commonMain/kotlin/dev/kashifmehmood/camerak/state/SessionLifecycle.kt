@@ -1,0 +1,384 @@
+@file:OptIn(CameraKEngineApi::class)
+
+package dev.kashifmehmood.camerak.state
+
+import dev.kashifmehmood.camerak.coroutines.suspendRunCatching
+import dev.kashifmehmood.camerak.engine.CameraEngine
+import dev.kashifmehmood.camerak.engine.DesiredHardware
+import dev.kashifmehmood.camerak.engine.EngineState
+import dev.kashifmehmood.camerak.error.CameraKError
+import dev.kashifmehmood.camerak.error.CameraOperation
+import dev.kashifmehmood.camerak.permissions.CameraKPermission
+import dev.kashifmehmood.camerak.permissions.CameraKPermissionChecker
+import dev.kashifmehmood.camerak.permissions.PermissionStatus
+import dev.kashifmehmood.camerak.recording.CONFIG_CHANGE_GRACE
+import dev.kashifmehmood.camerak.result.CameraKResult
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import dev.kashifmehmood.camerak.utils.CameraKLogger
+import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+
+/**
+ * How long a start may wait for the platform to open, hold or fail the camera before the holder
+ * gives up with `Timeout(START)`: long enough for a cold CameraX bind, short enough that a camera
+ * that never answers does not leave a spinner. A start whose open shows the system's prompt
+ * (`CameraKPermissionChecker.promptsOnOpen`) also gets [PERMISSION_PROMPT_TIMEOUT].
+ */
+internal val START_TIMEOUT: Duration = 10.seconds
+
+/**
+ * How much longer a start may wait when its open shows the system's prompt (macOS, at a NotDetermined
+ * it read): the open waits there for the user's answer, and the start's own deadline must not run
+ * out while the prompt is still being read.
+ */
+internal val PERMISSION_PROMPT_TIMEOUT: Duration = 60.seconds
+
+/** [base], plus [PERMISSION_PROMPT_TIMEOUT] when the open shows the system's prompt and waits for its answer. */
+internal fun promptAwareTimeout(base: Duration, prompting: Boolean): Duration =
+    if (prompting) base + PERMISSION_PROMPT_TIMEOUT else base
+
+/**
+ * How long `close()` waits for the engine to release the camera. A platform that never returns
+ * cannot keep the holder, or the next holder waiting on the same device, open beyond it.
+ */
+internal val ENGINE_CLOSE_TIMEOUT: Duration = 5.seconds
+
+/**
+ * How long a holder built to replace another waits for the old engine to close before it starts its
+ * own: a camera the old engine still holds would refuse the open, and one that never closes cannot
+ * keep the new holder from starting beyond it.
+ */
+internal val PREVIOUS_CLOSE_TIMEOUT: Duration = 10.seconds
+
+/**
+ * The state a start that timed out leaves, from the camera's status read again then:
+ * `Permission(status)` when the user denied it meanwhile, `Permission(NotDetermined)` while a prompt
+ * that opens with the camera (macOS) is still unanswered, so the re-check on resume starts it, and
+ * `Timeout(START)` otherwise.
+ */
+internal fun startTimeoutState(checker: CameraKPermissionChecker?): CameraKState.Error {
+    val status = checker?.status(CameraKPermission.CAMERA)
+    val error = if (checker != null && status != null && checker.waitsOnUser(CameraKPermission.CAMERA, status)) {
+        CameraKError.Permission(CameraKPermission.CAMERA, status)
+    } else {
+        CameraKError.Timeout(CameraOperation.START)
+    }
+    return CameraKState.Error(error)
+}
+
+/** Whether a start that timed out at [status] did so on the user: refused, or a prompt still up. */
+internal fun CameraKPermissionChecker.waitsOnUser(permission: CameraKPermission, status: PermissionStatus): Boolean =
+    !allowsOpen(status) || promptsOnOpen(permission, status)
+
+/**
+ * The holder's session lifecycle: a desired lifecycle (stopped, running, closed) that one
+ * reconciler, started at construction in [scope], turns into engine calls, and the holder's
+ * [state], written only through [transition]. A new desired value cancels the work of the previous
+ * one, so a stop during a start cancels the start instead of racing it.
+ *
+ * A stop while a recording is live waits [hostStopGrace] first, and a stop for a host's recreation
+ * waits [CONFIG_CHANGE_GRACE] whatever is live; a start inside that wait continues the open session:
+ * the engine is not started again and Starting is not published. So does a start that reaches the
+ * reconciler together with the stop before it, which then never runs.
+ *
+ * @param beforeReady Runs before the first and every later Ready is published, outside any lock.
+ * @param awaitPreviousClose Runs before each engine start: a holder that replaces another waits for
+ *   the old engine to close, bounded.
+ * @param hostStopGrace The config-change grace: returns at once with no live recording, otherwise
+ *   once the grace has run out. Cancellable.
+ * @param hostStop Stops the camera for a host stop in place of `engine.stop()`: the recording
+ *   controller ends a live recording first, then stops the engine.
+ */
+internal class SessionLifecycle(
+    private val engine: CameraEngine,
+    private val permissionChecker: CameraKPermissionChecker?,
+    scope: CoroutineScope,
+    private val desiredHardware: () -> DesiredHardware,
+    private val beforeReady: () -> Unit,
+    private val awaitPreviousClose: suspend () -> Unit,
+    private val hostStopGrace: suspend () -> Unit,
+    private val hostStop: suspend () -> Unit,
+) {
+    private sealed interface Desired {
+        /** Stopped once every attempt up to [upTo] had been requested. */
+        data class Stopped(val upTo: Int, val forRecreation: Boolean = false) : Desired
+
+        /** [attempt] changes on every start from Stopped or Error, so the reconciler runs a new session. */
+        class Running(val attempt: Int) : Desired
+
+        data object Closed : Desired
+    }
+
+    private val desired = MutableStateFlow<Desired>(Desired.Stopped(upTo = 0))
+    private val _state = MutableStateFlow<CameraKState>(CameraKState.Idle)
+    val state: StateFlow<CameraKState> = _state.asStateFlow()
+
+    private val attempts = atomic(0)
+    private val publishing = Mutex()
+
+    // Read and written by the reconciler only, one desired value at a time.
+    private var engineStarted = false
+
+    // The engine accepted a session (Open or Interrupted) and has not been stopped since.
+    private var sessionOpen = false
+
+    // True only while a stop waits out the grace over an open session: a start then continues it.
+    private var continuable = false
+
+    private val reconciler: Job = scope.launch {
+        desired.collectLatest { d ->
+            when (d) {
+                is Desired.Stopped -> {
+                    if (engineStarted) {
+                        continuable = sessionOpen
+                        if (d.forRecreation) delay(CONFIG_CHANGE_GRACE) else hostStopGrace()
+                        continuable = false
+                        withContext(NonCancellable) {
+                            hostStop()
+                            sessionOpen = false
+                        }
+                    }
+                    transition { CameraKState.Idle }
+                }
+                // A session still open was never stopped: the grace was waiting, or the stop before
+                // this start was conflated away. A failed session is not continued; it starts again.
+                is Desired.Running -> if (continuable || (sessionOpen && _state.value !is CameraKState.Error)) {
+                    continuable = false
+                    sessionCatching(d.attempt) { continueSession(d.attempt) }
+                } else {
+                    sessionCatching(d.attempt) { runSession(d.attempt) }
+                }
+                // The holder's release owns shutdown.
+                Desired.Closed -> Unit
+            }
+        }
+    }
+
+    private val readies = atomic(0)
+
+    /**
+     * Rises each time [state] becomes Ready, however quickly the next state follows, and never falls.
+     * A Ready that loses its race to another state may raise it too: a reader comparing two counts
+     * may see a change with no Ready behind it, but never misses a Ready.
+     */
+    val readyCount: Int get() = readies.value
+
+    /** The only writer of [state]. Nothing leaves Closed, whatever the engine reports. */
+    fun transition(next: (CameraKState) -> CameraKState) {
+        while (true) {
+            val current = _state.value
+            val updated = if (current is CameraKState.Closed) current else next(current)
+            // Counted before it is published, so whoever sees a later state reads a count that includes it.
+            val entersReady = updated is CameraKState.Ready && current !is CameraKState.Ready
+            if (entersReady) readies.incrementAndGet()
+            if (_state.compareAndSet(current, updated)) return
+        }
+    }
+
+    /** Starts a session from Idle or Error; changes nothing while one is live or once closed. */
+    fun start() {
+        desired.update { d ->
+            when {
+                d is Desired.Closed -> d
+                d is Desired.Stopped || _state.value is CameraKState.Error -> Desired.Running(
+                    attempts.incrementAndGet(),
+                )
+                else -> d
+            }
+        }
+    }
+
+    /** Stops the camera; [forRecreation] waits [CONFIG_CHANGE_GRACE] first for the recreated host's start. */
+    fun stop(forRecreation: Boolean = false) {
+        desired.update { if (it is Desired.Closed) it else Desired.Stopped(attempts.value, forRecreation) }
+    }
+
+    /** Restarts from Error; false in any other state. */
+    fun retry(): Boolean {
+        if (_state.value !is CameraKState.Error) return false
+        return restart()
+    }
+
+    /**
+     * Starts again from `Error(Permission)` whose status is not Restricted, once the checker reports
+     * a status that allows opening. Does nothing in any other state.
+     */
+    fun recheckPermission() {
+        val error = (_state.value as? CameraKState.Error)?.error as? CameraKError.Permission ?: return
+        if (error.status == PermissionStatus.Restricted) return
+        val checker = permissionChecker ?: return
+        val allowed = try {
+            checker.allowsOpen(checker.status(CameraKPermission.CAMERA))
+        } catch (e: Exception) {
+            CameraKLogger.e(TAG, "Re-checking the camera permission failed; the holder stays in Error", e)
+            return
+        }
+        if (allowed) restart()
+    }
+
+    private fun restart(): Boolean {
+        var wrote = false
+        desired.update { d ->
+            if (d is Desired.Closed) {
+                d
+            } else {
+                Desired.Running(attempts.incrementAndGet()).also { wrote = true }
+            }
+        }
+        return wrote
+    }
+
+    /** Publishes Closed. From here [transition] keeps it. */
+    fun enterClosed() {
+        _state.value = CameraKState.Closed
+    }
+
+    /** Ends the reconciler: a session still starting stops the engine, a live one is left to the engine's close. */
+    suspend fun shutDown() {
+        desired.value = Desired.Closed
+        reconciler.cancelAndJoin()
+    }
+
+    /** A failure outside a session's own handling ends the session in `Error(Internal)`. */
+    fun failSession(error: Throwable) {
+        transition { current ->
+            when (current) {
+                CameraKState.Starting, is CameraKState.Ready, is CameraKState.Interrupted ->
+                    CameraKState.Error(CameraKError.Internal(error))
+                else -> current
+            }
+        }
+    }
+
+    private suspend fun sessionCatching(attempt: Int, session: suspend () -> Unit) {
+        suspendRunCatching { session() }.onFailure { e ->
+            CameraKLogger.e(TAG, "The camera session failed unexpectedly", e)
+            stopEngine()
+            transition { CameraKState.Error(CameraKError.Internal(e)) }
+        }
+    }
+
+    private suspend fun stopEngine() = withContext(NonCancellable) {
+        engine.stop()
+        sessionOpen = false
+    }
+
+    // A start over a session that was never stopped: the camera never closed, so the session goes on
+    // from what the engine reports now, with no Starting and no second engine.start.
+    private suspend fun continueSession(attempt: Int) = coroutineScope {
+        val runtimeFailure = CompletableDeferred<Unit>()
+        launch(start = CoroutineStart.UNDISPATCHED) {
+            engine.state.first { s ->
+                publish(attempt) { s }
+                s is EngineState.Failed
+            }
+            runtimeFailure.complete(Unit)
+        }
+        runtimeFailure.await()
+        stopEngine()
+    }
+
+    private suspend fun runSession(attempt: Int) {
+        transition { CameraKState.Starting }
+        val checker = permissionChecker
+        val status = checker?.status(CameraKPermission.CAMERA) ?: PermissionStatus.Granted
+        if (checker != null && !checker.allowsOpen(status)) {
+            transition { CameraKState.Error(CameraKError.Permission(CameraKPermission.CAMERA, status)) }
+            return
+        }
+        val prompting = checker?.promptsOnOpen(CameraKPermission.CAMERA, status) == true
+        awaitPreviousClose()
+        engineStarted = true
+        // Open or Interrupted was reported for this session: the platform accepted it.
+        var accepted = false
+        try {
+            coroutineScope {
+                val runtimeFailure = CompletableDeferred<Unit>()
+                // UNDISPATCHED subscribes before start is called, and drop(1) discards the value the
+                // engine held before this session: its first Closed, or what a stopped session left.
+                // A Failed ends the mirror: it ends its generation, so no later value of it is mapped.
+                val mirror = launch(start = CoroutineStart.UNDISPATCHED) {
+                    engine.state.drop(1).first { s ->
+                        if (s is EngineState.Open || s is EngineState.Interrupted) {
+                            accepted = true
+                            sessionOpen = true
+                        }
+                        publish(attempt) { s }
+                        s is EngineState.Failed
+                    }
+                    runtimeFailure.complete(Unit)
+                }
+                when (
+                    val started =
+                        withTimeoutOrNull(promptAwareTimeout(START_TIMEOUT, prompting)) {
+                            engine.start(desiredHardware())
+                        }
+                ) {
+                    null -> {
+                        mirror.cancel()
+                        stopEngine()
+                        val timedOut = startTimeoutState(checker)
+                        transition { timedOut }
+                    }
+                    is CameraKResult.Failure -> {
+                        // Authoritative whether or not the engine also published Failed.
+                        mirror.cancel()
+                        stopEngine()
+                        transition { CameraKState.Error(started.error) }
+                    }
+                    is CameraKResult.Success -> {
+                        // Success means Open or Interrupted. Mapping the current value covers a start
+                        // on an engine that was already open, whose state therefore never changed.
+                        accepted = true
+                        sessionOpen = true
+                        publish(attempt) { engine.state.value }
+                        // The session lives until the next desired value cancels it, or until the
+                        // platform fails it: then it releases the camera, so that no later engine
+                        // value, such as a platform reopening on its own, moves Error back to Ready.
+                        runtimeFailure.await()
+                        stopEngine()
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            // A cancelled start leaves nothing open. An accepted, live session is left to what
+            // cancelled it: a stop (which stops the engine) or close (which closes it).
+            if (!accepted) stopEngine()
+            throw e
+        }
+    }
+
+    // The mirror and a successful start both publish what the engine reports, on any thread. One at a
+    // time, so neither settles Ready while the other is still attaching the plugins before it.
+    private suspend fun publish(attempt: Int, read: () -> EngineState) = publishing.withLock {
+        val engineState = read()
+        if (engineState is EngineState.Open && _state.value !is CameraKState.Closed) beforeReady()
+        transition { current -> engineState.toCameraKState(current) }
+    }
+
+    private companion object {
+        const val TAG = "CameraK"
+    }
+}

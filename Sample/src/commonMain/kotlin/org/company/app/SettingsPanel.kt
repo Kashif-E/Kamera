@@ -14,10 +14,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.X
-import com.kashif.cameraK.enums.CameraDeviceType
-import com.kashif.cameraK.enums.DeviceOrientation
-import com.kashif.cameraK.enums.ImageFormat
-import com.kashif.cameraK.enums.QualityPrioritization
+import dev.kashifmehmood.camerak.enums.CameraDeviceType
+import dev.kashifmehmood.camerak.enums.DeviceOrientation
+import dev.kashifmehmood.camerak.enums.ImageFormat
+import dev.kashifmehmood.camerak.enums.QualityPrioritization
 import org.company.app.designsystem.CircleIconButton
 import org.company.app.designsystem.OptionRow
 import org.company.app.designsystem.SampleTheme

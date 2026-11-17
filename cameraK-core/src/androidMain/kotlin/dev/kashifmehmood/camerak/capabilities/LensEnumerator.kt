@@ -1,0 +1,314 @@
+@file:OptIn(CameraKEngineApi::class)
+
+package dev.kashifmehmood.camerak.capabilities
+
+import android.content.Context
+import android.graphics.ImageFormat
+import android.graphics.SurfaceTexture
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.os.Build
+import dev.kashifmehmood.camerak.enums.CameraDeviceType
+import dev.kashifmehmood.camerak.enums.CameraLens
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import dev.kashifmehmood.camerak.utils.CameraKLogger
+
+/**
+ * [LensInfo] plus the Android-only binding facts the selector needs.
+ *
+ * @property parentLogicalId For a physical sub-lens, the id of the enclosing top-level logical
+ * camera it was expanded from; null for top-level entries. CameraSelector.select() (CameraX 1.5.1)
+ * resolves purely from the CameraFilter set — setPhysicalCameraId does NOT influence which logical
+ * camera is picked — so pinning a physical child to the right hardware requires filtering on this
+ * parent id too (see CameraSelectorResolver).
+ * @property physical For a physical sub-lens, what it can do on its own; null for top-level entries.
+ */
+internal class AndroidLensDescriptor(
+    val info: LensInfo,
+    val isPhysicalChild: Boolean,
+    val parentLogicalId: String?,
+    val physical: PhysicalLensFacts? = null,
+)
+
+/**
+ * The built-in lens a switch to [deviceType] on [lens] binds, or null when [lens] has no lens of that
+ * type. External cameras are never a target: the selector requires a lens facing, and CameraX never
+ * offers an external camera for one.
+ */
+internal fun List<AndroidLensDescriptor>.deviceTypeTarget(
+    lens: CameraLens,
+    deviceType: CameraDeviceType,
+): AndroidLensDescriptor? = firstOrNull {
+    it.info.lens == lens && !it.info.isExternal && it.info.deviceType == deviceType
+}
+
+/**
+ * Camera2 snapshot of every lens on the device. Top-level ids come from
+ * [CameraManager.cameraIdList]; a logical multi-camera's physical sub-lenses (which are
+ * NOT in that list) are expanded via physicalCameraIds and read directly with
+ * getCameraCharacteristics(physicalId) — Camera2 supports that since API 28. Crop
+ * pseudo-lenses the HAL over-enumerates are dropped via [dedupeOpticallyDistinctLenses].
+ */
+internal object LensEnumerator {
+
+    fun snapshot(context: Context): List<AndroidLensDescriptor> {
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager ?: return emptyList()
+        return snapshot(CameraManagerReader(manager))
+    }
+
+    fun snapshot(reader: Camera2Reader): List<AndroidLensDescriptor> {
+        val cameraIds = try {
+            reader.cameraIds()
+        } catch (e: Exception) {
+            CameraKLogger.w("CameraK", "Lens enumeration failed to list the cameras; reporting none", e)
+            emptyArray()
+        }
+
+        // External cameras are classified apart from built-in ones: they share no hardware with them.
+        val rawByFacing = mutableMapOf<Facing, MutableList<RawCamera>>()
+        // Left out after the types are read from every lens, so leaving one out relabels none of the others.
+        val unstreamable = mutableSetOf<String>()
+        for (id in cameraIds) {
+            val raw = describe(reader, id, isPhysicalChild = false, parentLogicalId = null) ?: continue
+            rawByFacing.getOrPut(raw.facing) { mutableListOf() }.add(raw)
+            if (raw.isLogical) {
+                for (physicalId in raw.physicalCameraIds) {
+                    val child = describe(reader, physicalId, isPhysicalChild = true, parentLogicalId = id)
+                        ?: continue
+                    if (!child.streamUseCases.containsAll(raw.streamUseCases intersect CAMERAX_STREAM_USE_CASES)) {
+                        CameraKLogger.w(
+                            "CameraK",
+                            "Physical lens $physicalId lacks stream use cases camera $id lists; it is not offered",
+                        )
+                        unstreamable += physicalId
+                    }
+                    rawByFacing.getOrPut(child.facing) { mutableListOf() }.add(child)
+                }
+            }
+        }
+
+        val result = mutableListOf<AndroidLensDescriptor>()
+        for ((facing, allRaw) in rawByFacing) {
+            val rawCameras = dedupeCropSiblings(allRaw)
+            val types = deriveLensDeviceTypes(
+                rawCameras.map { RawLensFocalInfo(it.id, it.focalLengthsMm, it.physicalSizeWidthMm, it.isLogical) },
+            )
+            for (raw in rawCameras) {
+                if (raw.isPhysicalChild && raw.id in unstreamable) continue
+                // Focal length can't detect macro; keep the pre-existing min-focus-distance rule
+                // for top-level ids (matches the old createCameraSelector MACRO filter).
+                val deviceType = if (!raw.isPhysicalChild && raw.minFocusDistance > MACRO_MIN_DIOPTERS) {
+                    CameraDeviceType.MACRO
+                } else {
+                    types[raw.id] ?: CameraDeviceType.DEFAULT
+                }
+                result.add(
+                    AndroidLensDescriptor(
+                        info = LensInfo(
+                            id = raw.id,
+                            deviceType = deviceType,
+                            lens = facing.lens,
+                            minZoom = raw.minZoomRatio,
+                            maxZoom = raw.maxZoomRatio,
+                            hasFlash = raw.hasFlash,
+                            isLogical = raw.isLogical,
+                            isExternal = facing.isExternal,
+                        ),
+                        isPhysicalChild = raw.isPhysicalChild,
+                        parentLogicalId = raw.parentLogicalId,
+                        physical = raw.physical,
+                    ),
+                )
+            }
+        }
+        return result
+    }
+
+    // LENS_INFO_MINIMUM_FOCUS_DISTANCE is in diopters (1/meters) — larger means it focuses
+    // closer, not farther. A typical main/wide camera reports ~8-12 diopters (focuses down to
+    // ~8-12cm); dedicated macro lenses report ~20-33 diopters (focus at ~3-5cm or closer). 20 is
+    // comfortably above the main-camera range while still catching real macro lenses. A
+    // fixed-focus lens reports 0 and stays excluded naturally.
+    private const val MACRO_MIN_DIOPTERS = 20f
+
+    // The stream use cases CameraX sets: PREVIEW, STILL_CAPTURE, VIDEO_RECORD, PREVIEW_VIDEO_STILL and
+    // VIDEO_CALL (CameraMetadata.SCALER_AVAILABLE_STREAM_USE_CASES_*, 1 to 5).
+    private val CAMERAX_STREAM_USE_CASES = setOf(1L, 2L, 3L, 4L, 5L)
+
+    // Dedup pool is per PARENT logical camera, not per facing: two logical cameras on the same
+    // facing (e.g. two back logical multi-cameras) can each have a child at the same focal length
+    // without being crop siblings of each other — pooling all children of a facing together would
+    // wrongly collapse one representative across both parents.
+    private fun dedupeCropSiblings(rawCameras: List<RawCamera>): List<RawCamera> {
+        val (children, topLevel) = rawCameras.partition { it.isPhysicalChild }
+        val survivingIds = children
+            .groupBy { it.parentLogicalId }
+            .values
+            .flatMap { group ->
+                dedupeOpticallyDistinctLenses(
+                    group.map { RawLensFocalInfo(it.id, it.focalLengthsMm, it.physicalSizeWidthMm, it.isLogical) },
+                )
+            }
+            .mapTo(mutableSetOf()) { it.id }
+        // A device may list a physical lens as a camera of its own too (the Galaxy S23's ultra-wide, camera 2
+        // inside logical camera 0): it is offered once, as that camera.
+        val topLevelIds = topLevel.mapTo(mutableSetOf()) { it.id }
+        return topLevel + children.filter { it.id in survivingIds && it.id !in topLevelIds }
+    }
+
+    /**
+     * Which way a camera faces. An external camera faces neither way; it reports [CameraLens.BACK]
+     * with [isExternal] set, since [CameraLens] has no entry for it.
+     */
+    private data class Facing(val lens: CameraLens, val isExternal: Boolean)
+
+    private class RawCamera(
+        val id: String,
+        val facing: Facing,
+        val minZoomRatio: Float,
+        val maxZoomRatio: Float,
+        val hasFlash: Boolean,
+        val isLogical: Boolean,
+        val isPhysicalChild: Boolean,
+        val parentLogicalId: String?,
+        val focalLengthsMm: List<Float>,
+        val physicalSizeWidthMm: Float?,
+        val physicalCameraIds: Set<String>,
+        val minFocusDistance: Float,
+        val physical: PhysicalLensFacts?,
+        /**
+         * The stream use cases the camera lists, which CameraX sets on its streams from Android 13 in
+         * every mode but zero-shutter-lag's; empty below it. A stream pinned to a physical lens is checked
+         * against the lens's own list, so a lens without its logical camera's fails the session.
+         */
+        val streamUseCases: Set<Long>,
+    )
+
+    private fun describe(
+        reader: Camera2Reader,
+        id: String,
+        isPhysicalChild: Boolean,
+        parentLogicalId: String?,
+    ): RawCamera? {
+        val characteristics = try {
+            reader.characteristics(id)
+        } catch (e: Exception) {
+            CameraKLogger.w("CameraK", "Lens enumeration failed to read camera $id; leaving it out", e)
+            null
+        } ?: return null
+
+        val facing = when (characteristics.get(CameraCharacteristics.LENS_FACING)) {
+            CameraCharacteristics.LENS_FACING_FRONT -> Facing(CameraLens.FRONT, isExternal = false)
+            CameraCharacteristics.LENS_FACING_EXTERNAL -> Facing(CameraLens.BACK, isExternal = true)
+            else -> Facing(CameraLens.BACK, isExternal = false)
+        }
+
+        // CONTROL_ZOOM_RATIO_RANGE is an API 30+ Key FIELD — referencing it below 30 throws
+        // NoSuchFieldError (an Error, uncatchable by catch(Exception)). Guard by SDK level.
+        val (minZoom, maxZoom) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val range = characteristics.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
+            (range?.lower ?: 1.0f) to (range?.upper ?: 1.0f)
+        } else {
+            val maxDigital = characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1.0f
+            1.0f to maxDigital
+        }
+
+        val physicalIds = try {
+            reader.physicalCameraIds(characteristics)
+        } catch (e: Exception) {
+            CameraKLogger.w(
+                "CameraK",
+                "Lens enumeration failed to read camera $id's physical lenses; listing it as one lens",
+                e,
+            )
+            emptySet()
+        }
+
+        return RawCamera(
+            id = id,
+            facing = facing,
+            minZoomRatio = minZoom,
+            maxZoomRatio = maxZoom,
+            hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true,
+            isLogical = physicalIds.isNotEmpty(),
+            isPhysicalChild = isPhysicalChild,
+            parentLogicalId = parentLogicalId,
+            focalLengthsMm = characteristics.get(
+                CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS,
+            )?.toList().orEmpty(),
+            physicalSizeWidthMm = characteristics.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)?.width,
+            physicalCameraIds = physicalIds,
+            minFocusDistance = characteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE) ?: 0f,
+            physical = if (isPhysicalChild) physicalFacts(reader, id, characteristics) else null,
+            streamUseCases = reader.streamUseCases(characteristics),
+        )
+    }
+
+    // A bind that pins a physical lens binds its logical camera, which CameraX sizes and describes: what
+    // the lens can do on its own is read here, from its own characteristics.
+    private fun physicalFacts(
+        reader: Camera2Reader,
+        id: String,
+        characteristics: CameraCharacteristics,
+    ): PhysicalLensFacts {
+        val outputs = try {
+            reader.outputSizes(characteristics)
+        } catch (e: Exception) {
+            CameraKLogger.w("CameraK", "Lens enumeration failed to read physical lens $id's output sizes", e)
+            null
+        }
+        return PhysicalLensFacts(outputs, meteringOf(characteristics))
+    }
+
+    // A minimum focus distance of 0 is a fixed-focus lens; a lens that takes no region of a kind cannot
+    // meter it at a point. A key the characteristics leave out restricts nothing.
+    private fun meteringOf(characteristics: CameraCharacteristics): PhysicalMetering {
+        fun takesRegions(key: CameraCharacteristics.Key<Int>) = characteristics.get(key)?.let { it > 0 } ?: true
+        val focuses =
+            characteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE)?.let { it > 0f } ?: true
+        return PhysicalMetering(
+            autoFocus = focuses && takesRegions(CameraCharacteristics.CONTROL_MAX_REGIONS_AF),
+            autoExposure = takesRegions(CameraCharacteristics.CONTROL_MAX_REGIONS_AE),
+            autoWhiteBalance = takesRegions(CameraCharacteristics.CONTROL_MAX_REGIONS_AWB),
+        )
+    }
+}
+
+/** The Camera2 reads [LensEnumerator] makes. */
+internal interface Camera2Reader {
+    fun cameraIds(): Array<String>
+
+    fun characteristics(id: String): CameraCharacteristics
+
+    /** The physical lenses of a logical multi-camera; none below API 28. */
+    fun physicalCameraIds(characteristics: CameraCharacteristics): Set<String>
+
+    /** The stream use cases [characteristics] lists; none below API 33, which has no such key. */
+    fun streamUseCases(characteristics: CameraCharacteristics): Set<Long> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_STREAM_USE_CASES)?.toSet().orEmpty()
+        } else {
+            emptySet()
+        }
+
+    /** The sizes [characteristics]' stream configuration map outputs; null when it has none. */
+    fun outputSizes(characteristics: CameraCharacteristics): LensOutputSizes? {
+        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
+        return LensOutputSizes(
+            still = map.getOutputSizes(ImageFormat.JPEG).orEmpty().toList(),
+            preview = map.getOutputSizes(SurfaceTexture::class.java).orEmpty().toList(),
+            analysis = map.getOutputSizes(ImageFormat.YUV_420_888).orEmpty().toList(),
+        )
+    }
+}
+
+private class CameraManagerReader(private val manager: CameraManager) : Camera2Reader {
+    override fun cameraIds(): Array<String> = manager.cameraIdList
+
+    override fun characteristics(id: String): CameraCharacteristics = manager.getCameraCharacteristics(id)
+
+    // physicalCameraIds is API 28+: referencing it below throws NoSuchMethodError, which no catch of
+    // Exception stops.
+    override fun physicalCameraIds(characteristics: CameraCharacteristics): Set<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) characteristics.physicalCameraIds else emptySet()
+}

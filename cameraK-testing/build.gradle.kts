@@ -30,10 +30,10 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.cameraK.testing"
+    namespace = "dev.kashifmehmood.camerak.testing"
 }
 
-// The @sample functions the KDoc names live in the desktop tests (com.kashif.cameraK.samples). Only
+// The @sample functions the KDoc names live in the desktop tests (dev.kashifmehmood.camerak.samples). Only
 // commonMain gets them: Dokka refuses two source sets that share a sample root.
 dokka {
     dokkaSourceSets.named("commonMain") {

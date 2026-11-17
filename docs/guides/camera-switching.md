@@ -8,7 +8,7 @@ scope.launch {
 }
 ```
 
-`toggleLens()` (in `com.kashif.cameraK.controls`) switches to the back camera from the front, and to
+`toggleLens()` (in `dev.kashifmehmood.camerak.controls`) switches to the back camera from the front, and to
 the front from any other, with device type `DEFAULT`. The result is the camera that is live
 afterwards.
 

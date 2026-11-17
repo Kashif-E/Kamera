@@ -1,6 +1,6 @@
 # CameraKScreen and CameraPreview
 
-The Compose UI in `camerak` (`com.kashif.cameraK.compose`). Both take a `CameraKStateHolder`,
+The Compose UI in `camerak` (`dev.kashifmehmood.camerak.compose`). Both take a `CameraKStateHolder`,
 usually from `rememberCameraKStateHolder`, and neither opens or closes the camera: the holder does.
 
 ## CameraKScreen

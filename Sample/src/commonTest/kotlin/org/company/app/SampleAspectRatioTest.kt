@@ -1,6 +1,6 @@
 package org.company.app
 
-import com.kashif.cameraK.enums.AspectRatio
+import dev.kashifmehmood.camerak.enums.AspectRatio
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

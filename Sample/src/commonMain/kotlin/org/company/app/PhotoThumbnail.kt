@@ -11,8 +11,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.kashif.cameraK.capture.CapturedImage
-import com.kashif.cameraK.utils.CameraKLogger
+import dev.kashifmehmood.camerak.capture.CapturedImage
+import dev.kashifmehmood.camerak.utils.CameraKLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

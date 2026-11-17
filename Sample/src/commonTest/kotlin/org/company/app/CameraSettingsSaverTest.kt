@@ -1,10 +1,10 @@
 package org.company.app
 
 import androidx.compose.runtime.saveable.SaverScope
-import com.kashif.cameraK.enums.AspectRatio
-import com.kashif.cameraK.enums.CameraDeviceType
-import com.kashif.cameraK.enums.ImageFormat
-import com.kashif.cameraK.enums.QualityPrioritization
+import dev.kashifmehmood.camerak.enums.AspectRatio
+import dev.kashifmehmood.camerak.enums.CameraDeviceType
+import dev.kashifmehmood.camerak.enums.ImageFormat
+import dev.kashifmehmood.camerak.enums.QualityPrioritization
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull

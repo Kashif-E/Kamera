@@ -103,7 +103,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.kashif.cameraK"
+    namespace = "dev.kashifmehmood.camerak"
 
     defaultConfig {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -120,7 +120,7 @@ dependencies {
 }
 
 tasks.named<Test>("desktopTest") {
-    // The docs tests (com.kashif.cameraK.docs) read these, so a docs-only change must rerun them.
+    // The docs tests (dev.kashifmehmood.camerak.docs) read these, so a docs-only change must rerun them.
     inputs
         .files(
             layout.projectDirectory.file("../README.MD"),
@@ -146,7 +146,7 @@ tasks.named<Test>("desktopTest") {
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
-// The @sample functions the KDoc names live in the desktop tests (com.kashif.cameraK.samples). Only
+// The @sample functions the KDoc names live in the desktop tests (dev.kashifmehmood.camerak.samples). Only
 // commonMain gets them: Dokka refuses two source sets that share a sample root.
 dokka {
     dokkaSourceSets.named("commonMain") {

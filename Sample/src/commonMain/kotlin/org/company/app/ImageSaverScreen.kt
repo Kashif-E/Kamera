@@ -2,12 +2,12 @@ package org.company.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import com.kashif.cameraK.error.CameraKError
-import com.kashif.cameraK.result.CameraKResult
-import com.kashif.mediasaverplugin.GalleryDestination
-import com.kashif.mediasaverplugin.MediaSaverConfig
-import com.kashif.mediasaverplugin.MediaSaverPlugin
-import com.kashif.mediasaverplugin.rememberMediaSaverPlugin
+import dev.kashifmehmood.camerak.error.CameraKError
+import dev.kashifmehmood.camerak.mediasaver.GalleryDestination
+import dev.kashifmehmood.camerak.mediasaver.MediaSaverConfig
+import dev.kashifmehmood.camerak.mediasaver.MediaSaverPlugin
+import dev.kashifmehmood.camerak.mediasaver.rememberMediaSaverPlugin
+import dev.kashifmehmood.camerak.result.CameraKResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.mapNotNull
 

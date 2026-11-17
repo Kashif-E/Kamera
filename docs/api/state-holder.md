@@ -1,6 +1,6 @@
 # CameraKStateHolder
 
-`com.kashif.cameraK.state.CameraKStateHolder`, in `camerak-core`. It owns one camera: its
+`dev.kashifmehmood.camerak.state.CameraKStateHolder`, in `camerak-core`. It owns one camera: its
 coroutine scope, the platform engine, the plugins and the recording. It has no Compose dependency.
 
 ## Creating one
@@ -87,7 +87,7 @@ returns `Failure(NotReady)`, and after `close()` `Failure(Closed)`.
 | `stopRecording()` | `RecordedVideo` | Also while Interrupted |
 | `pauseRecording()`, `resumeRecording()` | `Unit` | `Unsupported(PAUSE_RESUME)` where the platform cannot |
 
-In `com.kashif.cameraK.controls`: `cycleFlashMode()`, `toggleTorch()` and `toggleLens()`.
+In `dev.kashifmehmood.camerak.controls`: `cycleFlashMode()`, `toggleTorch()` and `toggleLens()`.
 
 ## Plugins
 

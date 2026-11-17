@@ -16,10 +16,10 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.kashif.cameraK.state.CameraKState
-import com.kashif.cameraK.state.CameraKStateHolder
-import com.kashif.cameraK.testing.FakeCameraEngine
-import com.kashif.cameraK.testing.fakeCameraKStateHolder
+import dev.kashifmehmood.camerak.state.CameraKState
+import dev.kashifmehmood.camerak.state.CameraKStateHolder
+import dev.kashifmehmood.camerak.testing.FakeCameraEngine
+import dev.kashifmehmood.camerak.testing.fakeCameraKStateHolder
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent

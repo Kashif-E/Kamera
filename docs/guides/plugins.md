@@ -6,10 +6,10 @@ captures, but no commands), so a plugin cannot shut the camera down or change it
 
 | Artifact | Plugin | Package |
 |----------|--------|---------|
-| `camerak-qr-scanner` | `QRScannerPlugin` | `com.kashif.qrscannerplugin` |
-| `camerak-ocr` | `OcrPlugin` | `com.kashif.ocrplugin` |
-| `camerak-analyzer` | `AnalyzerPlugin` | `com.kashif.analyzerplugin` |
-| `camerak-media-saver` | `MediaSaverPlugin` | `com.kashif.mediasaverplugin` |
+| `camerak-qr-scanner` | `QRScannerPlugin` | `dev.kashifmehmood.camerak.qrscanner` |
+| `camerak-ocr` | `OcrPlugin` | `dev.kashifmehmood.camerak.ocr` |
+| `camerak-analyzer` | `AnalyzerPlugin` | `dev.kashifmehmood.camerak.analyzer` |
+| `camerak-media-saver` | `MediaSaverPlugin` | `dev.kashifmehmood.camerak.mediasaver` |
 
 ## Using plugins
 
@@ -136,7 +136,7 @@ Desktop OCR runs Tesseract, which needs `eng.traineddata`. The plugin does not s
 Desktop OCR uses the first of:
 
 1. `OcrConfig { tessdataPath = "/path/to/tessdata" }`. If that directory has no `eng.traineddata`, OCR fails; no other source replaces it.
-2. The `eng.traineddata` from [tesseract-ocr/tessdata](https://github.com/tesseract-ocr/tessdata) (Apache-2.0), on your classpath at `com/kashif/ocrplugin/tessdata/eng.traineddata`, which is where `camerak-ocr-tessdata-eng` puts it. It is used only if its SHA-256 matches the one pinned in the library, after it is extracted to a per-user directory.
+2. The `eng.traineddata` from [tesseract-ocr/tessdata](https://github.com/tesseract-ocr/tessdata) (Apache-2.0), on your classpath at `dev/kashifmehmood/camerak/ocr/tessdata/eng.traineddata`, which is where `camerak-ocr-tessdata-eng` puts it. It is used only if its SHA-256 matches the one pinned in the library, after it is extracted to a per-user directory.
 3. The directory in the `TESSDATA_PREFIX` environment variable.
 
 The working directory is never searched. Tesseract parses whatever model the first and third options point at, so point them only at files you trust.

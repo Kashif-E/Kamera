@@ -2,7 +2,7 @@
 
 package org.company.app
 
-import com.kashif.cameraK.permissions.PermissionStatus
+import dev.kashifmehmood.camerak.permissions.PermissionStatus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test

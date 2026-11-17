@@ -9,7 +9,7 @@
   source sets (commonMain, androidMain, appleMain, desktopMain and their tests, and jvmMain, the
   code Android and desktop share), under
   <sourceSet>/kotlin/ in directories that match the package.
-- The media saver does not use core's Directory: no main source names `com.kashif.cameraK.enums.Directory`
+- The media saver does not use core's Directory: no main source names `dev.kashifmehmood.camerak.enums.Directory`
   or one of its values; the saver publishes to its own GalleryDestination. The rule runs against a
   fixture first.
 - The Sample's App.kt names no plugin package: each plugin's code lives in that plugin's screen file,
@@ -50,7 +50,7 @@ FENCE = re.compile(r"^\s*\*\s*```")
 SAMPLE_APP = pathlib.Path("Sample/src/commonMain/kotlin/org/company/app/App.kt")
 SAVER_MODULE = "ImageSaverPlugin"
 CORE_DIRECTORY = re.compile(
-    r"\bcom\.kashif\.cameraK\.enums\.(Directory\b|\*)|(?<![A-Za-z0-9_.])Directory\.(PICTURES|DCIM|DOCUMENTS)\b"
+    r"\bdev\.kashifmehmood\.camerak\.enums\.(Directory\b|\*)|(?<![A-Za-z0-9_.])Directory\.(PICTURES|DCIM|DOCUMENTS)\b"
 )
 
 
@@ -134,11 +134,11 @@ def plugin_package_references(text, packages):
 
 
 def sample_app_kt_imports_no_plugin_package(root):
-    fixture_packages = ["com.kashif.qrscannerplugin", "com.kashif.ocrPlugin"]
+    fixture_packages = ["dev.kashifmehmood.camerak.qrscanner", "com.kashif.ocrPlugin"]
     fixture = (
-        "import com.kashif.cameraK.state.CameraKState\n"
+        "import dev.kashifmehmood.camerak.state.CameraKState\n"
         "import com.kashif.qrscannerpluginx.Other\n"
-        "import com.kashif.qrscannerplugin.QRScannerPlugin\n"
+        "import dev.kashifmehmood.camerak.qrscanner.QRScannerPlugin\n"
         "val ocr = com.kashif.ocrPlugin.rememberOcrPlugin()\n"
         "import com.kashif.ocrPlugin.*\n"
     )
@@ -162,11 +162,11 @@ def core_directory_references(text):
 
 def saver_does_not_import_core_directory(root):
     fixture = (
-        "import com.kashif.cameraK.enums.ImageFormat\n"
-        "import com.kashif.cameraK.enums.Directory\n"
+        "import dev.kashifmehmood.camerak.enums.ImageFormat\n"
+        "import dev.kashifmehmood.camerak.enums.Directory\n"
         "val d = Directory.DCIM\n"
         "val g = GalleryDestination.DCIM\n"
-        "import com.kashif.cameraK.enums.*\n"
+        "import dev.kashifmehmood.camerak.enums.*\n"
         "val e = Environment.DIRECTORY_DCIM\n"
     )
     if core_directory_references(fixture) != [2, 3, 5]:

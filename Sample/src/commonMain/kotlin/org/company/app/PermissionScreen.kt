@@ -13,8 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import com.composables.icons.lucide.Camera
 import com.composables.icons.lucide.Lucide
-import com.kashif.cameraK.permissions.CameraKPermission
-import com.kashif.cameraK.permissions.PermissionStatus
+import dev.kashifmehmood.camerak.permissions.CameraKPermission
+import dev.kashifmehmood.camerak.permissions.PermissionStatus
 import org.company.app.designsystem.BulletRow
 import org.company.app.designsystem.ButtonSize
 import org.company.app.designsystem.IconBadge

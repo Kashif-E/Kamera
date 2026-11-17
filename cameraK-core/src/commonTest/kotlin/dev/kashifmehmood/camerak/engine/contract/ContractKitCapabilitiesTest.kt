@@ -1,0 +1,469 @@
+@file:OptIn(CameraKEngineApi::class)
+
+package dev.kashifmehmood.camerak.engine.contract
+
+import dev.kashifmehmood.camerak.capabilities.CameraCapabilities
+import dev.kashifmehmood.camerak.capabilities.LensInfo
+import dev.kashifmehmood.camerak.controls.NormalizedPoint
+import dev.kashifmehmood.camerak.engine.CameraEngine
+import dev.kashifmehmood.camerak.engine.CameraSelection
+import dev.kashifmehmood.camerak.engine.DesiredHardware
+import dev.kashifmehmood.camerak.engine.EngineState
+import dev.kashifmehmood.camerak.enums.AspectRatio
+import dev.kashifmehmood.camerak.enums.CameraDeviceType
+import dev.kashifmehmood.camerak.enums.CameraLens
+import dev.kashifmehmood.camerak.enums.FlashMode
+import dev.kashifmehmood.camerak.enums.ImageFormat
+import dev.kashifmehmood.camerak.enums.TorchMode
+import dev.kashifmehmood.camerak.error.InterruptionReason
+import dev.kashifmehmood.camerak.frames.FrameFormat
+import dev.kashifmehmood.camerak.result.CameraKResult
+import dev.kashifmehmood.camerak.state.CameraConfiguration
+import dev.kashifmehmood.camerak.testing.FakeCameraEngine
+import dev.kashifmehmood.camerak.utils.CameraKEngineApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
+
+/**
+ * The hardware cases take their values from the engine's capabilities: an engine runs the steps
+ * its cameras allow, the rest are listed as skipped, and a case with nothing left to run fails.
+ */
+class ContractKitCapabilitiesTest {
+    // What the desktop engine offers before it enumerates devices: one camera, no torch, fixed zoom.
+    private val oneFixedCamera = CameraCapabilities(
+        allLenses = listOf(
+            LensInfo(
+                id = "only",
+                deviceType = CameraDeviceType.DEFAULT,
+                lens = CameraLens.BACK,
+                minZoom = 1f,
+                maxZoom = 1f,
+                hasFlash = false,
+                isLogical = false,
+            ),
+        ),
+        flashModes = mapOf("only" to setOf(FlashMode.OFF)),
+        torchModes = mapOf("only" to setOf(TorchMode.OFF)),
+        supportsPauseResume = false,
+        supportedVideoQualities = emptySet(),
+        supportsVideoBitrate = false,
+        supportedAspectRatios = AspectRatio.entries.toSet(),
+        supportedImageFormats = setOf(ImageFormat.JPEG),
+        supportedAnalysisFormats = setOf(FrameFormat.YUV_420),
+        supportsSquareCapture = false,
+    )
+
+    // Two cameras that both take every flash and torch mode, share a zoom range, meter at a focus point
+    // and take exposure compensation, so a camera switch can re-apply everything the first camera was
+    // given; the selfie camera's narrower exposure range clamps the wide one's index.
+    private val twoFullCameras = CameraCapabilities(
+        allLenses = listOf(
+            fullLens("wide", CameraLens.BACK, maxZoom = 10f),
+            fullLens("selfie", CameraLens.FRONT, maxZoom = 4f),
+        ),
+        flashModes = mapOf("wide" to FlashMode.entries.toSet(), "selfie" to FlashMode.entries.toSet()),
+        torchModes = mapOf("wide" to TorchMode.entries.toSet(), "selfie" to TorchMode.entries.toSet()),
+        supportsPauseResume = true,
+        supportedVideoQualities = emptySet(),
+        supportsVideoBitrate = false,
+        supportedAspectRatios = AspectRatio.entries.toSet(),
+        supportedImageFormats = setOf(ImageFormat.JPEG),
+        supportedAnalysisFormats = setOf(FrameFormat.YUV_420),
+        supportsSquareCapture = false,
+        focusPointCameras = setOf("wide", "selfie"),
+        exposureCompensationRanges = mapOf("wide" to -6..6, "selfie" to -2..2),
+        exposureCompensationSteps = mapOf("wide" to 1f / 3, "selfie" to 1f / 3),
+    )
+
+    private fun fullLens(id: String, lens: CameraLens, maxZoom: Float) = LensInfo(
+        id = id,
+        deviceType = CameraDeviceType.WIDE_ANGLE,
+        lens = lens,
+        minZoom = 1f,
+        maxZoom = maxZoom,
+        hasFlash = true,
+        isLogical = false,
+    )
+
+    @Test
+    fun everyHardwareStepRunsWhenTheCamerasAllowIt() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(FakeEngineDriver(twoFullCameras), requires = emptySet(), skips = skips)
+
+        cases.hardwareChangesOnlyFromPlatformObserver()
+        cases.desiredHardwareReappliedAfterRestartAndCameraSwitch()
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun cameraSwitchListsTheReappliedValuesTheOtherCameraCannotTake() = runTest {
+        // The back camera takes flash ON and torch ON; the front one supports OFF only and a narrower zoom range.
+        val skips = ContractSkips()
+        val cases = ContractCases(FakeEngineDriver(), requires = emptySet(), skips = skips)
+
+        cases.desiredHardwareReappliedAfterRestartAndCameraSwitch()
+
+        assertEquals(
+            listOf(
+                "desiredHardwareReappliedAfterRestartAndCameraSwitch: flash after the switch",
+                "desiredHardwareReappliedAfterRestartAndCameraSwitch: torch after the switch",
+            ),
+            skips.skipped.map { it.substringBefore(" skipped (") },
+        )
+    }
+
+    @Test
+    fun oneCameraWithoutTorchOrZoomSkipsAndListsTheStepsItCannotRun() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(FakeEngineDriver(oneFixedCamera), requires = emptySet(), skips = skips)
+
+        cases.hardwareChangesOnlyFromPlatformObserver()
+        cases.desiredHardwareReappliedAfterRestartAndCameraSwitch()
+
+        assertEquals(
+            listOf(
+                "hardwareChangesOnlyFromPlatformObserver: torch",
+                "hardwareChangesOnlyFromPlatformObserver: zoom",
+                "desiredHardwareReappliedAfterRestartAndCameraSwitch: flash after restart",
+                "desiredHardwareReappliedAfterRestartAndCameraSwitch: torch after restart",
+                "desiredHardwareReappliedAfterRestartAndCameraSwitch: zoom after restart",
+                "desiredHardwareReappliedAfterRestartAndCameraSwitch: exposure after restart",
+                "desiredHardwareReappliedAfterRestartAndCameraSwitch: camera switch",
+            ),
+            skips.skipped.map { it.substringBefore(" skipped (") },
+        )
+    }
+
+    @Test
+    fun aCaseWhoseEveryStepIsSkippedFailsWithNothingToVerify() = runTest {
+        val skips = ContractSkips()
+        val cases =
+            ContractCases(NoBoundCameraDriver(FakeEngineDriver(oneFixedCamera)), requires = emptySet(), skips = skips)
+
+        val failure = assertFailsWith<AssertionError> { cases.hardwareChangesOnlyFromPlatformObserver() }
+
+        assertContains(failure.message.orEmpty(), "nothing to verify on this engine")
+        assertEquals(3, skips.skipped.size, "every step is listed: ${skips.skipped}")
+    }
+
+    @Test
+    fun commandsCaseRunsTheFlashStepOnAnEngineWithNothingAdjustable() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(FakeEngineDriver(oneFixedCamera), requires = emptySet(), skips = skips)
+
+        cases.commandsLeaveHardwareUntilThePlatformReports()
+
+        assertEquals(
+            listOf(
+                "commandsLeaveHardwareUntilThePlatformReports: setTorchMode",
+                "commandsLeaveHardwareUntilThePlatformReports: setZoom",
+                "commandsLeaveHardwareUntilThePlatformReports: setFlashMode",
+            ),
+            skips.skipped.map { it.substringBefore(" skipped (") },
+        )
+    }
+
+    @Test
+    fun commandsCaseWithNoBoundCameraSkipsTheFlashStepAndFailsWithNothingToVerify() = runTest {
+        val skips = ContractSkips()
+        val cases =
+            ContractCases(NoBoundCameraDriver(FakeEngineDriver(oneFixedCamera)), requires = emptySet(), skips = skips)
+
+        val failure = assertFailsWith<AssertionError> { cases.commandsLeaveHardwareUntilThePlatformReports() }
+
+        assertContains(failure.message.orEmpty(), "nothing to verify on this engine")
+        assertContains(
+            skips.skipped.map { it.substringBefore(" skipped (") },
+            "commandsLeaveHardwareUntilThePlatformReports: setFlashMode to the reported mode",
+        )
+    }
+
+    @Test
+    fun flashStepsOverAReadBackDriverExpectTheReadBackRightAfterTheCommand() = runTest {
+        val skips = ContractSkips()
+        val driver = ReadBackFlashFakeDriver(twoFullCameras)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.commandsLeaveHardwareUntilThePlatformReports()
+
+        assertEquals(emptyList(), skips.skipped, "both flash steps ran")
+        assertEquals(emptyList(), driver.flashReports, "the kit reported flash through changeHardware")
+    }
+
+    @Test
+    fun flashStepsOverAnObserverDriverAreUnchanged() = runTest {
+        val skips = ContractSkips()
+        val driver = ReportsRecordingDriver(twoFullCameras)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.commandsLeaveHardwareUntilThePlatformReports()
+
+        assertEquals(emptyList(), skips.skipped, "both flash steps ran")
+        // The reported mode first, then the second mode the bound camera takes, each as a platform observer report.
+        assertEquals(listOf(FlashMode.OFF, FlashMode.ON), driver.flashReports)
+    }
+
+    @Test
+    fun preOpenInterruptionCaseIsSkippedAndListedForAnEngineWithoutIt() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(InterruptsOnlyWhenOpenDriver(), requires = emptySet(), skips = skips)
+
+        cases.interruptBeforeOpenThenEndInterruptionReachesOpenWithOneStartCall(this)
+
+        assertEquals(
+            listOf(
+                "interruptBeforeOpenThenEndInterruptionReachesOpenWithOneStartCall: every step skipped " +
+                    "(the engine has no interruption before Open)",
+            ),
+            skips.skipped,
+        )
+    }
+
+    @Test
+    fun preOpenInterruptionCaseTakesThePlatformsOwnReason() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(OwnInterruptionReasonDriver(), requires = emptySet(), skips = skips)
+
+        cases.interruptBeforeOpenThenEndInterruptionReachesOpenWithOneStartCall(this)
+
+        assertEquals(emptyList(), skips.skipped, "the case ran over a driver with interruption before Open")
+    }
+
+    @Test
+    fun cameraCaseReadsCapabilitiesTheEngineEnumeratesAfterConstruction() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(EnumeratesOnSettleDriver(), requires = emptySet(), skips = skips)
+
+        cases.reportedCameraIsTheOneTheEngineOpenedOn()
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun observerCaseReadsCapabilitiesTheEngineEnumeratesAfterConstruction() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(EnumeratesOnSettleDriver(), requires = emptySet(), skips = skips)
+
+        cases.hardwareChangesOnlyFromPlatformObserver()
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun focusAndExposureCasesRunTheSupportedBranchOverACameraThatReportsThem() = runTest {
+        val skips = ContractSkips()
+        val driver = LastEngineDriver(twoFullCameras)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.focusAtFollowsTheCapability()
+        assertEquals(NormalizedPoint(0.5f, 0.5f), driver.last.lastFocusPoint, "the focus point reached the platform")
+        cases.exposureCompensationFollowsTheCapability()
+        assertEquals(6, driver.last.appliedExposureCompensationIndex, "the exposure index reached the platform")
+        cases.callsAfterCloseReturnClosed()
+        listOf("focusAt", "setExposureCompensation", "resetFocusAndExposure").forEach {
+            assertContains(driver.last.calls, it, "the closed engine was not asked for $it")
+        }
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun focusAndExposureCasesAssertUnsupportedOverACameraThatReportsNeither() = runTest {
+        val skips = ContractSkips()
+        val driver = LastEngineDriver(oneFixedCamera)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.focusAtFollowsTheCapability()
+        assertContains(driver.last.calls, "focusAt", "the unsupported branch made no call")
+        assertNull(driver.last.lastFocusPoint, "a camera without a focus point received one")
+        cases.exposureCompensationFollowsTheCapability()
+        assertContains(driver.last.calls, "setExposureCompensation", "the unsupported branch made no call")
+        assertEquals(0, driver.last.appliedExposureCompensationIndex)
+        cases.callsAfterCloseReturnClosed()
+        val focusAndExposure = setOf("focusAt", "setExposureCompensation", "resetFocusAndExposure")
+        assertEquals(emptyList(), driver.last.calls.filter { it in focusAndExposure }, "calls after close")
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun anEngineOnTheInterfaceDefaultsPassesTheUnsupportedBranch() = runTest {
+        val skips = ContractSkips()
+        val cases = ContractCases(InterfaceDefaultsDriver(oneFixedCamera), requires = emptySet(), skips = skips)
+
+        cases.focusAtFollowsTheCapability()
+        cases.exposureCompensationFollowsTheCapability()
+        cases.callsAfterCloseReturnClosed()
+
+        assertEquals(emptyList(), skips.skipped)
+    }
+
+    @Test
+    fun theExposureStepsReapplyTheIndexClampedIntoTheOtherCamerasRange() = runTest {
+        val skips = ContractSkips()
+        val driver = LastEngineDriver(twoFullCameras)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.desiredHardwareReappliedAfterRestartAndCameraSwitch()
+
+        assertEquals(emptyList(), skips.skipped)
+        assertEquals(2, driver.last.appliedExposureCompensationIndex, "6 clamped into the selfie camera's -2..2")
+    }
+
+    @Test
+    fun exposureStepOverAReadBackDriverExpectsTheReadBackWhenTheCommandReturns() = runTest {
+        val skips = ContractSkips()
+        val driver = ReadBackExposureFakeDriver(twoFullCameras)
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.exposureCompensationFollowsTheCapability()
+
+        assertEquals(emptyList(), skips.skipped, "the exposure step ran")
+        assertEquals(emptyList(), driver.exposureReports, "the kit reported exposure through changeHardware")
+    }
+
+    // Android reads a camera's exposure range from CameraX once it is bound, so the camera switched to has none
+    // in the capabilities until the switch: the kit reads the range the engine publishes after it.
+    @Test
+    fun theExposureSwitchStepReadsTheRangeTheEnginePublishesOnceTheCameraIsBound() = runTest {
+        val skips = ContractSkips()
+        val driver = PublishesExposureOnBindDriver()
+        val cases = ContractCases(driver, requires = emptySet(), skips = skips)
+
+        cases.desiredHardwareReappliedAfterRestartAndCameraSwitch()
+
+        assertEquals(emptyList(), skips.skipped)
+        assertEquals(2, driver.last.appliedExposureCompensationIndex, "6 clamped into the selfie camera's -2..2")
+    }
+
+    // The fake driver, keeping the engine it built last.
+    private class LastEngineDriver(capabilities: CameraCapabilities) : FakeEngineDriver(capabilities) {
+        val last: FakeCameraEngine get() = fake
+    }
+
+    // An engine on CameraEngine's own focus and exposure methods, as the Android and iOS engines are until W13.
+    private class InterfaceDefaultsDriver(capabilities: CameraCapabilities) : FakeEngineDriver(capabilities) {
+        override fun createEngine(config: CameraConfiguration): CameraEngine =
+            InterfaceDefaults(super.createEngine(config) as FakeCameraEngine)
+    }
+
+    private class InterfaceDefaults(fake: FakeCameraEngine) : CameraEngine by fake {
+        override suspend fun focusAt(point: NormalizedPoint): CameraKResult<Unit> = super<CameraEngine>.focusAt(point)
+
+        override suspend fun setExposureCompensation(index: Int): CameraKResult<Unit> =
+            super<CameraEngine>.setExposureCompensation(index)
+
+        override suspend fun resetFocusAndExposure(): CameraKResult<Unit> = super<CameraEngine>.resetFocusAndExposure()
+    }
+
+    // An engine that publishes a camera's exposure range once it has bound that camera, as Android reads it from
+    // CameraX's ExposureState; the fake platform behind it knows every range, so it clamps as a camera would.
+    private inner class PublishesExposureOnBindDriver : FakeEngineDriver(twoFullCameras) {
+        val last: FakeCameraEngine get() = fake
+
+        override fun createEngine(config: CameraConfiguration): CameraEngine =
+            PublishesExposureOnBind(super.createEngine(config) as FakeCameraEngine)
+    }
+
+    private inner class PublishesExposureOnBind(private val fake: FakeCameraEngine) : CameraEngine by fake {
+        private val bound = mutableSetOf<String>()
+        private val _capabilities = MutableStateFlow(withExposureOf(bound))
+        override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
+
+        override suspend fun start(desired: DesiredHardware): CameraKResult<Unit> =
+            fake.start(desired).also { publishBound() }
+
+        override suspend fun selectCamera(selection: CameraSelection): CameraKResult<LensInfo> =
+            fake.selectCamera(selection).also { publishBound() }
+
+        private fun publishBound() {
+            fake.appliedCameraId?.let(bound::add)
+            _capabilities.value = withExposureOf(bound)
+        }
+    }
+
+    // [twoFullCameras] with exposure compensation on the cameras [ids] only.
+    private fun withExposureOf(ids: Set<String>) = CameraCapabilities(
+        allLenses = twoFullCameras.allLenses,
+        flashModes = twoFullCameras.allLenses.associate { it.id to twoFullCameras.supportedFlashModes(it.id) },
+        torchModes = twoFullCameras.allLenses.associate { it.id to twoFullCameras.supportedTorchModes(it.id) },
+        supportsPauseResume = twoFullCameras.supportsPauseResume,
+        supportedVideoQualities = twoFullCameras.supportedVideoQualities,
+        supportsVideoBitrate = twoFullCameras.supportsVideoBitrate,
+        supportedAspectRatios = twoFullCameras.supportedAspectRatios,
+        supportedImageFormats = twoFullCameras.supportedImageFormats,
+        supportedAnalysisFormats = twoFullCameras.supportedAnalysisFormats,
+        supportsSquareCapture = twoFullCameras.supportsSquareCapture,
+        focusPointCameras = twoFullCameras.allLenses.filter { twoFullCameras.supportsFocusPoint(it.id) }.map { it.id }
+            .toSet(),
+        exposureCompensationRanges = ids.associateWith { checkNotNull(twoFullCameras.exposureCompensationRange(it)) },
+        exposureCompensationSteps = ids.associateWith { checkNotNull(twoFullCameras.exposureCompensationStep(it)) },
+    )
+
+    // The fake driver as K1 left it, listing the flash values the kit reports as platform observer reports.
+    private class ReportsRecordingDriver(capabilities: CameraCapabilities) : FakeEngineDriver(capabilities) {
+        val flashReports = mutableListOf<FlashMode>()
+
+        override fun changeHardware(change: HardwareChange) {
+            change.flashMode?.let(flashReports::add)
+            super.changeHardware(change)
+        }
+    }
+
+    // A platform that never says which camera it bound gives the hardware cases nothing to compare against.
+    private class NoBoundCameraDriver(private val delegate: FakeEngineDriver) : EngineContractDriver by delegate {
+        override fun boundSettings(): BoundSettings = delegate.boundSettings().copy(cameraId = null)
+    }
+
+    // The desktop engine's driver: the platform interrupts an open session only, never a start it holds.
+    private class InterruptsOnlyWhenOpenDriver(private val delegate: FakeEngineDriver = FakeEngineDriver()) :
+        EngineContractDriver by delegate {
+        private lateinit var engine: CameraEngine
+
+        override fun createEngine(config: CameraConfiguration): CameraEngine =
+            delegate.createEngine(config).also { engine = it }
+
+        override fun interrupt(reason: InterruptionReason) {
+            check(engine.state.value == EngineState.Open) {
+                "this engine has no interruption before Open"
+            }
+            delegate.interrupt(reason)
+        }
+    }
+
+    // A platform that maps every interruption to a reason of its own, as CameraX and AVFoundation do.
+    private class OwnInterruptionReasonDriver : FakeEngineDriver() {
+        override fun interrupt(reason: InterruptionReason) = super.interrupt(InterruptionReason.SYSTEM_PRESSURE)
+    }
+
+    // An engine that enumerates its cameras after construction, on its scheduler: until the first settle its
+    // capabilities are EMPTY, as a platform engine's are while the enumeration it launched is still queued.
+    private class EnumeratesOnSettleDriver : FakeEngineDriver() {
+        private lateinit var engine: EnumeratesAfterConstruction
+
+        override fun createEngine(config: CameraConfiguration): CameraEngine =
+            EnumeratesAfterConstruction(super.createEngine(config) as FakeCameraEngine).also { engine = it }
+
+        override suspend fun settle() {
+            super.settle()
+            engine.enumerate()
+        }
+    }
+
+    private class EnumeratesAfterConstruction(private val fake: FakeCameraEngine) : CameraEngine by fake {
+        private val _capabilities = MutableStateFlow(CameraCapabilities.EMPTY)
+        override val capabilities: StateFlow<CameraCapabilities> = _capabilities.asStateFlow()
+
+        fun enumerate() {
+            _capabilities.value = fake.capabilities.value
+        }
+    }
+}

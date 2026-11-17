@@ -3,7 +3,7 @@ package org.company.app
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.saveable.SaveableStateRegistry
-import com.kashif.cameraK.permissions.CameraKPermission
+import dev.kashifmehmood.camerak.permissions.CameraKPermission
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
