@@ -1,5 +1,4 @@
-// The convention plugins of every published module: camerak.kmp-library, camerak.publish and
-// camerak.relocation. The root settings include this build in pluginManagement, so a module applies
+// The convention plugins of every published module: camerak.kmp-library and camerak.publish. The root settings include this build in pluginManagement, so a module applies
 // them by id. Their plugin versions come from the root catalog, the one place versions live.
 dependencyResolutionManagement {
     repositories {

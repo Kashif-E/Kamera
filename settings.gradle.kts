@@ -2,8 +2,7 @@
 rootProject.name = "CameraCompose"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 pluginManagement {
-    // The convention plugins every published module applies (camerak.kmp-library, camerak.publish,
-    // camerak.relocation).
+    // The convention plugins every published module applies (camerak.kmp-library, camerak.publish).
     includeBuild("build-logic")
     repositories {
         google {
@@ -47,10 +46,3 @@ include(":cameraKScreenshotTests")
 include(":camerak-bom")
 // The release gate's Macrobenchmark over the Sample app; built by verify.sh, run on a device by the maintainer.
 include(":benchmark")
-
-// POM-only relocations of the 1.x coordinates 2.0 moved to a new group or id (the root build's relocatedArtifacts).
-include(":relocations:qr_scanner_plugin")
-include(":relocations:ocr_plugin")
-include(":relocations:analyzer_plugin")
-include(":relocations:image_saver_plugin")
-include(":relocations:camerak")

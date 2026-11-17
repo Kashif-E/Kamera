@@ -14,8 +14,8 @@ CameraKLogger.enabled = true
 
 Check that `mavenCentral()` is in your repositories and that the version is `2.0`. CameraK 2.0 is
 published under the group `dev.kashifmehmood`. The 1.x coordinates (`camerak` and the plugin ids such
-as `qr_scanner_plugin`, in the 1.x group) still resolve, through a relocation, to the 2.0 artifacts;
-switch to the new group and ids (see the [migration guide](migration/2.0.md)).
+as `qr_scanner_plugin`, in the 1.x group) resolve only to 1.x and do not relocate; switch to the new
+group and ids (see the [migration guide](migration/2.0.md)).
 
 ### Unresolved references after upgrading
 

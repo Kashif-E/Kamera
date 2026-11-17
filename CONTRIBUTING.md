@@ -35,12 +35,11 @@ The Gradle log goes to `build/verify/<mode>-<timestamp>.log`, and the summary go
 if a requested target ran zero tests. Results left over from earlier runs are ignored. The sample
 target runs the Sample's own tests (`:Sample:desktopTest`) and counts them as `Sample / sample`.
 
-**The publish step.** A `--full` run (and no narrower one) also publishes every published module, the
-BOM and the relocation POMs, unsigned, to `build/verify/m2`, which it empties first; nothing goes to
+**The publish step.** A `--full` run (and no narrower one) also publishes every published module and the
+BOM, unsigned, to `build/verify/m2`, which it empties first; nothing goes to
 `~/.m2` or Maven Central. The run is RED unless every coordinate a release uploads is there: each
 artifact's root and its `android`, `desktop`, `iosarm64` and `iossimulatorarm64` variants (`.module`
-and `.pom`), the BOM's root, all under `GROUP`, and each relocation POM, under the 1.x group (`LEGACY_GROUP`
-in gradle.properties), pointing at its 2.0 coordinate. Compiling the tests never
+and `.pom`) and the BOM's root, all under `GROUP`. Compiling the tests never
 builds the metadata compilations behind a root artifact, so only publishing shows they work.
 `./gradlew verifyAll` runs the same tasks without the summary.
 
@@ -95,7 +94,7 @@ When a comparison fails, the actual render and a diff are written to
 plugins of the `build-logic/` included build: `camerak.kmp-library` (the four targets, Java 17,
 explicit API mode, ABI validation, `compileSdk`/`minSdk` from the catalog, Dokka),
 `camerak.publish` (vanniktech maven-publish, which reads the POM and signing settings from
-`gradle.properties`) and `camerak.relocation` (the POM-only 1.x artifact ids). A module's own build
+`gradle.properties`). A module's own build
 file keeps its dependencies and its Android namespace. The lint target rejects a published build file
 that sets `jvmToolchain`, `compileSdk`, `minSdk` or a Kotlin target, or applies the publish plugin
 itself (`checkCatalogHygiene`).
@@ -123,7 +122,7 @@ until the file is regenerated, in the same commit, over everything CI and a rele
 rm gradle/verification-metadata.xml
 ./gradlew --write-verification-metadata sha256 --continue verifyAll -Pcamerak.verify.rerunTests=true \
     -Pcamerak.verify.publishRepo="$PWD/build/verify/m2" -PsignAllPublications=false
-./gradlew --write-verification-metadata sha256 --dry-run publishLibraries publishLegacyRelocations
+./gradlew --write-verification-metadata sha256 --dry-run publishLibraries
 mv gradle/verification-metadata.dryrun.xml gradle/verification-metadata.xml
 ```
 
@@ -154,17 +153,14 @@ environment. Nothing can start a publish by hand or from a branch, and only one 
 
 Both the harness and the publish job run `scripts/select_xcode.sh` first, which selects the newest Xcode 26.3 or later the image has: the macos-15 image defaults to Xcode 16.4, which cannot link the iOS binaries of the Compose modules (Compose Multiplatform 1.11 uses iOS 26 SDK classes; Kotlin 2.4.10 is tested with Xcode 26.4). `check_release_workflow.py` fails when either job lacks it.
 
-CameraK 2.0 publishes under `dev.kashifmehmood` (`GROUP`). The 1.x coordinates stay in the 1.x group
-(`LEGACY_GROUP` in gradle.properties), where the `relocations/` projects publish a relocation POM for
-each 1.x artifact id with a 2.0 successor. The upload job runs two builds, so each namespace is its own
-Central Portal deployment: `./gradlew publishLibraries` (everything under `GROUP`), then
-`./gradlew publishLegacyRelocations` (the relocation POMs). If the first fails, the second does not run.
+CameraK 2.0 publishes under `dev.kashifmehmood` (`GROUP`) and nothing under the 1.x group
+(`LEGACY_GROUP` in gradle.properties): no 1.x coordinate relocates. The upload job runs
+`./gradlew publishLibraries`, one Central Portal deployment of everything under `GROUP`.
 
 Before the first 2.0 release, the maintainer:
 
 - [ ] adds the namespace `dev.kashifmehmood` on central.sonatype.com (Namespaces, Add Namespace),
-      publishes the DNS TXT record it gives on `kashifmehmood.dev`, and verifies it. The same account
-      keeps the 1.x group for the relocation POMs; the same Central user token and signing key serve both.
+      publishes the DNS TXT record it gives on `kashifmehmood.dev`, and verifies it.
 - [ ] registers `dev.kashifmehmood:camerak` in the Google Play SDK Console and replaces
       `cameraK/src/androidMain/resources/META-INF/<1.x group as a path>/camerak/verification.properties`
       with the new token at `META-INF/dev/kashifmehmood/camerak/verification.properties`. Until then the

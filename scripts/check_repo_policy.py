@@ -36,8 +36,8 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      declare Compose by explicit coordinates rather than the compose.* accessors or
                      the compose() function.
                      Every published build file takes its shared setup from build-logic's convention
-                     plugins: a library applies camerak.kmp-library and camerak.publish, the BOM
-                     camerak.publish and each relocation camerak.relocation, and none of them sets
+                     plugins: a library applies camerak.kmp-library and camerak.publish and the BOM
+                     camerak.publish, and none of them sets
                      jvmToolchain, compileSdk, minSdk or a Kotlin target, or applies the publish
                      plugin itself.
   native-settings    A module with no native code (no cpp/jni sources, CMake or ndk-build file, or
@@ -78,9 +78,9 @@ Usage: check_repo_policy.py <policy> [<policy> ...]
                      no x86_64 simulator slice, since the libraries have no Intel-simulator target.
   published-group    The published group is dev.kashifmehmood, the namespace verified on Maven Central
                      (published_group_is_the_verified_namespace), and LEGACY_GROUP is exactly the 1.x
-                     group the relocation POMs publish under, this script's LEGACY_NAMESPACE. No tracked
+                     group, which 2.0 does not publish under, this script's LEGACY_NAMESPACE. No tracked
                      file or path names a retired group, dotted, regex-escaped, as a path or mangled into
-                     a Kotlin module name, outside the relocation projects, CHANGELOG.md,
+                     a Kotlin module name, outside CHANGELOG.md,
                      docs/migration/, the Play SDK Console token's META-INF directory, the LEGACY_GROUP
                      line and the LEGACY_NAMESPACE line.
 
@@ -992,8 +992,6 @@ BOM_CONVENTIONS = ("camerak.publish",)
 # Published resource jars (the root build's resourceModules): java-library modules that publish through
 # camerak.publish, as the BOM does.
 RESOURCE_MODULES = ["ocrTessdata"]
-RELOCATION_CONVENTIONS = ("camerak.relocation",)
-RELOCATION_SCRIPT = re.compile(r"^relocations/[A-Za-z0-9_-]+/build\.gradle\.kts$")
 PLUGIN_ID = re.compile(r'\bid\(\s*"([A-Za-z0-9_.-]+)"\s*\)')
 KOTLIN_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
 CONVENTION_SETTINGS = [
@@ -1018,13 +1016,11 @@ def convention_plugin_problems(
     scripts: Dict[str, str], libraries: List[str] = LIBRARY_MODULES, resources: List[str] = RESOURCE_MODULES
 ) -> List[str]:
     """module_build_files_use_convention_plugins: [scripts] maps each tracked build file to its text. A
-    published library's applies camerak.kmp-library and camerak.publish, the BOM's and each resource
-    module's camerak.publish, and a relocation project's camerak.relocation; none sets what those plugins
-    set."""
+    published library's applies camerak.kmp-library and camerak.publish, and the BOM's and each resource
+    module's camerak.publish; none sets what those plugins set."""
     expected: Dict[str, tuple] = {f"{module}/build.gradle.kts": LIBRARY_CONVENTIONS for module in libraries}
     expected[f"{BOM_MODULE}/build.gradle.kts"] = BOM_CONVENTIONS
     expected.update({f"{module}/build.gradle.kts": BOM_CONVENTIONS for module in resources})
-    expected.update({name: RELOCATION_CONVENTIONS for name in scripts if RELOCATION_SCRIPT.match(name)})
     problems = []
     for name, conventions in sorted(expected.items()):
         if name not in scripts:
@@ -1109,8 +1105,6 @@ def check_catalog() -> List[str]:
         "a/build.gradle.kts": conventional,
         "b/build.gradle.kts": repeated,
         "camerak-bom/build.gradle.kts": 'plugins {\n    `java-platform`\n    id("com.vanniktech.maven.publish")\n}\n',
-        "relocations/old_a/build.gradle.kts": 'plugins {\n    id("camerak.relocation")\n}\n',
-        "relocations/old_b/build.gradle.kts": "plugins {\n    `java-platform`\n}\n",
         "d/build.gradle.kts": 'plugins {\n    `java-library`\n    id("camerak.publish")\n}\n',
         "e/build.gradle.kts": 'plugins {\n    `java-library`\n    id("com.vanniktech.maven.publish")\n}\n',
     }
@@ -1131,7 +1125,6 @@ def check_catalog() -> List[str]:
         "camerak-bom/build.gradle.kts:3 sets the publish plugin itself; the convention plugins own it",
         'e/build.gradle.kts does not apply id("camerak.publish")',
         "e/build.gradle.kts:3 sets the publish plugin itself; the convention plugins own it",
-        'relocations/old_b/build.gradle.kts does not apply id("camerak.relocation")',
     ]
     if sorted(found) != sorted(wanted):
         raise CheckError(f"module_build_files_use_convention_plugins misjudges its fixture: {found}")
@@ -1940,14 +1933,13 @@ def check_sample_app() -> List[str]:
 # verifies on the Central Portal with a DNS TXT record on that domain (design §12.4 W13,
 # published_group_is_the_verified_namespace).
 VERIFIED_NAMESPACE = "dev.kashifmehmood"
-# The 1.x group, which the relocation POMs must publish under for a 1.x build to find them. This line is
+# The 1.x group. CameraK 2.0 publishes nothing under it and relocates no 1.x coordinate. This line is
 # the one place outside the exempt paths allowed to spell it (LEGACY_NAMESPACE_LINE).
 LEGACY_NAMESPACE = "io.github.kashif-mehmood-km"
 LEGACY_NAMESPACE_LINE = ("scripts/check_repo_policy.py", "LEGACY_NAMESPACE = ")
-# Where a retired group may still be named: the relocation projects that publish under it, the
-# changelog and migration guide that tell 1.x users, and the Play SDK Console token for the 1.x
+# Where a retired group may still be named: the changelog and migration guide that tell 1.x users, and the Play SDK Console token for the 1.x
 # coordinate under META-INF/<group as a path>/, kept until the maintainer registers the new one.
-RETIRED_GROUP_ALLOWED = ("relocations/", "CHANGELOG.md", "docs/migration/")
+RETIRED_GROUP_ALLOWED = ("CHANGELOG.md", "docs/migration/")
 PLAY_SDK_TOKEN_DIR = "cameraK/src/androidMain/resources/META-INF/{}/"
 
 
@@ -1968,8 +1960,7 @@ def published_group_problems(
         problems.append(f"gradle.properties: GROUP is {group}, not {VERIFIED_NAMESPACE}, the verified namespace")
     if legacy != legacy_namespace:
         problems.append(
-            f"gradle.properties: LEGACY_GROUP is {legacy}, not {legacy_namespace}, the 1.x group the relocation "
-            "POMs publish under"
+            f"gradle.properties: LEGACY_GROUP is {legacy}, not {legacy_namespace}, the 1.x group"
         )
     for retired in sorted({name for name in (group, legacy) if name and name != VERIFIED_NAMESPACE}):
         spelled = group_spellings(retired)
@@ -2000,7 +1991,6 @@ def check_published_group() -> List[str]:
     properties = {"GROUP": VERIFIED_NAMESPACE, "LEGACY_GROUP": old}
     allowed = {
         "gradle.properties": f"GROUP={VERIFIED_NAMESPACE}\nLEGACY_GROUP={old}\n",
-        "relocations/a/gradle.properties": f"POM_DESCRIPTION=Relocated from {old}:a\n",
         "CHANGELOG.md": f"- Published under `{VERIFIED_NAMESPACE}`; `{old}` relocates.\n",
         "docs/migration/2.0.md": f'implementation("{old}:a:1.2")\n',
         "cameraK/src/androidMain/resources/META-INF/org/example/old-group/a/verification.properties": f"#{old}:a\n",
@@ -2008,6 +1998,7 @@ def check_published_group() -> List[str]:
     }
     named = {
         "docs/index.md": f'implementation("{old}:a:2.0")\n',
+        "relocations/a/gradle.properties": f"POM_DESCRIPTION=Relocated from {old}:a\n",
         "build.gradle.kts": 'Regex("""org\\.example\\.old-group:a""")\n',
         "a/api/android/a.api": "public final fun getLambda$1$org_example_old_group_a ()V\n",
         "a/src/main/resources/META-INF/org/example/old-group/x.properties": "",

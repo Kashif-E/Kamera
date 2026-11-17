@@ -116,7 +116,7 @@ fi
 
 csv() { tr ' ' ',' <<<"$1"; }
 
-# The publish step, --full only: every published module, the BOM and the relocation POMs publish,
+# The publish step, --full only: every published module, the resource jars and the BOM publish,
 # unsigned, to a scratch repository that starts empty, and verify_report.py checks each coordinate.
 # Nothing is published to ~/.m2 or Maven Central.
 publish_repo=""

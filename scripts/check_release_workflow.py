@@ -8,9 +8,8 @@ A Maven Central upload cannot be undone. The publish workflow must therefore:
   which this script also runs against a matching and a mismatching tag);
 - wait for the full verification harness, reused from build.yml rather than copied;
 - publish from the protected `maven-central` environment, on the runner image CI uses;
-- publish in two steps of that one job, `publishLibraries` then `publishLegacyRelocations`, after the tag
-  check, neither conditional nor masking its exit status, in a job without continue-on-error, so each
-  namespace is its own deployment and a failed first step stops the second;
+- publish in one step of that one job, `publishLibraries`, after the tag check, neither conditional nor
+  masking its exit status, in a job without continue-on-error;
 - hold only `contents: read`, and never run two publishes at once (`publish` concurrency group).
 
 Credentials travelling as env variables only is checked by check_credential_hygiene.py.
@@ -33,9 +32,9 @@ BUILD_WORKFLOW = WORKFLOWS / "build.yml"
 TAG_GUARD = ROOT / "scripts" / "check_release_tag.sh"
 ENVIRONMENT = "maven-central"
 CONCURRENCY_GROUP = "publish"
-# The release publishes in two builds, one Central Portal deployment per namespace: the libraries under
-# GROUP, then the relocation POMs under LEGACY_GROUP. PUBLISH_TASK sees any step that publishes.
-RELEASE_TASKS = ("publishLibraries", "publishLegacyRelocations")
+# The release publishes everything under GROUP in one Central Portal deployment. PUBLISH_TASK sees any
+# step that publishes.
+RELEASE_TASKS = ("publishLibraries",)
 PUBLISH_TASK = re.compile(r"\bpublish(?:\w*MavenCentral\w*|Libraries|LegacyRelocations)\b", re.IGNORECASE)
 FULL_HARNESS = re.compile(r"scripts/verify\.sh\s+--full\b")
 # The image's default Xcode cannot link the iOS binaries (Compose Multiplatform 1.11 needs the iOS 26 SDK).
@@ -233,9 +232,6 @@ def release_step_problems(job: dict, steps: List[dict], uploads: List[int]) -> L
     for task, indexes in found.items():
         if len(indexes) != 1:
             problems.append(f"runs {task} in {len(indexes)} steps, not one")
-    libraries, relocations = (found[task] for task in RELEASE_TASKS)
-    if len(libraries) == 1 and len(relocations) == 1 and libraries[0] > relocations[0]:
-        problems.append(f"runs {RELEASE_TASKS[1]} before {RELEASE_TASKS[0]}")
     return problems
 
 
@@ -341,7 +337,6 @@ FIXTURE_BUILD = {
 FIXTURE_XCODE = "      - run: scripts/select_xcode.sh\n"
 FIXTURE_TAG_GUARD = '      - run: scripts/check_release_tag.sh "$GITHUB_REF_NAME"\n'
 FIXTURE_LIBRARIES = "      - run: ./gradlew publishLibraries --no-configuration-cache\n"
-FIXTURE_RELOCATIONS = "      - run: ./gradlew publishLegacyRelocations --no-configuration-cache\n"
 
 
 def fixture_release(steps: List[str], extra_jobs: str = "", job_settings: str = "") -> dict:
@@ -362,35 +357,29 @@ def fixture_release(steps: List[str], extra_jobs: str = "", job_settings: str = 
 
 def self_test() -> None:
     """Raises CheckError when the rules misjudge a fixture, so a rule that matches nothing cannot pass."""
-    correct = release_workflow_problems(
-        fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]), FIXTURE_BUILD
-    )
+    correct = release_workflow_problems(fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES]), FIXTURE_BUILD)
     if correct:
-        raise CheckError(f"the release rules reject the split release: {correct}")
+        raise CheckError(f"the release rules reject the release: {correct}")
     broken = {
-        "the two publish steps swapped": [FIXTURE_TAG_GUARD, FIXTURE_RELOCATIONS, FIXTURE_LIBRARIES],
-        "publishLegacyRelocations before the tag guard": [FIXTURE_RELOCATIONS, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES],
-        "publishLibraries alone": [FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES],
+        "publishLibraries before the tag guard": [FIXTURE_LIBRARIES, FIXTURE_TAG_GUARD],
+        "no publish step": [FIXTURE_TAG_GUARD],
+        "publishLibraries in two steps": [FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_LIBRARIES],
         "one publishAllPublicationsToMavenCentralRepository step": [
             FIXTURE_TAG_GUARD,
             "      - run: ./gradlew publishAllPublicationsToMavenCentralRepository\n",
         ],
-        "both tasks in one step": [
-            FIXTURE_TAG_GUARD,
-            "      - run: ./gradlew publishLibraries publishLegacyRelocations\n",
-        ],
-        "the second step with if: always()": [
+        "a second publishing task": [
             FIXTURE_TAG_GUARD,
             FIXTURE_LIBRARIES,
-            FIXTURE_RELOCATIONS + "        if: always()\n",
+            "      - run: ./gradlew publishLegacyRelocations --no-configuration-cache\n",
         ],
-        "the second step with continue-on-error: true": [
+        "the publish step with if: always()": [FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES + "        if: always()\n"],
+        "the publish step with continue-on-error: true": [
             FIXTURE_TAG_GUARD,
-            FIXTURE_LIBRARIES,
-            FIXTURE_RELOCATIONS + "        continue-on-error: true\n",
+            FIXTURE_LIBRARIES + "        continue-on-error: true\n",
         ],
     }
-    # Each way a publish step's script can exit 0 after its upload failed, so the next step runs anyway.
+    # Each way a publish step's script can exit 0 after its upload failed.
     masked = {
         "|| true": "      - run: ./gradlew publishLibraries --no-configuration-cache || true\n",
         "|| :": "      - run: ./gradlew publishLibraries --no-configuration-cache || :\n",
@@ -405,28 +394,21 @@ def self_test() -> None:
         "|| exit 0": "      - run: ./gradlew publishLibraries --no-configuration-cache || exit 0\n",
     }
     for form, step in masked.items():
-        broken[f"the first publish step masking its exit status with {form}"] = [
-            FIXTURE_TAG_GUARD,
-            step,
-            FIXTURE_RELOCATIONS,
-        ]
+        broken[f"the publish step masking its exit status with {form}"] = [FIXTURE_TAG_GUARD, step]
     accepted = [
         name
         for name, steps in broken.items()
         if not release_workflow_problems(fixture_release([FIXTURE_XCODE] + steps), FIXTURE_BUILD)
     ]
     # The image's default Xcode cannot link the iOS binaries: the harness and the publish job select one that can.
-    if not release_workflow_problems(
-        fixture_release([FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]), FIXTURE_BUILD
-    ):
+    if not release_workflow_problems(fixture_release([FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES]), FIXTURE_BUILD):
         accepted.append("the publishing job on the image's default Xcode")
     default_xcode_build = {
         "on": {"workflow_call": None},
         "jobs": {"full": {"runs-on": "macos-15", "steps": [{"run": "scripts/verify.sh --full"}]}},
     }
     if not release_workflow_problems(
-        fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]),
-        default_xcode_build,
+        fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES]), default_xcode_build
     ):
         accepted.append("the harness on the image's default Xcode")
     for label, steps in {
@@ -434,28 +416,23 @@ def self_test() -> None:
         "the harness only naming the script": [{"run": "echo scripts/select_xcode.sh"}, {"run": "scripts/verify.sh --full"}],
     }.items():
         late_build = {"on": {"workflow_call": None}, "jobs": {"full": {"runs-on": "macos-15", "steps": steps}}}
-        if not release_workflow_problems(
-            fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]), late_build
-        ):
+        if not release_workflow_problems(fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES]), late_build):
             accepted.append(label)
     second_job = (
-        "  relocations:\n    needs: [verify, publish]\n    runs-on: macos-15\n    environment: maven-central\n"
-        "    steps:\n" + FIXTURE_XCODE + FIXTURE_TAG_GUARD + FIXTURE_RELOCATIONS
+        "  again:\n    needs: [verify, publish]\n    runs-on: macos-15\n    environment: maven-central\n"
+        "    steps:\n" + FIXTURE_XCODE + FIXTURE_TAG_GUARD + FIXTURE_LIBRARIES
     )
     if not release_workflow_problems(
         fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES], second_job), FIXTURE_BUILD
     ):
-        accepted.append("the second step in a second job")
+        accepted.append("a publish step in a second job")
     if not release_workflow_problems(
-        fixture_release(
-            [FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS],
-            job_settings="    continue-on-error: true\n",
-        ),
+        fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES], job_settings="    continue-on-error: true\n"),
         FIXTURE_BUILD,
     ):
         accepted.append("the publishing job with continue-on-error: true")
     if accepted:
-        raise CheckError(f"the release rules accept a broken split release: {', '.join(accepted)}")
+        raise CheckError(f"the release rules accept a broken release: {', '.join(accepted)}")
 
 
 def check_release_workflow() -> List[str]:

@@ -238,9 +238,7 @@ RESOURCE_ARTIFACTS = ("camerak-ocr-tessdata-eng",)
 def publish_problems(repo: Path, expected: dict) -> list[str]:
     """The coordinates the publish step should have written to [repo] and did not: each module's root
     artifact and one per PUBLISHED_TARGETS entry (.module and .pom), each RESOURCE_ARTIFACTS entry's root
-    (.module, .pom and .jar), the BOM's root, and each relocation POM, published under the legacy group
-    with that as its own groupId, which must relocate to the 2.0 coordinate (group, artifact id and
-    version). A module whose targets in the build's model differ from
+    (.module, .pom and .jar) and the BOM's root. A module whose targets in the build's model differ from
     PUBLISHED_TARGETS is reported too, and so is a build whose resource artifacts differ from
     RESOURCE_ARTIFACTS."""
     group_dir = repo.joinpath(*expected["group"].split("."))
@@ -265,34 +263,6 @@ def publish_problems(repo: Path, expected: dict) -> list[str]:
     for artifact in RESOURCE_ARTIFACTS:
         require(artifact, ("module", "pom", "jar"))
     require(expected["bom"], ("module", "pom"))
-    legacy_group = expected["legacyGroup"]
-    legacy_dir = repo.joinpath(*legacy_group.split("."))
-    for old_id, new_id in sorted(expected["relocations"].items()):
-        pom = legacy_dir / old_id / version / f"{old_id}-{version}.pom"
-        if not pom.is_file():
-            problems.append(f"{legacy_group}:{old_id}:{version} has no relocation .pom")
-            continue
-        try:
-            root = ET.parse(pom).getroot()
-        except ET.ParseError as error:
-            problems.append(f"{pom.relative_to(ROOT)} is unreadable: {error}")
-            continue
-        ns = {"m": root.tag[1:].split("}")[0]} if root.tag.startswith("{") else {}
-        prefix = "m:" if ns else ""
-        relocation = root.find(f"{prefix}distributionManagement/{prefix}relocation", ns)
-        own = root.find(f"{prefix}groupId", ns)
-        own_group = "" if own is None else (own.text or "").strip()
-        if own_group != legacy_group:
-            problems.append(f"{old_id}'s POM has its own groupId {own_group or 'missing'}, not {legacy_group}")
-
-        def relocated(field: str) -> str:
-            element = None if relocation is None else relocation.find(f"{prefix}{field}", ns)
-            return "" if element is None else (element.text or "").strip()
-
-        found = ":".join(relocated(field) for field in ("groupId", "artifactId", "version"))
-        wanted = f"{expected['group']}:{new_id}:{version}"
-        if found != wanted:
-            problems.append(f"{old_id}'s POM relocates to {found if relocation is not None else 'nothing'}, not {wanted}")
     return problems
 
 
@@ -303,32 +273,18 @@ def write_publication(repo: Path, group: str, artifact: str, version: str, exten
         (directory / f"{artifact}-{version}.{extension}").write_text("{}\n" if extension == "module" else "<project/>\n")
 
 
-def relocation_pom(own_group: str, group: str, artifact: str, version: str) -> str:
-    return (
-        f'<project xmlns="http://maven.apache.org/POM/4.0.0"><groupId>{own_group}</groupId>'
-        "<distributionManagement><relocation>"
-        f"<groupId>{group}</groupId><artifactId>{artifact}</artifactId><version>{version}</version>"
-        "</relocation></distributionManagement></project>\n"
-    )
-
-
 def publish_check_self_test() -> list[str]:
     """What publish_problems misjudges among its fixtures: a complete repository, a module whose build
     dropped its iOS targets (so the build's own model expects none), a resource artifact without its .jar,
-    a build that no longer lists a resource artifact, relocation POMs that name the wrong group or
-    version, a relocation POM published under the new group instead of the legacy one, and one whose own
-    groupId is not the legacy group."""
-    group, legacy_group, version = "io.example", "io.legacy", "2.0"
+    and a build that no longer lists a resource artifact."""
+    group, version = "io.example", "2.0"
     every_target = ["android", "desktop", "iosarm64", "iossimulatorarm64"]
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as scratch:
         def repository(
             name: str,
             targets: list[str],
-            relocated: tuple[str, str, str],
             resource: tuple[str, ...] = ("module", "pom", "jar"),
-            relocation_dir: str = legacy_group,
-            relocation_own_group: str = legacy_group,
         ) -> Path:
             repo = Path(scratch) / name
             for artifact in ("lib", "bom"):
@@ -337,52 +293,30 @@ def publish_check_self_test() -> list[str]:
                 write_publication(repo, group, artifact, version, resource)
             for target in targets:
                 write_publication(repo, group, f"lib-{target}", version, ("module", "pom"))
-            pom = repo.joinpath(*relocation_dir.split("."), "old-lib", version, f"old-lib-{version}.pom")
-            pom.parent.mkdir(parents=True)
-            pom.write_text(relocation_pom(relocation_own_group, *relocated))
             return repo
 
         def expected(targets: list[str], resources: tuple[str, ...] = RESOURCE_ARTIFACTS) -> dict:
             return {
                 "group": group,
-                "legacyGroup": legacy_group,
                 "version": version,
                 "modules": {"lib": targets},
                 "resourceArtifacts": list(resources),
                 "bom": "bom",
-                "relocations": {"old-lib": "lib"},
             }
 
-        found = publish_problems(repository("complete", every_target, (group, "lib", version)), expected(every_target))
+        found = publish_problems(repository("complete", every_target), expected(every_target))
         if found:
             problems.append(f"a complete repository is rejected: {found}")
         no_ios = ["android", "desktop"]
-        found = publish_problems(repository("no-ios", no_ios, (group, "lib", version)), expected(no_ios))
+        found = publish_problems(repository("no-ios", no_ios), expected(no_ios))
         if not any("lib-iosarm64" in p for p in found) or not any("lib-iossimulatorarm64" in p for p in found):
             problems.append(f"a module that dropped its iOS targets is accepted: {found}")
-        complete = (group, "lib", version)
-        found = publish_problems(repository("no-jar", every_target, complete, ("module", "pom")), expected(every_target))
+        found = publish_problems(repository("no-jar", every_target, ("module", "pom")), expected(every_target))
         if len(found) != len(RESOURCE_ARTIFACTS) or not all(p.endswith("has no .jar") for p in found):
             problems.append(f"a resource artifact without its .jar is misjudged: {found}")
-        found = publish_problems(repository("unlisted", every_target, complete), expected(every_target, ()))
+        found = publish_problems(repository("unlisted", every_target), expected(every_target, ()))
         if len(found) != 1 or "resource artifacts" not in found[0]:
             problems.append(f"a build that no longer lists a resource artifact is misjudged: {found}")
-        for name, relocated in (("group", ("io.other", "lib", version)), ("version", (group, "lib", "1.9"))):
-            found = publish_problems(repository(f"wrong-{name}", every_target, relocated), expected(every_target))
-            if len(found) != 1 or "old-lib" not in found[0]:
-                problems.append(f"a relocation POM naming the wrong {name} is misjudged: {found}")
-        found = publish_problems(
-            repository("relocation-in-new-group", every_target, complete, relocation_dir=group, relocation_own_group=group),
-            expected(every_target),
-        )
-        if len(found) != 1 or f"{legacy_group}:old-lib:{version} has no relocation .pom" not in found[0]:
-            problems.append(f"a relocation POM published under the new group is misjudged: {found}")
-        found = publish_problems(
-            repository("relocation-own-group", every_target, complete, relocation_own_group=group),
-            expected(every_target),
-        )
-        if len(found) != 1 or "groupId" not in found[0]:
-            problems.append(f"a relocation POM whose own groupId is not the legacy group is misjudged: {found}")
     return problems
 
 
@@ -509,10 +443,8 @@ def main() -> int:
                 + len(expected_coordinates.get("resourceArtifacts", []))
                 + 1
             )
-            relocations = len(expected_coordinates["relocations"])
             task_checks["publish"] = (
-                f"every coordinate of {count} artifacts under {expected_coordinates['group']} and {relocations} "
-                f"relocation POMs under {expected_coordinates['legacyGroup']} published to "
+                f"every coordinate of {count} artifacts under {expected_coordinates['group']} published to "
                 f"`{os.path.relpath(publish_repo, ROOT)}`"
                 if not publish_missing
                 else f"{len(publish_missing)} coordinate(s) missing"

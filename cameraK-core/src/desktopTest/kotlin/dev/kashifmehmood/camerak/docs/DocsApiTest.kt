@@ -485,7 +485,7 @@ class DocsApiTest {
 
         val COORDINATE = Regex("""dev\.kashifmehmood:([A-Za-z0-9_.-]+)""")
 
-        /** §9.4: the plugins' 2.0 artifact ids. Their 1.x ids publish only relocation POMs. */
+        /** §9.4: the plugins' 2.0 artifact ids. Their 1.x ids are not relocated. */
         val PLUGIN_ARTIFACT_IDS = setOf("camerak-media-saver", "camerak-qr-scanner", "camerak-ocr", "camerak-analyzer")
 
         val ARTIFACT_IDS = setOf("camerak", "camerak-core", "camerak-testing", "camerak-bom") + PLUGIN_ARTIFACT_IDS

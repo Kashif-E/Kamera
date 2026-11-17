@@ -58,8 +58,7 @@ jobs:
 
       # Gradle reads ORG_GRADLE_PROJECT_* as project properties. Secrets stay out of the command line
       # and off the disk: the signing key is the ASCII-armored export, held in memory.
-      # Two builds, so each namespace is its own Central Portal deployment: the libraries under GROUP,
-      # then the 1.x relocation POMs under LEGACY_GROUP. A failed first step stops the second.
+      # One Central Portal deployment of everything under GROUP: the libraries, the resource jars and the BOM.
       - name: Publish the libraries to Maven Central
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -68,12 +67,3 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
         run: ./gradlew publishLibraries --no-configuration-cache
-
-      - name: Publish the 1.x relocation POMs to Maven Central
-        env:
-          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
-        run: ./gradlew publishLegacyRelocations --no-configuration-cache

@@ -223,10 +223,10 @@ def publish_env_violations(name: str, text: str) -> List[Violation]:
 
 
 def check_publish_env_rule() -> None:
-    """The release publishes in two steps, publishLibraries and publishLegacyRelocations; the publish-env
-    rule must see each as publishing."""
+    """The release publishes with publishLibraries; the publish-env rule must see it, and Central's own
+    publish task, as publishing."""
     env = "".join(f"          {name}: ${{{{ secrets.X }}}}\n" for name in PUBLISH_ENV)
-    for task in ("publishLibraries", "publishLegacyRelocations", "publishAllPublicationsToMavenCentralRepository"):
+    for task in ("publishLibraries", "publishAllPublicationsToMavenCentralRepository"):
         bare = f"jobs:\n  publish:\n    steps:\n      - run: ./gradlew {task}\n"
         if len(publish_env_violations("fixture.yml", bare)) != len(PUBLISH_ENV):
             raise CheckError(f"the publish-env rule does not see `{task}` as publishing")
