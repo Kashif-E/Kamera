@@ -8,6 +8,8 @@
 A camera library for Kotlin Multiplatform and Compose Multiplatform: Android (CameraX), iOS (AVFoundation) and desktop JVM (JavaCV) behind one API.
 </p>
 
+<p align="center">Built by <a href="https://kashifmehmood.dev">Kashif Mehmood</a></p>
+
 <p align="center">
 
 [![Maven Central](https://img.shields.io/maven-central/v/dev.kashifmehmood/camerak?label=Maven%20Central&color=blue)](https://search.maven.org/search?q=g:dev.kashifmehmood)
