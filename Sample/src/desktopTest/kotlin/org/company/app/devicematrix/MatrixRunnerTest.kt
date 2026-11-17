@@ -211,7 +211,12 @@ class MatrixRunnerTest {
         ).run()
 
         assertTrue(""""permissions":{"CAMERA":"Granted","MICROPHONE":"Granted"}""" in report, report)
-        assertTrue(platform.engines.first().calls.none { it == "startRecording" }, "the camera's prompt holder recorded")
+        assertTrue(
+            platform.engines.first().calls.none {
+                it == "startRecording"
+            },
+            "the camera's prompt holder recorded",
+        )
         assertTrue(platform.engines.drop(1).first().calls.containsAll(listOf("startRecording", "stopRecording")))
     }
 }
