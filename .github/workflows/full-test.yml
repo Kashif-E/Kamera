@@ -136,10 +136,15 @@ jobs:
           path: ci-out/**
 
   ios:
-    runs-on: macos-15
+    # Kotlin 2.4.10 is tested with Xcode 26.4, and Compose Multiplatform 1.11 links against iOS 26 SDK
+    # classes (UIViewLayoutRegion): the macos-15 image's default Xcode 16.4 cannot link the app.
+    runs-on: macos-26
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Xcode 26.4
+        run: sudo xcode-select -s /Applications/Xcode_26.4.1.app && xcodebuild -version
 
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
