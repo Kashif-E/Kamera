@@ -73,6 +73,13 @@ internal object LensEnumerator {
                 for (physicalId in raw.physicalCameraIds) {
                     val child = describe(reader, physicalId, isPhysicalChild = true, parentLogicalId = id)
                         ?: continue
+                    if (!child.streamUseCases.containsAll(raw.streamUseCases)) {
+                        CameraKLogger.w(
+                            "CameraK",
+                            "Physical lens $physicalId lacks stream use cases camera $id lists; it is not offered",
+                        )
+                        continue
+                    }
                     rawByFacing.getOrPut(child.facing) { mutableListOf() }.add(child)
                 }
             }
@@ -159,6 +166,12 @@ internal object LensEnumerator {
         val physicalCameraIds: Set<String>,
         val minFocusDistance: Float,
         val physical: PhysicalLensFacts?,
+        /**
+         * The stream use cases the camera lists, which CameraX sets on its streams from Android 13 in
+         * every mode but zero-shutter-lag's; empty below it. A stream pinned to a physical lens is checked
+         * against the lens's own list, so a lens without its logical camera's fails the session.
+         */
+        val streamUseCases: Set<Long>,
     )
 
     private fun describe(
@@ -217,6 +230,7 @@ internal object LensEnumerator {
             physicalCameraIds = physicalIds,
             minFocusDistance = characteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE) ?: 0f,
             physical = if (isPhysicalChild) physicalFacts(reader, id, characteristics) else null,
+            streamUseCases = reader.streamUseCases(characteristics),
         )
     }
 
@@ -258,6 +272,14 @@ internal interface Camera2Reader {
 
     /** The physical lenses of a logical multi-camera; none below API 28. */
     fun physicalCameraIds(characteristics: CameraCharacteristics): Set<String>
+
+    /** The stream use cases [characteristics] lists; none below API 33, which has no such key. */
+    fun streamUseCases(characteristics: CameraCharacteristics): Set<Long> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_STREAM_USE_CASES)?.toSet().orEmpty()
+        } else {
+            emptySet()
+        }
 
     /** The sizes [characteristics]' stream configuration map outputs; null when it has none. */
     fun outputSizes(characteristics: CameraCharacteristics): LensOutputSizes? {
