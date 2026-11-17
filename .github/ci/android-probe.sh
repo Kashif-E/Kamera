@@ -1,46 +1,26 @@
 #!/usr/bin/env bash
-# On a booted emulator: replays ranges of the Sample's device matrix with the whole logcat streamed to
-# a file, plus the camera service's dump of every camera's static metadata. Output in ci-out/probe.
+# On a booted emulator: PreviewSurfaceWithAnalysisDeviceTest three times and the video-bind and square
+# capture benchmarks, with the whole logcat streamed to a file. Output in ci-out/probe.
 set -u
 OUT=ci-out/probe
 mkdir -p "$OUT"
 G="./gradlew --no-daemon --dependency-verification=lenient"
-P=org.company.app.androidApp
 adb root > /dev/null 2>&1; sleep 3; adb wait-for-device
-adb shell dumpsys media.camera > "$OUT/media-camera.txt" 2>&1
-# A runner's download can time out; the replays need the app.
-for attempt in 1 2 3; do
-  $G :Sample:installDebug > "$OUT/install.txt" 2>&1 && break
-done
-adb shell pm path $P > /dev/null 2>&1 || { echo "install failed after 3 attempts" | tee -a "$OUT/status.txt"; exit 0; }
-for perm in CAMERA RECORD_AUDIO POST_NOTIFICATIONS READ_MEDIA_IMAGES READ_MEDIA_VIDEO; do
-  adb shell pm grant $P android.permission.$perm 2>/dev/null
-done
 adb logcat -G 16M; adb logcat -c
 adb logcat -v threadtime > "$OUT/logcat.txt" 2>&1 &
 LOGCAT=$!
-
-# replay NAME OFFSET LIMIT: photo-section cases OFFSET.. (offset within the section), LIMIT of them.
-replay() {
-  local name=$1 offset=$2 limit=$3 start=$SECONDS
-  adb shell am force-stop $P
-  adb shell run-as $P rm -rf files/camerak-matrix
-  adb shell log -t CameraKProbe "REPLAY $name offset=$offset limit=$limit"
-  adb shell am start -n $P/org.company.app.AppActivity --ez camerak.matrix true \
-    --es camerak.matrix.sections photo --ei camerak.matrix.offset "$offset" --ei camerak.matrix.limit "$limit" > /dev/null
-  while [ $((SECONDS - start)) -lt 600 ]; do
-    adb logcat -d -s CameraKMatrix:I | grep -q "DONE" && break
-    sleep 5
-  done
-  adb exec-out run-as $P cat files/camerak-matrix/report.json > "$OUT/$name.json" 2>/dev/null
-  adb shell am force-stop $P
-  adb logcat -d -s CameraKMatrix:I | grep -E 'DONE|\] #' | tail -n "$((limit + 1))" > "$OUT/$name.txt"
-  echo "$name: $(grep -o 'DONE .*' "$OUT/$name.txt" | tail -1) after $((SECONDS - start)) s" | tee -a "$OUT/status.txt"
-  adb logcat -c
-}
-
-replay telephoto 1152 30
-replay speed-wide 75 12
-replay speed-tele 1468 10
+for i in 1 2 3; do
+  $G :cameraK-core:connectedDebugAndroidTest \
+    -Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.engine.PreviewSurfaceWithAnalysisDeviceTest \
+    > "$OUT/preview-$i.txt" 2>&1
+  echo "preview run $i exit $?" | tee -a "$OUT/status.txt"
+  cp -r cameraK-core/build/outputs/androidTest-results "$OUT/preview-results-$i" 2>/dev/null
+done
+$G :benchmark:connectedBenchmarkAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.kashif.cameraK.benchmark.VideoBindBenchmark,com.kashif.cameraK.benchmark.SquareCaptureBenchmark \
+  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR,DEBUGGABLE,LOW-BATTERY,UNLOCKED \
+  > "$OUT/benchmark.txt" 2>&1
+echo "benchmark exit $?" | tee -a "$OUT/status.txt"
+cp -r benchmark/build/outputs/androidTest-results "$OUT/benchmark-results" 2>/dev/null
 kill $LOGCAT
 exit 0
