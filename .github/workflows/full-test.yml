@@ -80,8 +80,8 @@ jobs:
       - name: Device matrix (every section)
         run: bash .github/ci/desktop-matrix.sh matrix 90 60 -cameraKMatrix -cameraKMatrixLog
 
-      - name: Holder churn (300 opens and closes)
-        run: bash .github/ci/desktop-matrix.sh churn 25 10 -cameraKMatrix -cameraKMatrixChurn 300
+      - name: Holder churn (3000 opens and closes)
+        run: bash .github/ci/desktop-matrix.sh churn 40 10 -cameraKMatrix -cameraKMatrixChurn 3000
 
       - name: Upload results
         if: always()

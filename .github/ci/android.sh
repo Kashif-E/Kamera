@@ -5,7 +5,8 @@
 set -u
 OUT=ci-out/android
 mkdir -p "$OUT"
-G="./gradlew --no-daemon"
+# Lenient: the verification metadata lacks Linux-only Android tooling (aapt2); the report lists what is missing.
+G="./gradlew --no-daemon --dependency-verification=lenient"
 P=org.company.app.androidApp
 adb root > /dev/null 2>&1; sleep 3; adb wait-for-device
 {
@@ -64,7 +65,7 @@ run() {
 }
 
 run matrix 75 60 --es camerak.matrix.sections features,configflash,analysis,plugins,video,lifecycle,photo
-run churn 25 10 --ei camerak.matrix.churn 300
+run churn 40 15 --ei camerak.matrix.churn 1000
 adb exec-out screencap -p > "$OUT/screen.png"
 
 $G :benchmark:connectedBenchmarkAndroidTest \
@@ -73,4 +74,5 @@ $G :benchmark:connectedBenchmarkAndroidTest \
 echo "benchmark exit $?" | tee -a "$OUT/status.txt"
 cp -r benchmark/build/outputs/connected_android_test_additional_output "$OUT/benchmark-output" 2>/dev/null
 cp -r benchmark/build/outputs/androidTest-results "$OUT/benchmark-results" 2>/dev/null
+cp -r build/reports/dependency-verification "$OUT/dependency-verification" 2>/dev/null
 exit 0
