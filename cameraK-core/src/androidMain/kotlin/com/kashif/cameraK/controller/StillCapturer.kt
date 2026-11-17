@@ -115,7 +115,7 @@ internal class StillCapturer(
     /**
      * Takes one still into a new app-owned file and returns that file, a PNG for a PNG
      * configuration. Main thread. A caller that leaves before CameraX is asked sends nothing; one that
-     * leaves later does not stop CameraX, which still writes the file.
+     * leaves later does not stop CameraX, which still writes the file, and that file is deleted.
      */
     suspend fun capture(): CameraKResult<File> {
         if (isReleased()) return CameraKResult.Failure(CameraKError.Closed)
@@ -147,9 +147,9 @@ internal class StillCapturer(
         private val file: File,
     ) : ImageCapture.OnImageSavedCallback {
         override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-            if (isReleased()) {
-                // The release already told the caller this capture failed; leave no unreported file.
-                CameraKLogger.d(TAG, "Discarding a capture saved after the camera was closed")
+            if (isReleased() || continuation !in inFlight) {
+                // The caller was already told this capture failed; leave no unreported file.
+                CameraKLogger.d(TAG, "Discarding a capture saved after it was failed")
                 file.delete()
                 return
             }
@@ -213,10 +213,13 @@ internal class StillCapturer(
         }
     }
 
-    /** Fails every capture still waiting for a CameraX callback, which is now ignored. */
-    fun failInFlight() {
+    /**
+     * Fails every capture still waiting for a CameraX callback with [error]; a file CameraX writes for
+     * one later is deleted.
+     */
+    fun failInFlight(error: CameraKError = CameraKError.Closed) {
         inFlight.toList().forEach { continuation ->
-            if (inFlight.remove(continuation)) continuation.resume(CameraKResult.Failure(CameraKError.Closed))
+            if (inFlight.remove(continuation)) continuation.resume(CameraKResult.Failure(error))
         }
     }
 }

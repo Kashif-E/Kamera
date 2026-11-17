@@ -29,7 +29,7 @@ private const val TAG = "CameraK"
  * An iOS engine's stills (design §2.4): one session-queue block builds the settings from the photo
  * output as it is then and hands them to it; AVFoundation's callbacks stay on its own queue, and the
  * photo is written to app-owned storage off the session queue. The captures still waiting on
- * AVFoundation are kept under [lock], so close can complete them with Closed.
+ * AVFoundation are kept under [lock], so close can complete them with Closed and a failure with its error.
  */
 internal class EngineStills(
     private val lock: EngineLock,
@@ -54,8 +54,13 @@ internal class EngineStills(
     }
 
     /** Completes every capture still waiting on AVFoundation with Closed. */
-    fun closeAll() {
-        lock.locked { pending.toList().also { pending.clear() } }.forEach { it.settle(ENGINE_CLOSED) }
+    fun closeAll() = settleAll(ENGINE_CLOSED)
+
+    /** Completes every capture still waiting on AVFoundation with [error], the session's failure. */
+    fun failAll(error: CameraKError) = settleAll(engineFailure(error))
+
+    private fun settleAll(result: CameraKResult<NSData>) {
+        lock.locked { pending.toList().also { pending.clear() } }.forEach { it.settle(result) }
     }
 
     private suspend fun takeStill(): CameraKResult<CapturedImage> {

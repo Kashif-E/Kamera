@@ -479,7 +479,8 @@ internal class DesktopCameraEngine(
     }
 
     // Failed ends the generation: the session's callbacks stop counting, its grab loop is cancelled
-    // and releases the camera, and stop() publishes Closed after waiting for that (§2.3 rule 1).
+    // and releases the camera, a capture still waiting for a frame ends with the error, and stop()
+    // publishes Closed after waiting for that (§2.3 rule 1).
     private fun failLocked(session: Session, error: CameraKError) {
         CameraKLogger.e(TAG, "The desktop camera session failed", error.cause)
         session.ended = true
@@ -489,6 +490,8 @@ internal class DesktopCameraEngine(
         session.run?.firstFrame?.complete(false)
         _state.value = EngineState.Failed(error)
         session.outcome.complete(CameraKResult.Failure(error))
+        pendingCaptures.forEach { it.complete(CameraKResult.Failure(error)) }
+        pendingCaptures.clear()
     }
 
     private fun isCurrent(session: Session): Boolean = !closed && this.session === session && !session.ended
@@ -617,7 +620,8 @@ internal class DesktopCameraEngine(
 
     /**
      * A still of the camera's next frame, written to an app-owned file; NotReady unless Open.
-     * Completes with `Failure(Closed)` at once when the engine closes while it waits.
+     * Completes with `Failure(Closed)` at once when the engine closes while it waits, and with the
+     * session's error when it fails.
      */
     override suspend fun capture(): CameraKResult<CapturedImage> {
         val pending = CompletableDeferred<CameraKResult<CapturedImage>>()

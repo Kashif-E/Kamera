@@ -77,6 +77,9 @@ internal class EngineGenerations(
     private var generation = 0
     private var phase = EnginePhase.CLOSED
     private var closed = false
+
+    /** Told each failure, after it is published: the engine ends the captures still waiting with it. */
+    var onFailed: (CameraKError) -> Unit = {}
     private var pendingStart: PendingStart? = null
     private var firstFrame: AutoCloseable? = null
 
@@ -201,6 +204,7 @@ internal class EngineGenerations(
         }
         CameraKLogger.e(TAG, "the camera session failed", error.cause)
         failedStart?.continuation?.resume(engineFailure(error))
+        onFailed(error)
     }
 
     /** Claims the one restart a media-services reset gets; null when it was claimed already. */

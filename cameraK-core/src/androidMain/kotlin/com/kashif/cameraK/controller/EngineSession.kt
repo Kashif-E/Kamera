@@ -388,6 +388,8 @@ internal class EngineSession(
             live.startTrace = null
             _state.value = EngineState.Failed(error)
             live.opened.complete(CameraKResult.Failure(error))
+            // CameraX keeps a capture's request queued for a camera it will not reopen (ERROR_CAMERA_DISABLED).
+            stillCapturer.failInFlight(error)
         }
         return CameraKResult.Failure(error)
     }

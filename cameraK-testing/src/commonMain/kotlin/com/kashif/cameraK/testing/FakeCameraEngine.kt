@@ -172,7 +172,8 @@ public class FakeCameraEngine(
     private var throwFromNext = false
     private var holdNext = false
     private var nextFocusFailure: CameraKError? = null
-    private var heldCapture: CompletableDeferred<Unit>? = null
+    // Completed with null when released, or with the error that ended it: Closed, or a failure's.
+    private var heldCapture: CompletableDeferred<CameraKError?>? = null
     private var recording: ActiveRecording? = null
     private var recordingCount = 0
     private val released = CompletableDeferred<Unit>()
@@ -234,7 +235,7 @@ public class FakeCameraEngine(
         if (closed) return
         closed = true
         completePendingStart(CameraKResult.Failure(CameraKError.Closed))
-        heldCapture?.complete(Unit)
+        heldCapture?.complete(CameraKError.Closed)
         _state.value = EngineState.Closed
         val active = recording
         if (active == null) release() else endForShutdown(active).invokeOnCompletion { release() }
@@ -256,14 +257,14 @@ public class FakeCameraEngine(
         refusal()?.let { return it }
         if (holdNext) {
             holdNext = false
-            val gate = CompletableDeferred<Unit>()
+            val gate = CompletableDeferred<CameraKError?>()
             heldCapture = gate
-            try {
+            val ended = try {
                 gate.await()
             } finally {
                 heldCapture = null
             }
-            if (closed) return CameraKResult.Failure(CameraKError.Closed)
+            ended?.let { return CameraKResult.Failure(it) }
         }
         return captureResult()
     }
@@ -488,11 +489,15 @@ public class FakeCameraEngine(
         }
     }
 
-    /** A runtime failure while open: publishes `Failed(error)`, which ends the generation, and ends any recording. */
+    /**
+     * A runtime failure while open: publishes `Failed(error)`, which ends the generation, ends a held
+     * capture with [error], and ends any recording.
+     */
     public fun fail(error: CameraKError) {
         callback("fail") {
             if (!isLive()) return@callback
             _state.value = EngineState.Failed(error)
+            heldCapture?.complete(error)
             recording?.let { finalize(it, CameraKResult.Failure(error), RecordingEndReason.ERROR) }
         }
     }
@@ -502,13 +507,13 @@ public class FakeCameraEngine(
         if (!closed && _state.value is EngineState.Failed) _state.value = EngineState.Open
     }
 
-    /** The next capture waits until [releaseCapture] or close. */
+    /** The next capture waits until [releaseCapture], close (`Closed`) or [fail] (its error). */
     public fun holdNextCapture() {
         holdNext = true
     }
 
     public fun releaseCapture() {
-        heldCapture?.complete(Unit)
+        heldCapture?.complete(null)
     }
 
     /** The platform ends the recording on its own (a limit, an error, an interruption). */
