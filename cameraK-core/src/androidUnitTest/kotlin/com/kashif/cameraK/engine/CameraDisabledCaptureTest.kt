@@ -68,7 +68,13 @@ class CameraDisabledCaptureTest {
     fun aCaptureStillMakingItsFolderWhenTheCameraIsDisabledNeverReachesCameraX() = runTest {
         val io = HeldDispatcher(StandardTestDispatcher(testScheduler))
         val stills = File(platform.context.filesDir, "stills")
-        val engine = platform.engine(testScheduler, CameraConfiguration { outputDirectory = stills.path }, background = io)
+        val engine = platform.engine(
+            testScheduler,
+            CameraConfiguration {
+                outputDirectory = stills.path
+            },
+            background = io,
+        )
         open(platform, engine)
         // The start made the folder; with it gone, the capture makes it again on io, off the main thread.
         assertTrue(stills.deleteRecursively(), "setup: the app deletes the output folder")
@@ -82,7 +88,10 @@ class CameraDisabledCaptureTest {
         platform.settle(testScheduler)
 
         val failed = assertIs<EngineState.Failed>(engine.state.value)
-        assertTrue(capture.isCompleted, "a capture issued just before the failure waits for a camera CameraX will not reopen")
+        assertTrue(
+            capture.isCompleted,
+            "a capture issued just before the failure waits for a camera CameraX will not reopen",
+        )
         assertSame(failed.error, assertIs<CameraKResult.Failure>(capture.await()).error)
         assertTrue(platform.backend.captures.isEmpty(), "the capture reached CameraX after the camera was disabled")
         assertEquals(emptyList(), stills.listFiles().orEmpty().toList(), "a file nobody was told about")

@@ -172,6 +172,7 @@ public class FakeCameraEngine(
     private var throwFromNext = false
     private var holdNext = false
     private var nextFocusFailure: CameraKError? = null
+
     // Completed with null when released, or with the error that ended it: Closed, or a failure's.
     private var heldCapture: CompletableDeferred<CameraKError?>? = null
     private var recording: ActiveRecording? = null
