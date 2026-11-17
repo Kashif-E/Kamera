@@ -65,7 +65,8 @@ internal suspend fun GrabberSource.open(
 ): OpenedDevice {
     // A failed avfoundation open followed at once by the retry's open and release crashed macOS's main
     // thread (objc_release on an AVCaptureDeviceInput), so a size the camera is known to lack is not asked.
-    when (if (canRelax) knownMode(device) else null) {
+    val known = if (canRelax) knownMode(device) else null
+    when (known) {
         KnownMode.TARGET_MISSING -> throw ModeUnavailableException(
             "The camera has no mode at the configured targetResolution and CameraK's frame rate",
         )
@@ -84,6 +85,8 @@ internal suspend fun GrabberSource.open(
         return OpenedDevice(constrained, relaxed = false)
     } catch (e: Exception) {
         if (e is CancellationException || !canRelax || JavaCvErrorMapper.isNativeLibraryMissing(e)) throw e
+        // The camera has the target: the failure is the camera's, and the own mode could only be released at once.
+        if (known == KnownMode.TARGET_PRESENT) throw e
         CameraKLogger.w(TAG, "Opening the camera at CameraK's size and frame rate failed; retrying at its own mode", e)
         own(null)
         release(constrained)
@@ -195,8 +198,11 @@ internal class EnumeratedDeviceSource(
     override fun knownMode(device: LensInfo): KnownMode? {
         if (defaultCameraOverride != null) return null
         val size = targetResolution ?: DEFAULT_CAMERA_RESOLUTION
-        if (devices.hasMode(device.id, size, DEFAULT_CAMERA_FRAME_RATE) != false) return null
-        return if (targetResolution != null) KnownMode.TARGET_MISSING else KnownMode.DEFAULT_MISSING
+        return when (devices.hasMode(device.id, size, DEFAULT_CAMERA_FRAME_RATE)) {
+            null -> null
+            true -> if (targetResolution != null) KnownMode.TARGET_PRESENT else null
+            false -> if (targetResolution != null) KnownMode.TARGET_MISSING else KnownMode.DEFAULT_MISSING
+        }
     }
 }
 

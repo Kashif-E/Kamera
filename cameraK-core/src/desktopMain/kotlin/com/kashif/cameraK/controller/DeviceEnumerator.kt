@@ -26,6 +26,7 @@ import org.bytedeco.videoinput.videoInput
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import kotlin.math.abs
 
 /** One operating system's cameras: listed without opening any, and opened by `LensInfo.id`. */
 internal interface DesktopDevices {
@@ -184,16 +185,18 @@ internal class MacDevices(
         openInput(input(id) ?: throw DeviceGoneException("The selected camera is no longer connected"), size)
 
     /**
-     * Whether the camera [id] has a [size] mode whose frame rate ranges hold [frameRate], read from its
-     * `formats` as FFmpeg's avfoundation input matches them; null when the camera or the runtime cannot
-     * be read, or it lists no format.
+     * Whether the camera [id] has a [size] mode with a frame rate range topping out at [frameRate], read
+     * from its `formats` as FFmpeg's avfoundation input matches them (configure_video_device takes a rate
+     * only at a range's maximum, so a 1-60 range does not open at 30). Null when the camera or the runtime
+     * cannot be read, when it lists no format, and for the default entry: FFmpeg opens that as its own
+     * device 0, which need not be AVFoundation's default device.
      */
     override fun hasMode(id: String, size: Pair<Int, Int>, frameRate: Double): Boolean? = try {
         val objc = runtime()
         device(objc, id)?.let { modes(objc, it) }?.takeIf { it.isNotEmpty() }?.any { mode ->
             mode.width == size.first &&
                 mode.height == size.second &&
-                mode.frameRates.any { (min, max) -> frameRate in (min - RATE_SLACK)..(max + RATE_SLACK) }
+                mode.frameRates.any { (_, max) -> abs(max - frameRate) < RATE_SLACK }
         }
     } catch (e: Exception) {
         CameraKLogger.w(TAG, "Reading the camera's formats failed; its size is asked for without a check", e)
@@ -209,10 +212,7 @@ internal class MacDevices(
     private fun device(objc: ObjCRuntime, id: String): Long? {
         val video = objc.pointerConstant("AVFoundation", "AVMediaTypeVideo")
         val deviceClass = objc.getClass("AVCaptureDevice")
-        if (video == 0L || deviceClass == 0L) return null
-        if (id == desktopLensInfo().id) {
-            return objc.sendLong(deviceClass, objc.selector("defaultDeviceWithMediaType:"), video).takeIf { it != 0L }
-        }
+        if (video == 0L || deviceClass == 0L || id == desktopLensInfo().id) return null
         val array = objc.sendLong(deviceClass, objc.selector("devicesWithMediaType:"), video)
         if (array == 0L) return null
         return (0 until objc.send(array, objc.selector("count")))
@@ -291,7 +291,7 @@ internal class MacDevices(
         // A BOOL return fills only the low byte of the register.
         const val BOOL_MASK = 0xFFL
 
-        // Wide enough that a rate avfoundation would take is never ruled out: a wrong "no" refuses a mode.
+        // avfoundation's own tolerance when it matches a rate to a range's maximum.
         const val RATE_SLACK = 0.01
         val EXTERNAL_TYPES = setOf("AVCaptureDeviceTypeExternal", "AVCaptureDeviceTypeExternalUnknown")
     }
