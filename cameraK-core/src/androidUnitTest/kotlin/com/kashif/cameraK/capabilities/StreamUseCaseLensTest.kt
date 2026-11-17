@@ -68,11 +68,8 @@ class StreamUseCaseLensTest {
                 set(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS, floatArrayOf(focalLength))
                 set(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE, SizeF(5.6f, 4.2f))
                 // The key is API 33's: an older device has no such entry.
-                if (Build.VERSION.SDK_INT >=
-                    33
-                ) {
-                    useCases?.let { set(CameraCharacteristics.SCALER_AVAILABLE_STREAM_USE_CASES, it) }
-                }
+                val hasKey = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                if (hasKey && useCases != null) set(CameraCharacteristics.SCALER_AVAILABLE_STREAM_USE_CASES, useCases)
             }
             return characteristics
         }
