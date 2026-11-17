@@ -12,7 +12,7 @@ A camera library for Kotlin Multiplatform and Compose Multiplatform: Android (Ca
 
 <p align="center">
 
-[![Maven Central](https://img.shields.io/maven-central/v/dev.kashifmehmood/camerak?label=Maven%20Central&color=blue)](https://search.maven.org/search?q=g:dev.kashifmehmood)
+[![Maven Central](https://img.shields.io/maven-central/v/dev.kashifmehmood/camerak?label=Maven%20Central&color=blue)](https://central.sonatype.com/artifact/dev.kashifmehmood/camerak)
 [![GitHub Release](https://img.shields.io/github/v/release/kashif-e/Kamera)](https://github.com/Kashif-E/Kamera/releases)
 [![Kotlin Weekly](https://img.shields.io/badge/Kotlin_Weekly-425-7F52FF)](https://mailchi.mp/kotlinweekly/kotlin-weekly-425)
 [![Kotlin Weekly](https://img.shields.io/badge/Kotlin_Weekly-517-7F52FF)](https://mailchi.mp/kotlinweekly/kotlin-weekly-517)
