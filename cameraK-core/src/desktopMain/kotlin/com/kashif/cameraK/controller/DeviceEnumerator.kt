@@ -38,6 +38,9 @@ internal interface DesktopDevices {
      * The id of [desktopLensInfo], the one default entry, opens the system's default camera.
      */
     fun open(id: String, size: Pair<Int, Int>?): FrameGrabber
+
+    /** Whether the camera [id] has a [size] mode at [frameRate]; null when that cannot be read. */
+    fun hasMode(id: String, size: Pair<Int, Int>, frameRate: Double): Boolean? = null
 }
 
 /** No camera has the selected id any more: it was unplugged after enumeration. */
@@ -180,6 +183,68 @@ internal class MacDevices(
     override fun open(id: String, size: Pair<Int, Int>?): FrameGrabber =
         openInput(input(id) ?: throw DeviceGoneException("The selected camera is no longer connected"), size)
 
+    /**
+     * Whether the camera [id] has a [size] mode whose frame rate ranges hold [frameRate], read from its
+     * `formats` as FFmpeg's avfoundation input matches them; null when the camera or the runtime cannot
+     * be read, or it lists no format.
+     */
+    override fun hasMode(id: String, size: Pair<Int, Int>, frameRate: Double): Boolean? = try {
+        val objc = runtime()
+        device(objc, id)?.let { modes(objc, it) }?.takeIf { it.isNotEmpty() }?.any { mode ->
+            mode.width == size.first &&
+                mode.height == size.second &&
+                mode.frameRates.any { (min, max) -> frameRate in (min - RATE_SLACK)..(max + RATE_SLACK) }
+        }
+    } catch (e: Exception) {
+        CameraKLogger.w(TAG, "Reading the camera's formats failed; its size is asked for without a check", e)
+        null
+    } catch (e: LinkageError) {
+        CameraKLogger.w(TAG, "Reading the camera's formats needs a library that is missing", e)
+        null
+    }
+
+    private class MacMode(val width: Int, val height: Int, val frameRates: List<Pair<Double, Double>>)
+
+    // The AVCaptureDevice the id names now: the system default for the default entry.
+    private fun device(objc: ObjCRuntime, id: String): Long? {
+        val video = objc.pointerConstant("AVFoundation", "AVMediaTypeVideo")
+        val deviceClass = objc.getClass("AVCaptureDevice")
+        if (video == 0L || deviceClass == 0L) return null
+        if (id == desktopLensInfo().id) {
+            return objc.sendLong(deviceClass, objc.selector("defaultDeviceWithMediaType:"), video).takeIf { it != 0L }
+        }
+        val array = objc.sendLong(deviceClass, objc.selector("devicesWithMediaType:"), video)
+        if (array == 0L) return null
+        return (0 until objc.send(array, objc.selector("count")))
+            .map { objc.sendLong(array, objc.selector("objectAtIndex:"), it) }
+            .firstOrNull { objc.string(objc.send(it, objc.selector("uniqueID"))) == id }
+    }
+
+    private fun modes(objc: ObjCRuntime, device: Long): List<MacMode> {
+        val formats = objc.send(device, objc.selector("formats"))
+        if (formats == 0L) return emptyList()
+        return (0 until objc.send(formats, objc.selector("count"))).map { i ->
+            val format = objc.sendLong(formats, objc.selector("objectAtIndex:"), i)
+            // CMVideoDimensions: two int32s, width in the low half of the register.
+            val dimensions = objc.callLong(
+                "CoreMedia",
+                "CMVideoFormatDescriptionGetDimensions",
+                objc.send(format, objc.selector("formatDescription")),
+            )
+            val ranges = objc.send(format, objc.selector("videoSupportedFrameRateRanges"))
+            val rates = if (ranges == 0L) {
+                emptyList()
+            } else {
+                (0 until objc.send(ranges, objc.selector("count"))).map { r ->
+                    val range = objc.sendLong(ranges, objc.selector("objectAtIndex:"), r)
+                    objc.sendDouble(range, objc.selector("minFrameRate")) to
+                        objc.sendDouble(range, objc.selector("maxFrameRate"))
+                }
+            }
+            MacMode((dimensions and 0xFFFF_FFFFL).toInt(), (dimensions ushr 32).toInt(), rates)
+        }
+    }
+
     private class MacCamera(val uniqueId: String, val name: String, val position: Long, val isExternal: Boolean)
 
     private fun cameras(objc: ObjCRuntime): List<MacCamera> {
@@ -225,6 +290,9 @@ internal class MacDevices(
 
         // A BOOL return fills only the low byte of the register.
         const val BOOL_MASK = 0xFFL
+
+        // Wide enough that a rate avfoundation would take is never ruled out: a wrong "no" refuses a mode.
+        const val RATE_SLACK = 0.01
         val EXTERNAL_TYPES = setOf("AVCaptureDeviceTypeExternal", "AVCaptureDeviceTypeExternalUnknown")
     }
 }

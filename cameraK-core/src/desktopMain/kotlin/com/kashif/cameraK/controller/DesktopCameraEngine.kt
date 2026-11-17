@@ -406,6 +406,8 @@ internal class DesktopCameraEngine(
         val openError = when {
             // The device was unplugged after enumeration (§2.4 desktop, §4.1 row 2).
             failure is DeviceGoneException -> CameraKError.NoCamera(null, failure)
+            // A targetResolution the camera's formats lack: refused before anything was opened.
+            failure is ModeUnavailableException -> CameraKError.Unsupported(CameraFeature.TARGET_RESOLUTION, failure)
             opening || JavaCvErrorMapper.isNativeLibraryMissing(failure) ->
                 JavaCvErrorMapper.openFailure(failure, os) { authorization.cameraStatus() }
             else -> null
@@ -490,7 +492,7 @@ internal class DesktopCameraEngine(
         session.run?.firstFrame?.complete(false)
         _state.value = EngineState.Failed(error)
         session.outcome.complete(CameraKResult.Failure(error))
-        pendingCaptures.forEach { it.complete(CameraKResult.Failure(error)) }
+        pendingCaptures.toList().forEach { it.complete(CameraKResult.Failure(error)) }
         pendingCaptures.clear()
     }
 
@@ -755,13 +757,21 @@ internal class DesktopCameraEngine(
         }
         // Readied before it is listed, so a stop or close always reaches it, and releases it if it never ran.
         live.prepare(scope, runtime.newWorker(RECORDER_THREAD), grabber::openFeed, grabber.frameSize)
-        synchronized(lock) {
-            if (closed || startAbandoned) {
-                // As a camera start that a stop met: Closed, and the recording never runs.
-                live.requestStop(if (closed) RecordingEndReason.SHUTDOWN else RecordingEndReason.USER)
-                return CameraKResult.Failure(CameraKError.Closed)
+        val abandoned = synchronized(lock) {
+            when {
+                closed -> RecordingEndReason.SHUTDOWN
+                startAbandoned -> RecordingEndReason.USER
+                else -> {
+                    recording = live
+                    null
+                }
             }
-            recording = live
+        }
+        if (abandoned != null) {
+            // As a camera start that a stop met: Closed, and the recording never runs. Outside the lock:
+            // a recording that never ran closes its microphone and recorder as it is stopped.
+            live.requestStop(abandoned)
+            return CameraKResult.Failure(CameraKError.Closed)
         }
         val outcome = live.start()
         if (outcome is CameraKResult.Failure) synchronized(lock) { if (recording === live) recording = null }

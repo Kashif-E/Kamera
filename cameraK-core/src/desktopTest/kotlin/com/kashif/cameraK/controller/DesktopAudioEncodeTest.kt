@@ -70,6 +70,15 @@ class DesktopAudioEncodeTest {
             assertEquals(1, grabber.audioChannels, "audio channels")
             assertTrue("aac" in grabber.audioCodecName.orEmpty(), "audio codec ${grabber.audioCodecName}")
             assertTrue(abs(grabber.lengthInTime - 1_000_000L) <= 100_000L, "length ${grabber.lengthInTime} µs")
+            // The container's length is its longest track's; the audio's own is what it decodes to.
+            var decoded = 0L
+            while (true) {
+                val samples = grabber.grabSamples() ?: break
+                decoded += samples.samples[0].remaining()
+            }
+            val audioSeconds = decoded.toDouble() / grabber.sampleRate
+            // AAC codes 1024-sample frames and primes the encoder with one: two frames either way.
+            assertTrue(abs(audioSeconds - 1.0) <= 2 * 1024.0 / 48_000, "audio $audioSeconds s against 1 s of video")
         }
     }
 

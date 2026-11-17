@@ -152,6 +152,8 @@ A release is a pushed tag named `v` plus the `VERSION_NAME` in `gradle.propertie
 refuses a tag that does not match `VERSION_NAME`, and the upload job waits in the `maven-central`
 environment. Nothing can start a publish by hand or from a branch, and only one publish runs at a time.
 
+Both the harness and the publish job run `scripts/select_xcode.sh` first: the macos-15 image defaults to Xcode 16.4, which cannot link the iOS binaries of the Compose modules (Compose Multiplatform 1.11 uses iOS 26 SDK classes; Kotlin 2.4.10 is tested with Xcode 26.4). `check_release_workflow.py` fails when either job lacks it.
+
 CameraK 2.0 publishes under `dev.kashifmehmood` (`GROUP`). The 1.x coordinates stay in the 1.x group
 (`LEGACY_GROUP` in gradle.properties), where the `relocations/` projects publish a relocation POM for
 each 1.x artifact id with a 2.0 successor. The upload job runs two builds, so each namespace is its own

@@ -9,10 +9,13 @@ import com.kashif.cameraK.permissions.PermissionStatus
 import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import javax.sound.sampled.LineUnavailableException
+import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -78,6 +81,42 @@ class DesktopAudioTest {
             val prepare =
                 assertIs<CameraKResult.Failure>(sut.prepareRecording(VideoConfiguration { enableAudio = true }))
             assertIs<CameraKError.Hardware>(prepare.error)
+        } finally {
+            sut.close()
+            rig.settle()
+        }
+    }
+
+    @Test
+    fun aStartStoppedWhileItOpensTheMicrophoneClosesItOutsideTheEngineLock() = runTest {
+        val rig = DesktopEngineRig(testScheduler)
+        val steps = DesktopRecordingSteps(this, rig)
+        val sut = rig.engine()
+        val closedWithTheLockFree = CompletableDeferred<Boolean>()
+        val fake = FakeMicrophone()
+        val microphone = object : Microphone by fake {
+            // Another thread takes the engine's lock; while this close holds it, that thread waits.
+            override fun close() {
+                val other = thread { sut.startedWith }
+                other.join(1_000)
+                closedWithTheLockFree.complete(!other.isAlive)
+                fake.close()
+            }
+        }
+        rig.microphone = MicrophoneOpener {
+            // A stop while the start opens the microphone: the start then never runs its recording.
+            runBlocking { sut.stopRecording() }
+            microphone
+        }
+        try {
+            steps.open(sut)
+
+            val start = async { sut.startRecording(VideoConfiguration { enableAudio = true }) }
+            rig.settle()
+
+            assertIs<CameraKError.Closed>(assertIs<CameraKResult.Failure>(start.await()).error)
+            assertTrue(closedWithTheLockFree.await(), "the microphone was closed under the engine's lock")
+            assertEquals(0L, fake.closed.count, "the microphone was left open")
         } finally {
             sut.close()
             rig.settle()

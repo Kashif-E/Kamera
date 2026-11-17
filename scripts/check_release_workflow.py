@@ -38,6 +38,8 @@ CONCURRENCY_GROUP = "publish"
 RELEASE_TASKS = ("publishLibraries", "publishLegacyRelocations")
 PUBLISH_TASK = re.compile(r"\bpublish(?:\w*MavenCentral\w*|Libraries|LegacyRelocations)\b", re.IGNORECASE)
 FULL_HARNESS = re.compile(r"scripts/verify\.sh\s+--full\b")
+# The image's default Xcode cannot link the iOS binaries (Compose Multiplatform 1.11 needs the iOS 26 SDK).
+SELECT_XCODE = "scripts/select_xcode.sh"
 # A publish step's script that exits 0 after its upload failed: an `||` fallback that succeeds, a `true`
 # after the command, or errexit switched off.
 MASKED_EXIT = re.compile(
@@ -277,6 +279,12 @@ def release_workflow_problems(release: dict, build: dict) -> List[str]:
     harness_runners = {str(job.get("runs-on")) for job in build_jobs.values() if FULL_HARNESS.search(run_text(job))}
     if not harness_runners:
         problems.append(f"{BUILD_WORKFLOW.relative_to(ROOT)}: no job runs scripts/verify.sh --full")
+    for job_id, job in build_jobs.items():
+        if FULL_HARNESS.search(run_text(job)) and SELECT_XCODE not in run_text(job):
+            problems.append(
+                f"{BUILD_WORKFLOW.relative_to(ROOT)}: job {job_id} runs the harness on the image's default Xcode; "
+                f"run {SELECT_XCODE} first"
+            )
 
     if len(publishing) != 1:
         problems.append(f"{name}: {len(publishing)} jobs publish to Maven Central; expected exactly one")
@@ -301,6 +309,9 @@ def release_workflow_problems(release: dict, build: dict) -> List[str]:
         )
         uploads = [index for index, step in enumerate(steps) if PUBLISH_TASK.search(str(step.get("run", "")))]
         upload = uploads[0] if uploads else None
+        select = next((index for index, step in enumerate(steps) if SELECT_XCODE in str(step.get("run", ""))), None)
+        if select is None or upload is None or select > upload:
+            problems.append(f"{name}: job {job_id} publishes on the image's default Xcode; run {SELECT_XCODE} first")
         problems += [f"{name}: job {job_id} {problem}" for problem in release_step_problems(job, steps, uploads)]
         if guard is None or upload is None or guard > upload:
             problems.append(f"{name}: job {job_id} does not run scripts/check_release_tag.sh before publishing")
@@ -315,8 +326,11 @@ def release_workflow_problems(release: dict, build: dict) -> List[str]:
 # of breaking it (design §12.4 W13, the release-workflow gate).
 FIXTURE_BUILD = {
     "on": {"workflow_call": None},
-    "jobs": {"full": {"runs-on": "macos-15", "steps": [{"run": "scripts/verify.sh --full"}]}},
+    "jobs": {
+        "full": {"runs-on": "macos-15", "steps": [{"run": "scripts/select_xcode.sh"}, {"run": "scripts/verify.sh --full"}]},
+    },
 }
+FIXTURE_XCODE = "      - run: scripts/select_xcode.sh\n"
 FIXTURE_TAG_GUARD = '      - run: scripts/check_release_tag.sh "$GITHUB_REF_NAME"\n'
 FIXTURE_LIBRARIES = "      - run: ./gradlew publishLibraries --no-configuration-cache\n"
 FIXTURE_RELOCATIONS = "      - run: ./gradlew publishLegacyRelocations --no-configuration-cache\n"
@@ -341,7 +355,7 @@ def fixture_release(steps: List[str], extra_jobs: str = "", job_settings: str = 
 def self_test() -> None:
     """Raises CheckError when the rules misjudge a fixture, so a rule that matches nothing cannot pass."""
     correct = release_workflow_problems(
-        fixture_release([FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]), FIXTURE_BUILD
+        fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]), FIXTURE_BUILD
     )
     if correct:
         raise CheckError(f"the release rules reject the split release: {correct}")
@@ -391,19 +405,34 @@ def self_test() -> None:
     accepted = [
         name
         for name, steps in broken.items()
-        if not release_workflow_problems(fixture_release(steps), FIXTURE_BUILD)
+        if not release_workflow_problems(fixture_release([FIXTURE_XCODE] + steps), FIXTURE_BUILD)
     ]
+    # The image's default Xcode cannot link the iOS binaries: the harness and the publish job select one that can.
+    if not release_workflow_problems(
+        fixture_release([FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]), FIXTURE_BUILD
+    ):
+        accepted.append("the publishing job on the image's default Xcode")
+    default_xcode_build = {
+        "on": {"workflow_call": None},
+        "jobs": {"full": {"runs-on": "macos-15", "steps": [{"run": "scripts/verify.sh --full"}]}},
+    }
+    if not release_workflow_problems(
+        fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]),
+        default_xcode_build,
+    ):
+        accepted.append("the harness on the image's default Xcode")
     second_job = (
         "  relocations:\n    needs: [verify, publish]\n    runs-on: macos-15\n    environment: maven-central\n"
-        "    steps:\n" + FIXTURE_TAG_GUARD + FIXTURE_RELOCATIONS
+        "    steps:\n" + FIXTURE_XCODE + FIXTURE_TAG_GUARD + FIXTURE_RELOCATIONS
     )
     if not release_workflow_problems(
-        fixture_release([FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES], second_job), FIXTURE_BUILD
+        fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES], second_job), FIXTURE_BUILD
     ):
         accepted.append("the second step in a second job")
     if not release_workflow_problems(
         fixture_release(
-            [FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS], job_settings="    continue-on-error: true\n"
+            [FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS],
+            job_settings="    continue-on-error: true\n",
         ),
         FIXTURE_BUILD,
     ):
