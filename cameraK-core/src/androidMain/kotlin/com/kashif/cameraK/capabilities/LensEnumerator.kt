@@ -150,7 +150,10 @@ internal object LensEnumerator {
                 )
             }
             .mapTo(mutableSetOf()) { it.id }
-        return topLevel + children.filter { it.id in survivingIds }
+        // A device may list a physical lens as a camera of its own too (the Galaxy S23's ultra-wide, camera 2
+        // inside logical camera 0): it is offered once, as that camera.
+        val topLevelIds = topLevel.mapTo(mutableSetOf()) { it.id }
+        return topLevel + children.filter { it.id in survivingIds && it.id !in topLevelIds }
     }
 
     /**
