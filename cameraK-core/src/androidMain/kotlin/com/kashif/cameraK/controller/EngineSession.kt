@@ -124,6 +124,12 @@ internal class EngineSession(
     /** Whether the live session's camera is open, the only state that takes hardware commands. */
     val isOpen: Boolean get() = session?.failed == false && _state.value == EngineState.Open
 
+    /** Why a capture cannot be sent now: the session's failure, NotReady when it is otherwise not open; null when open. */
+    fun captureRefusal(): CameraKError? = when {
+        isOpen -> null
+        else -> (_state.value as? EngineState.Failed)?.error ?: CameraKError.NotReady
+    }
+
     /** Whether a bind has given the session its camera. */
     val isBound: Boolean get() = binder.camera != null
 

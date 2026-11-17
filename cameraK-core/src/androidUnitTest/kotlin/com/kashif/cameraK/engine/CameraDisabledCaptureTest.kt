@@ -70,6 +70,8 @@ class CameraDisabledCaptureTest {
         val stills = File(platform.context.filesDir, "stills")
         val engine = platform.engine(testScheduler, CameraConfiguration { outputDirectory = stills.path }, background = io)
         open(platform, engine)
+        // The start made the folder; with it gone, the capture makes it again on io, off the main thread.
+        assertTrue(stills.deleteRecursively(), "setup: the app deletes the output folder")
         io.held = true
         val capture = async { engine.capture() }
         platform.settle(testScheduler)

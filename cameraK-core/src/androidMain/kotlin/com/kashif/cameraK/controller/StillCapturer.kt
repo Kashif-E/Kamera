@@ -53,6 +53,8 @@ internal class StillCapturer(
     private val isReleased: () -> Boolean,
     private val metadata: () -> ImageCapture.Metadata,
     private val boundLens: () -> CameraLens?,
+    /** Why a capture cannot go to CameraX now (the session's failure, or not open); null when it can. Main thread. */
+    private val refusal: () -> CameraKError?,
     /** The capture session, exposure compensation index and autofocus state of each capture result; on the camera's thread. */
     private val onCaptureReported: (session: Any, index: Int, afState: Int?) -> Unit,
 ) {
@@ -133,6 +135,13 @@ internal class StillCapturer(
                     file.delete()
                     return@suspendCancellableCoroutine
                 }
+                // Making the folder left the main thread: the session can have failed meanwhile, and CameraX
+                // would queue the request for a camera it does not reopen.
+                refusal()?.let { error ->
+                    file.delete()
+                    continuation.resume(CameraKResult.Failure(error))
+                    return@suspendCancellableCoroutine
+                }
                 inFlight += continuation
                 val options = ImageCapture.OutputFileOptions.Builder(file).setMetadata(metadata()).build()
                 backend.takePicture(capture, options, callbackExecutor, SavedCallback(continuation, file))
@@ -190,8 +199,13 @@ internal class StillCapturer(
             return CameraKResult.Success(png)
         }
 
+        // A capture failed or closed while its file was written: nobody is told of that file, so it goes.
         private fun resume(result: CameraKResult<File>) {
-            if (inFlight.remove(continuation)) continuation.resume(result)
+            if (inFlight.remove(continuation)) {
+                continuation.resume(result)
+            } else if (result is CameraKResult.Success) {
+                result.value.delete()
+            }
         }
     }
 

@@ -265,6 +265,7 @@ public class FakeCameraEngine(
                 heldCapture = null
             }
             ended?.let { return CameraKResult.Failure(it) }
+            if (closed) return CameraKResult.Failure(CameraKError.Closed)
         }
         return captureResult()
     }

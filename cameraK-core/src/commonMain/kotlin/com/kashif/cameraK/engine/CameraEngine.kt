@@ -120,6 +120,11 @@ public interface CameraEngine {
      */
     public suspend fun stop()
 
+    /**
+     * Takes one still into an app-owned file. `NotReady` unless Open. A capture still waiting when the
+     * session fails returns `Failure` with the same error the state's `Failed` carries, and one still
+     * waiting at close returns `Closed`; neither leaves a file behind.
+     */
     public suspend fun capture(): CameraKResult<CapturedImage>
     public suspend fun setZoom(ratio: Float): CameraKResult<ZoomState>
     public suspend fun setFlashMode(mode: FlashMode): CameraKResult<FlashMode>
