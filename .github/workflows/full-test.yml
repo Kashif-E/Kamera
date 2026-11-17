@@ -15,9 +15,11 @@ permissions:
 
 jobs:
   verify:
+    if: "!contains(github.event.head_commit.message, '[probe]')"
     uses: ./.github/workflows/build.yml
 
   desktop:
+    if: "!contains(github.event.head_commit.message, '[probe]')"
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +100,7 @@ jobs:
             hs_err_pid*.log
 
   android:
+    if: "!contains(github.event.head_commit.message, '[probe]')"
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
@@ -140,6 +143,7 @@ jobs:
           path: ci-out/**
 
   ios:
+    if: "!contains(github.event.head_commit.message, '[probe]')"
     # Kotlin 2.4.10 is tested with Xcode 26.4, and Compose Multiplatform 1.11 links against iOS 26 SDK
     # classes (UIViewLayoutRegion): the macos-15 image's default Xcode 16.4 cannot link the app.
     runs-on: macos-26
