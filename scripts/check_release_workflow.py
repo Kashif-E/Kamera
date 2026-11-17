@@ -38,6 +38,8 @@ CONCURRENCY_GROUP = "publish"
 RELEASE_TASKS = ("publishLibraries", "publishLegacyRelocations")
 PUBLISH_TASK = re.compile(r"\bpublish(?:\w*MavenCentral\w*|Libraries|LegacyRelocations)\b", re.IGNORECASE)
 FULL_HARNESS = re.compile(r"scripts/verify\.sh\s+--full\b")
+# The image's default Xcode cannot link the iOS binaries (Compose Multiplatform 1.11 needs the iOS 26 SDK).
+SELECT_XCODE = "scripts/select_xcode.sh"
 # A publish step's script that exits 0 after its upload failed: an `||` fallback that succeeds, a `true`
 # after the command, or errexit switched off.
 MASKED_EXIT = re.compile(
@@ -277,6 +279,12 @@ def release_workflow_problems(release: dict, build: dict) -> List[str]:
     harness_runners = {str(job.get("runs-on")) for job in build_jobs.values() if FULL_HARNESS.search(run_text(job))}
     if not harness_runners:
         problems.append(f"{BUILD_WORKFLOW.relative_to(ROOT)}: no job runs scripts/verify.sh --full")
+    for job_id, job in build_jobs.items():
+        if FULL_HARNESS.search(run_text(job)) and SELECT_XCODE not in run_text(job):
+            problems.append(
+                f"{BUILD_WORKFLOW.relative_to(ROOT)}: job {job_id} runs the harness on the image's default Xcode; "
+                f"run {SELECT_XCODE} first"
+            )
 
     if len(publishing) != 1:
         problems.append(f"{name}: {len(publishing)} jobs publish to Maven Central; expected exactly one")
@@ -301,6 +309,9 @@ def release_workflow_problems(release: dict, build: dict) -> List[str]:
         )
         uploads = [index for index, step in enumerate(steps) if PUBLISH_TASK.search(str(step.get("run", "")))]
         upload = uploads[0] if uploads else None
+        select = next((index for index, step in enumerate(steps) if SELECT_XCODE in str(step.get("run", ""))), None)
+        if select is None or upload is None or select > upload:
+            problems.append(f"{name}: job {job_id} publishes on the image's default Xcode; run {SELECT_XCODE} first")
         problems += [f"{name}: job {job_id} {problem}" for problem in release_step_problems(job, steps, uploads)]
         if guard is None or upload is None or guard > upload:
             problems.append(f"{name}: job {job_id} does not run scripts/check_release_tag.sh before publishing")
