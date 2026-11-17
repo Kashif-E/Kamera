@@ -54,6 +54,12 @@ class EnumeratedDeviceSourceTest {
     }
 
     @Test
+    fun aCameraWithNoSizeAtTheRateOpensAtItsOwnModeWithOrWithoutATarget() {
+        assertEquals(KnownMode.DefaultMissing, source(1920 to 1080, emptyList()).knownMode(device))
+        assertEquals(KnownMode.DefaultMissing, source(null, emptyList()).knownMode(device))
+    }
+
+    @Test
     fun withoutATargetOnlyAMissing720pIsKnown() {
         assertEquals(KnownMode.DefaultMissing, source(null, listOf(1920 to 1080)).knownMode(device))
         assertNull(source(null, listOf(1280 to 720, 1920 to 1080)).knownMode(device))

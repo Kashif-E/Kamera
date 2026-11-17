@@ -27,6 +27,13 @@ class NearestSizeTest {
         assertEquals(1280 to 720, nearestSize(faceTime, 960 to 540))
     }
 
+    // Desktop cameras stream landscape: a portrait target written for the phones is turned first.
+    @Test
+    fun aPortraitTargetIsTurnedWhenTheCameraListsNoPortraitSize() {
+        assertEquals(1280 to 720, nearestSize(listOf(1920 to 1080, 1280 to 720, 640 to 480), 720 to 1280))
+        assertEquals(1920 to 1080, nearestSize(faceTime, 1080 to 1920))
+    }
+
     @Test
     fun aTargetOfAnotherAspectRatioIsMeasuredByWhatACropToItHolds() {
         assertEquals(1920 to 1080, nearestSize(faceTime, 1440 to 1080))
