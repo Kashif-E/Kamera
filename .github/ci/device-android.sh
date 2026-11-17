@@ -14,6 +14,7 @@ G="./gradlew --no-daemon --dependency-verification=lenient"
 P=org.company.app.androidApp
 PHOTO_CASES=300
 CHURN=500
+STALL_SECONDS=180
 adb root > /dev/null 2>&1; sleep 3; adb wait-for-device
 {
   echo "android $(adb shell getprop ro.build.version.release) sdk $(adb shell getprop ro.build.version.sdk) $(adb shell getprop ro.product.model)"
@@ -60,8 +61,17 @@ run() {
     fi
     if grep -q "DONE" "$dir/console.txt"; then outcome=done; break; fi
     if [ -z "$pid" ] && [ $((SECONDS - start)) -gt 30 ]; then outcome="app died"; break; fi
+    # A case or churn cycle that logs nothing for STALL_SECONDS is stuck; its threads say where.
+    local lines; lines=$(wc -l < "$dir/console.txt")
+    if [ "$lines" != "${seen:-}" ]; then seen=$lines; moved=$SECONDS; fi
+    if [ $((SECONDS - ${moved:-$start})) -ge $STALL_SECONDS ]; then outcome=stalled; break; fi
     sleep 5
   done
+  if [ "$outcome" != done ] && [ -n "$pid" ]; then
+    adb shell debuggerd -j "$pid" > "$dir/threads-java.txt" 2>&1
+    adb shell debuggerd "$pid" > "$dir/threads-native.txt" 2>&1
+  fi
+  seen=""; moved=""
   adb logcat -d > "$dir/logcat.txt"
   adb exec-out run-as $P cat files/camerak-matrix/report.json > "$dir/report.json" 2>/dev/null
   adb exec-out run-as $P cat files/camerak-matrix/report.md > "$dir/report.md" 2>/dev/null

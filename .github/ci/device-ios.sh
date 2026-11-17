@@ -7,7 +7,9 @@ set -u
 OUT=ci-out/ios
 mkdir -p "$OUT"
 BID=com.kashif.camera.iosApp
-CHURN=500
+# Without a camera every start ends in Error within milliseconds (500 cycles take about 5 s), so the
+# churn runs long enough for the memory samples every 5 s to show growth.
+CHURN=20000
 DEV=$(xcrun simctl list devices available -j | python3 -I -c '
 import json, sys
 devices = json.load(sys.stdin)["devices"]
@@ -61,6 +63,6 @@ run() {
 }
 
 run matrix 15 30 -cameraKMatrixSections features,lifecycle,video,photo -cameraKMatrixLimit 120
-run churn 15 5 -cameraKMatrixChurn $CHURN
+run churn 20 5 -cameraKMatrixChurn $CHURN
 cp -r ~/Library/Logs/DiagnosticReports "$OUT/crash-reports" 2>/dev/null
 exit 0

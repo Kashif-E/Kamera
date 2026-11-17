@@ -49,7 +49,7 @@ it runs the engine's device tests (`:cameraK-core:connectedDebugAndroidTest`), t
 over every section but photo plus the first 300 photo cases (front camera; the emulator's back camera
 hangs on a SPEED capture with flash), and a 500-open holder churn with memory sampled
 (`.github/ci/device-android.sh`). On an iOS simulator it builds the Sample with Xcode, runs the matrix
-(no cases without a camera) and a churn, and runs `leaks` on the app (`.github/ci/device-ios.sh`).
+(no cases without a camera) and a 20,000-cycle churn of starts that fail without a camera, and runs `leaks` on the app (`.github/ci/device-ios.sh`).
 `scripts/device_gate.py` fails the job on a FAILed or BLOCKED case, growth in the churn's memory or
 threads, a crash, or a root leak of any type but Skia's `GrOp`; the lint target runs its self-test
 (`:checkDeviceGateRules`). Capture on real hardware stays with `docs/device-checklist.md`.
