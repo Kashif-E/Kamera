@@ -53,25 +53,24 @@ class VerdictTest {
         assertEquals(Verdict.FAIL, judge(noFront, heicUnsupported, emptyList()).verdict)
     }
 
-    // Desktop capabilities list no sizes and no microphone: a refusal of either is the camera's or the
-    // machine's answer, and a success is as right.
+    // Desktop capabilities list no microphone: refusing one is the machine's answer, and a success is
+    // as right. A targetResolution is a target, never refused.
     @Test
     fun anUndecidableRefusal_isUnsupportedOk_andItsSuccessPasses() {
-        val noTarget = Outcome.Refused("start", CameraKError.Unsupported(CameraFeature.TARGET_RESOLUTION))
-        val undecidable = desktopUndecidable("desktop", targetResolution = true, audio = false)
-        assertEquals(Verdict.UNSUPPORTED_OK, judge(noTarget, undecidable, emptyList()).verdict)
-        assertEquals(Verdict.PASS, judge(Outcome.Completed, undecidable, emptyList()).verdict)
+        val undecidable = desktopUndecidable("desktop", audio = true)
         val noMicrophone = Outcome.Refused("startRecording", CameraKError.Unsupported(CameraFeature.AUDIO))
+        assertEquals(Verdict.UNSUPPORTED_OK, judge(noMicrophone, undecidable, emptyList()).verdict)
+        assertEquals(Verdict.PASS, judge(Outcome.Completed, undecidable, emptyList()).verdict)
         assertEquals(
-            Verdict.UNSUPPORTED_OK,
-            judge(
-                noMicrophone,
-                desktopUndecidable("desktop", targetResolution = false, audio = true),
-                emptyList(),
-            ).verdict,
+            Verdict.FAIL,
+            judge(noMicrophone, desktopUndecidable("android", audio = true), emptyList()).verdict,
         )
-        assertEquals(Verdict.FAIL, judge(noTarget, desktopUndecidable("android", true, false), emptyList()).verdict)
-        assertEquals(Verdict.FAIL, judge(noMicrophone, undecidable, emptyList()).verdict)
+        assertEquals(
+            Verdict.FAIL,
+            judge(noMicrophone, desktopUndecidable("desktop", audio = false), emptyList()).verdict,
+        )
+        val noTarget = Outcome.Refused("start", CameraKError.Unsupported(CameraFeature.TARGET_RESOLUTION))
+        assertEquals(Verdict.FAIL, judge(noTarget, undecidable, emptyList()).verdict)
     }
 
     @Test

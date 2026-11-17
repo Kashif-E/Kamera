@@ -214,18 +214,13 @@ internal fun analysisPrediction(capabilities: CameraCapabilities, spec: Analysis
 }
 
 /**
- * What desktop capabilities cannot say: they list no sizes, so a [targetResolution] the camera lacks is
- * `Unsupported(TARGET_RESOLUTION)` only at start, and no microphone, so a recording with [audio] on a
- * machine without one is `Unsupported(AUDIO)`. Nothing on other platforms.
+ * What desktop capabilities cannot say: they list no microphone, so a recording with [audio] on a
+ * machine without one is `Unsupported(AUDIO)`. A targetResolution is a target there as on the phones,
+ * never refused. Nothing on other platforms.
  */
-internal fun desktopUndecidable(platformName: String, targetResolution: Boolean, audio: Boolean): Prediction =
-    if (platformName != "desktop") {
+internal fun desktopUndecidable(platformName: String, audio: Boolean): Prediction =
+    if (platformName != "desktop" || !audio) {
         Prediction.NONE
     } else {
-        Prediction(
-            undecidable = setOfNotNull(
-                CameraFeature.TARGET_RESOLUTION.takeIf { targetResolution },
-                CameraFeature.AUDIO.takeIf { audio },
-            ),
-        )
+        Prediction(undecidable = setOf(CameraFeature.AUDIO))
     }
