@@ -22,6 +22,13 @@ class QRScannerConfigTest {
         assertEquals(5f, config.maxFps)
     }
 
+    // 1.x reported a code from its first read; a misread in one frame was reported too (#190).
+    @Test
+    fun aCodeIsReportedOnceReadInTwoFramesByDefault() {
+        assertEquals(2, QRScannerConfig().confirmations)
+        assertEquals(1, QRScannerConfig { confirmations = 1 }.confirmations)
+    }
+
     @Test
     fun comparesByValueAndCopies() {
         val config = QRScannerConfig {
@@ -48,6 +55,10 @@ class QRScannerConfigTest {
         assertEquals(300.milliseconds, copy.dedupeWindow)
         assertEquals(setOf(BarcodeFormat.EAN_13), copy.formats)
         assertNotEquals(config, copy)
+        val once = config.copy { confirmations = 1 }
+        assertEquals(1, once.confirmations)
+        assertNotEquals(config, once)
+        assertNotEquals(config.hashCode(), once.hashCode())
     }
 
     @Test
@@ -70,13 +81,14 @@ class QRScannerConfigTest {
         assertFailsWith<IllegalArgumentException>("a region left of the frame") {
             QRScannerConfig { region = FrameRect(-1, 0, 4, 4) }
         }
+        assertFailsWith<IllegalArgumentException>("no confirmations") { QRScannerConfig { confirmations = 0 } }
         QRScannerConfig { dedupeWindow = Duration.ZERO }
     }
 
     @Test
     fun toStringNamesEveryField() {
         assertEquals(
-            "QRScannerConfig(formats=[QR_CODE], region=[1, 2, 3, 4], dedupeWindow=1s, maxFps=5.0)",
+            "QRScannerConfig(formats=[QR_CODE], region=[1, 2, 3, 4], dedupeWindow=1s, maxFps=5.0, confirmations=2)",
             QRScannerConfig { region = FrameRect(1, 2, 3, 4) }.toString(),
         )
     }

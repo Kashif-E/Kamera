@@ -42,9 +42,37 @@ class QRScannerPluginTest {
         startReady(s)
 
         s.fake.fakeFrames.emit(blankFrame(0))
+        assertTrue(results.isEmpty(), "reported from one frame's read: $results")
+        s.fake.fakeFrames.emit(blankFrame(1))
 
         assertEquals(listOf(qr("HELLO")), results)
-        assertEquals(1, decoders.images.size, "decodes")
+        assertEquals(2, decoders.images.size, "decodes")
+    }
+
+    // #190: a ventilation grille decodes to a different misread in each frame.
+    @Test
+    fun misreadsThatDifferFromFrameToFrameAreNotReported() = runTest {
+        var frame = 0
+        val plugin = QRScannerPlugin(QRScannerConfig(), FakeDecoders { listOf(qr("grille ${frame++}")) })
+        val results = collectResults(plugin)
+        val s = qrSession(plugin)
+        startReady(s)
+
+        repeat(10) { s.fake.fakeFrames.emit(blankFrame(it)) }
+
+        assertTrue(results.isEmpty(), "misreads reported: $results")
+    }
+
+    @Test
+    fun oneConfirmationReportsACodeFromItsFirstRead() = runTest {
+        val plugin = QRScannerPlugin(QRScannerConfig { confirmations = 1 }, FakeDecoders { listOf(qr("HELLO")) })
+        val results = collectResults(plugin)
+        val s = qrSession(plugin)
+        startReady(s)
+
+        s.fake.fakeFrames.emit(blankFrame(0))
+
+        assertEquals(listOf(qr("HELLO")), results)
     }
 
     @Test
@@ -134,6 +162,7 @@ class QRScannerPluginTest {
         plugin.resume()
         runCurrent()
         s.fake.fakeFrames.emit(blankFrame(0))
+        s.fake.fakeFrames.emit(blankFrame(1))
 
         assertEquals(listOf(true, false), s.frames.registrations.map { it.closed }, "closed, per registration")
         assertEquals(listOf(qr("HELLO")), results)
@@ -259,7 +288,8 @@ class QRScannerPluginTest {
     @Test
     fun dedupeWithinTheWindow() = runTest {
         var next = listOf(qr("A"))
-        val plugin = QRScannerPlugin(QRScannerConfig(), FakeDecoders { next })
+        // One read reports, so the dedupe alone decides what is reported.
+        val plugin = QRScannerPlugin(QRScannerConfig { confirmations = 1 }, FakeDecoders { next })
         val results = collectResults(plugin)
         val s = qrSession(plugin)
         startReady(s)
@@ -378,7 +408,7 @@ class QRScannerPluginTest {
     fun aSlowResultsCollectorNeverSuspendsTheDecoder() = runTest {
         var count = 0
         val decoders = FakeDecoders { listOf(qr("code ${count++}")) }
-        val plugin = QRScannerPlugin(QRScannerConfig(), decoders)
+        val plugin = QRScannerPlugin(QRScannerConfig { confirmations = 1 }, decoders)
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             plugin.results.collect { awaitCancellation() }
         }

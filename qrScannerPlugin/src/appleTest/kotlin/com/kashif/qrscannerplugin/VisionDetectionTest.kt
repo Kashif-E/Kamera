@@ -62,7 +62,13 @@ class VisionDetectionTest {
     @Test
     fun aRegionWithoutTheCodeFindsNothing() = runTest {
         val scene = qrScene()
-        val plugin = QRScannerPlugin(QRScannerConfig { region = FrameRect(0, 0, 120, 240) }, REVISION_2)
+        val plugin = QRScannerPlugin(
+            QRScannerConfig {
+                region = FrameRect(0, 0, 120, 240)
+                confirmations = 1
+            },
+            REVISION_2,
+        )
         val results = collectResults(plugin)
         val s = qrSession(plugin)
         startReady(s)
@@ -74,7 +80,8 @@ class VisionDetectionTest {
 
     private fun TestScope.scan(config: QRScannerConfig, frame: TestFrame): Barcode {
         assertNull(frame.pixelBuffer, "a test frame's pixel buffer")
-        val plugin = QRScannerPlugin(config, REVISION_2)
+        // One read reports a code, so one frame shows the decoding.
+        val plugin = QRScannerPlugin(config.copy { confirmations = 1 }, REVISION_2)
         val results = collectResults(plugin)
         val s = qrSession(plugin)
         startReady(s)

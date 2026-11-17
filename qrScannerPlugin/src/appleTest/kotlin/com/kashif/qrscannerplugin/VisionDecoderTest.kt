@@ -123,7 +123,7 @@ class VisionDecoderTest {
     fun aFrameWithoutAPixelBufferDecodes() = runTest {
         val frame = TestFrame.luma(8, 8, ByteArray(64))
         assertNull(frame.pixelBuffer, "a test frame's pixel buffer")
-        val plugin = QRScannerPlugin(QRScannerConfig(), FakeDecoders { listOf(qr("HELLO")) })
+        val plugin = QRScannerPlugin(QRScannerConfig { confirmations = 1 }, FakeDecoders { listOf(qr("HELLO")) })
         val results = collectResults(plugin)
         val s = qrSession(plugin)
         startReady(s)
