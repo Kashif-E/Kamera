@@ -43,6 +43,17 @@ and `.pom`) and the BOM's root, all under `GROUP`. Compiling the tests never
 builds the metadata compilations behind a root artifact, so only publishing shows they work.
 `./gradlew verifyAll` runs the same tasks without the summary.
 
+**Devices in CI.** `.github/workflows/device.yml` runs for `main`, `ci/desktop` and release tags, not for
+every pull request, because its iOS job needs a macOS runner as the harness does. On an Android emulator
+it runs the engine's device tests (`:cameraK-core:connectedDebugAndroidTest`), the Sample's device matrix
+over every section but photo plus the first 300 photo cases (front camera; the emulator's back camera
+hangs on a SPEED capture with flash), and a 500-open holder churn with memory sampled
+(`.github/ci/device-android.sh`). On an iOS simulator it builds the Sample with Xcode, runs the matrix
+(no cases without a camera) and a churn, and runs `leaks` on the app (`.github/ci/device-ios.sh`).
+`scripts/device_gate.py` fails the job on a FAILed or BLOCKED case, growth in the churn's memory or
+threads, a crash, or a root leak of any type but Skia's `GrOp`; the lint target runs its self-test
+(`:checkDeviceGateRules`). Capture on real hardware stays with `docs/device-checklist.md`.
+
 **Adding a lint check.** Register the task with `group = lintGroup` in the root build (in a
 module, `rootProject.extra["lintGroup"]`, which is `"camerak lint"`). `verifyAll` runs every task
 in that group when the lint target is selected, and writes their paths to

@@ -26,6 +26,7 @@ checks=(
     :checkCatalogHygiene
     :checkComposeBaseline
     :checkCredentialHygiene
+    :checkDeviceGateRules
     :checkDocsWorkflow
     :checkLicenseMetadata
     :checkModuleSources

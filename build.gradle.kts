@@ -1634,6 +1634,26 @@ tasks.register("checkVerifyReportRules") {
     }
 }
 
+// device.yml's emulator and simulator runs are only as good as device_gate.py's verdict, which a run
+// cannot see fail: this runs it against fixture runs it must reject.
+tasks.register("checkDeviceGateRules") {
+    group = lintGroup
+    description = "Fails if device_gate.py accepts a failed case, a leak, a crash or memory growth"
+    val script = layout.projectDirectory.file("scripts/device_gate.py").asFile
+    val root = layout.projectDirectory.asFile
+    doLast {
+        val process =
+            ProcessBuilder("python3", "-I", script.path, "--self-test")
+                .directory(root)
+                .redirectErrorStream(true)
+                .start()
+        val output = process.inputStream.bufferedReader().readText()
+        val exit = process.waitFor()
+        if (exit != 0) throw GradleException("device_gate.py's verdict is wrong (exit $exit):\n$output")
+        logger.lifecycle(output.trimEnd())
+    }
+}
+
 // A Maven Central upload is irreversible. This fails unless the publish workflow runs only for a v*
 // tag matching VERSION_NAME, after the full harness, from the protected maven-central environment.
 tasks.register("checkReleaseWorkflow") {
@@ -2589,6 +2609,7 @@ val requiredLintChecks =
         ":checkCatalogHygiene",
         ":checkComposeBaseline",
         ":checkCredentialHygiene",
+        ":checkDeviceGateRules",
         ":checkDocsWorkflow",
         ":checkLicenseMetadata",
         ":checkModuleSources",
