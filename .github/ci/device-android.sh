@@ -81,5 +81,5 @@ run() {
 
 run matrix 30 60 --es camerak.matrix.sections features,configflash,analysis,plugins,video,lifecycle
 run photo 30 60 --es camerak.matrix.sections photo --ei camerak.matrix.limit $PHOTO_CASES
-run churn 20 15 --ei camerak.matrix.churn $CHURN
+run churn 20 15 --ei camerak.matrix.churn $CHURN --ez camerak.matrix.log true
 exit 0

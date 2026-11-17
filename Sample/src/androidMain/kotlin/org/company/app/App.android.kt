@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
+import dev.kashifmehmood.camerak.utils.CameraKLogger
 import org.company.app.devicematrix.DeviceMatrixApp
 import org.company.app.devicematrix.MatrixArgs
 import org.company.app.devicematrix.parseSections
@@ -17,8 +18,10 @@ class AppActivity : ComponentActivity() {
         enableEdgeToEdge()
         // adb shell am start -n org.company.app.androidApp/org.company.app.AppActivity --ez camerak.matrix true
         //   [--ei camerak.matrix.offset N] [--es camerak.matrix.sections photo,video] [--ei camerak.matrix.limit N] [--ei camerak.matrix.churn N]
+        //   [--ez camerak.matrix.log true]: CameraK's own log as well, as -cameraKMatrixLog on iOS and desktop
         if (intent.getBooleanExtra("camerak.matrix", false)) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (intent.getBooleanExtra("camerak.matrix.log", false)) CameraKLogger.enabled = true
             val args = MatrixArgs(
                 offset = intent.getIntExtra("camerak.matrix.offset", 0),
                 sections = parseSections(intent.getStringExtra("camerak.matrix.sections")),

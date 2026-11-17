@@ -187,11 +187,15 @@ internal class MatrixRunner(
         log("CHURN $holders holders of ${args.churnLens}/${args.churnType}")
         val ready = mutableListOf<Long>()
         for (i in 1..holders) {
+            // One line per step, so a cycle that never ends shows the call it is in.
+            log("CHURN $i step=new")
             val holder = platform.newHolder(config, emptyList())
             _holder.value = holder
+            log("CHURN $i step=open")
             val opened = open(holder)
             val camera = holder.uiState.value.cameraId
             _holder.value = null
+            log("CHURN $i step=close state=${opened.state}")
             val closing = clock.markNow()
             val closed = withTimeoutOrNull(timing.close) { holder.closeAndJoin() } != null
             val closeMs = closing.elapsedNow().inWholeMilliseconds
@@ -1151,6 +1155,7 @@ internal class MatrixRunner(
     private suspend fun open(holder: CameraKStateHolder): Opened {
         val starting = clock.markNow()
         holder.start()
+        if (args.churn != null) log("CHURN start returned state=${holder.cameraState.value}")
         val state = withTimeoutOrNull(timing.ready) {
             holder.cameraState.first {
                 it == CameraKState.Ready || it is CameraKState.Error || it == CameraKState.Closed
