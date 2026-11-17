@@ -38,6 +38,6 @@ replay() {
 
 replay telephoto 1152 30
 replay speed-wide 75 12
-replay speed-tele 1468 6
+replay speed-tele 1468 10
 kill $LOGCAT
 exit 0
