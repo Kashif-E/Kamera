@@ -24,6 +24,8 @@ final class com.kashif.qrscannerplugin/Barcode { // com.kashif.qrscannerplugin/B
 }
 
 final class com.kashif.qrscannerplugin/QRScannerConfig { // com.kashif.qrscannerplugin/QRScannerConfig|null[0]
+    final val confirmations // com.kashif.qrscannerplugin/QRScannerConfig.confirmations|{}confirmations[0]
+        final fun <get-confirmations>(): kotlin/Int // com.kashif.qrscannerplugin/QRScannerConfig.confirmations.<get-confirmations>|<get-confirmations>(){}[0]
     final val dedupeWindow // com.kashif.qrscannerplugin/QRScannerConfig.dedupeWindow|{}dedupeWindow[0]
         final fun <get-dedupeWindow>(): kotlin.time/Duration // com.kashif.qrscannerplugin/QRScannerConfig.dedupeWindow.<get-dedupeWindow>|<get-dedupeWindow>(){}[0]
     final val formats // com.kashif.qrscannerplugin/QRScannerConfig.formats|{}formats[0]
@@ -39,6 +41,9 @@ final class com.kashif.qrscannerplugin/QRScannerConfig { // com.kashif.qrscanner
     final fun toString(): kotlin/String // com.kashif.qrscannerplugin/QRScannerConfig.toString|toString(){}[0]
 
     final class Builder { // com.kashif.qrscannerplugin/QRScannerConfig.Builder|null[0]
+        final var confirmations // com.kashif.qrscannerplugin/QRScannerConfig.Builder.confirmations|{}confirmations[0]
+            final fun <get-confirmations>(): kotlin/Int // com.kashif.qrscannerplugin/QRScannerConfig.Builder.confirmations.<get-confirmations>|<get-confirmations>(){}[0]
+            final fun <set-confirmations>(kotlin/Int) // com.kashif.qrscannerplugin/QRScannerConfig.Builder.confirmations.<set-confirmations>|<set-confirmations>(kotlin.Int){}[0]
         final var dedupeWindow // com.kashif.qrscannerplugin/QRScannerConfig.Builder.dedupeWindow|{}dedupeWindow[0]
             final fun <get-dedupeWindow>(): kotlin.time/Duration // com.kashif.qrscannerplugin/QRScannerConfig.Builder.dedupeWindow.<get-dedupeWindow>|<get-dedupeWindow>(){}[0]
             final fun <set-dedupeWindow>(kotlin.time/Duration) // com.kashif.qrscannerplugin/QRScannerConfig.Builder.dedupeWindow.<set-dedupeWindow>|<set-dedupeWindow>(kotlin.time.Duration){}[0]

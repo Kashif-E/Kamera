@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
  * While the camera is Ready and the scanner is not paused, it holds one registration on the
  * holder's frame source, at most [QRScannerConfig.maxFps] frames a second. It reads each frame's
  * luma, decodes it (ZXing on Android and desktop, Vision on iOS), and emits each new code on
- * [results]. It works in either analysis format, YUV_420 or RGBA_8888.
+ * [results] once it has been read in [QRScannerConfig.confirmations] frames. It works in either analysis format, YUV_420 or RGBA_8888.
  *
  * A decoder failure other than "no code here" fails the plugin: [status] becomes `Failed`, the
  * failure is logged with its throwable and reported once as a `PluginFailed` event, and decoding
@@ -76,9 +76,9 @@ public class QRScannerPlugin internal constructor(
     )
 
     /**
-     * Each code found, once per [QRScannerConfig.dedupeWindow]. Decoding never waits for a
-     * collector: one that falls behind loses the oldest codes first. The payload is untrusted input
-     * (see [Barcode]).
+     * Each code read in [QRScannerConfig.confirmations] frames, once per [QRScannerConfig.dedupeWindow].
+     * Decoding never waits for a collector: one that falls behind loses the oldest codes first. The
+     * payload is untrusted input (see [Barcode]).
      */
     public val results: Flow<Barcode> = _results.asSharedFlow()
 
@@ -141,12 +141,16 @@ public class QRScannerPlugin internal constructor(
 
     /**
      * One registration's decoding, on the frame source's worker: the luma into a buffer reused while
-     * frames keep their size, the decoder over the area, then the dedupe.
+     * frames keep their size, the decoder over the area, then the confirmation and the dedupe.
      */
     private inner class FrameDecoding(
         private val decoder: BarcodeDecoder,
         private val onFailure: (Exception) -> Unit,
     ) : FrameAnalyzer {
+        private val confirmation = BarcodeConfirmation(
+            config.confirmations,
+            BarcodeConfirmation.window(config.confirmations, config.maxFps),
+        )
         private val dedupe = BarcodeDedupe(config.dedupeWindow)
         private var luma = ByteArray(0)
         private var scratch = ByteArray(0)
@@ -181,7 +185,8 @@ public class QRScannerPlugin internal constructor(
                 return
             }
             for (barcode in found) {
-                if (dedupe.admit(barcode, frame.timestampNanos)) _results.tryEmit(barcode)
+                val confirmed = confirmation.sighted(barcode, frame.timestampNanos)
+                if (confirmed && dedupe.admit(barcode, frame.timestampNanos)) _results.tryEmit(barcode)
             }
         }
     }

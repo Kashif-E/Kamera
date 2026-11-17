@@ -56,8 +56,11 @@ LaunchedEffect(scanner) {
 }
 ```
 
-A `Barcode` has `rawValue`, `rawBytes`, `format` and `boundingBox` (in frame pixels). The same code
-is reported once per `dedupeWindow` (one second by default). `region` limits decoding to a part of
+A `Barcode` has `rawValue`, `rawBytes`, `format` and `boundingBox` (in frame pixels). A code is
+reported once it has been read in `confirmations` frames (two by default), so a pattern that only looks
+like a code, such as a ventilation grille, is not reported from a single misread; `confirmations = 1`
+reports a code from its first read. The same code is then reported once per `dedupeWindow` (one second
+by default). `region` limits decoding to a part of
 the frame. ZXing decodes on Android and desktop, Vision on iOS; a format the platform cannot read is
 logged once and ignored.
 
@@ -66,6 +69,7 @@ logged once and ignored.
 | `formats` | `setOf(BarcodeFormat.QR_CODE)` |
 | `maxFps` | `5f` |
 | `dedupeWindow` | `1.seconds` |
+| `confirmations` | `2` |
 | `region` | `null` (the whole frame) |
 
 ## OCR Plugin
