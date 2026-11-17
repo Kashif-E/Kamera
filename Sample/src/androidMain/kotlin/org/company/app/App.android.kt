@@ -16,13 +16,14 @@ class AppActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // adb shell am start -n org.company.app.androidApp/org.company.app.AppActivity --ez camerak.matrix true
-        //   [--ei camerak.matrix.offset N] [--es camerak.matrix.sections photo,video] [--ei camerak.matrix.limit N]
+        //   [--ei camerak.matrix.offset N] [--es camerak.matrix.sections photo,video] [--ei camerak.matrix.limit N] [--ei camerak.matrix.churn N]
         if (intent.getBooleanExtra("camerak.matrix", false)) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             val args = MatrixArgs(
                 offset = intent.getIntExtra("camerak.matrix.offset", 0),
                 sections = parseSections(intent.getStringExtra("camerak.matrix.sections")),
                 limit = intent.getIntExtra("camerak.matrix.limit", 0).takeIf { it > 0 },
+                churn = intent.getIntExtra("camerak.matrix.churn", 0).takeIf { it > 0 },
             )
             setContent { DeviceMatrixApp(args) }
         } else {

@@ -4,36 +4,41 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.kashif.cameraK.utils.CameraKLogger
 import org.company.app.App
+import org.company.app.devicematrix.DeviceMatrixApp
+import org.company.app.devicematrix.matrixArgsFromLaunchArguments
 import org.company.app.smoke.SmokeApp
 import org.company.app.smoke.smokeArgs
 import kotlin.system.exitProcess
 
-// Launched with -cameraKSmoke (CI on Linux and Windows), the app opens the camera, takes one photo and
-// exits with the verdict instead of running the Sample.
+// Launched with -cameraKSmoke, the app takes one photo and exits with the verdict; with -cameraKMatrix,
+// it runs the device matrix instead of the Sample.
 fun main(args: Array<String>) {
-    val smoke = smokeArgs(args.toList())
-    // A smoke run's log shows why a camera did not open.
-    if (smoke != null) CameraKLogger.enabled = true
+    val arguments = args.toList()
+    val smoke = smokeArgs(arguments)
+    val matrix = matrixArgsFromLaunchArguments(arguments)
+    if (smoke != null || "-cameraKMatrixLog" in arguments) CameraKLogger.enabled = true
     var exitCode = 0
-    // Compose exits the process with 0 when the last window closes unless told not to.
     application(exitProcessOnExit = smoke == null) {
         System.setProperty("compose.interop.blending", "true")
         System.setProperty("compose.swing.render.on.layer", "true")
 
-        // Portrait, as the Sample is on a phone: the camera screen stacks its preview over its controls
-        // in a window taller than wide, and moves the controls to a side panel when it is made wider.
         Window(
-            title = "CameraK",
-            state = rememberWindowState(width = 460.dp, height = 780.dp),
+            title = if (matrix != null) "CameraK device matrix" else "CameraK",
+            // Portrait for the Sample, as on a phone; the matrix keeps its wide window.
+            state = if (matrix != null) {
+                rememberWindowState(width = 1440.dp, height = 1024.dp)
+            } else {
+                rememberWindowState(width = 460.dp, height = 780.dp)
+            },
             onCloseRequest = ::exitApplication,
         ) {
-            if (smoke != null) {
-                SmokeApp(smoke) { code ->
+            when {
+                smoke != null -> SmokeApp(smoke) { code ->
                     exitCode = code
                     exitApplication()
                 }
-            } else {
-                App()
+                matrix != null -> DeviceMatrixApp(matrix)
+                else -> App()
             }
         }
     }
