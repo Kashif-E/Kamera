@@ -4,6 +4,7 @@ import androidx.camera.core.CameraState
 import dev.kashifmehmood.camerak.error.CameraFeature
 import dev.kashifmehmood.camerak.error.CameraKError
 import dev.kashifmehmood.camerak.error.InterruptionReason
+import dev.kashifmehmood.camerak.utils.CameraKLogger
 
 /** What one CameraX camera-state report means for the engine. */
 internal sealed interface CameraXSignal {
@@ -23,7 +24,10 @@ internal sealed interface CameraXSignal {
 /**
  * Maps CameraX's camera state to the engine's (design §4.1), by error type: a recoverable error is an
  * interruption CameraX recovers from on its own, a critical one ends the session. Whether a
- * recoverable error lasts too long is the engine's decision, not the mapper's.
+ * recoverable error lasts too long is the engine's decision, not the mapper's. A stream-config error
+ * caused by a surface abandoned while CameraX configured the session (a preview attached and detached at
+ * once) changes nothing: CameraX resets the session with the surfaces it has and keeps streaming, and
+ * publishes no later state without the error.
  */
 internal object CameraXStateMapper {
     /** [bindingVideo]: the bind that failed included VideoCapture, which decides a stream-config error. */
@@ -39,6 +43,14 @@ internal object CameraXStateMapper {
             }
             return CameraXSignal.Interrupted(reason, code)
         }
+        if (code == CameraState.ERROR_STREAM_CONFIG && error.cause.isAbandonedSurface()) {
+            CameraKLogger.w(
+                TAG,
+                "A surface went away while CameraX configured the session; it reconfigures",
+                error.cause,
+            )
+            return CameraXSignal.None
+        }
         val failure = when (code) {
             CameraState.ERROR_STREAM_CONFIG -> CameraKError.Unsupported(
                 if (bindingVideo) CameraFeature.VIDEO_QUALITY else CameraFeature.ASPECT_RATIO,
@@ -50,4 +62,10 @@ internal object CameraXStateMapper {
         }
         return CameraXSignal.Failed(failure)
     }
+
+    // camera2's SurfaceUtils throws this for a surface released before the session's output configuration read it.
+    private fun Throwable?.isAbandonedSurface(): Boolean =
+        this is IllegalArgumentException && message?.contains("abandoned", ignoreCase = true) == true
+
+    private const val TAG = "CameraK"
 }

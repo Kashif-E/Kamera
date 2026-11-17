@@ -5,6 +5,11 @@ All notable changes to the Kamera project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Android: a preview attached and detached at once could leave a working camera in `Error`**: a surface released while CameraX configured the session makes CameraX report `ERROR_STREAM_CONFIG` ("Surface was abandoned"). CameraX resets the session with the surfaces it has and keeps streaming, but CameraK read the error as fatal and reported `Unsupported(ASPECT_RATIO)`, so later commands returned `NotReady`. That error is now logged and the camera stays Ready; any other stream-config error still ends the session.
+
 ## [2.0.0-rc01] - 2026-11-17
 
 ### Removed (breaking)
