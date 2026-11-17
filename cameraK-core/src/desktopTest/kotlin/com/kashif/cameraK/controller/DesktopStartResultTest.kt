@@ -84,8 +84,10 @@ class DesktopStartResultTest {
         }
     }
 
+    // targetResolution is a target, as on Android and iOS: a camera that opens only without it streams
+    // at its own mode rather than failing the start.
     @Test
-    fun aTargetResolutionTheCameraOpensOnlyWithoutIsUnsupported() = runTest {
+    fun aTargetResolutionTheCameraOpensOnlyWithoutStartsAtTheCamerasOwnMode() = runTest {
         val rig = DesktopEngineRig(testScheduler)
         val sut = DesktopCameraEngine(
             CameraConfiguration { targetResolution = Resolution(7680, 4320) },
@@ -97,9 +99,9 @@ class DesktopStartResultTest {
             val start = async { sut.start(desired) }
             rig.settle()
 
-            val error = assertIs<CameraKError.Unsupported>(assertIs<CameraKResult.Failure>(start.await()).error)
-            assertEquals(CameraFeature.TARGET_RESOLUTION, error.feature)
-            assertEquals(rig.camera.startCount, rig.camera.releaseCount, "the camera opened at its own mode was kept")
+            assertEquals(CameraKResult.Success(Unit), start.await())
+            assertIs<EngineState.Open>(sut.state.value)
+            assertEquals(1, rig.camera.startCount - rig.camera.releaseCount, "the camera opened at its own mode")
         } finally {
             sut.close()
         }
