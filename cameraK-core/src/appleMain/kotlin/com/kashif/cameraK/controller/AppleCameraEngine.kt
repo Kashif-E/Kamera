@@ -182,7 +182,10 @@ internal class AppleCameraEngine(
             CoroutineExceptionHandler { _, e -> CameraKLogger.e(TAG, "an iOS engine task failed", e) },
     )
 
-    private val stills: EngineStills = EngineStills(lock, generations, custom, config, tracer, environment.dispatchers)
+    private val stills: EngineStills =
+        EngineStills(lock, generations, custom, config, tracer, environment.dispatchers).also {
+            generations.onFailed = it::failAll
+        }
 
     private val closeDone = Job()
     private val starts = Mutex()

@@ -123,6 +123,10 @@ internal abstract class CameraEngineContractTest(
         driver.runCase { cases.closeCompletesAPendingCaptureWithClosed(this) }
 
     @Test
+    fun aFailureCompletesAPendingCaptureWithItsError(): TestResult =
+        driver.runCase { cases.aFailureCompletesAPendingCaptureWithItsError(this) }
+
+    @Test
     fun throwingPlatformCallbackDoesNotEscape(): TestResult =
         driver.runCase { cases.throwingPlatformCallbackDoesNotEscape(this) }
 }

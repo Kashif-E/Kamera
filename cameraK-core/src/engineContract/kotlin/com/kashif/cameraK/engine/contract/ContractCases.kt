@@ -32,6 +32,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -763,6 +764,28 @@ internal class ContractCases(
 
             capture.releaseCapture()
             driver.settle()
+        }
+    }
+
+    suspend fun aFailureCompletesAPendingCaptureWithItsError(scope: TestScope) {
+        val capture = driver as? CaptureDriver
+            ?: return skipCase("aFailureCompletesAPendingCaptureWithItsError", "CaptureDriver")
+        withEngine { engine ->
+            open(engine)
+            capture.holdNextCapture()
+            val pending = scope.async { engine.capture() }
+            driver.settle()
+            assertFalse(pending.isCompleted, "the held capture returned before its platform callback")
+
+            driver.fail()
+            driver.settle()
+            val failed = assertIs<EngineState.Failed>(engine.state.value)
+            assertTrue(pending.isCompleted, "a failure left a pending capture waiting")
+            assertSame(failed.error, assertIs<CameraKResult.Failure>(pending.await()).error)
+
+            capture.releaseCapture()
+            driver.settle()
+            assertIs<EngineState.Failed>(engine.state.value)
         }
     }
 
