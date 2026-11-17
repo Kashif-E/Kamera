@@ -67,6 +67,32 @@ class CameraXStateMapperTest {
         }
     }
 
+    // CameraX reports ERROR_STREAM_CONFIG when a surface is released while it configures the session (a
+    // preview attached and detached at once; device.yml's emulator, 17 Nov). It resets the session with the
+    // surfaces it has and keeps streaming, but publishes no later OPEN without an error, so failing on it
+    // left a working camera in Error.
+    @Test
+    fun aSurfaceAbandonedWhileTheSessionIsConfiguredIsNoFailure() {
+        val abandoned = IllegalArgumentException("Surface was abandoned")
+        for (bindingVideo in listOf(false, true)) {
+            val state = CameraState.create(
+                CameraState.Type.OPEN,
+                CameraState.StateError.create(STREAM_CONFIG, abandoned),
+            )
+            assertEquals(
+                CameraXSignal.None,
+                CameraXStateMapper.map(state, bindingVideo),
+                "binding video: $bindingVideo",
+            )
+        }
+        val unsupported = IllegalArgumentException("Unsupported stream configuration")
+        val state = CameraState.create(CameraState.Type.OPEN, CameraState.StateError.create(STREAM_CONFIG, unsupported))
+        assertIs<CameraXSignal.Failed>(
+            CameraXStateMapper.map(state, bindingVideo = false),
+            "another stream-config error",
+        )
+    }
+
     @Test
     fun statesWithoutAnErrorAreOpenOrNothing() {
         assertEquals(CameraXSignal.Open, CameraXStateMapper.map(CameraState.create(CameraState.Type.OPEN), false))
