@@ -200,9 +200,11 @@ internal class JnaObjCRuntime : ObjCRuntime {
     override fun send(receiver: Long, selector: Long): Long =
         objc.getFunction("objc_msgSend").invokeLong(arrayOf(Pointer(receiver), Pointer(selector)))
 
-    override fun sendDouble(receiver: Long, selector: Long): Double = 0.0
+    override fun sendDouble(receiver: Long, selector: Long): Double =
+        objc.getFunction("objc_msgSend").invokeDouble(arrayOf(Pointer(receiver), Pointer(selector)))
 
-    override fun callLong(library: String, function: String, argument: Long): Long = 0
+    override fun callLong(library: String, function: String, argument: Long): Long =
+        NativeLibrary.getInstance(library).getFunction(function).invokeLong(arrayOf(Pointer(argument)))
 
     override fun sendWithBlock(receiver: Long, selector: Long, argument: Long, block: Long) {
         objc.getFunction("objc_msgSend")

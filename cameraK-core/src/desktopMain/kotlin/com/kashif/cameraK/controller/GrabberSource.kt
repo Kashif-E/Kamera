@@ -60,6 +60,18 @@ internal suspend fun GrabberSource.open(
     release: (FrameGrabber) -> Unit,
     os: OperatingSystem = currentOperatingSystem(),
 ): OpenedDevice {
+    // A failed avfoundation open followed at once by the retry's open and release crashed macOS's main
+    // thread (objc_release on an AVCaptureDeviceInput), so a size the camera is known to lack is not asked.
+    when (if (canRelax) missingMode(device) else null) {
+        MissingMode.TARGET_RESOLUTION -> throw ModeUnavailableException(
+            "The camera has no mode at the configured targetResolution and CameraK's frame rate",
+        )
+        MissingMode.DEFAULT_SIZE -> {
+            CameraKLogger.w(TAG, "The camera has no mode at CameraK's size and frame rate; opening it at its own mode")
+            return openOwnMode(device, own, release, os, earlier = null)
+        }
+        null -> Unit
+    }
     val constrained = create(device, constrained = true).also { prepare(it, os) }
     try {
         blockingCall {
@@ -72,22 +84,33 @@ internal suspend fun GrabberSource.open(
         CameraKLogger.w(TAG, "Opening the camera at CameraK's size and frame rate failed; retrying at its own mode", e)
         own(null)
         release(constrained)
-        val relaxed = create(device, constrained = false).also { prepare(it, os) }
-        try {
-            blockingCall {
-                own(relaxed)
-                relaxed.start()
-            }
-            return OpenedDevice(relaxed, relaxed = true)
-        } catch (retry: Exception) {
-            if (retry !is CancellationException) retry.addSuppressed(e)
-            // macOS asks for CameraK's rate first (ffmpegGrabber); a camera whose modes top out
-            // elsewhere, such as 29.97, opens only at avfoundation's own default rate.
-            if (retry is CancellationException || os != OperatingSystem.MAC || relaxed.frameRate <= 0) throw retry
-            own(null)
-            release(relaxed)
-            return openAtDefaultRate(device, own, os, retry)
+        return openOwnMode(device, own, release, os, earlier = e)
+    }
+}
+
+// The camera at its own mode; [earlier] is the constrained open's failure, kept as suppressed.
+private suspend fun GrabberSource.openOwnMode(
+    device: LensInfo,
+    own: (FrameGrabber?) -> Unit,
+    release: (FrameGrabber) -> Unit,
+    os: OperatingSystem,
+    earlier: Exception?,
+): OpenedDevice {
+    val relaxed = create(device, constrained = false).also { prepare(it, os) }
+    try {
+        blockingCall {
+            own(relaxed)
+            relaxed.start()
         }
+        return OpenedDevice(relaxed, relaxed = true)
+    } catch (retry: Exception) {
+        if (retry !is CancellationException && earlier != null) retry.addSuppressed(earlier)
+        // macOS asks for CameraK's rate first (ffmpegGrabber); a camera whose modes top out
+        // elsewhere, such as 29.97, opens only at avfoundation's own default rate.
+        if (retry is CancellationException || os != OperatingSystem.MAC || relaxed.frameRate <= 0) throw retry
+        own(null)
+        release(relaxed)
+        return openAtDefaultRate(device, own, os, retry)
     }
 }
 
@@ -165,6 +188,13 @@ internal class EnumeratedDeviceSource(
 
     override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = defaultCameraOverride?.invoke()
         ?: devices.open(device.id, if (constrained) targetResolution ?: DEFAULT_CAMERA_RESOLUTION else null)
+
+    override fun missingMode(device: LensInfo): MissingMode? {
+        if (defaultCameraOverride != null) return null
+        val size = targetResolution ?: DEFAULT_CAMERA_RESOLUTION
+        if (devices.hasMode(device.id, size, DEFAULT_CAMERA_FRAME_RATE) != false) return null
+        return if (targetResolution != null) MissingMode.TARGET_RESOLUTION else MissingMode.DEFAULT_SIZE
+    }
 }
 
 /**

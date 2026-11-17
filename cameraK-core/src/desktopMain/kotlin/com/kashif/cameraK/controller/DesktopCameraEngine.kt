@@ -406,6 +406,8 @@ internal class DesktopCameraEngine(
         val openError = when {
             // The device was unplugged after enumeration (§2.4 desktop, §4.1 row 2).
             failure is DeviceGoneException -> CameraKError.NoCamera(null, failure)
+            // A targetResolution the camera's formats lack: refused before anything was opened.
+            failure is ModeUnavailableException -> CameraKError.Unsupported(CameraFeature.TARGET_RESOLUTION, failure)
             opening || JavaCvErrorMapper.isNativeLibraryMissing(failure) ->
                 JavaCvErrorMapper.openFailure(failure, os) { authorization.cameraStatus() }
             else -> null
