@@ -7,7 +7,9 @@ import kotlin.time.Duration
  *
  * Every field the block leaves unset takes its default; [copy] builds a changed copy.
  *
- * @property quality Resolution and bitrate preset.
+ * @property quality Resolution and bitrate preset. Left unset it is FHD, and a camera that cannot record
+ *                  FHD records the nearest quality it can, the next lower one first. A quality the app
+ *                  sets is recorded as set, or the recording fails with `Unsupported(VIDEO_QUALITY)`.
  * @property enableAudio Whether to record microphone audio (AAC). Off unless the app asks: with it on, a
  *                        recording needs the microphone permission. Desktop records no audio and logs a
  *                        warning when this is true.
@@ -38,6 +40,9 @@ public class VideoConfiguration private constructor(builder: Builder) {
     public val filePrefix: String = builder.filePrefix
     public val maxFileSizeBytes: Long? = builder.maxFileSizeBytes
 
+    /** Whether the app set [quality]; one left at its default gives way to what the camera records. */
+    internal val qualityChosen: Boolean = builder.qualityChosen
+
     /** A copy with the fields [block] sets; every other field keeps this configuration's value. */
     public fun copy(block: Builder.() -> Unit): VideoConfiguration = Builder(this).apply(block).build()
 
@@ -50,9 +55,10 @@ public class VideoConfiguration private constructor(builder: Builder) {
         "maxFileSizeBytes" to maxFileSizeBytes,
     )
 
-    override fun equals(other: Any?): Boolean = other is VideoConfiguration && fields() == other.fields()
+    override fun equals(other: Any?): Boolean =
+        other is VideoConfiguration && fields() == other.fields() && qualityChosen == other.qualityChosen
 
-    override fun hashCode(): Int = fields().hashCode()
+    override fun hashCode(): Int = 31 * fields().hashCode() + qualityChosen.hashCode()
 
     override fun toString(): String =
         fields().joinToString(prefix = "VideoConfiguration(", postfix = ")") { (name, value) -> "$name=$value" }
@@ -60,6 +66,11 @@ public class VideoConfiguration private constructor(builder: Builder) {
     /** The DSL's receiver: one property per field, each starting at the default or at the copied value. */
     public class Builder internal constructor(from: VideoConfiguration?) {
         public var quality: VideoQuality = from?.quality ?: VideoDefaults.QUALITY
+            set(value) {
+                field = value
+                qualityChosen = true
+            }
+        internal var qualityChosen: Boolean = from?.qualityChosen ?: false
         public var enableAudio: Boolean = from?.enableAudio ?: VideoDefaults.ENABLE_AUDIO
         public var maxDuration: Duration? = if (from != null) from.maxDuration else VideoDefaults.MAX_DURATION
         public var outputDirectory: String? =
@@ -117,6 +128,17 @@ public fun VideoConfiguration(
     maxFileSizeBytes: Long? = null,
     maxDurationMs: Long = 0L,
 ): VideoConfiguration = throw UnsupportedOperationException("Use VideoConfiguration { … }")
+
+/**
+ * The quality a recording of this configuration records on a camera that records [supported]: its
+ * own when the camera records it; for a quality left at its default, the nearest the camera records,
+ * the next lower one first; else null, which the engines return as `Unsupported(VIDEO_QUALITY)`.
+ */
+internal fun VideoConfiguration.qualityToRecord(supported: Set<VideoQuality>): VideoQuality? = when {
+    quality in supported -> quality
+    qualityChosen -> null
+    else -> supported.filter { it < quality }.maxOrNull() ?: supported.filter { it > quality }.minOrNull()
+}
 
 /** The one source of the video configuration's defaults. */
 internal object VideoDefaults {
