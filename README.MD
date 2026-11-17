@@ -39,23 +39,23 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // The camera with its Compose UI; camerak-core alone for an app without Compose
-            implementation("dev.kashifmehmood:camerak:2.0")
+            implementation("dev.kashifmehmood:camerak:2.0.0-rc01")
 
             // Optional plugins
-            implementation("dev.kashifmehmood:camerak-media-saver:2.0")
-            implementation("dev.kashifmehmood:camerak-qr-scanner:2.0")
-            implementation("dev.kashifmehmood:camerak-ocr:2.0")
-            implementation("dev.kashifmehmood:camerak-analyzer:2.0")
+            implementation("dev.kashifmehmood:camerak-media-saver:2.0.0-rc01")
+            implementation("dev.kashifmehmood:camerak-qr-scanner:2.0.0-rc01")
+            implementation("dev.kashifmehmood:camerak-ocr:2.0.0-rc01")
+            implementation("dev.kashifmehmood:camerak-analyzer:2.0.0-rc01")
         }
         commonTest.dependencies {
             // The fake camera, for tests only
-            implementation("dev.kashifmehmood:camerak-testing:2.0")
+            implementation("dev.kashifmehmood:camerak-testing:2.0.0-rc01")
         }
     }
 }
 ```
 
-`camerak-bom` pins every CameraK artifact to one version: add `implementation(project.dependencies.platform("dev.kashifmehmood:camerak-bom:2.0"))` and leave the versions off the others. The [installation guide](docs/getting-started/installation.md) also covers version catalogs.
+`camerak-bom` pins every CameraK artifact to one version: add `implementation(project.dependencies.platform("dev.kashifmehmood:camerak-bom:2.0.0-rc01"))` and leave the versions off the others. The [installation guide](docs/getting-started/installation.md) also covers version catalogs.
 
 ### Platform Setup
 

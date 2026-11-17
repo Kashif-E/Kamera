@@ -10,7 +10,7 @@ Upgrading from 1.x? Start with the [2.0 migration guide](migration/2.0.md).
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("dev.kashifmehmood:camerak:2.0")
+            implementation("dev.kashifmehmood:camerak:2.0.0-rc01")
         }
     }
 }

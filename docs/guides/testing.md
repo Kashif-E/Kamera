@@ -6,7 +6,7 @@ real engines. Declare it in a test source set only:
 
 ```kotlin
 commonTest.dependencies {
-    implementation("dev.kashifmehmood:camerak-testing:2.0")
+    implementation("dev.kashifmehmood:camerak-testing:2.0.0-rc01")
 }
 ```
 

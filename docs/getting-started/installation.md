@@ -18,17 +18,17 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // The camera with its Compose UI; camerak-core alone for an app without Compose
-            implementation("dev.kashifmehmood:camerak:2.0")
+            implementation("dev.kashifmehmood:camerak:2.0.0-rc01")
 
             // Optional plugins
-            implementation("dev.kashifmehmood:camerak-media-saver:2.0")
-            implementation("dev.kashifmehmood:camerak-qr-scanner:2.0")
-            implementation("dev.kashifmehmood:camerak-ocr:2.0")
-            implementation("dev.kashifmehmood:camerak-analyzer:2.0")
+            implementation("dev.kashifmehmood:camerak-media-saver:2.0.0-rc01")
+            implementation("dev.kashifmehmood:camerak-qr-scanner:2.0.0-rc01")
+            implementation("dev.kashifmehmood:camerak-ocr:2.0.0-rc01")
+            implementation("dev.kashifmehmood:camerak-analyzer:2.0.0-rc01")
         }
         commonTest.dependencies {
             // The fake camera, for tests only
-            implementation("dev.kashifmehmood:camerak-testing:2.0")
+            implementation("dev.kashifmehmood:camerak-testing:2.0.0-rc01")
         }
     }
 }
@@ -50,7 +50,7 @@ Import the BOM once and leave the versions off the CameraK artifacts:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation(project.dependencies.platform("dev.kashifmehmood:camerak-bom:2.0"))
+            implementation(project.dependencies.platform("dev.kashifmehmood:camerak-bom:2.0.0-rc01"))
             implementation("dev.kashifmehmood:camerak")
             implementation("dev.kashifmehmood:camerak-qr-scanner")
         }
@@ -64,7 +64,7 @@ Add to `gradle/libs.versions.toml`:
 
 ```toml
 [versions]
-camerak = "2.0"
+camerak = "2.0.0-rc01"
 
 [libraries]
 camerak = { module = "dev.kashifmehmood:camerak", version.ref = "camerak" }
