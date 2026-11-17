@@ -64,8 +64,8 @@ run() {
   echo "$name: $outcome after $((SECONDS - start)) s; $(grep -oE 'DONE .*' "$dir/console.txt" | tail -1)" | tee -a "$OUT/status.txt"
 }
 
-run matrix 75 60 --es camerak.matrix.sections features,configflash,analysis,plugins,video,lifecycle,photo
-run churn 40 15 --ei camerak.matrix.churn 1000
+run matrix 70 60 --es camerak.matrix.sections features,configflash,analysis,plugins,video,lifecycle,photo
+run churn 60 30 --ei camerak.matrix.churn 3000
 adb exec-out screencap -p > "$OUT/screen.png"
 
 $G :benchmark:connectedBenchmarkAndroidTest \

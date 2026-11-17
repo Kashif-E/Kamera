@@ -8,8 +8,11 @@ G="./gradlew --no-daemon --dependency-verification=lenient"
 P=org.company.app.androidApp
 adb root > /dev/null 2>&1; sleep 3; adb wait-for-device
 adb shell dumpsys media.camera > "$OUT/media-camera.txt" 2>&1
-$G :Sample:installDebug > "$OUT/install.txt" 2>&1
-echo "install exit $?" | tee -a "$OUT/status.txt"
+# A runner's download can time out; the replays need the app.
+for attempt in 1 2 3; do
+  $G :Sample:installDebug > "$OUT/install.txt" 2>&1 && break
+done
+adb shell pm path $P > /dev/null 2>&1 || { echo "install failed after 3 attempts" | tee -a "$OUT/status.txt"; exit 0; }
 for perm in CAMERA RECORD_AUDIO POST_NOTIFICATIONS READ_MEDIA_IMAGES READ_MEDIA_VIDEO; do
   adb shell pm grant $P android.permission.$perm 2>/dev/null
 done
@@ -25,7 +28,7 @@ replay() {
   adb shell log -t CameraKProbe "REPLAY $name offset=$offset limit=$limit"
   adb shell am start -n $P/org.company.app.AppActivity --ez camerak.matrix true \
     --es camerak.matrix.sections photo --ei camerak.matrix.offset "$offset" --ei camerak.matrix.limit "$limit" > /dev/null
-  while [ $((SECONDS - start)) -lt 900 ]; do
+  while [ $((SECONDS - start)) -lt 600 ]; do
     adb logcat -d -s CameraKMatrix:I | grep -q "DONE" && break
     sleep 5
   done
