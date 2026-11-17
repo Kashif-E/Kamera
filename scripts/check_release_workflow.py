@@ -421,6 +421,15 @@ def self_test() -> None:
         default_xcode_build,
     ):
         accepted.append("the harness on the image's default Xcode")
+    for label, steps in {
+        "the harness selecting Xcode after it ran": [{"run": "scripts/verify.sh --full"}, {"run": "scripts/select_xcode.sh"}],
+        "the harness only naming the script": [{"run": "echo scripts/select_xcode.sh"}, {"run": "scripts/verify.sh --full"}],
+    }.items():
+        late_build = {"on": {"workflow_call": None}, "jobs": {"full": {"runs-on": "macos-15", "steps": steps}}}
+        if not release_workflow_problems(
+            fixture_release([FIXTURE_XCODE, FIXTURE_TAG_GUARD, FIXTURE_LIBRARIES, FIXTURE_RELOCATIONS]), late_build
+        ):
+            accepted.append(label)
     second_job = (
         "  relocations:\n    needs: [verify, publish]\n    runs-on: macos-15\n    environment: maven-central\n"
         "    steps:\n" + FIXTURE_XCODE + FIXTURE_TAG_GUARD + FIXTURE_RELOCATIONS
