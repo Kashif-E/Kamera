@@ -61,7 +61,9 @@ public class VideoConfiguration private constructor(builder: Builder) {
     override fun hashCode(): Int = 31 * fields().hashCode() + qualityChosen.hashCode()
 
     override fun toString(): String =
-        fields().joinToString(prefix = "VideoConfiguration(", postfix = ")") { (name, value) -> "$name=$value" }
+        fields().joinToString(prefix = "VideoConfiguration(", postfix = ")") { (name, value) ->
+            if (name == "quality" && !qualityChosen) "$name=$value (default)" else "$name=$value"
+        }
 
     /** The DSL's receiver: one property per field, each starting at the default or at the copied value. */
     public class Builder internal constructor(from: VideoConfiguration?) {

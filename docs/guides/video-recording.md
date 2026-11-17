@@ -120,7 +120,7 @@ recording; leaving the screen does, with reason `INTERRUPTED`.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
-| `quality` | `FHD` | `SD`, `HD`, `FHD` or `UHD`: size and bitrate |
+| `quality` | `FHD` | `SD`, `HD`, `FHD` or `UHD`: size and bitrate. Left unset, a camera without FHD records the nearest quality it has; set, a quality the camera lacks fails the start with `Unsupported(VIDEO_QUALITY)` |
 | `enableAudio` | `false` | Record the microphone; needs its permission |
 | `maxDuration` | `null` | The longest the recording runs; null is unlimited. The file is kept |
 | `maxFileSizeBytes` | `null` | The largest the file grows; null is unlimited. The file is kept |

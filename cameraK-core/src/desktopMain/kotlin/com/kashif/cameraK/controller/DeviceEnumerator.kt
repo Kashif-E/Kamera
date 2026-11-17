@@ -40,7 +40,7 @@ internal interface DesktopDevices {
      */
     fun open(id: String, size: Pair<Int, Int>?): FrameGrabber
 
-    /** The sizes the camera [id] has a mode for at [frameRate]; null when they cannot be read. */
+    /** The sizes the camera [id] has a mode for at [frameRate], empty for none; null when they cannot be read. */
     fun sizes(id: String, frameRate: Double): List<Pair<Int, Int>>? = null
 }
 
@@ -187,17 +187,17 @@ internal class MacDevices(
     /**
      * The sizes of the camera [id]'s modes with a frame rate range topping out at [frameRate], read from
      * its `formats` as FFmpeg's avfoundation input matches them (configure_video_device takes a rate only
-     * at a range's maximum, so a 1-60 range does not open at 30). Null when the camera or the runtime
-     * cannot be read, when it lists no such mode, and for the default entry: FFmpeg opens that as its own
-     * device 0, which need not be AVFoundation's default device.
+     * at a range's maximum, so a 1-60 range does not open at 30); empty when it lists formats but none
+     * at the rate. Null when the camera or the runtime cannot be read, when it lists no format, and for
+     * the default entry: FFmpeg opens that as its own device 0, which need not be AVFoundation's default.
      */
     override fun sizes(id: String, frameRate: Double): List<Pair<Int, Int>>? = try {
         val objc = runtime()
         device(objc, id)?.let { modes(objc, it) }
+            ?.takeIf { it.isNotEmpty() }
             ?.filter { mode -> mode.frameRates.any { (_, max) -> abs(max - frameRate) < RATE_SLACK } }
             ?.map { it.width to it.height }
             ?.distinct()
-            ?.takeIf { it.isNotEmpty() }
     } catch (e: Exception) {
         CameraKLogger.w(TAG, "Reading the camera's formats failed; its size is asked for without a check", e)
         null

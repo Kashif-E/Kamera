@@ -12,7 +12,6 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.CameraKStateHolder
 import com.kashif.cameraK.utils.CameraKLogger
 import com.kashif.cameraK.video.VideoConfiguration
-import com.kashif.cameraK.video.VideoQuality
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -74,7 +73,8 @@ internal fun rememberShownRecordingDurationMs(holder: CameraKStateHolder, record
     recordingState.shownDurationMs(rememberRecordingElapsed(holder).value)
 
 /**
- * The Sample's video recording on the holder: Full HD with audio, up to five minutes.
+ * The Sample's video recording on the holder: the default quality (Full HD, or the nearest a camera
+ * without it records) with audio, up to five minutes.
  *
  * The platform ends a recording at [VideoConfiguration.maxDuration], and the holder's
  * [SampleRecorder.recordingState] says so, as it does for a recording the platform ends with an
@@ -82,7 +82,6 @@ internal fun rememberShownRecordingDurationMs(holder: CameraKStateHolder, record
  */
 internal class RecordingFeature(private val recorder: SampleRecorder) {
     val configuration = VideoConfiguration {
-        quality = VideoQuality.FHD
         enableAudio = true
         maxDuration = 5.minutes
     }

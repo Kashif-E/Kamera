@@ -35,9 +35,11 @@ class MacCameraModesTest {
         assertEquals(listOf(3840 to 2160), mac.sizes("built-in", 60.0))
     }
 
+    // A camera whose modes top out elsewhere (29.97) is known to have none at the rate: unknown would
+    // send the open through a failed avfoundation open and a quick reopen, the sequence that crashed.
     @Test
-    fun aCameraWithNoModeAtTheRateIsUnknown() {
-        assertNull(mac.sizes("built-in", 29.97))
+    fun aCameraWithNoModeAtTheRateHasNoSizes() {
+        assertEquals(emptyList(), mac.sizes("built-in", 29.97))
     }
 
     @Test
