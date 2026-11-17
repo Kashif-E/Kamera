@@ -18,6 +18,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * The holder alone counts captures in flight (pending-captures-double-decrement): the Android engine
@@ -66,6 +67,7 @@ class PlatformCounterGoneTest {
             held.settle(testScheduler)
             Thread.sleep(5)
         }
+        assertTrue(running.all { it.isCompleted }, "the captures did not finish within 5 s")
         running.forEach { assertIs<CameraKResult.Success<*>>(it.await(), "a holder capture") }
         holder.closeAndJoin()
     }

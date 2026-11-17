@@ -341,10 +341,12 @@ class CameraKStateHolderCommandTest {
         assertEquals(0, holder.uiState.value.pendingCaptures)
     }
 
-    // A capture the platform never answers (the Android emulator lost nine PNG captures in one CI run, and
-    // #189 left CameraX's request queued for good) ends as a Timeout, and its slot is free again.
+    // A capture the platform does not answer (the Android emulator lost nine PNG captures in one CI run, and
+    // #189 left CameraX's request queued for good) ends as a Timeout and frees its slot. The platform's
+    // capture is not cancelled, so a file it was still writing is never left unreported: a photo that
+    // arrives after the deadline still reaches captures, as a cancelled caller's does.
     @Test
-    fun aCaptureThePlatformNeverAnswersTimesOutAndFreesItsSlot() = runTest {
+    fun aCaptureThePlatformDoesNotAnswerTimesOutAndALatePhotoStillReachesCaptures() = runTest {
         val fake = FakeCameraEngine()
         val holder = readyHolder(fake)
         val received = collectCaptures(holder)
@@ -360,9 +362,10 @@ class CameraKStateHolderCommandTest {
         val timeout = assertIs<CameraKError.Timeout>(assertIs<CameraKResult.Failure>(capture.await()).error)
         assertEquals(CameraOperation.CAPTURE, timeout.operation)
         assertEquals(0, holder.uiState.value.pendingCaptures)
+        assertEquals(emptyList(), received)
         fake.releaseCapture()
         runCurrent()
-        assertEquals(emptyList(), received, "a capture that timed out reached captures")
+        assertEquals(1, received.size, "the photo the platform delivered after the deadline was lost")
         assertIs<CameraKResult.Success<CapturedImage>>(holder.capture())
     }
 
