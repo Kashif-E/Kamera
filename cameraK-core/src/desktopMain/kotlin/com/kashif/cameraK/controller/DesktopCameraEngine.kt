@@ -366,12 +366,10 @@ internal class DesktopCameraEngine(
         synchronized(lock) { liveRuns.toList() }.joinAll()
     }
 
+    // targetResolution is a target, as on the phones: a camera that opened only at its own mode streams at it.
     private fun onRunOpened(run: Run, relaxed: Boolean) = synchronized(lock) {
-        val session = run.session
-        if (!isCurrentRun(run)) return
-        // The camera opened only at its own mode, and the configuration asked for a size (§4.1 row 3).
-        if (relaxed && config.targetResolution != null) {
-            failLocked(session, CameraKError.Unsupported(CameraFeature.TARGET_RESOLUTION))
+        if (isCurrentRun(run) && relaxed && config.targetResolution != null) {
+            CameraKLogger.w(TAG, "The camera did not open at the targetResolution; it streams at its own mode")
         }
     }
 
@@ -406,8 +404,6 @@ internal class DesktopCameraEngine(
         val openError = when {
             // The device was unplugged after enumeration (§2.4 desktop, §4.1 row 2).
             failure is DeviceGoneException -> CameraKError.NoCamera(null, failure)
-            // A targetResolution the camera's formats lack: refused before anything was opened.
-            failure is ModeUnavailableException -> CameraKError.Unsupported(CameraFeature.TARGET_RESOLUTION, failure)
             opening || JavaCvErrorMapper.isNativeLibraryMissing(failure) ->
                 JavaCvErrorMapper.openFailure(failure, os) { authorization.cameraStatus() }
             else -> null

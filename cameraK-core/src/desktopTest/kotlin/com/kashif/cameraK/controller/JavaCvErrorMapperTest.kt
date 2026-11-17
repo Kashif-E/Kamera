@@ -90,7 +90,7 @@ class JavaCvErrorMapperTest {
     @Test
     fun aDefaultSizeTheCameraLacksOpensAtItsOwnModeWithoutAFailedOpen() = runBlocking {
         val ownMode = OpeningGrabber(null)
-        val source = ScriptedSource(canRelax = true, ownMode, known = KnownMode.DEFAULT_MISSING)
+        val source = ScriptedSource(canRelax = true, ownMode, known = KnownMode.DefaultMissing)
         val released = mutableListOf<FrameGrabber>()
 
         val opened = source.open(device, own = {}, release = { released += it }, os = OperatingSystem.MAC)
@@ -102,25 +102,28 @@ class JavaCvErrorMapperTest {
     }
 
     @Test
-    fun aTargetResolutionTheCameraLacksIsRefusedBeforeAnyGrabberIsMade() = runBlocking {
-        val source = ScriptedSource(canRelax = true, OpeningGrabber(null), known = KnownMode.TARGET_MISSING)
+    fun aListedSizeIsTheOneAskedFor() = runBlocking {
+        val listed = OpeningGrabber(null)
+        val source = ScriptedSource(canRelax = true, listed, known = KnownMode.Listed(1920 to 1080))
 
-        assertFailsWith<ModeUnavailableException> {
-            source.open(device, own = {}, release = {}, os = OperatingSystem.MAC)
-        }
-        assertEquals(emptyList(), source.constrainedRequests, "a grabber was made for a size the camera lacks")
+        val opened = source.open(device, own = {}, release = {}, os = OperatingSystem.MAC)
+
+        assertSame(listed, opened.grabber)
+        assertEquals(false, opened.relaxed)
+        assertEquals(listOf(1920 to 1080), source.sizeRequests, "the size asked for")
+        assertEquals(emptyList(), source.constrainedRequests, "a grabber was made at CameraK's own size")
     }
 
-    // The camera has the target: a failed open is the camera's, and the own-mode retry could only open
-    // a grabber to release at once as Unsupported, the sequence that crashed.
+    // The camera lists the size: a failed open is the camera's, and an own-mode retry after it is the
+    // sequence that crashed.
     @Test
-    fun aTargetResolutionTheCameraHasIsNotRetriedAtItsOwnModeWhenItsOpenFails() = runBlocking {
+    fun aListedSizeIsNotRetriedAtItsOwnModeWhenItsOpenFails() = runBlocking {
         val failure = FrameGrabber.Exception(openError(-16, "Device or resource busy"))
         val source = ScriptedSource(
             canRelax = true,
             OpeningGrabber(failure),
             OpeningGrabber(null),
-            known = KnownMode.TARGET_PRESENT,
+            known = KnownMode.Listed(1920 to 1080),
         )
         val released = mutableListOf<FrameGrabber>()
 
@@ -129,7 +132,8 @@ class JavaCvErrorMapperTest {
         }
 
         assertSame(failure, thrown)
-        assertEquals(listOf(true), source.constrainedRequests, "the camera was opened again at its own mode")
+        assertEquals(listOf(1920 to 1080), source.sizeRequests, "the size asked for")
+        assertEquals(emptyList(), source.constrainedRequests, "the camera was opened again at its own mode")
         assertEquals(emptyList(), released, "the caller owns the grabber that failed")
     }
 
@@ -327,12 +331,18 @@ class JavaCvErrorMapperTest {
     ) : GrabberSource {
         private val next = ArrayDeque(grabbers.toList())
         val constrainedRequests = mutableListOf<Boolean>()
+        val sizeRequests = mutableListOf<Pair<Int, Int>>()
         override fun deviceKey(device: LensInfo): Any = this
 
         override fun knownMode(device: LensInfo): KnownMode? = known
 
         override fun create(device: LensInfo, constrained: Boolean): FrameGrabber {
             constrainedRequests += constrained
+            return next.removeFirst()
+        }
+
+        override fun create(device: LensInfo, size: Pair<Int, Int>): FrameGrabber {
+            sizeRequests += size
             return next.removeFirst()
         }
     }

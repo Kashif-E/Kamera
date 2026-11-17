@@ -36,7 +36,7 @@ start with `CameraKError.Unsupported(feature)`; `holder.capabilities` lists what
 | `imageFormat` | `ImageFormat` | `JPEG` | `JPEG`, `PNG`, or `HEIC` where the iOS camera offers HEVC |
 | `qualityPrioritization` | `QualityPrioritization` | `BALANCED` | `QUALITY`, `SPEED`, `BALANCED` or `NONE` |
 | `aspectRatio` | `AspectRatio` | `RATIO_16_9` | `RATIO_4_3`, `RATIO_16_9` or `RATIO_1_1`; the device's orientation decides portrait or landscape (`RATIO_9_16` is deprecated in favour of `RATIO_16_9`, which it now equals) |
-| `targetResolution` | `Resolution?` | `null` | The capture size to aim for, e.g. `Resolution(1920, 1080)` |
+| `targetResolution` | `Resolution?` | `null` | The capture size to aim for, e.g. `Resolution(1920, 1080)`; a camera without it uses the nearest size it has (on Linux and Windows, its own) |
 | `targetOrientation` | `DeviceOrientation?` | `null` | Fixes the orientation of captures and recordings; null follows the device |
 | `outputDirectory` | `String?` | `null` | Where captures (and by default recordings) are written; null is app-owned storage |
 | `mirrorFrontCamera` | `Boolean` | `false` | Mirror front-camera captures to match the preview |

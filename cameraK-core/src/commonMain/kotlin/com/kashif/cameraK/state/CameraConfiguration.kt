@@ -32,7 +32,8 @@ import com.kashif.cameraK.frames.FrameFormat
  * @property imageFormat Image format for captures.
  * @property qualityPrioritization Quality vs performance trade-off.
  * @property aspectRatio Aspect ratio for preview and capture.
- * @property targetResolution Target resolution, or null for the platform's choice.
+ * @property targetResolution Target resolution, or null for the platform's choice. A camera without it
+ *   captures at the nearest size it has; on Linux and Windows, where its sizes are not read, at its own.
  * @property targetOrientation The orientation captures and recordings are fixed to; null follows the
  *   device.
  * @property outputDirectory The directory stills and, by default, recordings are written to, used as

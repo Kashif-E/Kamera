@@ -8,9 +8,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * What the enumerated cameras' source knows of the mode a constrained open asks for: the configured
- * target or CameraK's 720p at 30 fps, read from the devices; nothing when the devices cannot tell or a
- * test camera stands in.
+ * What the enumerated cameras' source knows of the mode a constrained open asks for, from the sizes the
+ * devices list at CameraK's 30 fps: the configured target, else the listed size nearest it; without a
+ * target, only that 720p is missing; nothing when the devices cannot tell or a test camera stands in.
  */
 class EnumeratedDeviceSourceTest {
     private val device = desktopLensInfo()
@@ -20,41 +20,49 @@ class EnumeratedDeviceSourceTest {
         defaultCameraOverride = null
     }
 
-    private fun source(target: Pair<Int, Int>?, has: Boolean?, asked: MutableList<Pair<Int, Int>> = mutableListOf()) =
-        EnumeratedDeviceSource(
-            object : DesktopDevices {
-                override fun list(): List<LensInfo> = listOf(device)
+    private fun source(
+        target: Pair<Int, Int>?,
+        sizes: List<Pair<Int, Int>>?,
+        rates: MutableList<Double> = mutableListOf(),
+    ) = EnumeratedDeviceSource(
+        object : DesktopDevices {
+            override fun list(): List<LensInfo> = listOf(device)
 
-                override fun open(id: String, size: Pair<Int, Int>?): FrameGrabber = error("not opened")
+            override fun open(id: String, size: Pair<Int, Int>?): FrameGrabber = error("not opened")
 
-                override fun hasMode(id: String, size: Pair<Int, Int>, frameRate: Double): Boolean? {
-                    asked += size
-                    return has
-                }
-            },
-            target,
-        )
+            override fun sizes(id: String, frameRate: Double): List<Pair<Int, Int>>? {
+                rates += frameRate
+                return sizes
+            }
+        },
+        target,
+    )
 
     @Test
-    fun aTargetTheCameraLacksOrHasIsKnown() {
-        val asked = mutableListOf<Pair<Int, Int>>()
-        assertEquals(KnownMode.TARGET_MISSING, source(3840 to 2160, has = false, asked).knownMode(device))
-        assertEquals(KnownMode.TARGET_PRESENT, source(3840 to 2160, has = true, asked).knownMode(device))
-        assertEquals(listOf(3840 to 2160, 3840 to 2160), asked)
+    fun aListedTargetIsAskedFor() {
+        val rates = mutableListOf<Double>()
+        val known = source(1920 to 1080, listOf(1280 to 720, 1920 to 1080), rates).knownMode(device)
+        assertEquals(KnownMode.Listed(1920 to 1080), known)
+        assertEquals(listOf(30.0), rates)
+    }
+
+    @Test
+    fun aTargetTheCameraLacksGivesWayToTheNearestSizeItLists() {
+        val sizes = listOf(640 to 480, 1280 to 720, 1920 to 1080, 1552 to 1552)
+        assertEquals(KnownMode.Listed(1920 to 1080), source(3840 to 2160, sizes).knownMode(device))
+        assertEquals(KnownMode.Listed(1280 to 720), source(1024 to 576, sizes).knownMode(device))
     }
 
     @Test
     fun withoutATargetOnlyAMissing720pIsKnown() {
-        val asked = mutableListOf<Pair<Int, Int>>()
-        assertEquals(KnownMode.DEFAULT_MISSING, source(null, has = false, asked).knownMode(device))
-        assertNull(source(null, has = true, asked).knownMode(device))
-        assertEquals(listOf(1280 to 720, 1280 to 720), asked)
+        assertEquals(KnownMode.DefaultMissing, source(null, listOf(1920 to 1080)).knownMode(device))
+        assertNull(source(null, listOf(1280 to 720, 1920 to 1080)).knownMode(device))
     }
 
     @Test
     fun devicesThatCannotTellOrATestCameraKnowNothing() {
-        assertNull(source(3840 to 2160, has = null).knownMode(device))
+        assertNull(source(3840 to 2160, null).knownMode(device))
         defaultCameraOverride = { error("not opened") }
-        assertNull(source(3840 to 2160, has = false).knownMode(device))
+        assertNull(source(3840 to 2160, listOf(1280 to 720)).knownMode(device))
     }
 }

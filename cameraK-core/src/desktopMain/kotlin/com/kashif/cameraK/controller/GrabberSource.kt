@@ -26,24 +26,41 @@ internal interface GrabberSource {
     /** A new grabber for [device]; [constrained] asks for CameraK's size and frame rate. */
     fun create(device: LensInfo, constrained: Boolean): FrameGrabber
 
+    /** A new grabber for [device] asking for [size], one of its own modes, at CameraK's frame rate. */
+    fun create(device: LensInfo, size: Pair<Int, Int>): FrameGrabber = create(device, constrained = true)
+
     /** What is known of the mode a constrained open of [device] asks for; null when nothing is. */
     fun knownMode(device: LensInfo): KnownMode? = null
 }
 
 /** What the camera's own list of modes says of the mode a constrained open asks for. */
-internal enum class KnownMode {
-    /** The camera has no mode at the configuration's targetResolution and CameraK's frame rate. */
-    TARGET_MISSING,
+internal sealed interface KnownMode {
+    /**
+     * The camera has a [size] mode at CameraK's frame rate: the configuration's targetResolution, or the
+     * size it has nearest to it.
+     */
+    data class Listed(val size: Pair<Int, Int>) : KnownMode
 
     /** The camera has no mode at CameraK's default size and frame rate, asked for when no target is set. */
-    DEFAULT_MISSING,
-
-    /** The camera has a mode at the configuration's targetResolution and CameraK's frame rate. */
-    TARGET_PRESENT,
+    data object DefaultMissing : KnownMode
 }
 
-/** The configuration's targetResolution is a size the camera lacks; nothing was opened. */
-internal class ModeUnavailableException(message: String) : Exception(message)
+/**
+ * The size of [sizes] a [target] opens at, as CameraX picks one (closest higher, then lower): [target]
+ * when listed; else the smallest size that holds the target once cropped to the target's aspect ratio;
+ * else the size whose crop holds the most of it.
+ */
+internal fun nearestSize(sizes: List<Pair<Int, Int>>, target: Pair<Int, Int>): Pair<Int, Int> {
+    require(sizes.isNotEmpty()) { "no size to choose from" }
+    if (target in sizes) return target
+    val ratio = target.first.toDouble() / target.second
+
+    // The largest rectangle of the target's aspect ratio inside a size.
+    fun crop(size: Pair<Int, Int>) = minOf(size.first.toDouble(), size.second * ratio).let { it to it / ratio }
+    val area = compareBy<Pair<Int, Int>> { it.first.toLong() * it.second }
+    return sizes.filter { crop(it).let { (w, h) -> w >= target.first && h >= target.second } }.minWithOrNull(area)
+        ?: sizes.maxWith(compareBy<Pair<Int, Int>> { crop(it).let { (w, h) -> w * h } }.then(area.reversed()))
+}
 
 /** A started grabber, and whether it opened only at the camera's own mode. */
 internal class OpenedDevice(val grabber: FrameGrabber, val relaxed: Boolean)
@@ -64,19 +81,16 @@ internal suspend fun GrabberSource.open(
     os: OperatingSystem = currentOperatingSystem(),
 ): OpenedDevice {
     // A failed avfoundation open followed at once by the retry's open and release crashed macOS's main
-    // thread (objc_release on an AVCaptureDeviceInput), so a size the camera is known to lack is not asked.
+    // thread (objc_release on an AVCaptureDeviceInput), so a size the camera is known to lack is not
+    // asked: the nearest it has is.
     val known = if (canRelax) knownMode(device) else null
-    when (known) {
-        KnownMode.TARGET_MISSING -> throw ModeUnavailableException(
-            "The camera has no mode at the configured targetResolution and CameraK's frame rate",
-        )
-        KnownMode.DEFAULT_MISSING -> {
-            CameraKLogger.w(TAG, "The camera has no mode at CameraK's size and frame rate; opening it at its own mode")
-            return openOwnMode(device, own, release, os, earlier = null)
-        }
-        KnownMode.TARGET_PRESENT, null -> Unit
+    if (known == KnownMode.DefaultMissing) {
+        CameraKLogger.w(TAG, "The camera has no mode at CameraK's size and frame rate; opening it at its own mode")
+        return openOwnMode(device, own, release, os, earlier = null)
     }
-    val constrained = create(device, constrained = true).also { prepare(it, os) }
+    val listed = (known as? KnownMode.Listed)?.size
+    val constrained = if (listed != null) create(device, listed) else create(device, constrained = true)
+    prepare(constrained, os)
     try {
         blockingCall {
             own(constrained)
@@ -85,8 +99,8 @@ internal suspend fun GrabberSource.open(
         return OpenedDevice(constrained, relaxed = false)
     } catch (e: Exception) {
         if (e is CancellationException || !canRelax || JavaCvErrorMapper.isNativeLibraryMissing(e)) throw e
-        // The camera has the target: the failure is the camera's, and the own mode could only be released at once.
-        if (known == KnownMode.TARGET_PRESENT) throw e
+        // The camera lists the size: the failure is the camera's.
+        if (known is KnownMode.Listed) throw e
         CameraKLogger.w(TAG, "Opening the camera at CameraK's size and frame rate failed; retrying at its own mode", e)
         own(null)
         release(constrained)
@@ -181,8 +195,9 @@ internal class CustomGrabberSource(private val grabber: FrameGrabber) : GrabberS
 
 /**
  * The enumerated cameras of [devices], each opened by its `LensInfo.id` at [targetResolution] (720p
- * when null) and CameraK's frame rate, or at the camera's own mode on the retry. The lock is keyed
- * on the id (§2.4 desktop). Tests that reach a real camera get [defaultCameraOverride] instead.
+ * when null), or the size the camera lists nearest to it, and CameraK's frame rate, or at the camera's
+ * own mode on the retry. The lock is keyed on the id (§2.4 desktop). Tests that reach a real camera get
+ * [defaultCameraOverride] instead.
  */
 internal class EnumeratedDeviceSource(
     private val devices: DesktopDevices,
@@ -195,13 +210,26 @@ internal class EnumeratedDeviceSource(
     override fun create(device: LensInfo, constrained: Boolean): FrameGrabber = defaultCameraOverride?.invoke()
         ?: devices.open(device.id, if (constrained) targetResolution ?: DEFAULT_CAMERA_RESOLUTION else null)
 
+    override fun create(device: LensInfo, size: Pair<Int, Int>): FrameGrabber =
+        defaultCameraOverride?.invoke() ?: devices.open(device.id, size)
+
     override fun knownMode(device: LensInfo): KnownMode? {
         if (defaultCameraOverride != null) return null
-        val size = targetResolution ?: DEFAULT_CAMERA_RESOLUTION
-        return when (devices.hasMode(device.id, size, DEFAULT_CAMERA_FRAME_RATE)) {
-            null -> null
-            true -> if (targetResolution != null) KnownMode.TARGET_PRESENT else null
-            false -> if (targetResolution != null) KnownMode.TARGET_MISSING else KnownMode.DEFAULT_MISSING
+        val sizes = devices.sizes(device.id, DEFAULT_CAMERA_FRAME_RATE) ?: return null
+        val target = targetResolution
+        return when {
+            target != null -> KnownMode.Listed(
+                nearestSize(sizes, target).also {
+                    if (it != target) {
+                        CameraKLogger.w(
+                            TAG,
+                            "The camera has no mode at the targetResolution; opening it at the nearest size it has",
+                        )
+                    }
+                },
+            )
+            DEFAULT_CAMERA_RESOLUTION in sizes -> null
+            else -> KnownMode.DefaultMissing
         }
     }
 }
