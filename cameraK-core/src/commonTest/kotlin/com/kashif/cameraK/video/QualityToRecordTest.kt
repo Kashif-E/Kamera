@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * The quality a recording records on a camera that records a given set: the configured one when the
@@ -53,5 +54,7 @@ class QualityToRecordTest {
         assertNotEquals(VideoConfiguration(), VideoConfiguration { quality = FHD })
         assertEquals(VideoConfiguration(), VideoConfiguration { enableAudio = false })
         assertEquals(VideoConfiguration { quality = FHD }, VideoConfiguration().copy { quality = FHD })
+        assertTrue("quality=FHD (default)," in VideoConfiguration().toString())
+        assertTrue("quality=FHD," in VideoConfiguration { quality = FHD }.toString())
     }
 }

@@ -66,6 +66,8 @@ internal object LensEnumerator {
 
         // External cameras are classified apart from built-in ones: they share no hardware with them.
         val rawByFacing = mutableMapOf<Facing, MutableList<RawCamera>>()
+        // Left out after the types are read from every lens, so leaving one out relabels none of the others.
+        val unstreamable = mutableSetOf<String>()
         for (id in cameraIds) {
             val raw = describe(reader, id, isPhysicalChild = false, parentLogicalId = null) ?: continue
             rawByFacing.getOrPut(raw.facing) { mutableListOf() }.add(raw)
@@ -73,12 +75,12 @@ internal object LensEnumerator {
                 for (physicalId in raw.physicalCameraIds) {
                     val child = describe(reader, physicalId, isPhysicalChild = true, parentLogicalId = id)
                         ?: continue
-                    if (!child.streamUseCases.containsAll(raw.streamUseCases)) {
+                    if (!child.streamUseCases.containsAll(raw.streamUseCases intersect CAMERAX_STREAM_USE_CASES)) {
                         CameraKLogger.w(
                             "CameraK",
                             "Physical lens $physicalId lacks stream use cases camera $id lists; it is not offered",
                         )
-                        continue
+                        unstreamable += physicalId
                     }
                     rawByFacing.getOrPut(child.facing) { mutableListOf() }.add(child)
                 }
@@ -92,6 +94,7 @@ internal object LensEnumerator {
                 rawCameras.map { RawLensFocalInfo(it.id, it.focalLengthsMm, it.physicalSizeWidthMm, it.isLogical) },
             )
             for (raw in rawCameras) {
+                if (raw.isPhysicalChild && raw.id in unstreamable) continue
                 // Focal length can't detect macro; keep the pre-existing min-focus-distance rule
                 // for top-level ids (matches the old createCameraSelector MACRO filter).
                 val deviceType = if (!raw.isPhysicalChild && raw.minFocusDistance > MACRO_MIN_DIOPTERS) {
@@ -127,6 +130,10 @@ internal object LensEnumerator {
     // comfortably above the main-camera range while still catching real macro lenses. A
     // fixed-focus lens reports 0 and stays excluded naturally.
     private const val MACRO_MIN_DIOPTERS = 20f
+
+    // The stream use cases CameraX sets: PREVIEW, STILL_CAPTURE, VIDEO_RECORD, PREVIEW_VIDEO_STILL and
+    // VIDEO_CALL (CameraMetadata.SCALER_AVAILABLE_STREAM_USE_CASES_*, 1 to 5).
+    private val CAMERAX_STREAM_USE_CASES = setOf(1L, 2L, 3L, 4L, 5L)
 
     // Dedup pool is per PARENT logical camera, not per facing: two logical cameras on the same
     // facing (e.g. two back logical multi-cameras) can each have a child at the same focal length

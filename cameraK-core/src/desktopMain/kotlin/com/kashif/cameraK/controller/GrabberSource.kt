@@ -47,12 +47,16 @@ internal sealed interface KnownMode {
 
 /**
  * The size of [sizes] a [target] opens at, as CameraX picks one (closest higher, then lower): [target]
- * when listed; else the smallest size that holds the target once cropped to the target's aspect ratio;
+ * when listed, turned to landscape when the camera lists no portrait size; else the smallest size that holds the target once cropped to the target's aspect ratio;
  * else the size whose crop holds the most of it.
  */
 internal fun nearestSize(sizes: List<Pair<Int, Int>>, target: Pair<Int, Int>): Pair<Int, Int> {
     require(sizes.isNotEmpty()) { "no size to choose from" }
     if (target in sizes) return target
+    // Desktop cameras stream landscape: a portrait target written for the phones is turned.
+    if (target.second > target.first && sizes.none { it.second > it.first }) {
+        return nearestSize(sizes, target.second to target.first)
+    }
     val ratio = target.first.toDouble() / target.second
 
     // The largest rectangle of the target's aspect ratio inside a size.
@@ -218,6 +222,7 @@ internal class EnumeratedDeviceSource(
         val sizes = devices.sizes(device.id, DEFAULT_CAMERA_FRAME_RATE) ?: return null
         val target = targetResolution
         return when {
+            sizes.isEmpty() -> KnownMode.DefaultMissing
             target != null -> KnownMode.Listed(
                 nearestSize(sizes, target).also {
                     if (it != target) {
