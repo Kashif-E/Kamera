@@ -21,14 +21,17 @@ import com.kashif.cameraK.result.CameraKResult
 import com.kashif.cameraK.state.ZoomState
 import com.kashif.cameraK.utils.CameraKEngineApi
 import com.kashif.cameraK.video.VideoConfiguration
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 
 /** What the fake platform reports, beyond what the contract kit checks. */
 class FakeCameraEngineTest {
@@ -48,6 +51,37 @@ class FakeCameraEngineTest {
 
         assertIs<CameraKResult.Success<LensInfo>>(fake.selectCamera(CameraSelection.ById(FakeCapabilities.BACK_ID)))
         assertEquals(FakeCapabilities.BACK_ID, fake.hardware.value.camera?.id, "after switching to the back camera")
+        fake.close()
+    }
+
+    @Test
+    fun aHeldCaptureReleasedThenClosedBeforeItResumesIsClosed() = runTest {
+        val fake = FakeCameraEngine()
+        assertEquals(success, fake.start(desiredOn(FakeCapabilities.BACK_ID)))
+        fake.holdNextCapture()
+        val capture = async { fake.capture() }
+        runCurrent()
+
+        fake.releaseCapture()
+        fake.close()
+        runCurrent()
+
+        assertEquals(CameraKResult.Failure(CameraKError.Closed), capture.await())
+    }
+
+    @Test
+    fun aHeldCaptureEndsWithTheFailureThatEndedTheSession() = runTest {
+        val fake = FakeCameraEngine()
+        assertEquals(success, fake.start(desiredOn(FakeCapabilities.BACK_ID)))
+        fake.holdNextCapture()
+        val capture = async { fake.capture() }
+        runCurrent()
+
+        val error = CameraKError.Disconnected()
+        fake.fail(error)
+        runCurrent()
+
+        assertSame(error, assertIs<CameraKResult.Failure>(capture.await()).error)
         fake.close()
     }
 
