@@ -22,7 +22,7 @@ jobs:
 
   publish:
     needs: verify
-    runs-on: macos-15
+    runs-on: macos-26
     environment: maven-central
 
     steps:
@@ -53,7 +53,7 @@ jobs:
           touch ~/.gradle/gradle.properties
           # Set (not blindly append) so a re-run / pre-existing entry can't create duplicates.
           sed -i.bak '/^org.gradle.jvmargs=/d' ~/.gradle/gradle.properties && rm -f ~/.gradle/gradle.properties.bak
-          # macos-15 is Apple silicon with ~7 GB; -Xmx5g leaves room for the Kotlin/Native linker itself.
+          # macos-26 is Apple silicon with ~7 GB; -Xmx5g leaves room for the Kotlin/Native linker itself.
           echo "org.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=1g" >> ~/.gradle/gradle.properties
 
       # Gradle reads ORG_GRADLE_PROJECT_* as project properties. Secrets stay out of the command line

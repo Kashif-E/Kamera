@@ -14,7 +14,7 @@ permissions:
 jobs:
   verify:
     # Pinned to the image the release workflow uses; screenshot goldens are recorded on macOS.
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -50,7 +50,7 @@ jobs:
           mkdir -p ~/.gradle
           touch ~/.gradle/gradle.properties
           sed -i.bak '/^org.gradle.jvmargs=/d' ~/.gradle/gradle.properties && rm -f ~/.gradle/gradle.properties.bak
-          # macos-15 is Apple silicon with ~7 GB; -Xmx5g leaves room for the Kotlin/Native linker itself.
+          # macos-26 is Apple silicon with ~7 GB; -Xmx5g leaves room for the Kotlin/Native linker itself.
           echo "org.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=1g" >> ~/.gradle/gradle.properties
 
       - name: Verify (spotless, tests on every target, release and device compiles, Android lint, screenshots, Sample and its iOS framework link)
@@ -71,7 +71,7 @@ jobs:
 
   lint-self-tests:
     # The lint target's own tests start Gradle builds of their own, so scripts/verify.sh cannot run them.
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

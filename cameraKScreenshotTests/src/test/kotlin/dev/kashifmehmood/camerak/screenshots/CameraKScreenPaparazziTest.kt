@@ -35,7 +35,7 @@ import org.junit.Test
  */
 class CameraKScreenPaparazziTest {
     // Pixel-exact comparison; see PixelExactSnapshotVerifier for why maxPercentDifference = 0.0 alone
-    // is not. Goldens are recorded and verified on macOS (CI runs macos-15); layoutlib's native
+    // is not. Goldens are recorded and verified on macOS (CI runs macos-26); layoutlib's native
     // runtime differs per OS.
     @get:Rule
     val paparazzi =
