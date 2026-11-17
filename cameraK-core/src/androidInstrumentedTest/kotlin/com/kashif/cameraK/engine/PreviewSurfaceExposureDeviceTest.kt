@@ -69,7 +69,7 @@ internal class PreviewSurfaceExposureDeviceTest {
         } finally {
             attachment.close()
             driver.settle()
-            engine.close()
+            engine.closeAndJoin()
         }
     }
 
@@ -85,7 +85,7 @@ internal class PreviewSurfaceExposureDeviceTest {
             assertEquals(CameraKResult.Success(Unit), engine.setExposureCompensation(INDEX))
         } finally {
             driver.settle()
-            engine.close()
+            engine.closeAndJoin()
         }
     }
 
@@ -101,7 +101,7 @@ internal class PreviewSurfaceExposureDeviceTest {
             assertIs<CameraKResult.Success<*>>(captured, "the photo after the preview surface went: $captured")
             (captured.value as? CapturedImage)?.path?.let { File(it).delete() }
         } finally {
-            engine.close()
+            engine.closeAndJoin()
         }
     }
 

@@ -69,7 +69,7 @@ internal class PhysicalLensRecordingDeviceTest {
             engine.stopRecording()
             driver.settle()
             File(path).delete()
-            engine.close()
+            engine.closeAndJoin()
         }
     }
 }
