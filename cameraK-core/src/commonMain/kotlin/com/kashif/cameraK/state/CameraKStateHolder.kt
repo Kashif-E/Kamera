@@ -448,14 +448,22 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
 
     /**
      * Takes a picture to a file in app-owned storage. The image also reaches [captures], even when
-     * the caller is cancelled. More than three captures at once return `Failure(Busy(CAPTURE))`.
+     * the caller is cancelled. More than three captures at once return `Failure(Busy(CAPTURE))`. A
+     * capture the platform has not answered within 30 seconds returns `Failure(Timeout(CAPTURE))` and
+     * frees its slot; a photo the platform writes for it later is discarded.
      */
     public suspend fun capture(): CameraKResult<CapturedImage> {
         commands.refused()?.let { return it }
         if (!takeCaptureSlot()) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.CAPTURE))
         val job = commands.start(CameraOperation.CAPTURE) {
             try {
-                engine.capture().onSuccess { _captures.tryEmit(it) }
+                withTimeoutOrNull(CAPTURE_TIMEOUT) { engine.capture() }?.onSuccess { _captures.tryEmit(it) }
+                    ?: CameraKResult.Failure(CameraKError.Timeout(CameraOperation.CAPTURE)).also {
+                        CameraKLogger.w(
+                            TAG,
+                            "The platform did not answer a capture within $CAPTURE_TIMEOUT; it timed out",
+                        )
+                    }
             } finally {
                 pendingCaptures.update { it - 1 }
             }
