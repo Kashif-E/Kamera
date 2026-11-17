@@ -509,7 +509,11 @@ public class FakeCameraEngine(
         if (!closed && _state.value is EngineState.Failed) _state.value = EngineState.Open
     }
 
-    /** The next capture waits until [releaseCapture], close (`Closed`) or [fail] (its error). */
+    /**
+     * The next capture waits until [releaseCapture], close (`Closed`) or [fail] (its error). Through a
+     * holder, the caller gets `Timeout(CAPTURE)` after 30 seconds of (virtual) time, and the release then
+     * still reaches the holder's captures.
+     */
     public fun holdNextCapture() {
         holdNext = true
     }

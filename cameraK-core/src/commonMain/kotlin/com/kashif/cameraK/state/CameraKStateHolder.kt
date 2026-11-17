@@ -46,6 +46,7 @@ import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
@@ -448,14 +449,26 @@ public class CameraKStateHolder @CameraKEngineApi constructor(
 
     /**
      * Takes a picture to a file in app-owned storage. The image also reaches [captures], even when
-     * the caller is cancelled. More than three captures at once return `Failure(Busy(CAPTURE))`.
+     * the caller is cancelled. More than three captures at once return `Failure(Busy(CAPTURE))`. A
+     * capture the platform has not answered within 30 seconds returns `Failure(Timeout(CAPTURE))` and
+     * frees its slot; the platform's capture is not cancelled, and a photo it delivers later still
+     * reaches [captures].
      */
     public suspend fun capture(): CameraKResult<CapturedImage> {
         commands.refused()?.let { return it }
         if (!takeCaptureSlot()) return CameraKResult.Failure(CameraKError.Busy(CameraOperation.CAPTURE))
         val job = commands.start(CameraOperation.CAPTURE) {
             try {
-                engine.capture().onSuccess { _captures.tryEmit(it) }
+                // The platform's capture is not cancelled at the deadline: a file it is still writing would
+                // be left unreported. It runs on in the holder's scope, and a late photo reaches captures.
+                val platform = scope.async { engine.capture().onSuccess { _captures.tryEmit(it) } }
+                withTimeoutOrNull(CAPTURE_TIMEOUT) { platform.await() }
+                    ?: CameraKResult.Failure(CameraKError.Timeout(CameraOperation.CAPTURE)).also {
+                        CameraKLogger.w(
+                            TAG,
+                            "The platform did not answer a capture within $CAPTURE_TIMEOUT; it timed out",
+                        )
+                    }
             } finally {
                 pendingCaptures.update { it - 1 }
             }

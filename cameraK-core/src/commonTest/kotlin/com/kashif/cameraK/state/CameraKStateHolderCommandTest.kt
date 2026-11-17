@@ -45,6 +45,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -338,6 +339,34 @@ class CameraKStateHolderCommandTest {
         assertEquals(listOf(image), captures, "what reached captures")
         assertEquals(1, gates.started, "engine captures")
         assertEquals(0, holder.uiState.value.pendingCaptures)
+    }
+
+    // A capture the platform does not answer (the Android emulator lost nine PNG captures in one CI run, and
+    // #189 left CameraX's request queued for good) ends as a Timeout and frees its slot. The platform's
+    // capture is not cancelled, so a file it was still writing is never left unreported: a photo that
+    // arrives after the deadline still reaches captures, as a cancelled caller's does.
+    @Test
+    fun aCaptureThePlatformDoesNotAnswerTimesOutAndALatePhotoStillReachesCaptures() = runTest {
+        val fake = FakeCameraEngine()
+        val holder = readyHolder(fake)
+        val received = collectCaptures(holder)
+
+        fake.holdNextCapture()
+        val capture = async { holder.capture() }
+        advanceTimeBy(CAPTURE_TIMEOUT - 1.milliseconds)
+        assertFalse(capture.isCompleted, "the capture gave up before its deadline")
+        advanceTimeBy(2.milliseconds)
+        runCurrent()
+
+        assertTrue(capture.isCompleted, "a capture the platform never answers waits for good")
+        val timeout = assertIs<CameraKError.Timeout>(assertIs<CameraKResult.Failure>(capture.await()).error)
+        assertEquals(CameraOperation.CAPTURE, timeout.operation)
+        assertEquals(0, holder.uiState.value.pendingCaptures)
+        assertEquals(emptyList(), received)
+        fake.releaseCapture()
+        runCurrent()
+        assertEquals(1, received.size, "the photo the platform delivered after the deadline was lost")
+        assertIs<CameraKResult.Success<CapturedImage>>(holder.capture())
     }
 
     @Test
