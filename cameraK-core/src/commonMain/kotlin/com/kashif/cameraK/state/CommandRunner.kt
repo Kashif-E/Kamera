@@ -27,6 +27,12 @@ import kotlin.time.Duration.Companion.seconds
  */
 internal val COMMAND_DRAIN_TIMEOUT: Duration = 2.seconds
 
+/**
+ * How long a capture waits for the platform's answer before it returns `Timeout(CAPTURE)`: longer than any
+ * capture a camera takes, flash precapture and maximum quality included.
+ */
+internal val CAPTURE_TIMEOUT: Duration = 30.seconds
+
 /** More captures than this in flight at once return `Failure(Busy(CAPTURE))`. */
 internal const val MAX_IN_FLIGHT_CAPTURES: Int = 3
 

@@ -45,6 +45,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -338,6 +339,31 @@ class CameraKStateHolderCommandTest {
         assertEquals(listOf(image), captures, "what reached captures")
         assertEquals(1, gates.started, "engine captures")
         assertEquals(0, holder.uiState.value.pendingCaptures)
+    }
+
+    // A capture the platform never answers (the Android emulator lost nine PNG captures in one CI run, and
+    // #189 left CameraX's request queued for good) ends as a Timeout, and its slot is free again.
+    @Test
+    fun aCaptureThePlatformNeverAnswersTimesOutAndFreesItsSlot() = runTest {
+        val fake = FakeCameraEngine()
+        val holder = readyHolder(fake)
+        val received = collectCaptures(holder)
+
+        fake.holdNextCapture()
+        val capture = async { holder.capture() }
+        advanceTimeBy(CAPTURE_TIMEOUT - 1.milliseconds)
+        assertFalse(capture.isCompleted, "the capture gave up before its deadline")
+        advanceTimeBy(2.milliseconds)
+        runCurrent()
+
+        assertTrue(capture.isCompleted, "a capture the platform never answers waits for good")
+        val timeout = assertIs<CameraKError.Timeout>(assertIs<CameraKResult.Failure>(capture.await()).error)
+        assertEquals(CameraOperation.CAPTURE, timeout.operation)
+        assertEquals(0, holder.uiState.value.pendingCaptures)
+        fake.releaseCapture()
+        runCurrent()
+        assertEquals(emptyList(), received, "a capture that timed out reached captures")
+        assertIs<CameraKResult.Success<CapturedImage>>(holder.capture())
     }
 
     @Test
