@@ -16,6 +16,8 @@ PHOTO_CASES=300
 CHURN=500
 STALL_SECONDS=180
 adb root > /dev/null 2>&1; sleep 3; adb wait-for-device
+# CameraX's own debug logging alone fills the default 256 KB buffer in seconds.
+adb logcat -G 16M
 {
   echo "android $(adb shell getprop ro.build.version.release) sdk $(adb shell getprop ro.build.version.sdk) $(adb shell getprop ro.product.model)"
   adb shell dumpsys media.camera | grep -E '^ *Camera [0-9]+|Facing' | head -10
@@ -59,7 +61,11 @@ run() {
       progress=$(grep -oE '(BEGIN #[0-9]+|CHURN [0-9]+/[0-9]+)' "$dir/console.txt" | tail -1)
       echo "$((SECONDS - start)),$pss,$java,$native,$graphics,$threads,$progress" >> "$dir/memory.csv"
     fi
-    if grep -q "DONE" "$dir/console.txt"; then outcome=done; break; fi
+    # The report's summary is the finish: logcat drops lines when the app logs in bursts.
+    if grep -q "DONE" "$dir/console.txt" ||
+      adb exec-out run-as $P cat files/camerak-matrix/report.md 2>/dev/null | grep -q "^## Summary"; then
+      outcome=done; break
+    fi
     if [ -z "$pid" ] && [ $((SECONDS - start)) -gt 30 ]; then outcome="app died"; break; fi
     # A case or churn cycle that logs nothing for STALL_SECONDS is stuck; its threads say where.
     local lines; lines=$(wc -l < "$dir/console.txt")
@@ -76,7 +82,8 @@ run() {
   adb exec-out run-as $P cat files/camerak-matrix/report.json > "$dir/report.json" 2>/dev/null
   adb exec-out run-as $P cat files/camerak-matrix/report.md > "$dir/report.md" 2>/dev/null
   adb shell am force-stop $P
-  echo "$name: $outcome after $((SECONDS - start)) s; $(grep -oE 'DONE .*' "$dir/console.txt" | tail -1)" | tee -a "$OUT/status.txt"
+  echo "$name: $outcome after $((SECONDS - start)) s; $(grep -oE 'DONE .*' "$dir/console.txt" | tail -1)" \
+    "$(sed -n '/^## Summary/,$p' "$dir/report.md" 2>/dev/null | grep -E '^- ' | tr '\n' ' ')" | tee -a "$OUT/status.txt"
 }
 
 run matrix 30 60 --es camerak.matrix.sections features,configflash,analysis,plugins,video,lifecycle

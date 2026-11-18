@@ -129,6 +129,19 @@ class MatrixRunnerTest {
         assertTrue(platform.lines.any { "PASS" in it && "photo/BACK" in it }, platform.lines.joinToString("\n"))
     }
 
+    // CI reads the report to know a churn finished: the log can drop its last lines.
+    @Test
+    fun aChurnWritesAReportEndingInItsSummary() = runTest {
+        val platform = TestPlatform(this)
+
+        MatrixRunner(platform, MatrixArgs(churn = 3)).run()
+
+        assertTrue(report.contains(""""churn":3"""), report)
+        assertTrue(report.contains(""""opened":3"""), report)
+        assertTrue(report.trimEnd().endsWith("]"), "the finished report is closed")
+        assertEquals(listOf(1, 1, 1), platform.engines.map { it.releaseCount }, "each churned holder closed")
+    }
+
     @Test
     fun aFormatTheCapabilitiesLeaveOut_isUnsupportedOk() = runTest {
         val capabilities = FakeCapabilities.backAndFront(imageFormats = setOf(ImageFormat.JPEG, ImageFormat.PNG))

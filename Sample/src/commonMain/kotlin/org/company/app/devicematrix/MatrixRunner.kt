@@ -148,7 +148,7 @@ internal class MatrixRunner(
             "permissions" to permissions,
         )
         args.churn?.let { holders ->
-            churn(holders)
+            churn(holders, header, started)
             return
         }
         val probed = probe()
@@ -178,14 +178,26 @@ internal class MatrixRunner(
     }
 
     // Opens and closes [holders] holders of one camera in this process, logging each one's time to Ready
-    // and to closed, and the median time to Ready of each 50.
-    private suspend fun churn(holders: Int) {
+    // and to closed, and the median time to Ready of each 50. The report's summary says it finished:
+    // the log can drop lines.
+    private suspend fun churn(
+        holders: Int,
+        header: List<Pair<String, Any?>>,
+        started: TimeSource.Monotonic.ValueTimeMark,
+    ) {
         val config = CameraConfiguration {
             cameraLens = CameraLens.valueOf(args.churnLens)
             cameraDeviceType = CameraDeviceType.valueOf(args.churnType)
         }
         log("CHURN $holders holders of ${args.churnLens}/${args.churnType}")
+        writer.begin(
+            resume = false,
+            header =
+            header + listOf("churn" to holders, "lens" to "${args.churnLens}/${args.churnType}"),
+        )
         val ready = mutableListOf<Long>()
+        var openedCount = 0
+        var closedCount = 0
         for (i in 1..holders) {
             // One line per step, so a cycle that never ends shows the call it is in.
             log("CHURN $i step=new")
@@ -200,13 +212,23 @@ internal class MatrixRunner(
             val closed = withTimeoutOrNull(timing.close) { holder.closeAndJoin() } != null
             val closeMs = closing.elapsedNow().inWholeMilliseconds
             ready += opened.readyMs
+            if (opened.ready) openedCount++
+            if (closed) closedCount++
             log(
                 "CHURN $i/$holders state=${opened.state} readyMs=${opened.readyMs} closeMs=$closeMs closed=$closed camera=$camera",
             )
             _progress.update { it.copy(done = i, total = holders, current = "churn $i") }
             if (i % 50 == 0) log("CHURN median of $i-49..$i readyMs=${ready.takeLast(50).sorted()[25]}")
         }
-        log("DONE churn=$holders")
+        writer.finish(
+            listOf(
+                "churn" to holders,
+                "opened" to openedCount,
+                "closed" to closedCount,
+                "elapsedSeconds" to started.elapsedNow().inWholeSeconds,
+            ),
+        )
+        log("DONE churn=$holders opened=$openedCount closed=$closedCount")
         _progress.update { it.copy(finished = true, current = "done") }
     }
 

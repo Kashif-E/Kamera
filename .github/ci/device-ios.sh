@@ -36,6 +36,10 @@ run() {
   local dir="$OUT/$name" start=$SECONDS last=-$interval outcome=timeout pid=""
   mkdir -p "$dir"
   xcrun simctl terminate "$DEV" $BID > /dev/null 2>&1
+  local container
+  container=$(xcrun simctl get_app_container "$DEV" $BID data 2>/dev/null)
+  # Each run writes its own report; one left by the step before would read as this one's.
+  rm -rf "$container/Documents/camerak-matrix"
   xcrun simctl launch --console-pty "$DEV" $BID -cameraKMatrix -cameraKMatrixLog "$@" > "$dir/console.txt" 2>&1 &
   local launcher=$!
   echo "seconds,rss_kb,threads,progress" > "$dir/memory.csv"
@@ -47,14 +51,15 @@ run() {
       progress=$(grep -oE 'CameraKMatrix: (BEGIN #[0-9]+|CHURN [0-9]+/[0-9]+)' "$dir/console.txt" | tail -1 | sed 's/CameraKMatrix: //')
       echo "$((SECONDS - start)),$(ps -o rss= -p "$pid" | tr -d ' '),$(ps -M -p "$pid" | tail -n +2 | wc -l | tr -d ' '),$progress" >> "$dir/memory.csv"
     fi
-    if grep -q "CameraKMatrix: DONE" "$dir/console.txt"; then outcome=done; break; fi
+    if grep -q "CameraKMatrix: DONE" "$dir/console.txt" ||
+      grep -q "^## Summary" "$container/Documents/camerak-matrix/report.md" 2>/dev/null; then
+      outcome=done; break
+    fi
     if ! kill -0 $launcher 2>/dev/null; then outcome=exited; break; fi
     sleep 5
   done
   sleep 3
   [ -n "$pid" ] && leaks "$pid" > "$dir/leaks.txt" 2>&1
-  local container
-  container=$(xcrun simctl get_app_container "$DEV" $BID data 2>/dev/null)
   cp "$container"/Documents/camerak-matrix/report.* "$dir/" 2>/dev/null
   xcrun simctl terminate "$DEV" $BID > /dev/null 2>&1
   kill $launcher 2>/dev/null
