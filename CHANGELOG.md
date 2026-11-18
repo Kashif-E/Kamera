@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-rc02] - 2026-11-18
+
 ### Fixed
 - **Android: a preview attached and detached at once could leave a working camera in `Error`**: a surface released while CameraX configured the session makes CameraX report `ERROR_STREAM_CONFIG` ("Surface was abandoned"). CameraX resets the session with the surfaces it has and keeps streaming, but CameraK read the error as fatal and reported `Unsupported(ASPECT_RATIO)`, so later commands returned `NotReady`. That error is now logged and the camera stays Ready; any other stream-config error still ends the session.
 - **Android: every close logged one warning per holder closed before it**: CameraX 1.5.3 keeps a key for every lifecycle owner the process has bound, and each `unbind` walks all of them, logging "Attempt to unbind use cases from an invalid camera" for each one whose lifecycle is destroyed. Each holder is its own owner, and its close unbound its use cases after destroying its lifecycle. CameraX had already unbound them by then, so the call only did that walk. After 500 holders a close logged about 500 lines in one burst (96,000 over a 500-holder churn), enough for logcat to drop the app's other lines. A close now leaves the unbind to the destroyed lifecycle. Each holder still leaves CameraX one small key, an int and a camera id, until the process ends.

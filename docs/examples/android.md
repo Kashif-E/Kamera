@@ -13,7 +13,7 @@ For an Android-only module:
 
 ```kotlin
 dependencies {
-    implementation("dev.kashifmehmood:camerak:2.0.0-rc01")
+    implementation("dev.kashifmehmood:camerak:2.0.0-rc02")
 }
 ```
 
