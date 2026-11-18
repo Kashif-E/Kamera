@@ -391,8 +391,8 @@ internal class PendingCapture(
 
 /**
  * Tracks which use cases are bound, the way ProcessCameraProvider does: the camera is open while
- * any use case is bound to a started lifecycle. Binding to a destroyed lifecycle is refused, as
- * CameraX refuses it.
+ * any use case is bound to a started lifecycle, and an owner's lifecycle reaching DESTROYED unbinds
+ * that owner's use cases. Binding to a destroyed lifecycle is refused, as CameraX refuses it.
  */
 internal class FakeCameraBinding : CameraBinding {
     val bound = linkedSetOf<UseCase>()
@@ -432,19 +432,45 @@ internal class FakeCameraBinding : CameraBinding {
      */
     var refuseVideoCapture = false
 
-    /** Unbinds of use cases whose owner was already destroyed: an owner's final release of its camera. */
+    /** Owners whose lifecycle reached DESTROYED with use cases bound: each one's final release of its camera. */
     var releaseCount = 0
         private set
 
+    /**
+     * Unbind calls naming a use case whose owner was already DESTROYED. CameraX has unbound those
+     * itself by then, and 1.5.3 walks a key for every owner the process ever bound on each unbind,
+     * logging a warning for each destroyed one.
+     */
+    var unbindsAfterDestroy = 0
+        private set
+
     private val owners = mutableMapOf<UseCase, LifecycleOwner>()
+    private val watchedOwners = mutableSetOf<LifecycleOwner>()
 
     override fun unbind(vararg useCases: UseCase) {
         checkMainThread("unbind")
-        if (useCases.any { owners[it]?.lifecycle?.currentState == Lifecycle.State.DESTROYED }) releaseCount++
+        if (useCases.any { owners[it]?.lifecycle?.currentState == Lifecycle.State.DESTROYED }) unbindsAfterDestroy++
         useCases.forEach { owners -= it }
-        bound.removeAll(useCases.toSet())
+        remove(useCases.toSet())
+    }
+
+    private fun remove(useCases: Set<UseCase>) {
+        bound.removeAll(useCases)
         cameras.filter { camera -> camera.useCases.isNotEmpty() && camera.useCases.none { it in bound } }
             .forEach { it.closeForUnbind() }
+    }
+
+    // LifecycleCamera.onDestroy removes every use case of the destroyed owner.
+    private fun watch(owner: LifecycleOwner) {
+        if (!watchedOwners.add(owner)) return
+        owner.lifecycle.addObserver(
+            LifecycleEventObserver { _, event ->
+                if (event != Lifecycle.Event.ON_DESTROY) return@LifecycleEventObserver
+                val own = owners.filterValues { it === owner }.keys
+                if (own.any { it in bound }) releaseCount++
+                remove(own)
+            },
+        )
     }
 
     override fun bindToLifecycle(owner: LifecycleOwner, camera: ResolvedCamera, useCaseGroup: UseCaseGroup): Camera {
@@ -482,6 +508,7 @@ internal class FakeCameraBinding : CameraBinding {
         bindThreads += Thread.currentThread()
         bound += useCases
         useCases.forEach { owners[it] = owner }
+        watch(owner)
         val camera = cameraFor?.invoke(resolved) ?: newCamera()
         cameras += camera
         camera.useCases += useCases

@@ -63,4 +63,20 @@ class OwnUseCasesTest {
             "close must unbind exactly its own use cases",
         )
     }
+
+    // CameraX 1.5.3 keeps a key for every lifecycle owner it ever bound and walks all of them on each
+    // unbind, warning once per destroyed owner. Destroying the engine's lifecycle already unbinds its
+    // use cases; an unbind after that made each close log one warning per holder closed before it.
+    @Test
+    fun close_leavesTheUnbindToTheDestroyedLifecycle() = runTest {
+        val engine = platform.engine(testScheduler)
+        open(platform, engine)
+
+        engine.close()
+        platform.settle(testScheduler)
+
+        assertEquals(setOf(hostPreview), platform.backend.binding.bound.toSet(), "close left its use cases bound")
+        assertEquals(1, platform.backend.binding.releaseCount, "close did not destroy the engine's lifecycle")
+        assertEquals(0, platform.backend.binding.unbindsAfterDestroy, "close unbound after destroying its lifecycle")
+    }
 }
