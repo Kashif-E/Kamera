@@ -10,7 +10,7 @@ zxing = "3.5.4"
 kotlin = "2.4.10"
 agp = "8.13.2"
 dokka = "2.2.0"
-spotless = "8.10.4"
+spotless = "8.11.0"
 kotlinx-coroutines = "1.11.0"
 kotlinx-io = "0.9.0"
 
