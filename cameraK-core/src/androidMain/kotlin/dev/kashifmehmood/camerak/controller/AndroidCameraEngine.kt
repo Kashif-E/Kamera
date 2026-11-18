@@ -423,8 +423,9 @@ internal class AndroidCameraEngine(
     // ── Close ──────────────────────────────────────────────────────────────────────────────────
 
     // Main thread. Releases everything once: a recording first, finalized while the camera is still
-    // open (§2.3 rule 7), then the sensor and frame delivery, the lifecycle and this engine's use
-    // cases, then what the 1.x callers were waiting on. A step that throws is logged and the steps
+    // open (§2.3 rule 7), then the sensor and frame delivery, then the lifecycle, whose DESTROYED
+    // unbinds this engine's use cases (an explicit unbind only when destroying it failed), then what
+    // the 1.x callers were waiting on. A step that throws is logged and the steps
     // after it still run.
     private suspend fun release() {
         try {
@@ -440,7 +441,15 @@ internal class AndroidCameraEngine(
         // VideoCapture is still bound so it finalizes cleanly.
         releaseStep("Stopping frame delivery on release") { framePipeline.stopDelivery() }
         releaseStep("Destroying the engine lifecycle") { session.destroyLifecycle() }
-        releaseStep("Unbinding use cases on release") { binder.unbindOwnUseCases() }
+        releaseStep("Unbinding use cases on release") {
+            if (lifecycle.currentState ==
+                Lifecycle.State.DESTROYED
+            ) {
+                binder.forgetOwnUseCases()
+            } else {
+                binder.unbindOwnUseCases()
+            }
+        }
         releaseStep("Dropping the frame consumers") { framePipeline.clearConsumers() }
         // A capture still in flight would otherwise wait for a callback that is now ignored.
         releaseStep("Failing the captures in flight") { stillCapturer.failInFlight() }

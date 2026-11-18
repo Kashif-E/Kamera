@@ -161,6 +161,16 @@ internal class UseCaseBinder(
     }
 
     /**
+     * Forgets the use cases this engine bound, once its lifecycle is DESTROYED: CameraX unbinds a
+     * destroyed owner's use cases itself. An unbind after that is not free: CameraX 1.5.3 keeps a key
+     * for every owner the process ever bound and walks them all on each unbind, warning once per
+     * destroyed owner.
+     */
+    fun forgetOwnUseCases() {
+        boundUseCases.clear()
+    }
+
+    /**
      * Builds a [ViewPort] matching the configured aspect ratio so every use case (preview, capture,
      * analyzer) is cropped to the same field of view. The [Rational] is expressed as width:height in
      * the display's CURRENT orientation (the convention `PreviewView.getViewPort()` uses), so it is

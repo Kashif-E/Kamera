@@ -83,7 +83,7 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
         }
     }
 
-    /** Unbinds made while the owner of an unbound use case was DESTROYED: the engine's release. */
+    /** Owners whose lifecycle reached DESTROYED with use cases bound, which unbinds them: the engine's release. */
     fun releaseCount(): Int = synchronized(lock) { releases }
 
     /**
@@ -126,7 +126,6 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
     private inner class RecordingBinding(private val binding: CameraBinding) : CameraBinding {
         override fun unbind(vararg useCases: UseCase) {
             synchronized(lock) {
-                if (useCases.any { owners[it]?.lifecycle?.currentState == Lifecycle.State.DESTROYED }) releases++
                 useCases.forEach { owners -= it }
                 val unbound = useCases.toSet()
                 cameras.values.forEach { camera ->
@@ -156,11 +155,19 @@ internal class RecordingCameraXBackend(private val real: CameraXBackend) : Camer
         private fun record(owner: LifecycleOwner, useCases: List<UseCase>, bound: Camera): Camera {
             val id = binding.cameraIdOf(bound)
             if (observedOwners.add(owner)) {
-                // Stopping the owner closes its cameras, and the torch, zoom and exposure index with them.
+                // Stopping the owner closes its cameras, and the torch, zoom and exposure index with them;
+                // destroying it unbinds its use cases.
                 owner.lifecycle.addObserver(
                     LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_STOP) {
                             synchronized(lock) { cameras.values.filter { it.owner === owner }.forEach { it.reset() } }
+                        }
+                        if (event == Lifecycle.Event.ON_DESTROY) {
+                            synchronized(lock) {
+                                if (owners.values.any { it === owner }) releases++
+                                owners.values.removeAll { it === owner }
+                                cameras.values.filter { it.owner === owner }.forEach { it.useCases.clear() }
+                            }
                         }
                     },
                 )
