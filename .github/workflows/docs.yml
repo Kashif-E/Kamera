@@ -38,7 +38,8 @@ jobs:
       - name: Build the site (strict)
         run: mkdocs build --strict --site-dir site
 
-      # Links in code blocks are skipped. Maven Central's search answers automated clients with 403.
+      # Links in code blocks are skipped. Maven Central's search answers automated clients with 403, and
+      # central.sonatype.com rate-limits CI runners with 429: the host answered, so the link is not broken.
       - name: Check links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
@@ -46,6 +47,7 @@ jobs:
           args: >-
             --no-progress
             --max-retries 3
+            --accept '200..=299,429'
             --exclude-path docs/superpowers
             --exclude '^https://search\.maven\.org/'
             'docs/**/*.md'
