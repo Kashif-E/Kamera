@@ -33,7 +33,7 @@ jobs:
 
       # This job holds the signing secrets: check the wrapper jar is a genuine Gradle release first.
       - name: Validate the Gradle wrapper
-        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+        uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       - name: Check the tag names the version being published
         run: scripts/check_release_tag.sh "$GITHUB_REF_NAME"
