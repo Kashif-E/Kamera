@@ -8,8 +8,8 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
-  logo: assets/cameraklogo.png
-  favicon: assets/cameraklogo.png
+  logo: assets/brand/kamera-mark.svg
+  favicon: assets/brand/favicon.png
   language: en
   palette:
     - media: "(prefers-color-scheme: light)"

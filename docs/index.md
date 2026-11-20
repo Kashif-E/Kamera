@@ -1,5 +1,8 @@
 # Kamera Documentation
 
+![Kamera](assets/brand/kamera-banner-light.png#only-light)
+![Kamera](assets/brand/kamera-banner-dark.png#only-dark)
+
 **A camera library for Kotlin Multiplatform**: Android (CameraX), iOS (AVFoundation) and desktop JVM (JavaCV) behind one API, with Compose Multiplatform UI on top.
 
 Upgrading from 1.x? Start with the [2.0 migration guide](migration/2.0.md).

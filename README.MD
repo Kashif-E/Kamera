@@ -1,7 +1,10 @@
 # Kamera
 
 <p align="center">
-  <img src="docs/assets/kamera.jpg" alt="Kamera Poster" width="800" style="border-radius: 50%;"/>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/kamera-banner-dark.png">
+    <img src="docs/assets/brand/kamera-banner-light.png" alt="Kamera: one camera API for Android, iOS and desktop" width="800">
+  </picture>
 </p>
 
 <p align="center">
