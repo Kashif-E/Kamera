@@ -24,7 +24,7 @@ androidx-activity = "1.13.0"
 androidx-lifecycle = "2.9.4"
 # The JetBrains multiplatform lifecycle, at the version compose-multiplatform 1.11.1's ui depends on:
 # camerak-core's bindToLifecycle, and camerak's Compose lifecycle effects and retained holder ViewModel.
-jetbrains-lifecycle = "2.9.6"
+jetbrains-lifecycle = "2.11.0"
 # cameraK-core's Android trace sections. The version CameraX 1.5.3 already brings at runtime.
 androidx-tracing = "1.2.0"
 # The JavaCPP release train: javacv and javacpp carry its number, each preset binding its native
