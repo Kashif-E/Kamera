@@ -14,7 +14,7 @@ spotless = "8.10.4"
 kotlinx-coroutines = "1.11.0"
 kotlinx-io = "0.9.0"
 
-compose-multiplatform = "1.11.1"
+compose-multiplatform = "1.12.2"
 # Compose Material 3 has its own version line; this is the one compose-multiplatform 1.11.1 ships.
 compose-material3 = "1.9.0"
 lucide-icons = "2.2.1"
