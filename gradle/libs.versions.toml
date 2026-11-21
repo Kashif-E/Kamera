@@ -26,7 +26,7 @@ androidx-lifecycle = "2.9.4"
 # camerak-core's bindToLifecycle, and camerak's Compose lifecycle effects and retained holder ViewModel.
 jetbrains-lifecycle = "2.9.6"
 # cameraK-core's Android trace sections. The version CameraX 1.5.3 already brings at runtime.
-androidx-tracing = "1.2.0"
+androidx-tracing = "2.0.5"
 # The JavaCPP release train: javacv and javacpp carry its number, each preset binding its native
 # library's version before it. These are the Java bindings only; apps add the natives they ship.
 javacpp = "1.5.12"
